@@ -42,6 +42,9 @@ struct MarginsApp: App {
 
         Window("Connect AI Agents", id: "agents") { AgentConnectView().tint(.marginsTeal) }
         Window("Citations in Word & Google Docs", id: "citations") { CitationsView().tint(.marginsTeal) }
+        Window("Clean Up Library", id: "cleanup") {
+            if let model = holder.model { NavigationStack { CleanupView() }.environmentObject(model).tint(.marginsTeal) }
+        }
             .windowResizability(.contentSize)
 
         WindowGroup("Reader", for: String.self) { $paperID in
@@ -113,6 +116,18 @@ final class ModelHolder: ObservableObject {
                 try? t.write(toFile: "/tmp/margins-ask.txt", atomically: true, encoding: .utf8)
                 exit(0)
             }
+        } else if let model, args.contains("-cleanupReport") {
+            // test hook (read-only): what Clean Up would show
+            let issues = model.detailIssues(), groups = model.duplicateGroups()
+            var out = "issues: \(issues.count)\n"
+            var byProblem: [String: Int] = [:]
+            for i in issues { for p in i.problems { byProblem[p, default: 0] += 1 } }
+            out += byProblem.map { "  \($0.key): \($0.value)" }.sorted().joined(separator: "\n") + "\n"
+            for i in issues.prefix(12) { out += "  - \(i.paper.meta.title.prefix(60)) | \(i.paper.meta.authors.prefix(2).joined(separator: "; ").prefix(40)) | \(i.problems.joined(separator: ", "))\n" }
+            out += "duplicates: \(groups.count)\n"
+            for g in groups.prefix(12) { out += "  - [\(g.reason)] " + g.papers.map { "\($0.meta.title.prefix(50)) (\($0.meta.year))" }.joined(separator: " || ") + "\n" }
+            try? out.write(toFile: "/tmp/margins-cleanup.txt", atomically: true, encoding: .utf8)
+            exit(0)
         } else if let model, let i = args.firstIndex(of: "-importPDFs"), i + 1 < args.count {
             let folder = URL(fileURLWithPath: args[i + 1])
             Task { await model.importPDFFolder(folder); await model.makeReadingViews() }
@@ -131,6 +146,7 @@ struct MarginsCommands: Commands {
         CommandGroup(after: .appSettings) {
             Button("Connect AI Agents…") { openWindow(id: "agents") }
             Button("Citations in Word & Google Docs…") { openWindow(id: "citations") }
+            Button("Clean Up Library…") { openWindow(id: "cleanup") }
         }
         CommandGroup(after: .newItem) {
             Button("Add Paper…") { NotificationCenter.default.post(name: .marginsAddPaper, object: nil) }

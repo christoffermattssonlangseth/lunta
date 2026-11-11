@@ -22,6 +22,8 @@ The library syncs between your Mac and iPhone through iCloud Drive.
   tables scroll in place) next to the original PDF. **Highlights and notes** in four colours; the
   **reading position syncs**, so a paper opens where you stopped on the other device.
 - **Listen:** natural-voice narration (Kokoro) on the Mac and on the iPhone, following along in the text.
+- **Clean up:** *Clean Up Library…* finds papers with missing or broken details (fixed from the DOI, or
+  read from the PDF on the device) and duplicates (merged, keeping tags, folders, highlights and the PDF).
 - **Discover:** search 250 million papers on OpenAlex, add with one click, open what you added.
 - **Cite:** APA, Vancouver, Nature, BibTeX, RIS, Markdown; share PDFs, EPUBs and citations. **Word and
   Google Docs add-ins** insert citations from the library and build the reference list.
@@ -152,7 +154,8 @@ must be running; the extension talks to it on `127.0.0.1:47480` (extension reque
 5. ✅ Highlights and notes, synced reading position
 6. ✅ Ask (on-device assistant) and MCP server for agents
 7. ✅ Citation add-ins: Word and Google Docs
-8. Duplicate and metadata cleanup, smart folders, new-paper alerts, arXiv HTML reading views
+8. ✅ Duplicate and metadata cleanup
+9. Smart folders, new-paper alerts, arXiv HTML reading views
 
 ## License
 

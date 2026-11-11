@@ -121,6 +121,7 @@ struct LibraryView: View {
 struct SourceMenu: View {
     @EnvironmentObject var model: LibraryModel
     @State private var managing = false
+    @State private var cleaning = false
     var body: some View {
         Menu {
             Picker("Show", selection: $model.source) {
@@ -148,6 +149,7 @@ struct SourceMenu: View {
                 }
             }
             Button("Manage Folders & Tags…", systemImage: "folder.badge.gearshape") { managing = true }
+            Button("Clean Up Library…", systemImage: "wand.and.sparkles") { cleaning = true }
             Divider()
             Picker("Sort", selection: $model.sort) {
                 Text("Recently added").tag(SortKey.added)
@@ -159,6 +161,12 @@ struct SourceMenu: View {
             Image(systemName: "line.3.horizontal.decrease.circle")
         }
         .sheet(isPresented: $managing) { ManageFoldersView().environmentObject(model) }
+        .sheet(isPresented: $cleaning) {
+            NavigationStack {
+                CleanupView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { cleaning = false } } }
+            }
+            .environmentObject(model)
+        }
     }
 }
 
