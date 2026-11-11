@@ -171,6 +171,29 @@ extension LibraryModel {
         reload()
     }
 
+    /// Papers whose text runs words together (PDFs that position words without space characters,
+    /// converted before Margins could tell). Remaking their reading view fixes them.
+    func runTogetherPapers() async -> [Paper] {
+        let papers = everyPaper.filter { $0.hasPdf && $0.hasEpub }
+        let lib = self.lib
+        let ids = await Task.detached { () -> Set<String> in
+            var out = Set<String>()
+            for p in papers {
+                let path = lib.expectedFilePath(id: p.id, kind: .fulltext)
+                guard CloudLibrary.isDownloaded(URL(fileURLWithPath: path)),
+                      let t = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+                var words = 0, long = 0
+                for w in t.split(whereSeparator: { !$0.isLetter }) {
+                    words += 1
+                    if w.count >= 22, w.contains(where: \.isLowercase) { long += 1 }
+                }
+                if words > 300, long * 1000 > words * 8 { out.insert(p.id) }
+            }
+            return out
+        }.value
+        return papers.filter { ids.contains($0.id) }
+    }
+
     /// The most complete paper of a group (files, highlights, details).
     func bestOf(_ g: DuplicateGroup) -> String {
         g.papers.max { score($0) < score($1) }?.id ?? g.papers[0].id
@@ -193,6 +216,9 @@ struct CleanupView: View {
     @State private var working: Set<String> = []
     @State private var fixingAll = false
     @State private var editing: EditID?
+    @State private var spacing: [Paper] = []
+    @State private var remaking = false
+    @State private var remade = 0
 
     struct EditID: Identifiable { let id: String }
 
@@ -205,6 +231,27 @@ struct CleanupView: View {
                 Text("Possible duplicates (\(groups.count))")
             } footer: {
                 Text("Merging keeps one paper and moves tags, folders, highlights, stars and a missing PDF onto it.")
+            }
+            if !spacing.isEmpty || remaking {
+                Section {
+                    ForEach(spacing, id: \.id) { p in
+                        HStack {
+                            Text(p.meta.title.isEmpty ? "Untitled" : p.meta.title).lineLimit(2)
+                            Spacer()
+                            if working.contains(p.id) { ProgressView().controlSize(.small) }
+                        }
+                        .font(.callout)
+                    }
+                } header: {
+                    HStack {
+                        Text("Words run together (\(spacing.count))")
+                        Spacer()
+                        Button(remaking ? "Remaking \(remade)/\(remade + spacing.count)…" : "Remake Reading Views") { remakeAll() }
+                            .disabled(remaking).font(.callout)
+                    }
+                } footer: {
+                    Text("These were converted from PDFs that leave out the spaces between words. Margins now puts them back; remaking the reading view fixes the text, search and narration.")
+                }
             }
             Section {
                 if issues.isEmpty { Text("All papers have a title, authors and a year.").foregroundStyle(.secondary) }
@@ -223,7 +270,10 @@ struct CleanupView: View {
             }
         }
         .navigationTitle("Clean Up Library")
-        .task { refresh() }
+        .task {
+            refresh()
+            spacing = await model.runTogetherPapers()
+        }
         .sheet(item: $editing, onDismiss: refresh) { e in MetadataEditor(paperID: e.id).environmentObject(model) }
         #if os(macOS)
         .frame(minWidth: 640, minHeight: 560)
@@ -305,6 +355,22 @@ struct CleanupView: View {
             // keep rows that still need work; drop fixed ones after a moment so the note is seen
             try? await Task.sleep(for: .seconds(1.2))
             issues = fresh
+        }
+    }
+
+    private func remakeAll() {
+        remaking = true
+        remade = 0
+        Task {
+            while let p = spacing.first {
+                working.insert(p.id)
+                _ = await model.makeReadingView(p.id)
+                working.remove(p.id)
+                spacing.removeFirst()
+                remade += 1
+            }
+            remaking = false
+            model.reload()
         }
     }
 

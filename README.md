@@ -25,7 +25,8 @@ The library syncs between your Mac and iPhone through iCloud Drive.
   **reading position syncs**, so a paper opens where you stopped on the other device.
 - **Listen:** natural-voice narration (Kokoro) on the Mac and on the iPhone, following along in the text.
 - **Clean up:** *Clean Up Library…* finds papers with missing or broken details (fixed from the DOI, or
-  read from the PDF on the device) and duplicates (merged, keeping tags, folders, highlights and the PDF).
+  read from the PDF on the device), duplicates (merged, keeping tags, folders, highlights and the PDF), and
+  reading views whose words ran together (remade).
 - **Discover:** search 250 million papers on OpenAlex, add with one click, open what you added.
 - **New for You:** watch authors, topics, or the papers citing one of yours (right-click a paper › Watch,
   or *Watch this search* in Discover). Margins checks OpenAlex when it opens and twice a day, and

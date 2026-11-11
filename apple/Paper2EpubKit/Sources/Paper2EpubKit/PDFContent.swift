@@ -32,6 +32,8 @@ struct PageGraphics {
     var images: [R] = []
     var drawings: [R] = []
     var runs: [TextRun] = []
+    /// Word gaps the content stream makes by moving instead of drawing a space: (x, baseline).
+    var gaps: [CGPoint] = []
 }
 
 /// Walks a page's content stream with CGPDFScanner to find image placements, vector drawings and
@@ -250,7 +252,14 @@ final class PDFContentScanner {
         let b = CGPoint(x: endP.x - origin.x, y: pageHeight - (endP.y - origin.y))
         out.runs.append(TextRun(x0: min(a.x, b.x), x1: max(a.x, b.x), baseline: a.y, size: effSize,
                                 bold: font.bold, italic: font.italic, math: font.math))
+        // a jump to the right on the same baseline since the last text = a word space nobody drew
+        if let e = lastEnd, abs(e.y - a.y) < 0.3 * max(effSize, 2), a.x - e.x > 0.15 * effSize, a.x - e.x < 3 * effSize {
+            out.gaps.append(CGPoint(x: (a.x + e.x) / 2, y: a.y))
+        }
+        lastEnd = CGPoint(x: max(a.x, b.x), y: a.y)
     }
+
+    private var lastEnd: CGPoint?
 
     private func adjust(_ n: CGFloat) {   // TJ number: move left by n/1000 text-space units
         let tx = -n / 1000 * ts.size * ts.th

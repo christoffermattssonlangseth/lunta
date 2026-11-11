@@ -129,8 +129,12 @@ final class ModelHolder: ObservableObject {
             for i in issues.prefix(12) { out += "  - \(i.paper.meta.title.prefix(60)) | \(i.paper.meta.authors.prefix(2).joined(separator: "; ").prefix(40)) | \(i.problems.joined(separator: ", "))\n" }
             out += "duplicates: \(groups.count)\n"
             for g in groups.prefix(12) { out += "  - [\(g.reason)] " + g.papers.map { "\($0.meta.title.prefix(50)) (\($0.meta.year))" }.joined(separator: " || ") + "\n" }
-            try? out.write(toFile: "/tmp/margins-cleanup.txt", atomically: true, encoding: .utf8)
-            exit(0)
+            Task {
+                let spaced = await model.runTogetherPapers()
+                out += "run-together: \(spaced.count)\n"
+                try? out.write(toFile: "/tmp/margins-cleanup.txt", atomically: true, encoding: .utf8)
+                exit(0)
+            }
         } else if let model, let i = args.firstIndex(of: "-importPDFs"), i + 1 < args.count {
             let folder = URL(fileURLWithPath: args[i + 1])
             Task { await model.importPDFFolder(folder); await model.makeReadingViews() }

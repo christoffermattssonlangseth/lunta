@@ -123,7 +123,7 @@ final class PDFAnalyzer {
             }
             let g = page.pageRef.map { PDFContentScanner(box: mb).scan($0) } ?? PageGraphics()
             graphics.append(g)
-            let lines = extractLines(page, pno: pno, mb: mb, runs: g.runs)
+            let lines = extractLines(page, pno: pno, mb: mb, runs: g.runs, gaps: g.gaps)
             for l in lines { sizes[l.size, default: 0] += l.text.count }
             pagesLines.append(lines)
             if pno % 5 == 4 { log("Reading page \(pno + 1) of \(doc.pageCount)") }
@@ -132,12 +132,14 @@ final class PDFAnalyzer {
         findRunning()
     }
 
-    private func extractLines(_ page: PDFPage, pno: Int, mb: CGRect, runs: [TextRun]) -> [PLine] {
+    private func extractLines(_ page: PDFPage, pno: Int, mb: CGRect, runs: [TextRun], gaps: [CGPoint]) -> [PLine] {
         guard let attr = page.attributedString, let sel = page.selection(for: mb) else { return [] }
         let ns = attr.string as NSString
         // bucket text runs by baseline for quick style lookup
         var buckets: [Int: [TextRun]] = [:]
         for r in runs { buckets[Int(r.baseline / 4), default: []].append(r) }
+        var gapBuckets: [Int: [CGPoint]] = [:]
+        for g in gaps { gapBuckets[Int(g.y / 4), default: []].append(g) }
 
         func toTop(_ b: CGRect) -> R {
             R(x0: b.minX - mb.minX, y0: mb.maxY - b.maxY, x1: b.maxX - mb.minX, y1: mb.maxY - b.minY)
@@ -195,6 +197,22 @@ final class PDFAnalyzer {
             var last: TextRun?
             var prevWasSpace = true
             var text = ""
+            // Some PDFs place words by position and never encode a space: put one back wherever the
+            // content stream jumped right between two characters (see PageGraphics.gaps).
+            var spaced: [C] = []
+            for c in chars {
+                if let p = spaced.last, !p.ch.trimmingCharacters(in: .whitespaces).isEmpty,
+                   !c.ch.trimmingCharacters(in: .whitespaces).isEmpty, p.box.w > 0, c.box.w > 0, c.box.x0 >= p.box.x0 {
+                    let lo = (p.box.x0 + p.box.x1) / 2, hi = (c.box.x0 + c.box.x1) / 2
+                    let key = Int(c.box.y1 / 4)
+                    let hit = ((key - 2)...(key + 2)).contains { k in
+                        (gapBuckets[k] ?? []).contains { g in g.x > lo && g.x < hi && g.y >= c.box.y0 - 1 && g.y <= c.box.y1 + 1.5 }
+                    }
+                    if hit { spaced.append(C(ch: " ", size: c.size, box: R(x0: p.box.x1, y0: c.box.y0, x1: c.box.x0, y1: c.box.y1), run: nil)) }
+                }
+                spaced.append(c)
+            }
+            chars = spaced
             for idx in chars.indices {
                 let c = chars[idx]
                 let isSpace = c.ch.trimmingCharacters(in: .whitespaces).isEmpty
