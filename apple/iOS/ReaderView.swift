@@ -17,6 +17,9 @@ struct ReaderView: View {
     @State private var fontScale = 1.0
     @State private var current: String?
     @State private var scrollRequest = ScrollRequest()
+    @StateObject private var narrator = Narrator()
+    @StateObject private var controller = ReaderController()
+    @State private var listening = false
 
     enum Mode: String, CaseIterable { case reading = "Reading", pdf = "PDF" }
 
@@ -27,8 +30,11 @@ struct ReaderView: View {
                 ProgressView(message ?? "Opening…")
             } else if mode == .reading, let book {
                 EpubWebViewIOS(url: URL(fileURLWithPath: book.combined), readAccess: URL(fileURLWithPath: book.dir),
-                               fontScale: fontScale, scrollRequest: scrollRequest) { current = $0 }
-                    .ignoresSafeArea(edges: .bottom)
+                               fontScale: fontScale, scrollRequest: scrollRequest, controller: controller) { current = $0 }
+                    .ignoresSafeArea(edges: listening ? [] : .bottom)
+                    .safeAreaInset(edge: .bottom) {
+                        if listening { NarrationBar(narrator: narrator) { stopListening() } }
+                    }
             } else if mode == .pdf, let pdfURL {
                 PDFKitViewIOS(url: pdfURL).ignoresSafeArea(edges: .bottom)
             } else {
@@ -45,6 +51,9 @@ struct ReaderView: View {
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if mode == .reading, book != nil {
+                    Button { listening ? stopListening() : startListening() } label: {
+                        Image(systemName: listening ? "headphones.circle.fill" : "headphones")
+                    }
                     Button { showContents = true } label: { Image(systemName: "list.bullet") }
                     Menu {
                         Button { fontScale = min(1.8, fontScale + 0.1) } label: { Label("Larger Text", systemImage: "textformat.size.larger") }
@@ -60,6 +69,30 @@ struct ReaderView: View {
         .sheet(isPresented: $showInfo) { NavigationStack { PaperInfoView(paperID: paperID, embedded: false) } }
         .onChange(of: mode) { _, m in if m == .pdf, pdfURL == nil { Task { await loadPDF() } } }
         .task { await load() }
+        .onDisappear { if listening { stopListening() } }
+    }
+
+    private func startListening() {
+        Task {
+            let items = await controller.narrationItems()
+            guard !items.isEmpty else { return }
+            narrator.load(items, title: model.paper(paperID)?.meta.title ?? "")
+            narrator.onHighlight = { [weak controller] id in controller?.highlight(id) }
+            controller.onTapParagraph = { [weak narrator] id in narrator?.play(fromID: id) }
+            controller.setListening(true)
+            listening = true
+            if let first = await controller.firstVisibleID(), let i = items.firstIndex(where: { $0.id == first }), i > 0 {
+                narrator.play(from: i)
+            } else {
+                narrator.play(from: 0)
+            }
+        }
+    }
+
+    private func stopListening() {
+        narrator.stop()
+        controller.setListening(false)
+        listening = false
     }
 
     private func load() async {
@@ -125,14 +158,20 @@ struct EpubWebViewIOS: UIViewRepresentable {
     let readAccess: URL
     let fontScale: Double
     let scrollRequest: ScrollRequest
+    let controller: ReaderController
     let onPosition: (String) -> Void
 
     func makeUIView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
         cfg.userContentController.addUserScript(WKUserScript(source: ReaderAssets.styleScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         cfg.userContentController.addUserScript(WKUserScript(source: ReaderAssets.trackingJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        cfg.userContentController.addUserScript(WKUserScript(source: ReaderAssets.narrationJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         cfg.userContentController.add(context.coordinator, name: "pos")
+        let narr = NarrationMessageHandler()
+        narr.controller = controller
+        cfg.userContentController.add(narr, name: "narr")
         let v = WKWebView(frame: .zero, configuration: cfg)
+        controller.webView = v
         v.isOpaque = false
         v.backgroundColor = .clear
         v.loadFileURL(url, allowingReadAccessTo: readAccess)

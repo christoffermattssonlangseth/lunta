@@ -81,6 +81,10 @@ enum ReaderAssets {
     .titlepage h1 { border-top: none; padding-top: 0; margin-top: .6em; }
     figure img, .table-wrap img { border-radius: 4px; }
     .section-start { scroll-margin-top: 1em; }
+    .narr-current { background: rgba(242,180,90,.30); border-radius: 6px; box-shadow: 0 0 0 5px rgba(242,180,90,.30);
+                    transition: background .25s; }
+    @media (prefers-color-scheme: dark) { .narr-current { background: rgba(242,180,90,.22); box-shadow: 0 0 0 5px rgba(242,180,90,.22); } }
+    body.listening p, body.listening li, body.listening h1, body.listening h2, body.listening h3, body.listening figcaption { cursor: pointer; }
     """
 
     /// Injects `css` into the page.
@@ -101,6 +105,54 @@ enum ReaderAssets {
       window.addEventListener('scroll', function(){ clearTimeout(t); t = setTimeout(report, 90); });
     })();
     """
+
+    /// Narration helpers: list readable units in reading order, highlight one, report taps.
+    static let narrationJS = #"""
+    (function(){
+      window.marginsNarration = function(includeCaptions){
+        var out = [], n = 0;
+        var skip = '.references, ol.refs, .refs, .notes, table, .affiliations, .frontmatter, .license, .doi, .journal, nav, .supp';
+        var els = document.querySelectorAll('h1, h2, h3, h4, p, li, figcaption, .titlepage .authors');
+        for (var i = 0; i < els.length; i++) {
+          var el = els[i];
+          if (el.closest(skip)) continue;
+          if (!includeCaptions && (el.closest('figure') || el.classList.contains('caption'))) continue;
+          var tag = el.tagName.toUpperCase();   // XHTML pages report lowercase names
+          if (tag === 'LI' && el.querySelector('p')) continue;
+          var c = el.cloneNode(true);
+          c.querySelectorAll('sup, .fn, .eqlabel, script, style, img').forEach(function(x){ x.remove(); });
+          c.querySelectorAll('math').forEach(function(m){ m.replaceWith(document.createTextNode(' [equation] ')); });
+          var t = (c.textContent || '').replace(/\s+/g, ' ').trim();
+          if (t.length < 2) continue;
+          // footnote-style lines from PDFs: affiliations, equal-contribution notes, venue lines
+          if (/^[∗*†‡§¶]/.test(t) || /^(Work (was )?performed|Correspond|E-?mail|Present address|\d+(st|nd|rd|th) (Conference|International))/i.test(t)) continue;
+          if (!el.id) el.id = 'narr-' + (n++);
+          var kind = /^H\d$/.test(tag) ? 'heading' : (el.closest('figure') ? 'caption' : 'text');
+          out.push({ id: el.id, text: t, kind: kind });
+        }
+        return JSON.stringify(out);
+      };
+      window.marginsHighlight = function(id){
+        document.querySelectorAll('.narr-current').forEach(function(e){ e.classList.remove('narr-current'); });
+        var e = document.getElementById(id);
+        if (e) { e.classList.add('narr-current'); e.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+      };
+      window.marginsListening = function(on){
+        document.body.classList.toggle('listening', !!on);
+        if (!on) document.querySelectorAll('.narr-current').forEach(function(e){ e.classList.remove('narr-current'); });
+      };
+      window.marginsFirstVisible = function(){
+        var els = document.querySelectorAll('[id^="narr-"], h1[id], h2[id], h3[id], p[id], li[id]');
+        for (var i = 0; i < els.length; i++) { var r = els[i].getBoundingClientRect(); if (r.bottom > 60) return els[i].id; }
+        return '';
+      };
+      document.addEventListener('click', function(ev){
+        if (!document.body.classList.contains('listening')) return;
+        var el = ev.target.closest('p, li, h1, h2, h3, h4, figcaption');
+        if (el && el.id && !ev.target.closest('a')) window.webkit.messageHandlers.narr.postMessage(el.id);
+      });
+    })();
+    """#
 
     static func scrollJS(_ anchor: String) -> String {
         let safe = anchor.replacingOccurrences(of: "\\", with: "").replacingOccurrences(of: "'", with: "\\'")

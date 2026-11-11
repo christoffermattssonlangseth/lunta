@@ -13,6 +13,9 @@ struct ReaderWindow: View {
     @State private var scrollRequest = ScrollRequest()
     @State private var fontScale = 1.0
     @State private var error: String?
+    @StateObject private var narrator = Narrator()
+    @StateObject private var controller = ReaderController()
+    @State private var listening = false
 
     enum Mode: String, CaseIterable { case reading = "Reading", pdf = "PDF" }
 
@@ -41,7 +44,10 @@ struct ReaderWindow: View {
                 case .reading:
                     if let book {
                         EpubWebView(url: URL(fileURLWithPath: book.combined), readAccess: URL(fileURLWithPath: book.dir),
-                                    fontScale: fontScale, scrollRequest: scrollRequest) { id in current = id }
+                                    fontScale: fontScale, scrollRequest: scrollRequest, controller: controller) { id in current = id }
+                            .safeAreaInset(edge: .bottom) {
+                                if listening { NarrationBar(narrator: narrator) { stopListening() } }
+                            }
                     } else if let error {
                         ContentUnavailableView("No reading view", systemImage: "book", description: Text(error))
                     } else {
@@ -62,6 +68,11 @@ struct ReaderWindow: View {
                 }
                 ToolbarItemGroup {
                     if mode == .reading {
+                        Button { listening ? stopListening() : startListening() } label: {
+                            Image(systemName: listening ? "headphones.circle.fill" : "headphones")
+                        }
+                        .help(listening ? "Stop listening" : "Listen to this paper")
+                        .disabled(book == nil)
                         Button { fontScale = max(0.7, fontScale - 0.1) } label: { Image(systemName: "textformat.size.smaller") }
                             .help("Smaller text")
                         Button { fontScale = min(1.8, fontScale + 0.1) } label: { Image(systemName: "textformat.size.larger") }
@@ -86,6 +97,30 @@ struct ReaderWindow: View {
         }
     }
 
+    private func startListening() {
+        Task {
+            let items = await controller.narrationItems()
+            guard !items.isEmpty else { return }
+            narrator.load(items, title: model.paper(paperID)?.meta.title ?? "")
+            narrator.onHighlight = { [weak controller] id in controller?.highlight(id) }
+            controller.onTapParagraph = { [weak narrator] id in narrator?.play(fromID: id) }
+            controller.setListening(true)
+            listening = true
+            // start where the reader is looking (skip the title page if at the top)
+            if let first = await controller.firstVisibleID(), let i = items.firstIndex(where: { $0.id == first }), i > 0 {
+                narrator.play(from: i)
+            } else {
+                narrator.play(from: 0)
+            }
+        }
+    }
+
+    private func stopListening() {
+        narrator.stop()
+        controller.setListening(false)
+        listening = false
+    }
+
     /// Contents entries point at "section.xhtml#id" or at a whole section; in the continuous
     /// document these become "#id" and "#section-<n>".
     private func anchor(_ t: TocEntry, in book: EpubBook) -> String {
@@ -107,15 +142,21 @@ struct EpubWebView: NSViewRepresentable {
     let readAccess: URL
     let fontScale: Double
     let scrollRequest: ScrollRequest
+    let controller: ReaderController
     let onPosition: (String) -> Void
 
     func makeNSView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
         cfg.userContentController.addUserScript(WKUserScript(source: ReaderAssets.styleScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         cfg.userContentController.addUserScript(WKUserScript(source: ReaderAssets.trackingJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        cfg.userContentController.addUserScript(WKUserScript(source: ReaderAssets.narrationJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         cfg.userContentController.add(context.coordinator, name: "pos")
+        let narr = NarrationMessageHandler()
+        narr.controller = controller
+        cfg.userContentController.add(narr, name: "narr")
         let v = WKWebView(frame: .zero, configuration: cfg)
         v.setValue(false, forKey: "drawsBackground")
+        controller.webView = v
         v.loadFileURL(url, allowingReadAccessTo: readAccess)
         context.coordinator.loaded = url
         return v
