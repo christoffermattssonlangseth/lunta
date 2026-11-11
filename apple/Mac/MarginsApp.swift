@@ -96,7 +96,20 @@ final class ModelHolder: ObservableObject {
                 if let paper, let book = try? model.lib.openEpub(id: paper) {
                     engine.passages = { await PageTextExtractor.items(of: URL(fileURLWithPath: book.combined), readAccess: URL(fileURLWithPath: book.dir)) }
                 }
-                let t = await engine.transcript(for: q)
+                let t: String
+                if let mode = args.firstIndex(of: "-askMode").flatMap({ $0 + 1 < args.count ? args[$0 + 1] : nil }) {
+                    // q is a library search; its top hits are compared or summarized
+                    let ids = ((try? model.lib.search(query: q, limit: 6)) ?? []).map(\.paper.id)
+                    t = await engine.transcript {
+                        switch mode {
+                        case "compare": engine.compare(Array(ids.prefix(3)))
+                        case "gaps": engine.gaps(ids, name: q)
+                        default: engine.overview(ids, name: q)
+                        }
+                    }
+                } else {
+                    t = await engine.transcript(for: q)
+                }
                 try? t.write(toFile: "/tmp/margins-ask.txt", atomically: true, encoding: .utf8)
                 exit(0)
             }

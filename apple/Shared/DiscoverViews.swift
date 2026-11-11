@@ -23,6 +23,44 @@ struct BeyondBanner: View {
     }
 }
 
+extension LibraryModel {
+    /// The library id of a search result, including papers added since the search ran.
+    func libraryID(of hit: DiscoverHit) -> String? {
+        hit.inLibrary ?? discoverResults.first { $0.id == hit.id }?.inLibrary
+    }
+}
+
+/// Opens a paper from the search results: the reader window on the Mac, the reader on iPhone.
+struct OpenAddedPaper: View {
+    let id: String
+    var compact = false
+    #if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+    #endif
+
+    var body: some View {
+        #if os(macOS)
+        Button { openWindow(value: id) } label: { label }
+            .buttonStyle(compact ? AnyButtonStyle(.borderless) : AnyButtonStyle(.borderedProminent))
+            .help("Open this paper")
+        #else
+        NavigationLink(value: id) { label }
+            .buttonStyle(compact ? AnyButtonStyle(.borderless) : AnyButtonStyle(.borderedProminent))
+        #endif
+    }
+
+    private var label: some View {
+        Label(compact ? "Open" : "Open Paper", systemImage: compact ? "checkmark.circle.fill" : "book")
+            .font(compact ? .callout.weight(.medium) : .body)
+    }
+}
+
+struct AnyButtonStyle: PrimitiveButtonStyle {
+    private let make: (Configuration) -> AnyView
+    init<S: PrimitiveButtonStyle>(_ s: S) { make = { AnyView(s.makeBody(configuration: $0)) } }
+    func makeBody(configuration: Configuration) -> some View { make(configuration) }
+}
+
 struct DiscoverRow: View {
     @EnvironmentObject var model: LibraryModel
     let hit: DiscoverHit
@@ -40,10 +78,8 @@ struct DiscoverRow: View {
                 }
             }
             Spacer(minLength: 6)
-            if hit.inLibrary != nil {
-                Label("In library", systemImage: "checkmark.circle.fill")
-                    .labelStyle(.iconOnly).foregroundStyle(Color.marginsTeal).font(.title3)
-                    .help("Already in your library")
+            if let id = model.libraryID(of: hit) {
+                OpenAddedPaper(id: id, compact: true).tint(.marginsTeal)
             } else if adding {
                 ProgressView().controlSize(.small)
             } else {
@@ -68,7 +104,9 @@ struct DiscoverDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 6) {
-                    Pill(text: "Not in your library", icon: "globe", color: .marginsTeal)
+                    if model.libraryID(of: hit) == nil {
+                        Pill(text: "Not in your library", icon: "globe", color: .marginsTeal)
+                    }
                     if hit.openAccess { Pill(text: "Open access", icon: "lock.open", color: .green) }
                 }
                 Text(hit.meta.title).font(.title2.weight(.bold)).textSelection(.enabled)
@@ -78,14 +116,17 @@ struct DiscoverDetail: View {
                 }
                 Text([hit.meta.journal, hit.meta.year, hit.citedBy > 0 ? "cited \(hit.citedBy)×" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary)
-                if hit.inLibrary == nil {
+                if let id = model.libraryID(of: hit) {
+                    HStack(spacing: 12) {
+                        OpenAddedPaper(id: id).tint(.marginsTeal)
+                        Label("In your library", systemImage: "checkmark.circle.fill").foregroundStyle(Color.marginsTeal)
+                    }
+                } else {
                     Button {
                         adding = true
                         Task { await model.addDiscovered(hit); adding = false }
                     } label: { Label(adding ? "Adding…" : "Add to Library", systemImage: "plus") }
                     .buttonStyle(.borderedProminent).tint(.marginsTeal).disabled(adding)
-                } else {
-                    Label("In your library", systemImage: "checkmark.circle.fill").foregroundStyle(Color.marginsTeal)
                 }
                 if !hit.meta.abstractText.isEmpty {
                     Card(title: "Abstract") { Text(hit.meta.abstractText).lineSpacing(3).textSelection(.enabled) }

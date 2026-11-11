@@ -70,6 +70,19 @@ struct LibraryWindow: View {
         .sheet(isPresented: $addingPaper) { AddPaperSheet() }
         .modifier(EditSheet(editing: $editing))
         .onReceive(NotificationCenter.default.publisher(for: .marginsAddPaper)) { _ in addingPaper = true }
+        .onReceive(NotificationCenter.default.publisher(for: .marginsAskCompare)) { n in
+            guard let ids = n.object as? [String] else { return }
+            asking = true
+            if ask.busy { return }
+            ask.compare(ids)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .marginsAskFolder)) { n in
+            guard let id = n.object as? String, let c = model.collections.first(where: { $0.id == id }) else { return }
+            let ids = model.lib.papers(filter: PaperFilter(collection: id, tag: nil, starredOnly: false, unreadOnly: false), sort: .added).map(\.id)
+            asking = true
+            if ask.busy { return }
+            ask.overview(ids, name: c.name)
+        }
         .onOpenURL { url in
             // margins://open?id=<paper id>  (from the browser extension)
             if url.host == "open", let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?
@@ -233,6 +246,8 @@ struct Sidebar: View {
                 return handled
             }
             .contextMenu {
+                Button("Summarize with Ask") { NotificationCenter.default.post(name: .marginsAskFolder, object: c.id) }
+                Divider()
                 Button("New Subfolder…") { newFolder(parent: c) }
                 Button("Rename…") {
                     prompt = NameRequest(title: "Rename Folder", initial: c.name) { model.renameFolder(c.id, $0) }
@@ -563,6 +578,12 @@ struct MultiSelection: View {
     var body: some View {
         VStack(spacing: 12) {
             Text("\(ids.count) papers selected").font(.title3)
+            if ids.count <= 8 {
+                Button { NotificationCenter.default.post(name: .marginsAskCompare, object: ids) } label: {
+                    Label("Compare with Ask", systemImage: "sparkles")
+                }
+                .buttonStyle(.borderedProminent)
+            }
             Button("Find PDFs") { Task { for id in ids { await model.findPDF(id) } } }
             Button("Make Reading Views") { Task { for id in ids { await model.makeReadingView(id) }; model.reload() } }
             SharePanel(ids: ids).id(ids)
@@ -679,6 +700,7 @@ struct AddPaperSheet: View {
 struct DiscoverList: View {
     @EnvironmentObject var model: LibraryModel
     @Binding var selection: String?
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 0) {
@@ -694,6 +716,16 @@ struct DiscoverList: View {
             } else {
                 List(model.discoverResults, selection: $selection) { hit in
                     DiscoverRow(hit: hit).tag(hit.id)
+                }
+                .contextMenu(forSelectionType: String.self) { ids in
+                    if let id = ids.first, let hit = model.discoverResults.first(where: { $0.id == id }), let pid = model.libraryID(of: hit) {
+                        Button("Open Paper") { openWindow(value: pid) }
+                    }
+                } primaryAction: { ids in
+                    // double-click: open papers that are in the library
+                    if let id = ids.first, let hit = model.discoverResults.first(where: { $0.id == id }), let pid = model.libraryID(of: hit) {
+                        openWindow(value: pid)
+                    }
                 }
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
@@ -712,6 +744,8 @@ extension Notification.Name {
     static let marginsEditPaper = Notification.Name("marginsEditPaper")
     static let marginsSharePapers = Notification.Name("marginsSharePapers")
     static let marginsOrganize = Notification.Name("marginsOrganize")
+    static let marginsAskCompare = Notification.Name("marginsAskCompare")
+    static let marginsAskFolder = Notification.Name("marginsAskFolder")
     static let marginsNewFolder = Notification.Name("marginsNewFolder")
     static let marginsNewTag = Notification.Name("marginsNewTag")
 }

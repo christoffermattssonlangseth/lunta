@@ -99,6 +99,13 @@ struct AssistantPanel: View {
                 chip("Find recent papers beyond my library on…", fill: "Find new papers on ")
                 chip("Tag my papers about…", fill: "Find my papers about  and propose tagging them")
                 chip("What were my last 10 papers about?") { engine.ask("Summarize the topics of the 10 papers I added most recently.") }
+                if let (name, ids) = currentGroup {
+                    chip("Summarize “\(name)”") { engine.overview(ids, name: name) }
+                    chip("What's missing in “\(name)”?") { engine.gaps(ids, name: name) }
+                    if ids.count >= 2 && ids.count <= 8 {
+                        chip("Compare the papers in “\(name)”") { engine.compare(ids) }
+                    }
+                }
             } else {
                 chip("Summarize this paper") { engine.summarize() }
                 chip("Explain the text I've selected") { engine.explainSelection() }
@@ -106,6 +113,15 @@ struct AssistantPanel: View {
                 chip("How did they do it?") { engine.ask("Describe the data and methods: cohort or samples, measurements, and statistical analysis.") }
                 chip("What are the limitations?") { engine.ask("What limitations do the authors acknowledge, and what others are apparent?") }
             }
+        }
+    }
+
+    /// The folder or tag being shown in the library, with its papers.
+    private var currentGroup: (String, [String])? {
+        switch model.source {
+        case .collection(let id): return (model.collections.first { $0.id == id }?.name ?? "Folder", model.papers.map(\.id))
+        case .tag(let t): return ("#\(t)", model.papers.map(\.id))
+        default: return nil
         }
     }
 

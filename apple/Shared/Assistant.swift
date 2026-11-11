@@ -720,7 +720,9 @@ final class AskEngine: ObservableObject {
         guard !q.isEmpty, !busy else { return }
         messages.append(AskMessage(role: .user, text: shown ?? q))
         busy = true
-        task = Task { await run(q) }
+        // nudge toward propose_change only when the user's own words ask for a change
+        let wantsChange = shown == nil && Self.asksForChange(q)
+        task = Task { await run(q, wantsChange: wantsChange) }
     }
 
     func stop() {
@@ -729,14 +731,14 @@ final class AskEngine: ObservableObject {
         save()
     }
 
-    private func run(_ q: String) async {
+    private func run(_ q: String, wantsChange: Bool = false) async {
         defer { busy = false; save() }
         do {
             if session == nil { try await start() }
             let before = proposals.count
             try await stream(q)
             // small models sometimes describe a change instead of proposing it: nudge once
-            if scope == .library, proposals.count == before, Self.asksForChange(q), !Task.isCancelled {
+            if scope == .library, proposals.count == before, wantsChange, !Task.isCancelled {
                 try await stream("Call propose_change now for the papers you listed (use their numbers). Then confirm in one short sentence.")
             }
         } catch let e where Self.isOverflow(e) {
@@ -842,16 +844,44 @@ final class AskEngine: ObservableObject {
         let history = messages.dropLast().contains { $0.role == .assistant }
         if restored, history { instructions += earlierConversation(limit: budget / 2) }
         restored = false
+        session = await makeSession(tools: tools, instructions: instructions)
+    }
+
+    private func makeSession(tools: [any Tool], instructions: String) async -> LanguageModelSession {
         usingCloud = false
         if #available(macOS 27.0, iOS 27.0, *), usesOpenModel {
             await OpenModel.shared.prepare()
-            session = LanguageModelSession(model: OpenModel.shared.model, tools: tools, instructions: instructions)
+            return LanguageModelSession(model: OpenModel.shared.model, tools: tools, instructions: instructions)
         } else if #available(macOS 27.0, iOS 27.0, *), cloudAvailable {
-            session = LanguageModelSession(model: PrivateCloudComputeLanguageModel(), tools: tools, instructions: instructions)
             usingCloud = true
-        } else {
-            session = LanguageModelSession(tools: tools, instructions: instructions)
+            return LanguageModelSession(model: PrivateCloudComputeLanguageModel(), tools: tools, instructions: instructions)
         }
+        return LanguageModelSession(tools: tools, instructions: instructions)
+    }
+
+    /// Answers a prompt that already holds everything needed, without tools (so the model can't wander
+    /// off searching). The main conversation then picks it up as earlier context.
+    private func answerDirectly(_ prompt: String, shown: String) async {
+        guard !busy else { return }
+        messages.append(AskMessage(role: .user, text: shown))
+        busy = true
+        defer { busy = false; save() }
+        let s = await makeSession(tools: [], instructions: "You are the research assistant in Margins, the user's reference manager. Use only the papers given in the message; cite them by their numbers like [3]. Be concise.")
+        let i = messages.count
+        messages.append(AskMessage(role: .assistant, text: ""))
+        do {
+            for try await snap in s.streamResponse(to: prompt, options: GenerationOptions(temperature: 0.2)) {
+                messages[i].text = Self.withoutThinking(snap.content)
+            }
+        } catch {
+            if messages[i].text.isEmpty { messages.remove(at: i) }
+            fail(error)
+            return
+        }
+        if messages[i].text.trimmingCharacters(in: .whitespaces).isEmpty { messages.remove(at: i) }
+        // the next question starts a fresh session that's told what was said
+        session = nil
+        restored = true
     }
 
     private func handle(_ e: AskEvent) {
@@ -916,8 +946,15 @@ final class AskEngine: ObservableObject {
 
     /// Runs one question to completion and returns the transcript (for the -ask launch hook).
     func transcript(for q: String) async -> String {
-        ask(q)
-        while busy { try? await Task.sleep(for: .milliseconds(200)) }
+        await transcript { self.ask(q) }
+    }
+
+    func transcript(_ begin: () -> Void) async -> String {
+        begin()
+        for _ in 0..<100 where !busy { try? await Task.sleep(for: .milliseconds(100)) }
+        // quick actions may run in steps: wait until it has been idle for a moment
+        var idle = 0
+        while idle < 10 { try? await Task.sleep(for: .milliseconds(200)); idle = busy ? 0 : idle + 1 }
         let src = sources.keys.sorted().map { "  [\($0)] \(sources[$0]!.label)" }.joined(separator: "\n")
         return (["model: \(modelLabel)"] + messages.map { "\($0.role): \($0.text)" } + proposals.map { "proposal: \($0.summary)" }).joined(separator: "\n") + "\nsources:\n" + src
     }
@@ -940,6 +977,95 @@ final class AskEngine: ObservableObject {
             }
             ask("Explain this passage from the paper in plain language, including any jargon, and say why it matters for the paper:\n\n“\(clip(s, budget / 2))”",
                 shown: "Explain: “\(clip(s, 140))”")
+        }
+    }
+
+    // MARK: across papers (library scope)
+
+    /// Numbered digests of papers (title, year, journal, abstract), fitted to the model's budget.
+    private func paperDigests(_ ids: [String], perPaper: Int? = nil) async -> String? {
+        if session == nil { try? await start() }
+        guard let ctx, let model else { return nil }
+        let papers = ids.compactMap { model.paper($0) }
+        guard !papers.isEmpty else { return nil }
+        let room = budget + 1200
+        let each = perPaper ?? max(90, room / papers.count)
+        var out: [String] = [], used = 0
+        for p in papers {
+            let n = ctx.register(.paper(p.id), p.meta.title)
+            let head = "[\(n)] \(p.meta.title) (\(p.meta.authors.first.map { $0 + ($0 == p.meta.authors.last ? "" : " et al.") } ?? "unknown"), \(p.meta.year)\(p.meta.journal.isEmpty ? "" : ", " + p.meta.journal))"
+            let abs = digitize(clip(p.meta.abstractText, max(0, each - head.count)))
+            let line = abs.isEmpty || each < 160 ? head : head + ": " + abs
+            if used + line.count > room { break }
+            out.append(line); used += line.count
+        }
+        return out.joined(separator: "\n")
+    }
+
+    /// Side-by-side comparison of a few papers.
+    func compare(_ ids: [String]) {
+        let ids = Array(ids.prefix(8))
+        Task {
+            guard let d = await paperDigests(ids) else { return }
+            await answerDirectly("Compare these papers for a researcher:\n\n\(d)\n\nFor each, give the question, data/methods and main finding in one line each, citing it by number. Then: where they agree, where they disagree or differ in approach, and which is strongest evidence and why. Use only what is written here.",
+                shown: "Compare \(ids.count) papers")
+        }
+    }
+
+    /// What a folder (or tag) is about: themes, methods, findings, open questions.
+    func overview(_ ids: [String], name: String) {
+        Task {
+            let take = Array(ids.prefix(usesOpenModel || cloudAvailable ? 30 : 14))
+            guard let d = await paperDigests(take) else { return }
+            let more = ids.count > take.count ? " (\(take.count) of its \(ids.count) papers shown)" : ""
+            await answerDirectly("These are the papers in my collection “\(name)”\(more):\n\n\(d)\n\nWrite a short overview: the main themes (grouping papers by number), the methods used, the key findings, and open questions or gaps. Cite papers by number. Use only what is written here.",
+                shown: "Summarize “\(name)”")
+        }
+    }
+
+    /// Gaps in a collection, then recent papers beyond the library that fill them. The model only
+    /// names the gaps; the search runs here and its real results are listed (small models
+    /// otherwise invent papers).
+    func gaps(_ ids: [String], name: String) {
+        Task {
+            let take = Array(ids.prefix(usesOpenModel || cloudAvailable ? 24 : 10))
+            guard let d = await paperDigests(take, perPaper: 140) else { return }
+            let before = messages.count
+            await answerDirectly("My collection “\(name)” has these papers:\n\n\(d)\n\nWhat important topics, methods or kinds of study seem to be missing? Answer with exactly three lines, each a gap and then search keywords that include the topic, separated by |, like:\n- Few studies in female athletes | velocity-based training women\nDo not name any papers.",
+                shown: "What's missing in “\(name)”?")
+            guard let i = messages.indices.last(where: { $0 >= before && messages[$0].role == .assistant }) else { return }
+            var lines: [(gap: String, query: String)] = []
+            let junk = CharacterSet(charactersIn: "-*•<>\"“”").union(.whitespaces)
+            for raw in messages[i].text.split(separator: "\n") {
+                let parts = raw.split(separator: "|", maxSplits: 1).map { $0.trimmingCharacters(in: junk) }
+                if parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty { lines.append((parts[0], parts[1])) }
+            }
+            guard !lines.isEmpty else { return }
+            messages[i].text = "Possible gaps in “\(name)”:\n" + lines.map { "- \($0.gap)" }.joined(separator: "\n")
+            // keep each search on the collection's topic
+            let topic = name.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+            busy = true
+            var sections: [String] = []
+            for line in lines.prefix(3) {
+                guard let ctx else { break }
+                let q = line.query.lowercased().contains(topic.lowercased()) ? line.query : "\(topic) \(line.query)"
+                messages.append(AskMessage(role: .activity, text: "Searching beyond your library for “\(q)”"))
+                let lib = model?.lib
+                let hits = await Task.detached { (try? lib?.discover(query: q, limit: 5)) ?? [] }.value
+                let fresh = hits.filter { $0.inLibrary == nil }.prefix(3)
+                guard !fresh.isEmpty else { continue }
+                let list = fresh.map { h -> String in
+                    let n = ctx.register(.external(h.meta.doi.isEmpty ? h.meta.title : h.meta.doi), h.meta.title, hit: h)
+                    let who = h.meta.authors.first.map { $0 + (h.meta.authors.count > 1 ? " et al." : "") } ?? ""
+                    return "- [\(n)] \(h.meta.title) — \(who) \(h.meta.date.prefix(4))\(h.meta.journal.isEmpty ? "" : ", " + h.meta.journal)"
+                }
+                sections.append("**\(line.gap)**\n" + list.joined(separator: "\n"))
+            }
+            busy = false
+            messages.append(AskMessage(role: .assistant, text: sections.isEmpty
+                ? "I found no new papers for these gaps. Try Discover with other words."
+                : "New papers beyond your library (not in Margins yet):\n\n" + sections.joined(separator: "\n\n")))
+            save()
         }
     }
 
