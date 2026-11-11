@@ -10,6 +10,7 @@ struct LibraryWindow: View {
     @State private var addingPaper = false
     @State private var newCollection = false
     @State private var asking = false
+    @State private var dropping = false
     @StateObject private var ask = AskEngine(scope: .library)
 
     var body: some View {
@@ -78,10 +79,47 @@ struct LibraryWindow: View {
                 openWindow(value: id)
             }
         }
-        .onDrop(of: [.pdf, .fileURL], isTargeted: nil) { providers in
-            Task { await model.addPDFs(await pdfURLs(providers)) }
+        .onDrop(of: [.pdf, .fileURL], isTargeted: $dropping) { providers in
+            Task {
+                let urls = await pdfURLs(providers)
+                guard !urls.isEmpty else { model.errorMessage = "Only PDF files can be dropped here."; return }
+                let out = await model.addPDFs(urls)
+                if let id = out.first(where: { $0.paperID != nil })?.paperID {
+                    model.query = ""
+                    if model.source == .discover { model.source = .all }
+                    selection = [id]
+                }
+            }
             return true
         }
+        .overlay {
+            if dropping {
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(Color.marginsTeal, style: StrokeStyle(lineWidth: 3, dash: [10, 6]))
+                    .background(Color.marginsTeal.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                    .overlay {
+                        VStack(spacing: 8) {
+                            Image(systemName: "doc.badge.plus").font(.system(size: 44)).foregroundStyle(Color.marginsTeal)
+                            Text("Drop to add to your library").font(.title3.weight(.semibold))
+                            Text("Margins reads each PDF, finds its details and makes a reading view.")
+                                .font(.callout).foregroundStyle(.secondary)
+                        }
+                        .padding(24)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                    }
+                    .padding(10)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if !model.addOutcomes.isEmpty {
+                AddedCard(selection: $selection).padding(.trailing, 16).padding(.bottom, 40)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: dropping)
+        .animation(.spring(duration: 0.3), value: model.addOutcomes)
         .alert("Margins", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK") { model.errorMessage = nil }
         } message: { Text(model.errorMessage ?? "") }
@@ -455,6 +493,65 @@ struct MultiSelection: View {
             Button("Make Reading Views") { Task { for id in ids { await model.makeReadingView(id) }; model.reload() } }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Summary after adding PDFs: what happened to each file, with a link to the paper.
+struct AddedCard: View {
+    @EnvironmentObject var model: LibraryModel
+    @Environment(\.openWindow) private var openWindow
+    @Binding var selection: Set<String>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(headline).font(.headline)
+                Spacer()
+                Button { model.addOutcomes = [] } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
+            }
+            ForEach(model.addOutcomes.prefix(6)) { o in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: icon(o.kind)).foregroundStyle(color(o.kind))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(o.title).lineLimit(2).font(.callout)
+                        Text(o.kind == .attached ? "PDF attached to a paper you already had" : o.kind == .added ? "Added · \(o.file)" : o.file)
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer(minLength: 6)
+                    if let id = o.paperID {
+                        Button("Read") { openWindow(value: id) }.controlSize(.small)
+                        Button("Show") { selection = [id] }.controlSize(.small)
+                    }
+                }
+            }
+            if model.addOutcomes.count > 6 {
+                Text("and \(model.addOutcomes.count - 6) more").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .frame(width: 440)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+        .task(id: model.addOutcomes) {
+            try? await Task.sleep(for: .seconds(12))
+            model.addOutcomes = []
+        }
+    }
+
+    private var headline: String {
+        let ok = model.addOutcomes.filter { $0.kind != .failed }.count
+        let bad = model.addOutcomes.count - ok
+        if bad == 0 { return ok == 1 ? "PDF added" : "\(ok) PDFs added" }
+        if ok == 0 { return "Couldn't add \(bad == 1 ? "the PDF" : "\(bad) PDFs")" }
+        return "\(ok) added, \(bad) couldn't be added"
+    }
+
+    private func icon(_ k: LibraryModel.AddOutcome.Kind) -> String {
+        switch k { case .added: return "checkmark.circle.fill"; case .attached: return "paperclip.circle.fill"; case .failed: return "exclamationmark.triangle.fill" }
+    }
+
+    private func color(_ k: LibraryModel.AddOutcome.Kind) -> Color {
+        switch k { case .added: return .marginsTeal; case .attached: return .marginsCopper; case .failed: return .orange }
     }
 }
 

@@ -12,6 +12,9 @@ packages:
     path: MarginsCore
   Paper2EpubKit:
     path: Paper2EpubKit
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio.git
+    from: "0.18.3"
 
 settings:
   base:
@@ -70,6 +73,8 @@ targets:
         product: MarginsCore
       - package: Paper2EpubKit
         product: Paper2EpubKit
+      - package: FluidAudio
+        product: FluidAudio
     info:
       path: iOS/Info.plist
       properties:

@@ -38,6 +38,8 @@ final class Narrator: NSObject, ObservableObject {
     @Published private(set) var live = false
     /// Waiting for the natural voice to finish the next paragraph.
     @Published private(set) var waiting = false
+    /// A line under the player, e.g. while the natural voice downloads.
+    @Published var note: String?
     private var clips: ClipProvider?
     private var clipTask: Task<Void, Never>?
     private var clipToken = 0
@@ -469,7 +471,9 @@ struct NarrationBar: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(Color.marginsTeal)
-            if !narrator.neural && !narrator.live && !narrator.hasGoodVoice {
+            if let note = narrator.note {
+                Text(note).font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+            } else if !narrator.neural && !narrator.live && !narrator.hasGoodVoice {
                 Text("Tip: download a Premium voice for much more natural speech (Settings › Accessibility › Spoken Content › Voices).")
                     .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
             }

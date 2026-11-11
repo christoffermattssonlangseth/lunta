@@ -67,6 +67,9 @@ struct ReaderView: View {
                     Menu {
                         Button { fontScale = min(2.2, fontScale + 0.1) } label: { Label("Larger Text", systemImage: "textformat.size.larger") }
                         Button { fontScale = max(0.7, fontScale - 0.1) } label: { Label("Smaller Text", systemImage: "textformat.size.smaller") }
+                        Picker("Natural Voice", selection: Binding(get: { PhoneVoice.shared.voice }, set: { PhoneVoice.shared.voice = $0 })) {
+                            ForEach(PhoneVoice.voices, id: \.id) { Text($0.name).tag($0.id) }
+                        }
                     } label: { Image(systemName: "textformat.size") }
                 }
                 Button { showInfo = true } label: { Image(systemName: "info.circle") }
@@ -90,6 +93,7 @@ struct ReaderView: View {
         .onChange(of: mode) { _, m in if m == .pdf, pdfURL == nil { Task { await loadPDF() } } }
         .task {
             controller.onFigure = { figure = $0 }
+            if PhoneVoice.shared.downloaded { Task { _ = await PhoneVoice.shared.prepare() } }
             ask.model = model
             ask.passages = { [weak controller] in await controller?.narrationItems(includeCaptions: true) ?? [] }
             ask.selection = { [weak controller] in await controller?.selectedText() }
@@ -103,8 +107,27 @@ struct ReaderView: View {
             let items = await controller.narrationItems()
             guard !items.isEmpty else { return }
             // natural (neural) narration when it has been rendered, otherwise the system voice
-            if !(await model.loadNeuralNarration(paperID, into: narrator, pageItems: items)) {
-                narrator.load(items, title: model.paper(paperID)?.meta.title ?? "")
+            let title = model.paper(paperID)?.meta.title ?? ""
+            if await model.loadNeuralNarration(paperID, into: narrator, pageItems: items) {
+                // a full natural-voice narration was rendered on the Mac
+            } else {
+                // natural voice made on this iPhone, paragraph by paragraph as it plays
+                narrator.loadLive(items, title: title) { item in
+                    await PhoneVoice.shared.clip(Narrator.spoken(item), kind: item.kind)
+                }
+                if !PhoneVoice.shared.downloaded {
+                    narrator.note = "Downloading the natural voice (one time, about 350 MB)…"
+                    Task {
+                        let ok = await PhoneVoice.shared.prepare()
+                        narrator.note = ok ? nil : "Couldn't load the natural voice; using Apple's voice."
+                        if !ok, listening {
+                            let i = narrator.index
+                            narrator.load(items, title: title)
+                            narrator.onHighlight = { [weak controller] id in controller?.highlight(id) }
+                            narrator.play(from: i)
+                        }
+                    }
+                }
             }
             narrator.onHighlight = { [weak controller] id in controller?.highlight(id) }
             controller.onTapParagraph = { [weak narrator] id in narrator?.play(fromID: id) }

@@ -255,15 +255,45 @@ final class LibraryModel: ObservableObject {
     }
 
     /// Adds PDFs (dragged in or picked): matches them to existing papers by DOI, converts them for reading.
-    func addPDFs(_ urls: [URL]) async {
+    /// What happened to each PDF added by dropping or File › Add PDF (shown as a summary card).
+    struct AddOutcome: Identifiable, Equatable {
+        enum Kind { case added, attached, failed }
+        let id = UUID()
+        let file: String
+        let kind: Kind
+        let paperID: String?
+        let title: String
+    }
+    @Published var addOutcomes: [AddOutcome] = []
+
+    @discardableResult
+    func addPDFs(_ urls: [URL]) async -> [AddOutcome] {
+        var out: [AddOutcome] = []
+        let started = Int64(Date().timeIntervalSince1970 * 1000) - 1000
         for (i, url) in urls.enumerated() {
-            status = "Adding PDF \(i + 1) of \(urls.count)…"
-            guard let data = try? Data(contentsOf: url) else { continue }
-            await addPDF(data, name: url.lastPathComponent)
+            let name = url.lastPathComponent
+            pdfStep = urls.count > 1 ? "PDF \(i + 1) of \(urls.count) · \(name)" : name
+            status = "\(pdfStep): reading…"
+            guard let data = try? Data(contentsOf: url), data.starts(with: Array("%PDF".utf8)) else {
+                out.append(AddOutcome(file: name, kind: .failed, paperID: nil, title: "Not a readable PDF"))
+                continue
+            }
+            if let p = await addPDF(data, name: name) {
+                out.append(AddOutcome(file: name, kind: p.added >= started ? .added : .attached, paperID: p.id, title: p.meta.title))
+            } else {
+                out.append(AddOutcome(file: name, kind: .failed, paperID: nil, title: "Couldn't add this PDF"))
+            }
         }
+        pdfStep = ""
         status = nil
         reload()
+        addOutcomes = out
+        return out
     }
+
+    /// Current file label for step-by-step status while adding PDFs.
+    private var pdfStep = ""
+    private func step(_ s: String) { if !pdfStep.isEmpty { status = "\(pdfStep): \(s)" } }
 
     @discardableResult
     func addPDF(_ data: Data, name: String) async -> Paper? {
@@ -278,7 +308,9 @@ final class LibraryModel: ObservableObject {
         try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         let file = tmp.appendingPathComponent(name.hasSuffix(".pdf") ? name : name + ".pdf")
         try? data.write(to: file)
+        step("making the reading view…")
         let conv = try? await Paper2Epub.convert(file: file, into: tmp)
+        step("looking up the paper's details…")
         var meta = PaperMeta.empty
         if let doi { meta = (await Task.detached { try? resolveMetadata(input: doi) }.value) ?? meta }
         if meta.title.isEmpty, let conv { meta = Self.meta(from: conv) }
@@ -303,6 +335,7 @@ final class LibraryModel: ObservableObject {
             }
         }
         if meta.title.isEmpty { meta.title = (name as NSString).deletingPathExtension }
+        step("saving…")
         let m = meta
         let epub = conv.flatMap { try? Data(contentsOf: $0.file) }
         let p = try? await Task.detached { try lib.addPaper(meta: m, pdf: data, epub: epub, fulltext: conv?.fulltext) }.value
