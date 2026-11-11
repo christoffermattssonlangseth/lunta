@@ -859,6 +859,14 @@ final class AskEngine: ObservableObject {
         return LanguageModelSession(tools: tools, instructions: instructions)
     }
 
+    /// One prompt, no tools, no history: the model's plain answer (nil without a model, or on failure).
+    /// Used by New for You to write searches and screen abstracts.
+    func plainAnswer(_ prompt: String, instructions: String) async -> String? {
+        guard unavailableReason == nil else { return nil }
+        let s = await makeSession(tools: [], instructions: instructions)
+        return try? await s.respond(to: prompt, options: GenerationOptions(temperature: 0.2)).content
+    }
+
     /// Answers a prompt that already holds everything needed, without tools (so the model can't wander
     /// off searching). The main conversation then picks it up as earlier context.
     private func answerDirectly(_ prompt: String, shown: String) async {

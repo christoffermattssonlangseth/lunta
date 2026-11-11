@@ -32,9 +32,13 @@ The library syncs between your Mac and iPhone through iCloud Drive.
   read from the PDF on the device), duplicates (merged, keeping tags, folders, highlights and the PDF), and
   reading views whose words ran together (remade).
 - **Discover:** search 250 million papers on OpenAlex, add with one click, open what you added.
-- **New for You:** watch authors, topics, or the papers citing one of yours (right-click a paper › Watch,
-  or *Watch this search* in Discover). Margins checks OpenAlex when it opens and twice a day, and
-  notifies you when something new appears.
+- **New for You:** a daily feed of new papers picked for your research. Describe your work in a few
+  sentences (or let Margins draft it from your library). Each day it casts a wide net (OpenAlex
+  searches written from your paragraph, papers citing recent ones in your library, authors you follow,
+  and the last days of bioRxiv and medRxiv), ranks the candidates on the device with sentence
+  embeddings against your interests, your library and your past Add / Not for Me choices, and has
+  the on-device model read the best abstracts, keep only clear matches and say why each one fits.
+  Authors you follow and papers citing ones you watch always show up. One notification a day.
 - **Cite:** APA, Vancouver, Nature, BibTeX, RIS, Markdown; share PDFs, EPUBs and citations. **Word and
   Google Docs add-ins** insert citations from the library and build the reference list.
 - **Ask (✨):** an assistant that runs on the device: Apple Intelligence, or the open Qwen3 4B model where
@@ -74,6 +78,7 @@ scripts/build-core.sh  builds the Rust core for iOS, the simulator and macOS →
 <library>/positions/<device>.json   last reading position per paper (changes often, so not in the log)
 <library>/smart-folders.json        smart folder rules
 <library>/watches.json              watched authors, topics and citations
+<library>/foryou.json               New for You: your interests, the feed, Add / Not for Me feedback
 ```
 
 Blobs are written once. Every change (metadata, read/starred, tags, collections, highlights and

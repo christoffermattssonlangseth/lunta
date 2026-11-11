@@ -57,9 +57,10 @@ struct LibraryView: View {
                 else { libraryList }
             }
             .navigationTitle(model.sourceTitle)
-            .searchable(text: $model.query, prompt: model.source == .discover ? "Search new papers, then tap Search" : "Titles, authors, full text, notes")
+            .modifier(LibrarySearch(enabled: model.source != .alerts))
             .onSubmit(of: .search) { if model.source == .discover { Task { await model.discover(model.query) } } }
             .toolbar {
+                if model.source != .alerts && model.source != .discover {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Picker("Sort", selection: $model.sort) {
@@ -69,6 +70,7 @@ struct LibraryView: View {
                             Text("First author").tag(SortKey.firstAuthor)
                         }
                     } label: { Image(systemName: "arrow.up.arrow.down") }
+                }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { asking = true } label: { Image(systemName: "sparkles") }
@@ -315,3 +317,16 @@ struct DiscoverListIOS: View {
 }
 
 struct ShareTargetIOS: Identifiable { let id: String }
+
+/// The library's search field (not on New for You, which is a feed).
+struct LibrarySearch: ViewModifier {
+    @EnvironmentObject var model: LibraryModel
+    let enabled: Bool
+    func body(content: Content) -> some View {
+        if enabled {
+            content.searchable(text: $model.query, prompt: model.source == .discover ? "Search new papers, then tap Search" : "Titles, authors, full text, notes")
+        } else {
+            content
+        }
+    }
+}

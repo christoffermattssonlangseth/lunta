@@ -543,16 +543,8 @@ final class LibraryModel: ObservableObject {
         if let id, let i = discoverResults.firstIndex(where: { $0.meta.doi == hit.meta.doi && $0.meta.title == hit.meta.title }) {
             discoverResults[i].inLibrary = id
         }
-        // the same paper found by a watch ("New for You") shows as added too
-        if let id {
-            let key = Self.hitKey(hit)
-            let center = WatchCenter.shared
-            for i in center.finds.indices where Self.hitKey(center.finds[i].hit) == key {
-                var h = center.finds[i].hit
-                h.inLibrary = id
-                center.finds[i] = WatchFind(watch: center.finds[i].watch, hit: h)
-            }
-        }
+        // the same paper in New for You shows as added too (and counts as a paper you wanted)
+        if let id { WatchCenter.shared.added(key: Self.hitKey(hit), id: id) }
         return id
     }
 

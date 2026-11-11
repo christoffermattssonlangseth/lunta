@@ -80,7 +80,7 @@ final class ModelHolder: ObservableObject {
             citations?.start()
             model.watchForOutsideChanges()
             NarrationRenderer.shared.model = model
-            if !ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("-ask") || $0 == "-cleanupReport" }) {
+            if !ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("-ask") || $0 == "-cleanupReport" || $0 == "-forYouReport" }) {
                 WatchCenter.shared.start(model)
             }
         }
@@ -117,6 +117,36 @@ final class ModelHolder: ObservableObject {
                     t = await engine.transcript(for: q)
                 }
                 try? t.write(toFile: "/tmp/margins-ask.txt", atomically: true, encoding: .utf8)
+                exit(0)
+            }
+        } else if let model, args.contains("-forYouReport") {
+            // test hook: runs New for You with its files in /tmp/margins-foryou (the library's own feed
+            // is untouched) and writes what it found to /tmp/margins-foryou.txt.
+            // `-interests "<paragraph>"`, or the paragraph is drafted from the library.
+            Task {
+                let c = WatchCenter.shared
+                let dir = URL(fileURLWithPath: "/tmp/margins-foryou")
+                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                c.folderOverride = dir
+                c.model = model
+                var out = ""
+                var t = Date()
+                var interests = args.firstIndex(of: "-interests").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? ""
+                if interests.isEmpty {
+                    interests = await c.draftInterests() ?? ""
+                    out += "drafted in \(Int(Date().timeIntervalSince(t)))s:\n"
+                }
+                out += "INTERESTS: \(interests)\n\n"
+                c.setInterestsQuietly(interests)
+                t = Date()
+                await c.run()
+                out += "run: \(Int(Date().timeIntervalSince(t)))s\n\(c.lastStats)\n"
+                out += "queries: \(c.state.queries.joined(separator: " | "))\nkeywords: \(c.state.keywords.joined(separator: ", "))\n\n"
+                for f in c.finds {
+                    let r = f.record
+                    out += "- \(r.title.prefix(110))\n    \(r.journal) · \(r.date) · score \(String(format: "%.3f", r.score)) · from \(r.source.prefix(60))\n    why: \(r.reason)\n"
+                }
+                try? out.write(toFile: "/tmp/margins-foryou.txt", atomically: true, encoding: .utf8)
                 exit(0)
             }
         } else if let model, args.contains("-cleanupReport") {
