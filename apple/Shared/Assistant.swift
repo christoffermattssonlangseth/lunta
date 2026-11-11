@@ -16,8 +16,8 @@ enum AskScope: Equatable {
 }
 
 /// Something an answer can cite as [n].
-struct AskSource: Identifiable, Equatable {
-    enum Kind: Equatable {
+struct AskSource: Identifiable, Equatable, Codable {
+    enum Kind: Equatable, Codable {
         case passage(String)     // element id in the reading view
         case paper(String)       // paper id in the library
         case external(String)    // a paper beyond the library (DOI or title)
@@ -27,22 +27,22 @@ struct AskSource: Identifiable, Equatable {
     let label: String
 }
 
-struct AskMessage: Identifiable, Equatable {
-    enum Role { case user, assistant, activity, notice }
-    let id = UUID()
+struct AskMessage: Identifiable, Equatable, Codable {
+    enum Role: String, Codable { case user, assistant, activity, notice }
+    var id = UUID()
     let role: Role
     var text: String
 }
 
-struct ProposedChange: Identifiable, Equatable {
-    enum Kind: Equatable {
+struct ProposedChange: Identifiable, Equatable, Codable {
+    enum Kind: Equatable, Codable {
         case tag(String, [String])
         case collection(String, [String])
         case markRead([String], Bool)
         case add(Int)                     // external source number
     }
-    enum State { case pending, applied, dismissed, failed }
-    let id = UUID()
+    enum State: String, Codable { case pending, applied, dismissed, failed }
+    var id = UUID()
     let kind: Kind
     let summary: String
     var state: State = .pending
@@ -76,9 +76,10 @@ final class AskContext: @unchecked Sendable {
     private var spent = 0
     let fulltext: @Sendable (String) async -> String?
 
-    init(lib: Library, passages: [NarrationItem], emit: @escaping @Sendable (AskEvent) -> Void,
+    init(lib: Library, passages: [NarrationItem], earlier: [AskSource] = [], emit: @escaping @Sendable (AskEvent) -> Void,
          fulltext: @escaping @Sendable (String) async -> String?) {
         self.lib = lib
+        self.sources = earlier.sorted { $0.id < $1.id }
         self.passages = passages
         self.emit = emit
         self.fulltext = fulltext
@@ -92,7 +93,7 @@ final class AskContext: @unchecked Sendable {
     func register(_ kind: AskSource.Kind, _ label: String, hit: DiscoverHit? = nil) -> Int {
         lock.lock(); defer { lock.unlock() }
         if let s = sources.first(where: { $0.kind == kind }) { return s.id }
-        let s = AskSource(id: sources.count + 1, kind: kind, label: label)
+        let s = AskSource(id: (sources.map(\.id).max() ?? 0) + 1, kind: kind, label: label)
         sources.append(s)
         if let hit { external[s.id] = hit }
         emit(.source(s))
@@ -574,7 +575,84 @@ final class AskEngine: ObservableObject {
     private var ctx: AskContext?
     private var task: Task<Void, Never>?
 
-    init(scope: AskScope) { self.scope = scope }
+    init(scope: AskScope) {
+        self.scope = scope
+        restore()
+    }
+
+    // MARK: keeping the conversation
+
+    /// Conversations survive quitting the app for a while (per device, not synced).
+    static let keepFor: TimeInterval = 3 * 24 * 3600
+
+    private struct Saved: Codable {
+        var saved: Date
+        var messages: [AskMessage]
+        var sources: [AskSource]
+        var proposals: [ProposedChange]
+    }
+
+    private static var folder: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("Margins/Ask", isDirectory: true)
+    }
+
+    private var saveURL: URL {
+        switch scope {
+        case .library: return Self.folder.appendingPathComponent("library.json")
+        case .paper(let id):
+            let safe = id.map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "_" }
+            return Self.folder.appendingPathComponent("paper-\(String(safe)).json")
+        }
+    }
+
+    /// True when this panel picked up an earlier conversation the model hasn't seen yet in this run.
+    private var restored = false
+
+    private func restore() {
+        Self.pruneOld()
+        guard let data = try? Data(contentsOf: saveURL),
+              let s = try? JSONDecoder().decode(Saved.self, from: data),
+              Date().timeIntervalSince(s.saved) < Self.keepFor else { return }
+        messages = s.messages.filter { !($0.role == .assistant && $0.text.isEmpty) }
+        sources = Dictionary(s.sources.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        proposals = s.proposals
+        restored = !messages.isEmpty
+    }
+
+    func save() {
+        if messages.isEmpty { try? FileManager.default.removeItem(at: saveURL); return }
+        let s = Saved(saved: Date(), messages: messages, sources: Array(sources.values), proposals: proposals)
+        guard let data = try? JSONEncoder().encode(s) else { return }
+        try? FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
+        try? data.write(to: saveURL, options: .atomic)
+    }
+
+    private static func pruneOld() {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        for f in files {
+            let d = (try? f.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            if Date().timeIntervalSince(d) > keepFor { try? fm.removeItem(at: f) }
+        }
+    }
+
+    /// The earlier exchange, condensed, so a fresh model session can carry on from it.
+    private func earlierConversation(limit: Int) -> String {
+        var lines: [String] = []
+        for m in messages.dropLast() where m.role == .user || m.role == .assistant {
+            lines.append("\(m.role == .user ? "User" : "You"): \(clip(m.text, limit / 2))")
+        }
+        var out = "", used = 0
+        for l in lines.reversed() {
+            if used + l.count > limit { break }
+            out = l + "\n" + out
+            used += l.count
+        }
+        let cites = sources.keys.sorted().prefix(30).map { "[\($0)] \(clip(sources[$0]!.label, 90))" }.joined(separator: "; ")
+        return "\nEarlier in this conversation (continue from it; numbers keep their meaning):\n\(out)" +
+            (cites.isEmpty ? "" : "Sources so far: \(cites)\n")
+    }
 
     // MARK: availability
 
@@ -631,6 +709,8 @@ final class AskEngine: ObservableObject {
         sources = [:]
         proposals = []
         busy = false
+        restored = false
+        save()
     }
 
     // MARK: asking
@@ -646,10 +726,11 @@ final class AskEngine: ObservableObject {
     func stop() {
         task?.cancel()
         busy = false
+        save()
     }
 
     private func run(_ q: String) async {
-        defer { busy = false }
+        defer { busy = false; save() }
         do {
             if session == nil { try await start() }
             let before = proposals.count
@@ -742,11 +823,12 @@ final class AskEngine: ObservableObject {
             guard let url = await model?.ensureLocal(id, .fulltext) else { return nil }
             return try? String(contentsOf: url, encoding: .utf8)
         }
-        let c = await Task.detached { AskContext(lib: lib, passages: items, emit: emit, fulltext: fulltext) }.value
+        let earlier = Array(sources.values)
+        let c = await Task.detached { AskContext(lib: lib, passages: items, earlier: earlier, emit: emit, fulltext: fulltext) }.value
         ctx = c
         c.budget = budget + 1600
         let tools: [any Tool]
-        let instructions: String
+        var instructions: String
         switch scope {
         case .paper(let id):
             tools = [FindInPaperTool(ctx: c), ReadSectionTool(ctx: c), SearchLibraryTool(ctx: c)]
@@ -756,6 +838,10 @@ final class AskEngine: ObservableObject {
                      SearchInsidePaperTool(ctx: c), FindNewPapersTool(ctx: c), ProposeChangeTool(ctx: c)]
             instructions = libraryInstructions(model)
         }
+        // picked up after a relaunch: give the new session the gist of what was said
+        let history = messages.dropLast().contains { $0.role == .assistant }
+        if restored, history { instructions += earlierConversation(limit: budget / 2) }
+        restored = false
         usingCloud = false
         if #available(macOS 27.0, iOS 27.0, *), usesOpenModel {
             await OpenModel.shared.prepare()
@@ -884,7 +970,12 @@ final class AskEngine: ObservableObject {
             case .markRead(let ids, let read):
                 for id in ids { try lib.setRead(id: id, read: read) }
             case .add(let n):
-                guard let hit = ctx?.hit(n) else { throw CocoaError(.featureUnsupported) }
+                guard let hit = ctx?.hit(n) else {
+                    proposals[i].state = .failed
+                    messages.append(AskMessage(role: .notice, text: "That search result is from an earlier session. Ask again to find it, then add it."))
+                    save()
+                    return
+                }
                 if let id = await model.addDiscovered(hit) {
                     let c = ctx?.register(.paper(id), hit.meta.title)
                     _ = c
@@ -892,6 +983,7 @@ final class AskEngine: ObservableObject {
             }
             proposals[i].state = .applied
             model.reload()
+            save()
         } catch {
             proposals[i].state = .failed
             messages.append(AskMessage(role: .notice, text: "Couldn't apply: \(error.localizedDescription)"))
@@ -900,5 +992,6 @@ final class AskEngine: ObservableObject {
 
     func dismiss(_ p: ProposedChange) {
         if let i = proposals.firstIndex(where: { $0.id == p.id }) { proposals[i].state = .dismissed }
+        save()
     }
 }
