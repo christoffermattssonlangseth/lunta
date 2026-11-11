@@ -43,6 +43,9 @@ targets:
       - Assets.xcassets
       - path: ../tts/margins_tts.py
         buildPhase: resources
+      - path: citations
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: MarginsCore
         product: MarginsCore

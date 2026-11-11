@@ -41,6 +41,7 @@ struct MarginsApp: App {
         .handlesExternalEvents(matching: ["library"])
 
         Window("Connect AI Agents", id: "agents") { AgentConnectView().tint(.marginsTeal) }
+        Window("Citations in Word & Google Docs", id: "citations") { CitationsView().tint(.marginsTeal) }
             .windowResizability(.contentSize)
 
         WindowGroup("Reader", for: String.self) { $paperID in
@@ -57,6 +58,7 @@ final class ModelHolder: ObservableObject {
     @Published var model: LibraryModel?
     @Published var error: String?
     private var server: ExtensionServer?
+    private var citations: CitationServer?
     init() {
         Task { await open() }
     }
@@ -71,6 +73,8 @@ final class ModelHolder: ObservableObject {
         if let model {
             server = ExtensionServer(model: model)
             server?.start()
+            citations = CitationServer(model: model)
+            citations?.start()
             model.watchForOutsideChanges()
             NarrationRenderer.shared.model = model
         }
@@ -113,6 +117,7 @@ struct MarginsCommands: Commands {
     var body: some Commands {
         CommandGroup(after: .appSettings) {
             Button("Connect AI Agents…") { openWindow(id: "agents") }
+            Button("Citations in Word & Google Docs…") { openWindow(id: "citations") }
         }
         CommandGroup(after: .newItem) {
             Button("Add Paper…") { NotificationCenter.default.post(name: .marginsAddPaper, object: nil) }

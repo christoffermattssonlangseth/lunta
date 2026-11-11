@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>{{CSS}}</style>
+<script>{{COMMON}}</script>
+</head>
+<body>
+<header><strong>Margins</strong><select id="style" title="Citation style"></select></header>
+<input id="q" type="search" placeholder="Search your library…" autocomplete="off">
+<div id="results"></div>
+<div id="picked" class="picked"></div>
+<div class="buttons"><button id="insert" class="primary" disabled>Insert Citation</button></div>
+<div class="buttons"><button id="bib">Insert Bibliography</button><button id="refresh">Update All</button></div>
+<p id="status" class="status"></p>
+<script>
+var BASE = 'https://localhost:47481/api', TOKEN = '{{TOKEN}}';
+var picked = [], style = 'apa';
+function $(id) { return document.getElementById(id); }
+function status(m, err) { $('status').textContent = m || ''; $('status').className = 'status' + (err ? ' err' : ''); }
+function api(path, body) {
+  var o = { headers: { 'X-Margins-Token': TOKEN } };
+  if (body) { o.method = 'POST'; o.headers['Content-Type'] = 'application/json'; o.body = JSON.stringify(body); }
+  return fetch(BASE + path, o).then(function (r) { if (!r.ok) throw new Error('Margins answered ' + r.status); return r.json(); });
+}
+function server(fn) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  return new Promise(function (ok, fail) {
+    var r = google.script.run.withSuccessHandler(ok).withFailureHandler(fail);
+    r[fn].apply(r, args);
+  });
+}
+function offline() { status('Can’t reach Margins. Open the Margins app on your Mac (and allow this page to reach localhost if Chrome asks).', true); }
+function renderPicked() {
+  $('picked').textContent = picked.length ? 'Citing: ' + picked.map(function (p) { return (p.families[0] || p.title.slice(0, 30)) + ' ' + (p.year || ''); }).join('; ') : '';
+  $('insert').disabled = !picked.length;
+  document.querySelectorAll('.hit').forEach(function (el) { el.classList.toggle('on', picked.some(function (p) { return p.id === el.dataset.id; })); });
+}
+function search(q) {
+  if (!q.trim()) { $('results').innerHTML = ''; return; }
+  api('/search?q=' + encodeURIComponent(q)).then(function (hits) {
+    $('results').innerHTML = hits.length ? '' : '<p class="status">No papers match.</p>';
+    hits.forEach(function (h) {
+      var el = document.createElement('div'); el.className = 'hit'; el.dataset.id = h.id;
+      el.innerHTML = '<div class="t"></div><div class="m"></div>';
+      el.querySelector('.t').textContent = h.title || 'Untitled';
+      el.querySelector('.m').textContent = [(h.authors || []).slice(0, 3).join(', '), h.year, h.journal].filter(Boolean).join(' · ');
+      el.onclick = function () {
+        var i = picked.findIndex(function (p) { return p.id === h.id; });
+        if (i >= 0) picked.splice(i, 1); else picked.push(h);
+        renderPicked();
+      };
+      $('results').appendChild(el);
+    });
+    renderPicked();
+  }).catch(offline);
+}
+function compute() {
+  return server('listCitations').then(function (lists) {
+    var num = MarginsCite.numbering(lists);
+    return api('/bibliography', { style: style, ids: num.list }).then(function (res) {
+      var papers = {}; res.entries.forEach(function (e) { papers[e.id] = e; });
+      return { lists: lists, num: num, papers: papers, entries: res.entries };
+    });
+  });
+}
+function updateAll() {
+  status('Updating…');
+  return compute().then(function (c) {
+    var texts = c.lists.map(function (l) { return MarginsCite.inText(style, l, c.num.order, c.papers); });
+    var bib = MarginsCite.bibliography(style, c.entries, c.num.order).map(function (e) { return MarginsCite.runs(e.text); });
+    return server('applyAll', texts, style === 'nature', bib).then(function (n) {
+      status(n + ' citation' + (n === 1 ? '' : 's') + ' · ' + MarginsCite.STYLES[style].name);
+    });
+  }).catch(function (e) { if (e && e.message && e.message.indexOf('Margins') >= 0) status(e.message, true); else offline(); });
+}
+function insert() {
+  var ids = picked.map(function (p) { return p.id; });
+  server('insertCitation', ids, '(…)', style === 'nature').then(function () { picked = []; renderPicked(); return updateAll(); })
+    .catch(function (e) { status(e.message || String(e), true); });
+}
+function insertBib() {
+  server('insertBibliography', []).then(updateAll).catch(function (e) { status(e.message || String(e), true); });
+}
+(function () {
+  var sel = $('style');
+  Object.keys(MarginsCite.STYLES).forEach(function (k) { var o = document.createElement('option'); o.value = k; o.textContent = MarginsCite.STYLES[k].name; sel.appendChild(o); });
+  server('getStyle').then(function (s) { style = s; sel.value = s; });
+  sel.onchange = function () { style = sel.value; server('setStyle', style); updateAll(); };
+  var t; $('q').addEventListener('input', function (e) { clearTimeout(t); t = setTimeout(function () { search(e.target.value); }, 250); });
+  $('insert').onclick = insert; $('bib').onclick = insertBib; $('refresh').onclick = updateAll;
+  api('/status').then(function (s) { status('Connected to Margins · ' + s.papers + ' papers'); }).catch(offline);
+})();
+</script>
+</body>
+</html>

@@ -19,18 +19,21 @@ final class CitationServer {
     private weak var model: LibraryModel?
     let token: String
 
-    static var tlsDir: URL {
+    nonisolated static var tlsDir: URL {
         CloudLibrary.localURL.deletingLastPathComponent().appendingPathComponent("tls", isDirectory: true)
     }
 
     init(model: LibraryModel) {
         self.model = model
-        if let t = UserDefaults.standard.string(forKey: "citationToken") {
-            token = t
-        } else {
-            token = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12)).lowercased()
-            UserDefaults.standard.set(token, forKey: "citationToken")
-        }
+        token = Self.token
+    }
+
+    /// Pairing key the Google Docs sidebar must send.
+    nonisolated static var token: String {
+        if let t = UserDefaults.standard.string(forKey: "citationToken") { return t }
+        let t = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12)).lowercased()
+        UserDefaults.standard.set(t, forKey: "citationToken")
+        return t
     }
 
     func start() {
@@ -53,7 +56,7 @@ final class CitationServer {
     // MARK: - Certificate (local CA + localhost certificate, made with the system's openssl)
 
     /// Creates the local certificate authority and the localhost certificate on first use.
-    static func ensureCertificates() -> Bool {
+    nonisolated static func ensureCertificates() -> Bool {
         let dir = tlsDir
         let fm = FileManager.default
         if fm.fileExists(atPath: dir.appendingPathComponent("server.p12").path) { return true }
@@ -175,7 +178,7 @@ final class CitationServer {
             // same-origin add-in pages send no Origin (or ours); the Google sidebar must present the token
             if let origin, origin != "https://localhost:\(Self.port)" {
                 guard Self.isGoogleSidebar(origin), r.headers["x-margins-token"] == token else {
-                    json(c, 403, ["error": "Not paired. Enter the token shown in Margins › Settings › Citations."], origin: origin)
+                    json(c, 403, ["error": "Not paired. Copy Sidebar.html again from Margins › Citations in Word & Google Docs."], origin: origin)
                     return
                 }
             }
