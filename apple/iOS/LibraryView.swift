@@ -7,14 +7,50 @@ struct LibraryView: View {
     @State private var input = ""
     @State private var asking = false
     @State private var askPath: [String] = []
-    @State private var path: [String] = []
+    @State private var path = NavigationPath()
+    @State private var opened = false
     @State private var sharing: ShareTargetIOS?
     @State private var organizing: ShareTargetIOS?
     @State private var prompt: NameRequest?
     @StateObject private var ask = AskEngine(scope: .library)
 
+    // Mail-style: the first screen lists the places (all, starred, folders, …); each opens its
+    // papers, and the back swipe from the left edge returns to the list. Opens on the last place.
     var body: some View {
         NavigationStack(path: $path) {
+            LibraryHome()
+                .navigationDestination(for: SidebarItem.self) { item in
+                    papersScreen.onAppear { if model.source != item { model.source = item } }
+                }
+                .navigationDestination(for: String.self) { id in ReaderView(paperID: id) }
+        }
+        .onAppear {
+            guard !opened else { return }
+            opened = true
+            path.append(model.source)
+        }
+        #if DEBUG
+        .task {
+            // testing in the Simulator: -openFirstPaper opens the first paper's reader
+            guard ProcessInfo.processInfo.arguments.contains("-openFirstPaper") else { return }
+            for _ in 0..<40 where model.papers.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
+            if let p = model.papers.first { path.append(p.id) }
+        }
+        #endif
+        .safeAreaInset(edge: .bottom) {
+            if let s = model.status {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(s).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                }
+                .padding(.horizontal).padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .background(.bar)
+            }
+        }
+    }
+
+    private var papersScreen: some View {
             Group {
                 if model.source == .discover { DiscoverListIOS() }
                 else if model.source == .alerts { WatchInbox(selection: .constant(nil)).listStyle(.insetGrouped) }
@@ -23,33 +59,22 @@ struct LibraryView: View {
             .navigationTitle(model.sourceTitle)
             .searchable(text: $model.query, prompt: model.source == .discover ? "Search new papers, then tap Search" : "Titles, authors, full text, notes")
             .onSubmit(of: .search) { if model.source == .discover { Task { await model.discover(model.query) } } }
-            .navigationDestination(for: String.self) { id in ReaderView(paperID: id) }
-            #if DEBUG
-            .task {
-                // testing in the Simulator: -openFirstPaper opens the first paper's reader
-                guard ProcessInfo.processInfo.arguments.contains("-openFirstPaper") else { return }
-                for _ in 0..<40 where model.papers.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
-                if let p = model.papers.first { path = [p.id] }
-            }
-            #endif
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { SourceMenu() }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Sort", selection: $model.sort) {
+                            Text("Recently added").tag(SortKey.added)
+                            Text("Year").tag(SortKey.year)
+                            Text("Title").tag(SortKey.title)
+                            Text("First author").tag(SortKey.firstAuthor)
+                        }
+                    } label: { Image(systemName: "arrow.up.arrow.down") }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { asking = true } label: { Image(systemName: "sparkles") }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { adding = true } label: { Image(systemName: "plus") }
-                }
-            }
-            .safeAreaInset(edge: .bottom) {
-                if let s = model.status {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text(s).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    .padding(.horizontal).padding(.vertical, 8)
-                    .frame(maxWidth: .infinity)
-                    .background(.bar)
                 }
             }
             .sheet(isPresented: $asking) {
@@ -74,7 +99,6 @@ struct LibraryView: View {
             .alert("Margins", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
                 Button("OK") { model.errorMessage = nil }
             } message: { Text(model.errorMessage ?? "") }
-        }
     }
 
     private var libraryList: some View {
@@ -131,63 +155,67 @@ struct LibraryView: View {
 }
 
 
-struct SourceMenu: View {
+/// The first screen: every place papers can be listed from, like Mail's list of mailboxes.
+struct LibraryHome: View {
     @EnvironmentObject var model: LibraryModel
+    @ObservedObject private var center = WatchCenter.shared
     @State private var managing = false
     @State private var cleaning = false
     @State private var newSmart = false
     @State private var editingSmart: SmartFolder?
+    @State private var prompt: NameRequest?
+
     var body: some View {
-        Menu {
-            Picker("Show", selection: $model.source) {
-                Label("All Papers", systemImage: "books.vertical").tag(SidebarItem.all)
-                Label("Starred", systemImage: "star").tag(SidebarItem.starred)
-                Label("Unread", systemImage: "smallcircle.filled.circle").tag(SidebarItem.unread)
-                Label("Discover New Papers", systemImage: "globe.europe.africa").tag(SidebarItem.discover)
-                Label("New for You", systemImage: "bell.badge").tag(SidebarItem.alerts)
+        List {
+            Section {
+                place(.all, "All Papers", "books.vertical", count: model.counts.all)
+                place(.starred, "Starred", "star", count: model.counts.starred)
+                place(.unread, "Unread", "smallcircle.filled.circle", count: model.counts.unread)
             }
-            if !model.collections.isEmpty {
-                Menu("Folders") {
-                    Picker("Folders", selection: $model.source) {
-                        ForEach(model.foldersFlat, id: \.folder.id) { item in
-                            Label(String(repeating: "    ", count: item.depth) + item.folder.name,
-                                  systemImage: item.depth == 0 ? "folder" : "folder.fill")
-                                .tag(SidebarItem.collection(item.folder.id))
+            Section {
+                place(.alerts, "New for You", "bell.badge", count: center.newCount, badge: true)
+                place(.discover, "Discover New Papers", "globe.europe.africa")
+            }
+            Section("Folders") {
+                ForEach(model.foldersFlat, id: \.folder.id) { item in
+                    place(.collection(item.folder.id), item.folder.name, item.depth == 0 ? "folder" : "folder.fill", indent: item.depth)
+                        .contextMenu {
+                            Button("New Subfolder…", systemImage: "folder.badge.plus") {
+                                prompt = NameRequest(title: "New Folder", action: "Create") { _ = model.newFolder($0, parent: item.folder.id) }
+                            }
+                            Button("Rename…", systemImage: "pencil") {
+                                prompt = NameRequest(title: "Rename Folder", initial: item.folder.name, action: "Rename") { model.renameFolder(item.folder.id, $0) }
+                            }
+                            Button("Delete Folder", systemImage: "trash", role: .destructive) { model.deleteFolder(item.folder.id) }
                         }
-                    }
                 }
+                Button {
+                    prompt = NameRequest(title: "New Folder", action: "Create") { _ = model.newFolder($0) }
+                } label: { Label("New Folder", systemImage: "plus").foregroundStyle(Color.marginsTeal) }
             }
-            Menu("Smart Folders") {
-                if !model.smartFolders.isEmpty {
-                    Picker("Smart Folders", selection: $model.source) {
-                        ForEach(model.smartFolders) { f in Label(f.name, systemImage: "gearshape.2").tag(SidebarItem.smart(f.id)) }
-                    }
+            Section("Smart Folders") {
+                ForEach(model.smartFolders) { f in
+                    place(.smart(f.id), f.name, "gearshape.2")
+                        .contextMenu {
+                            Button("Edit…", systemImage: "slider.horizontal.3") { editingSmart = f }
+                            Button("Delete", systemImage: "trash", role: .destructive) { model.deleteSmartFolder(f.id) }
+                        }
                 }
-                Button("New Smart Folder…", systemImage: "plus") { newSmart = true }
-                if case .smart(let id) = model.source, let f = model.smartFolder(id) {
-                    Button("Edit “\(f.name)”…", systemImage: "slider.horizontal.3") { editingSmart = f }
-                    Button("Delete “\(f.name)”", systemImage: "trash", role: .destructive) { model.deleteSmartFolder(id) }
-                }
+                Button { newSmart = true } label: { Label("New Smart Folder", systemImage: "plus").foregroundStyle(Color.marginsTeal) }
             }
             if !model.tags.isEmpty {
-                Menu("Tags") {
-                    Picker("Tags", selection: $model.source) {
-                        ForEach(model.tags, id: \.self) { t in Label(t, systemImage: "tag").tag(SidebarItem.tag(t)) }
-                    }
+                Section("Tags") {
+                    ForEach(model.tags, id: \.self) { t in place(.tag(t), t, "tag") }
                 }
             }
-            Button("Manage Folders & Tags…", systemImage: "folder.badge.gearshape") { managing = true }
-            Button("Clean Up Library…", systemImage: "wand.and.sparkles") { cleaning = true }
-            Divider()
-            Picker("Sort", selection: $model.sort) {
-                Text("Recently added").tag(SortKey.added)
-                Text("Year").tag(SortKey.year)
-                Text("Title").tag(SortKey.title)
-                Text("First author").tag(SortKey.firstAuthor)
+            Section {
+                Button { managing = true } label: { Label("Manage Folders & Tags…", systemImage: "folder.badge.gearshape") }
+                Button { cleaning = true } label: { Label("Clean Up Library…", systemImage: "wand.and.sparkles") }
             }
-        } label: {
-            Image(systemName: "line.3.horizontal.decrease.circle")
         }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Margins")
+        .namePrompt($prompt)
         .sheet(isPresented: $managing) { ManageFoldersView().environmentObject(model) }
         .sheet(isPresented: $newSmart) { SmartFolderEditor(folder: SmartFolder(), isNew: true).environmentObject(model) }
         .sheet(item: $editingSmart) { f in SmartFolderEditor(folder: f).environmentObject(model) }
@@ -196,6 +224,30 @@ struct SourceMenu: View {
                 CleanupView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { cleaning = false } } }
             }
             .environmentObject(model)
+        }
+    }
+
+    private func place(_ item: SidebarItem, _ title: String, _ icon: String, count: Int? = nil,
+                       indent: Int = 0, badge: Bool = false) -> some View {
+        NavigationLink(value: item) {
+            HStack {
+                Label {
+                    Text(title)
+                } icon: {
+                    Image(systemName: icon).foregroundStyle(Color.marginsTeal)
+                }
+                .padding(.leading, CGFloat(indent) * 18)
+                Spacer()
+                if let count, count > 0 {
+                    if badge {
+                        Text("\(count)").font(.footnote.weight(.semibold).monospacedDigit()).foregroundStyle(.white)
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(Capsule().fill(Color.marginsTeal))
+                    } else {
+                        Text("\(count)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
     }
 }
