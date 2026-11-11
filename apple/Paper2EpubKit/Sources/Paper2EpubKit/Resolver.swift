@@ -12,6 +12,8 @@ enum AssetLocator {
 enum Source {
     case jats(Data, assets: AssetLocator, meta: PaperMeta, label: String)
     case pdf(Data, meta: PaperMeta, label: String)
+    /// LaTeXML HTML (arXiv / ar5iv); image paths are relative to `base`.
+    case html(XNode, base: URL, meta: PaperMeta, label: String)
 }
 
 typealias Candidate = (label: String, load: () async throws -> Source)
@@ -29,7 +31,7 @@ enum Resolver {
 
         // arXiv: links, IDs and arXiv DOIs
         if let aid = arxivID(in: s) {
-            return [("arXiv \(aid)", { throw fail("arXiv papers are not supported yet (coming in the next version).") })]
+            return ArxivHTML.candidates(aid, log: log)
         }
 
         // PMCID, bare or inside a PMC / Europe PMC link
@@ -110,7 +112,7 @@ enum Resolver {
     static func doiCandidates(_ doi: String, log: @escaping (String) -> Void) -> [Candidate] {
         var out: [Candidate] = []
         if doi.lowercased().hasPrefix("10.48550/arxiv.") {
-            return [("arXiv", { throw fail("arXiv papers are not supported yet (coming in the next version).") })]
+            return ArxivHTML.candidates(String(doi.dropFirst("10.48550/arxiv.".count)), log: log)
         }
         out.append(("Europe PMC full text for \(doi)", {
             try await europePMCByQuery("DOI:\"\(doi)\"", what: doi, log: log)

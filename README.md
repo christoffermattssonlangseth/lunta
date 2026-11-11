@@ -19,7 +19,8 @@ The library syncs between your Mac and iPhone through iCloud Drive.
 - **Organise:** folders with subfolders (drag papers and folders in the Mac sidebar), tags, stars,
   read/unread. **Smart folders** fill themselves from rules (words, tag, folder, year range, recently
   added, unread/starred, PDF or not, highlighted). Folders & Tags is one tap away on iPhone (swipe, long-press, or the reader's ⋯ menu).
-- **Read:** a reflowable reading view made from the paper (large type on iPhone, zoomable figures, wide
+- **Read:** a reflowable reading view made from the paper (open-access XML from PMC/Europe PMC, arXiv's
+  own HTML with real equations for arXiv papers, or the PDF itself) (large type on iPhone, zoomable figures, wide
   tables scroll in place) next to the original PDF. **Highlights and notes** in four colours; the
   **reading position syncs**, so a paper opens where you stopped on the other device.
 - **Listen:** natural-voice narration (Kokoro) on the Mac and on the iPhone, following along in the text.
@@ -162,7 +163,7 @@ must be running; the extension talks to it on `127.0.0.1:47480` (extension reque
 7. ✅ Citation add-ins: Word and Google Docs
 8. ✅ Duplicate and metadata cleanup, smart folders
 9. ✅ New-paper alerts
-10. arXiv HTML reading views
+10. ✅ arXiv HTML reading views (arXiv HTML, ar5iv, then PDF)
 
 ## License
 

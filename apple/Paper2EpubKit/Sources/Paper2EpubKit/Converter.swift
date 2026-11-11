@@ -44,11 +44,37 @@ public enum Paper2Epub {
             if !Paper2Epub.offline, let doc = PDFDocument(data: data), let doi = PDFAnalyzer.quickDOI(doc) {
                 log("PDF has DOI \(doi); checking for an XML version")
                 for c in Resolver.doiCandidates(doi, log: log) {
-                    if let src = try? await c.load(), case .jats = src { return try await build(src, log: log) }
+                    guard let src = try? await c.load() else { continue }
+                    switch src {
+                    case .jats, .html: return try await build(src, log: log)
+                    case .pdf: continue      // the arXiv PDF candidate: we already have this PDF
+                    }
                 }
                 log("No XML version; converting the PDF itself")
             }
             return try await PDFBook.build(data, meta: meta, log: log)
+        case .html(let root, let base, let meta, let label):
+            log("Converting \(label)")
+            let conv = ArxivConverter(root: root, base: base)
+            var fetched: [(URL, BookImage)] = []
+            let urls = conv.imageURLs()
+            if !urls.isEmpty { log("Downloading \(urls.count) figure image(s)") }
+            for (i, u) in urls.prefix(80).enumerated() {
+                guard let r = try? await Net.fetch(u, timeout: 30), (200..<300).contains(r.status) else { continue }
+                if u.pathExtension.lowercased() == "svg" || r.contentType.contains("svg") {
+                    fetched.append((u, BookImage(fileName: "fig\(i + 1).svg", data: r.data, mediaType: "image/svg+xml")))
+                } else if let n = Images.normalise(r.data) {
+                    fetched.append((u, BookImage(fileName: "fig\(i + 1).\(n.ext)", data: n.data, mediaType: n.mediaType)))
+                }
+            }
+            conv.setImages(fetched)
+            let chapters = conv.chapters(meta: meta)
+            guard chapters.contains(where: { $0.title != "Abstract" }) else { throw fail("The \(label) page has no full text.") }
+            var notes: [String] = []
+            if conv.missingFigures > 0 { notes.append("\(conv.missingFigures) figure image(s) could not be downloaded.") }
+            let allHTML = chapters.map(\.html).joined()
+            let imgs = fetched.map(\.1).filter { allHTML.contains("../images/\($0.fileName)\"") }
+            return Book(meta: meta, chapters: chapters, images: imgs, sourceLabel: label, notes: notes)
         case .jats(let data, let assets, let extraMeta, let label):
             log("Converting \(label)")
             let root = try XML.parse(data)

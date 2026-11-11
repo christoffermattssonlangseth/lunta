@@ -590,7 +590,14 @@ final class LibraryModel: ObservableObject {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("margins-conv-\(UUID())")
         defer { try? FileManager.default.removeItem(at: tmp) }
         var result: ConversionResult?
-        if let pdf = await ensureLocal(id, .pdf) {
+        // arXiv: the HTML arXiv renders from the LaTeX (real equations, figures) beats the PDF
+        let arxiv = !p.meta.arxiv.isEmpty ? p.meta.arxiv
+            : (p.meta.doi.lowercased().hasPrefix("10.48550/arxiv.") ? String(p.meta.doi.dropFirst("10.48550/arxiv.".count)) : "")
+        if !arxiv.isEmpty {
+            result = try? await Paper2Epub.convert("arxiv:\(arxiv)", into: tmp)
+        }
+        if result != nil {
+        } else if let pdf = await ensureLocal(id, .pdf) {
             result = try? await Paper2Epub.convert(file: pdf, into: tmp)
         } else {
             for input in [p.meta.pmcid, p.meta.doi] where !input.isEmpty {
@@ -625,7 +632,7 @@ final class LibraryModel: ObservableObject {
         defer { converting = false; progress = nil }
         let all = lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
         let weekAgo = Date().timeIntervalSince1970 - 7 * 86400
-        let todo = all.filter { !$0.hasEpub && ($0.hasPdf || !$0.meta.pmcid.isEmpty || !$0.meta.doi.isEmpty) }
+        let todo = all.filter { !$0.hasEpub && ($0.hasPdf || !$0.meta.pmcid.isEmpty || !$0.meta.doi.isEmpty || !$0.meta.arxiv.isEmpty) }
             .filter { $0.hasPdf || UserDefaults.standard.double(forKey: "noFullText.\($0.id)") < weekAgo }
             // papers with a PDF first (no network needed), then PubMed Central papers, then the rest
             .sorted { ($0.hasPdf ? 0 : 1, !$0.meta.pmcid.isEmpty ? 0 : 1) < ($1.hasPdf ? 0 : 1, !$1.meta.pmcid.isEmpty ? 0 : 1) }
