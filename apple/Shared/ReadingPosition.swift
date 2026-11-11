@@ -80,6 +80,13 @@ extension ReaderAssets {
       // character offset of the first text visible near the top of the screen
       window.marginsReadingOffset = function(){
         var ns = nodes(), pos = 0;
+        // pages: the exact character at the start of the page, so the place survives new page sizes
+        var o = window.marginsPageOrigin && window.marginsPageOrigin();
+        var c = o && document.caretRangeFromPoint ? document.caretRangeFromPoint(o.x, o.y) : null;
+        if (c && c.startContainer.nodeType === 3) {
+          for (var j = 0; j < ns.length; j++) { if (ns[j] === c.startContainer) return pos + c.startOffset; pos += ns[j].nodeValue.length; }
+          pos = 0;
+        }
         for (var i = 0; i < ns.length; i++) {
           var n = ns[i], len = n.nodeValue.length;
           if (n.nodeValue.trim()) {

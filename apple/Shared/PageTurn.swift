@@ -13,23 +13,30 @@ import WebKit
 extension ReaderAssets {
     static let pagedJS = #"""
     (function(){
-      var on = false, top = 24, bottom = 34, native = false, W = 0, anchor = null, settle = null, busy = false;
+      var on = false, top = 24, bottom = 34, native = false, W = 0, Hh = 0, anchor = null, settle = null, busy = false, checks = [], heldPage = -1;
       var style = document.createElement('style'); document.documentElement.appendChild(style);
       var label = document.createElement('div'); label.id = 'm-page-no';
       function post(m){ try { window.webkit.messageHandlers.page.postMessage(m); } catch (x) {} }
 
       window.marginsPaged = function(){ return on; };
-      function cols(){ return window.innerWidth >= 860 ? 2 : 1; }
+      // the exact viewport size: with larger text it isn't a whole number of pixels, and
+      // innerWidth's rounding would add up to a visible shift after a few pages
+      function vw(){ return window.visualViewport ? window.visualViewport.width * window.visualViewport.scale : window.innerWidth; }
+      function vh(){ return window.visualViewport ? window.visualViewport.height * window.visualViewport.scale : window.innerHeight; }
+      var pad = 20;
+      // where the first line of the page starts (to read the exact position)
+      window.marginsPageOrigin = function(){ return on ? { x: pad + 3, y: top + 6 } : null; };
+      function cols(){ return vw() >= 860 ? 2 : 1; }
       function page(){ return W ? Math.round(window.scrollX / W) : 0; }
       function pages(){ return W ? Math.max(1, Math.round(document.documentElement.scrollWidth / W)) : 1; }
 
       function layout(){
         if (!on) { style.textContent = ''; document.documentElement.classList.remove('m-paged'); label.remove(); return; }
-        W = window.innerWidth;
-        var H = window.innerHeight, n = cols();
+        W = vw(); Hh = vh();
+        var H = Hh, n = cols();
         var minPad = n > 1 ? 44 : (W < 500 ? 20 : 36);
         var colW = Math.min(W / n - 2 * minPad, 640);
-        var pad = (W / n - colW) / 2;
+        pad = (W / n - colW) / 2;
         var inner = H - top - bottom;
         style.textContent =
           // iPhone: the scroll view pages natively, so the root must stay scrollable (iOS stops
@@ -84,31 +91,46 @@ extension ReaderAssets {
       };
 
       function remember(){ if (window.marginsReadingOffset) anchor = window.marginsReadingOffset(); }
-      function restore(){ if (anchor != null && window.marginsScrollToOffset) window.marginsScrollToOffset(anchor); }
+      function restore(){
+        if (!(anchor != null && window.marginsScrollToOffset && window.marginsScrollToOffset(anchor))) window.marginsGoToPage(page(), false);
+      }
+      // while you stay on the page a relayout put you on, keep the place you were at (re-reading it
+      // would give that page's first word, and the place would creep back with every change)
+      function relayout(){ busy = true; layout(); restore(); busy = false; heldPage = page(); show(); }
+
+      // A text-size change reaches the page a moment after the app asks for new pages, and the
+      // resize event doesn't always follow: keep checking the size for a second and lay the
+      // pages out again (at the remembered place) whenever it no longer matches.
+      function watchSize(){
+        checks.forEach(clearTimeout);
+        checks = [50, 150, 350, 700, 1200].map(function(ms){
+          return setTimeout(function(){ if (on && (Math.abs(vw() - W) > 0.01 || Math.abs(vh() - Hh) > 0.01)) relayout(); }, ms);
+        });
+      }
 
       window.marginsSetPaged = function(want, t, b, isNative){
         var changed = want !== on || t !== top || b !== bottom;
-        if (!changed) return;
-        remember();
-        busy = true;
+        if (!changed) { watchSize(); return; }
+        // the place is remembered as you turn; only take it fresh when switching modes
+        // (mid-resize the page may already be laid out for another size)
+        if (want !== on || anchor == null) remember();
         on = want; top = t; bottom = b; native = !!isNative;
-        layout();
-        restore();
-        busy = false;
-        show();
+        relayout();
+        watchSize();
       };
 
       window.addEventListener('scroll', function(){
         if (!on || busy) return;
         clearTimeout(settle);
-        settle = setTimeout(function(){ remember(); show(); }, 150);
+        settle = setTimeout(function(){ if (Math.abs(vw() - W) < 0.01 && page() !== heldPage) { heldPage = -1; remember(); } show(); }, 150);
       });
       var resizing = null;
       window.addEventListener('resize', function(){
         if (!on) return;
         clearTimeout(resizing);
-        resizing = setTimeout(function(){ busy = true; layout(); restore(); busy = false; show(); }, 120);
+        resizing = setTimeout(function(){ relayout(); watchSize(); }, 120);
       });
+      if (window.visualViewport) window.visualViewport.addEventListener('resize', function(){ if (on) watchSize(); });
       window.addEventListener('load', function(){ if (on) { show(); } });
 
       // taps: edges turn the page, the middle shows or hides the bars (iPhone)
