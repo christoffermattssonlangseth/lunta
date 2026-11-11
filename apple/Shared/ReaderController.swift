@@ -9,6 +9,12 @@ final class ReaderController: ObservableObject {
     var onFigure: ((ReaderFigure) -> Void)?
     /// Called when the user taps a paragraph while listening.
     var onTapParagraph: ((String) -> Void)?
+    /// Called when the user taps a highlight (its annotation id).
+    var onAnnotation: ((String) -> Void)?
+    /// Called when the page has loaded (to draw highlights).
+    var onPageReady: (() -> Void)?
+    /// Called from the text selection menu.
+    var onMenu: ((ReaderMenuAction) -> Void)?
 
     func narrationItems(includeCaptions: Bool = false) async -> [NarrationItem] {
         guard let v = webView,

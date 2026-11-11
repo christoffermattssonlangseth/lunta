@@ -20,6 +20,8 @@ struct ReaderView: View {
     @State private var organizing = false
     @State private var editing = false
     @State private var chromeHidden = false
+    @State private var editingAnnotation: Annotation?
+    @State private var showHighlights = false
     @State private var current: String?
     @State private var scrollRequest = ScrollRequest()
     @StateObject private var narrator = Narrator()
@@ -88,6 +90,9 @@ struct ReaderView: View {
                         .pickerStyle(.menu)
                         Divider()
                     }
+                    if mode == .reading, book != nil {
+                        Button { showHighlights = true } label: { Label("Highlights & Notes", systemImage: "highlighter") }
+                    }
                     Button { organizing = true } label: { Label("Folders & Tags…", systemImage: "folder") }
                     Button { editing = true } label: { Label("Edit Details…", systemImage: "pencil") }
                     Button { sharing = true } label: { Label("Share…", systemImage: "square.and.arrow.up") }
@@ -95,6 +100,20 @@ struct ReaderView: View {
                 } label: { Image(systemName: "ellipsis.circle") }
             }
         }
+        .sheet(item: $editingAnnotation) { a in AnnotationEditor(annotation: a) { refreshHighlights() }.environmentObject(model) }
+        .sheet(isPresented: $showHighlights) {
+            NavigationStack {
+                AnnotationsList(paperID: paperID, onShow: { a in
+                    showHighlights = false
+                    Task { try? await Task.sleep(for: .milliseconds(350)); controller.showAnnotation(a.id) }
+                }, onEdit: { a in showHighlights = false; editingAnnotation = a })
+                .navigationTitle("Highlights & Notes").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showHighlights = false } } }
+            }
+            .environmentObject(model)
+            .presentationDetents([.medium, .large])
+        }
+        .onChange(of: paper?.annotationCount) { refreshHighlights() }
         .sheet(isPresented: $organizing) { OrganizeView(ids: [paperID]).environmentObject(model) }
         .sheet(isPresented: $editing) { MetadataEditor(paperID: paperID).environmentObject(model) }
         .sheet(isPresented: $showContents) {
@@ -118,6 +137,19 @@ struct ReaderView: View {
         .onChange(of: mode) { _, m in if m == .pdf, pdfURL == nil { Task { await loadPDF() } } }
         .task {
             controller.onFigure = { figure = $0 }
+            controller.onPageReady = { refreshHighlights() }
+            controller.onAnnotation = { id in editingAnnotation = model.annotations(paperID).first { $0.id == id } }
+            controller.onMenu = { action in
+                Task {
+                    guard let sel = await controller.pageSelection() else { return }
+                    switch action {
+                    case .highlight(let c): model.addHighlight(paperID, sel, color: c)
+                    case .note: editingAnnotation = model.addHighlight(paperID, sel)
+                    }
+                    controller.clearSelection()
+                    refreshHighlights()
+                }
+            }
             if PhoneVoice.shared.downloaded { Task { _ = await PhoneVoice.shared.prepare() } }
             ask.model = model
             ask.passages = { [weak controller] in await controller?.narrationItems(includeCaptions: true) ?? [] }
@@ -126,6 +158,8 @@ struct ReaderView: View {
         }
         .onDisappear { if listening { stopListening() } }
     }
+
+    private func refreshHighlights() { controller.showAnnotations(model.annotations(paperID)) }
 
     private func startListening() {
         Task {
@@ -255,7 +289,9 @@ struct EpubWebViewIOS: UIViewRepresentable {
         let fig = FigureMessageHandler()
         fig.controller = controller
         cfg.userContentController.add(fig, name: "fig")
-        let v = WKWebView(frame: .zero, configuration: cfg)
+        cfg.addAnnotations(controller)
+        let v = ReaderWebView(frame: .zero, configuration: cfg)
+        v.controller = controller
         controller.webView = v
         v.isOpaque = false
         v.backgroundColor = .clear

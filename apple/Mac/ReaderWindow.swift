@@ -18,6 +18,8 @@ struct ReaderWindow: View {
     @StateObject private var controller = ReaderController()
     @State private var listening = false
     @State private var asking = false
+    @State private var editingAnnotation: Annotation?
+    @State private var showHighlights = false
     @StateObject private var ask: AskEngine
     @Environment(\.openWindow) private var openWindow
 
@@ -98,6 +100,21 @@ struct ReaderWindow: View {
                             .help("Make natural-voice narration (renders on this Mac, syncs to iPhone)")
                             .disabled(book == nil || NarrationRenderer.shared.rendering.contains(paperID))
                         }
+                        Button { highlightSelection(.yellow) } label: { Image(systemName: "highlighter") }
+                            .help("Highlight the selected text (⇧⌘H). Right-click a selection for colors and notes.")
+                            .keyboardShortcut("h", modifiers: [.command, .shift])
+                            .disabled(book == nil)
+                        Button { showHighlights.toggle() } label: {
+                            Image(systemName: "list.bullet.rectangle")
+                        }
+                        .help("Highlights and notes")
+                        .disabled(book == nil)
+                        .popover(isPresented: $showHighlights, arrowEdge: .bottom) {
+                            AnnotationsList(paperID: paperID, onShow: { a in controller.showAnnotation(a.id) },
+                                            onEdit: { a in showHighlights = false; editingAnnotation = a })
+                                .frame(width: 380, height: 460)
+                                .environmentObject(model)
+                        }
                         Button { asking.toggle() } label: { Image(systemName: asking ? "sparkles.rectangle.stack.fill" : "sparkles") }
                             .help("Ask about this paper (Apple Intelligence)")
                             .keyboardShortcut("j", modifiers: .command)
@@ -116,12 +133,22 @@ struct ReaderWindow: View {
                 .inspectorColumnWidth(min: 300, ideal: 380, max: 560)
         }
         .sheet(item: $figure) { f in FigureViewer(figure: f) }
+        .sheet(item: $editingAnnotation) { a in AnnotationEditor(annotation: a) { refreshHighlights() } }
+        .onChange(of: paper?.annotationCount) { refreshHighlights() }
         .onReceive(NotificationCenter.default.publisher(for: .marginsReaderMode)) { n in
             if n.object as? String == paperID, let m = Self.requestedMode.removeValue(forKey: paperID) { mode = m }
         }
         .navigationTitle(paper?.meta.title ?? "Reader")
         .task {
             controller.onFigure = { figure = $0 }
+            controller.onPageReady = { refreshHighlights() }
+            controller.onAnnotation = { id in editingAnnotation = model.annotations(paperID).first { $0.id == id } }
+            controller.onMenu = { action in
+                switch action {
+                case .highlight(let c): highlightSelection(c)
+                case .note: noteOnSelection()
+                }
+            }
             ask.model = model
             ask.passages = { [weak controller] in await controller?.narrationItems(includeCaptions: true) ?? [] }
             ask.selection = { [weak controller] in await controller?.selectedText() }
@@ -141,6 +168,26 @@ struct ReaderWindow: View {
             if !p.read { model.setRead(p, true) }
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    private func refreshHighlights() { controller.showAnnotations(model.annotations(paperID)) }
+
+    private func highlightSelection(_ c: HighlightColor) {
+        Task {
+            guard let sel = await controller.pageSelection() else { return }
+            model.addHighlight(paperID, sel, color: c)
+            controller.clearSelection()
+            refreshHighlights()
+        }
+    }
+
+    private func noteOnSelection() {
+        Task {
+            guard let sel = await controller.pageSelection(), let a = model.addHighlight(paperID, sel) else { return }
+            controller.clearSelection()
+            refreshHighlights()
+            editingAnnotation = a
         }
     }
 
@@ -215,7 +262,9 @@ struct EpubWebView: NSViewRepresentable {
         let fig = FigureMessageHandler()
         fig.controller = controller
         cfg.userContentController.add(fig, name: "fig")
-        let v = WKWebView(frame: .zero, configuration: cfg)
+        cfg.addAnnotations(controller)
+        let v = ReaderWebView(frame: .zero, configuration: cfg)
+        v.controller = controller
         v.setValue(false, forKey: "drawsBackground")
         controller.webView = v
         v.loadFileURL(url, allowingReadAccessTo: readAccess)

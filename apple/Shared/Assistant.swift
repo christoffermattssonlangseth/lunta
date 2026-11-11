@@ -883,8 +883,21 @@ final class AskEngine: ObservableObject {
         the paper doesn't say. search_library searches the user's \
         other papers. Be concise and precise; use short paragraphs or bullet points; keep numbers and units exact.
         Sections: \(headings.isEmpty ? "unknown" : headings)
-        Abstract: \(abstract.isEmpty ? "(none)" : abstract)
+        Abstract: \(abstract.isEmpty ? "(none)" : abstract)\(highlights(p))
         """
+    }
+
+    /// The user's own highlights and notes in this paper, so "what did I mark?" works.
+    private func highlights(_ p: Paper?) -> String {
+        guard let p, let model, p.annotationCount > 0 else { return "" }
+        let list = model.annotations(p.id).sorted { (Int($0.position) ?? 0) < (Int($1.position) ?? 0) }
+        var out = "", used = 0
+        for a in list {
+            let line = "- “\(clip(a.quote.trimmingCharacters(in: .whitespacesAndNewlines), 160))”" + (a.note.isEmpty ? "" : " — note: \(clip(a.note, 120))") + "\n"
+            if used + line.count > budget / 4 { break }
+            out += line; used += line.count
+        }
+        return "\nThe user's highlights and notes in this paper:\n" + out
     }
 
     private func libraryInstructions(_ m: LibraryModel) -> String {
