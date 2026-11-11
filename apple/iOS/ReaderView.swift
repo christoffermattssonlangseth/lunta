@@ -116,7 +116,7 @@ struct ReaderView: View {
                     await PhoneVoice.shared.clip(Narrator.spoken(item), kind: item.kind)
                 }
                 if !PhoneVoice.shared.downloaded {
-                    narrator.note = "Downloading the natural voice (one time, about 350 MB)…"
+                    narrator.note = "Downloading the natural voice (one time only)…"
                     Task {
                         let ok = await PhoneVoice.shared.prepare()
                         narrator.note = ok ? nil : "Couldn't load the natural voice; using Apple's voice."
@@ -233,6 +233,8 @@ struct EpubWebViewIOS: UIViewRepresentable {
         controller.webView = v
         v.isOpaque = false
         v.backgroundColor = .clear
+        v.scrollView.alwaysBounceHorizontal = false
+        v.scrollView.showsHorizontalScrollIndicator = false
         v.loadFileURL(url, allowingReadAccessTo: readAccess)
         context.coordinator.loaded = url
         return v

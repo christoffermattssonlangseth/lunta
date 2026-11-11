@@ -204,6 +204,12 @@ final class LibraryModel: ObservableObject {
 
     // MARK: - Editing
 
+    /// Saves edited details.
+    func updateMeta(_ id: String, _ meta: PaperMeta) {
+        do { try lib.updateMeta(id: id, meta: meta) } catch { errorMessage = error.localizedDescription }
+        reload()
+    }
+
     func toggleStar(_ p: Paper) { try? lib.setStarred(id: p.id, starred: !p.starred); reload() }
     func setRead(_ p: Paper, _ read: Bool) { try? lib.setRead(id: p.id, read: read); reload() }
     func delete(_ ids: [String]) { for id in ids { try? lib.deletePaper(id: id) }; reload() }
@@ -267,7 +273,7 @@ final class LibraryModel: ObservableObject {
     @Published var addOutcomes: [AddOutcome] = []
 
     @discardableResult
-    func addPDFs(_ urls: [URL]) async -> [AddOutcome] {
+    func addPDFs(_ urls: [URL], privately: Bool = false) async -> [AddOutcome] {
         var out: [AddOutcome] = []
         let started = Int64(Date().timeIntervalSince1970 * 1000) - 1000
         for (i, url) in urls.enumerated() {
@@ -278,7 +284,7 @@ final class LibraryModel: ObservableObject {
                 out.append(AddOutcome(file: name, kind: .failed, paperID: nil, title: "Not a readable PDF"))
                 continue
             }
-            if let p = await addPDF(data, name: name) {
+            if let p = await addPDF(data, name: name, privately: privately) {
                 out.append(AddOutcome(file: name, kind: p.added >= started ? .added : .attached, paperID: p.id, title: p.meta.title))
             } else {
                 out.append(AddOutcome(file: name, kind: .failed, paperID: nil, title: "Couldn't add this PDF"))
@@ -296,7 +302,8 @@ final class LibraryModel: ObservableObject {
     private func step(_ s: String) { if !pdfStep.isEmpty { status = "\(pdfStep): \(s)" } }
 
     @discardableResult
-    func addPDF(_ data: Data, name: String) async -> Paper? {
+    /// `privately`: no network lookups at all; the details come only from the PDF itself.
+    func addPDF(_ data: Data, name: String, privately: Bool = false) async -> Paper? {
         let lib = self.lib
         let doi = Paper2Epub.doi(inPDF: data)
         if let doi, let existing = lib.findByDoi(doi: doi) {
@@ -309,13 +316,31 @@ final class LibraryModel: ObservableObject {
         let file = tmp.appendingPathComponent(name.hasSuffix(".pdf") ? name : name + ".pdf")
         try? data.write(to: file)
         step("making the reading view…")
-        let conv = try? await Paper2Epub.convert(file: file, into: tmp)
+        let conv = try? await Paper2Epub.$offline.withValue(privately) { try await Paper2Epub.convert(file: file, into: tmp) }
         step("looking up the paper's details…")
         var meta = PaperMeta.empty
-        if let doi { meta = (await Task.detached { try? resolveMetadata(input: doi) }.value) ?? meta }
+        if let doi, !privately { meta = (await Task.detached { try? resolveMetadata(input: doi) }.value) ?? meta }
         if meta.title.isEmpty, let conv { meta = Self.meta(from: conv) }
+        // no authors from the PDF's layout: let the on-device model read them off the first page
+        if meta.authors.isEmpty || meta.title.isEmpty {
+            step("reading the title and authors…")
+            if let x = await PDFDetails.extract(fromPDF: data) {
+                if !x.title.isEmpty, meta.title.isEmpty || meta.title.count < 15 || !meta.title.lowercased().hasPrefix(String(x.title.lowercased().prefix(12))) {
+                    meta.title = x.title
+                }
+                if meta.authors.isEmpty { meta.authors = x.authors }
+                if meta.journal.isEmpty { meta.journal = x.journal }
+                if meta.date.isEmpty { meta.date = x.year }
+                if meta.doi.isEmpty, !x.doi.isEmpty {
+                    meta.doi = x.doi
+                    if !privately, let full = await Task.detached(operation: { try? resolveMetadata(input: x.doi) }).value, !full.title.isEmpty {
+                        meta = full
+                    }
+                }
+            }
+        }
         // no DOI in the PDF: look the title up on OpenAlex and adopt the matching record
-        if (doi == nil || meta.doi.isEmpty), meta.title.count > 15, let found = await lookUpByTitle(meta.title) {
+        if !privately, (doi == nil || meta.doi.isEmpty), meta.title.count > 15, let found = await lookUpByTitle(meta.title) {
             var m = found
             if !found.doi.isEmpty, let full = await Task.detached(operation: { try? resolveMetadata(input: found.doi) }).value { m = full }
             if m.abstractText.isEmpty { m.abstractText = found.abstractText.isEmpty ? meta.abstractText : found.abstractText }

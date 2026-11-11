@@ -12,6 +12,9 @@ public enum Paper2Epub {
     }
 
     /// Converts a file (PDF or JATS XML) handed to the app.
+    /// When true, converting a PDF never goes online (no XML lookup by DOI).
+    @TaskLocal public static var offline = false
+
     public static func convert(file: URL, into dir: URL, log: @escaping Log = { _ in }) async throws -> ConversionResult {
         let cands = try Resolver.candidates(forFile: file, log: log)
         return try await run(cands, into: dir, log: log)
@@ -38,7 +41,7 @@ public enum Paper2Epub {
         switch src {
         case .pdf(let data, let meta, _):
             // An open-access XML version beats any PDF analysis: check for one via the PDF's DOI first.
-            if let doc = PDFDocument(data: data), let doi = PDFAnalyzer.quickDOI(doc) {
+            if !Paper2Epub.offline, let doc = PDFDocument(data: data), let doi = PDFAnalyzer.quickDOI(doc) {
                 log("PDF has DOI \(doi); checking for an XML version")
                 for c in Resolver.doiCandidates(doi, log: log) {
                     if let src = try? await c.load(), case .jats = src { return try await build(src, log: log) }

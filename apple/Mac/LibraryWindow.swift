@@ -11,6 +11,7 @@ struct LibraryWindow: View {
     @State private var newCollection = false
     @State private var asking = false
     @State private var dropping = false
+    @State private var editing: EditTarget?
     @StateObject private var ask = AskEngine(scope: .library)
 
     var body: some View {
@@ -68,6 +69,7 @@ struct LibraryWindow: View {
         }
         .safeAreaInset(edge: .bottom) { StatusBar() }
         .sheet(isPresented: $addingPaper) { AddPaperSheet() }
+        .modifier(EditSheet(editing: $editing))
         .onReceive(NotificationCenter.default.publisher(for: .marginsAddPaper)) { _ in addingPaper = true }
         .onOpenURL { url in
             // margins://open?id=<paper id>  (from the browser extension)
@@ -80,10 +82,11 @@ struct LibraryWindow: View {
             }
         }
         .onDrop(of: [.pdf, .fileURL], isTargeted: $dropping) { providers in
+            let privately = NSEvent.modifierFlags.contains(.option)
             Task {
                 let urls = await pdfURLs(providers)
                 guard !urls.isEmpty else { model.errorMessage = "Only PDF files can be dropped here."; return }
-                let out = await model.addPDFs(urls)
+                let out = await model.addPDFs(urls, privately: privately)
                 if let id = out.first(where: { $0.paperID != nil })?.paperID {
                     model.query = ""
                     if model.source == .discover { model.source = .all }
@@ -92,26 +95,7 @@ struct LibraryWindow: View {
             }
             return true
         }
-        .overlay {
-            if dropping {
-                RoundedRectangle(cornerRadius: 14)
-                    .strokeBorder(Color.marginsTeal, style: StrokeStyle(lineWidth: 3, dash: [10, 6]))
-                    .background(Color.marginsTeal.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
-                    .overlay {
-                        VStack(spacing: 8) {
-                            Image(systemName: "doc.badge.plus").font(.system(size: 44)).foregroundStyle(Color.marginsTeal)
-                            Text("Drop to add to your library").font(.title3.weight(.semibold))
-                            Text("Margins reads each PDF, finds its details and makes a reading view.")
-                                .font(.callout).foregroundStyle(.secondary)
-                        }
-                        .padding(24)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-                    }
-                    .padding(10)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
-        }
+        .overlay { if dropping { DropHint() } }
         .overlay(alignment: .bottomTrailing) {
             if !model.addOutcomes.isEmpty {
                 AddedCard(selection: $selection).padding(.trailing, 16).padding(.bottom, 40)
@@ -129,10 +113,27 @@ struct LibraryWindow: View {
 
     private func pdfURLs(_ providers: [NSItemProvider]) async -> [URL] {
         var out: [URL] = []
-        for p in providers where p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-            if let data = try? await p.loadItem(forTypeIdentifier: UTType.fileURL.identifier) as? Data,
-               let url = URL(dataRepresentation: data, relativeTo: nil), url.pathExtension.lowercased() == "pdf" {
-                out.append(url)
+        for p in providers {
+            if p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier),
+               let item = try? await p.loadItem(forTypeIdentifier: UTType.fileURL.identifier) {
+                // depending on the macOS version and the source app this is a URL, Data or a string
+                let url: URL? = (item as? URL) ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
+                    ?? (item as? String).flatMap { URL(string: $0) }
+                if let url, url.pathExtension.lowercased() == "pdf" || (try? url.resourceValues(forKeys: [.contentTypeKey]))?.contentType?.conforms(to: .pdf) == true {
+                    out.append(url)
+                    continue
+                }
+            }
+            if p.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
+                // a PDF without a file URL (e.g. dragged out of a browser or Mail): copy it out
+                let copy: URL? = await withCheckedContinuation { c in
+                    _ = p.loadFileRepresentation(forTypeIdentifier: UTType.pdf.identifier) { u, _ in
+                        guard let u else { c.resume(returning: nil); return }
+                        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("drop-\(UUID().uuidString)-\(u.lastPathComponent)")
+                        c.resume(returning: (try? FileManager.default.copyItem(at: u, to: dest)) != nil ? dest : nil)
+                    }
+                }
+                if let copy { out.append(copy) }
             }
         }
         return out
@@ -302,6 +303,7 @@ struct PaperMenu: View {
             Button("Open") { openWindow(value: id) }
             Button(p.starred ? "Unstar" : "Star") { model.toggleStar(p) }
             Button(p.read ? "Mark as Unread" : "Mark as Read") { model.setRead(p, !p.read) }
+            Button("Edit Details…") { NotificationCenter.default.post(name: .marginsEditPaper, object: id) }
             Divider()
             CiteMenu(ids: ids)
         } else {
@@ -386,6 +388,9 @@ struct PaperDetail: View {
                 if !paper.meta.journal.isEmpty { Pill(text: paper.meta.journal, color: .marginsTeal) }
                 if !paper.meta.year.isEmpty { Pill(text: paper.meta.year, color: .secondary) }
                 Spacer()
+                Button { NotificationCenter.default.post(name: .marginsEditPaper, object: paper.id) } label: { Image(systemName: "pencil") }
+                    .buttonStyle(.borderless).help("Edit title, authors and other details (⌘E)")
+                    .keyboardShortcut("e", modifiers: .command)
                 CiteMenu(ids: [paper.id]).menuStyle(.borderlessButton).fixedSize()
                 Button { model.toggleStar(paper) } label: {
                     Image(systemName: paper.starred ? "star.fill" : "star")
@@ -414,7 +419,8 @@ struct PaperDetail: View {
                     .buttonStyle(.borderedProminent).tint(.marginsTeal)
                     .disabled(!paper.hasEpub && !paper.hasPdf)
                 if let pdf = model.fileURL(paper.id, .pdf) {
-                    Button { NSWorkspace.shared.open(pdf) } label: { Label("PDF", systemImage: "doc.richtext") }
+                    Button { ReaderWindow.open(paper.id, mode: .pdf, openWindow) } label: { Label("PDF", systemImage: "doc.richtext") }
+                        .contextMenu { Button("Open in Preview") { NSWorkspace.shared.open(pdf) } }
                 } else {
                     Button { run("Searching open-access sources…") { await findPDF() } } label: {
                         Label("Find PDF", systemImage: "magnifyingglass")
@@ -626,5 +632,47 @@ struct DiscoverList: View {
         .background(Color.marginsTeal.opacity(0.04))
         .navigationTitle("Discover")
         .navigationSubtitle(model.discoverQuery.isEmpty ? "Beyond your library" : "\(model.discoverResults.count) results for “\(model.discoverQuery)”")
+    }
+}
+
+struct EditTarget: Identifiable { let id: String }
+
+extension Notification.Name {
+    static let marginsEditPaper = Notification.Name("marginsEditPaper")
+}
+
+/// Shown while PDFs are dragged over the library window.
+struct DropHint: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 14)
+            .strokeBorder(Color.marginsTeal, style: StrokeStyle(lineWidth: 3, dash: [10, 6]))
+            .background(Color.marginsTeal.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                VStack(spacing: 8) {
+                    Image(systemName: "doc.badge.plus").font(.system(size: 44)).foregroundStyle(Color.marginsTeal)
+                    Text("Drop to add to your library").font(.title3.weight(.semibold))
+                    Text("Margins reads each PDF, finds its details and makes a reading view.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Text("Hold ⌥ while dropping to add privately (nothing is looked up online).")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(24)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            }
+            .padding(10)
+            .allowsHitTesting(false)
+            .transition(.opacity)
+    }
+}
+
+/// Presents the details editor when a paper asks to be edited.
+struct EditSheet: ViewModifier {
+    @Binding var editing: EditTarget?
+    func body(content: Content) -> some View {
+        content
+            .sheet(item: $editing) { t in MetadataEditor(paperID: t.id) }
+            .onReceive(NotificationCenter.default.publisher(for: .marginsEditPaper)) { n in
+                if let id = n.object as? String { editing = EditTarget(id: id) }
+            }
     }
 }

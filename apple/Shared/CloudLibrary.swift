@@ -140,6 +140,14 @@ enum ReaderAssets {
     .titlepage h1 { border-top: none; padding-top: 0; margin-top: .6em; }
     figure img, .table-wrap img { border-radius: 4px; }
     img { max-width: 100%; height: auto; cursor: zoom-in; }
+    /* nothing may stick out sideways: long links and words wrap, wide things scroll inside their own box */
+    html, body { overflow-x: hidden; max-width: 100vw; }
+    p, li, a, td, th, figcaption, h1, h2, h3, h4, div { overflow-wrap: anywhere; }
+    svg, video, iframe, object, embed, canvas { max-width: 100%; height: auto; }
+    pre { white-space: pre-wrap; }
+    .m-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; margin: 1em 0; }
+    .m-scroll > table { margin: 0; }
+    table { border-collapse: collapse; }
     .section-start { scroll-margin-top: 1em; }
     .narr-current { background: rgba(242,180,90,.30); border-radius: 6px; box-shadow: 0 0 0 5px rgba(242,180,90,.30);
                     transition: background .25s; }
@@ -158,13 +166,41 @@ enum ReaderAssets {
     }, true);
     """
 
+    /// Finds anything wider than the page (tables, equations, code, fixed-width boxes) and contains it,
+    /// so the page itself never becomes wider than the screen. Runs again as images load.
+    static let overflowJS = """
+    (function(){
+      function fix(){
+        var W = document.documentElement.clientWidth;
+        var all = document.body ? document.body.getElementsByTagName('*') : [];
+        for (var i = 0; i < all.length; i++) {
+          var el = all[i];
+          if (el.closest('.m-scroll')) continue;
+          var r = el.getBoundingClientRect();
+          if (r.right <= W + 1 && el.scrollWidth <= el.clientWidth + 1) continue;
+          var tag = el.tagName.toLowerCase();
+          if (tag === 'table' || tag === 'pre' || tag === 'math' || el.classList.contains('table-wrap') || el.classList.contains('disp-formula')) {
+            var box = document.createElement('div'); box.className = 'm-scroll';
+            el.parentNode.insertBefore(box, el); box.appendChild(el);
+          } else if (r.width > W) {
+            el.style.maxWidth = '100%'; el.style.boxSizing = 'border-box';
+            if (el.scrollWidth > el.clientWidth + 1) el.style.overflowX = 'auto';
+          }
+        }
+      }
+      fix();
+      window.addEventListener('load', fix);
+      setTimeout(fix, 600);
+    })();
+    """
+
     /// Injects `css` into the page.
     static var styleScript: String {
         let c = css.replacingOccurrences(of: "`", with: "")
         // the books don't declare a mobile viewport; without one the iPhone lays the page out 980 px wide and shrinks it
         return "var s=document.createElement('style');s.textContent=`\(c)`;document.documentElement.appendChild(s);"
-            + "if(!document.querySelector('meta[name=viewport]')){var m=document.createElement('meta');m.name='viewport';m.content='width=device-width, initial-scale=1';(document.head||document.documentElement).appendChild(m);}"
-            + figureJS
+            + "if(!document.querySelector('meta[name=viewport]')){var m=document.createElement('meta');m.name='viewport';m.content='width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover';(document.head||document.documentElement).appendChild(m);}"
+            + figureJS + overflowJS
     }
 
     /// Reports the id of the heading currently at the top of the screen to the "pos" handler.

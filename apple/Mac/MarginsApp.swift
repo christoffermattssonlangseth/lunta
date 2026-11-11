@@ -110,6 +110,8 @@ struct MarginsCommands: Commands {
                 .keyboardShortcut("n", modifiers: [.command, .shift])
             Button("Add PDF…") { addPDFs() }
                 .keyboardShortcut("o", modifiers: [.command])
+            Button("Add PDF Privately…") { addPDFs(privately: true) }
+                .keyboardShortcut("o", modifiers: [.command, .option])
             Divider()
             Button("Import from ReadCube Papers / BibTeX / RIS…") { importExport() }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
@@ -135,15 +137,16 @@ struct MarginsCommands: Commands {
     }
 
     /// Pick PDFs; each becomes a library entry with metadata from its DOI or an OpenAlex title match.
-    private func addPDFs() {
+    /// Privately: nothing about the PDF leaves this Mac (no DOI or title lookups), e.g. for manuscripts under review.
+    private func addPDFs(privately: Bool = false) {
         guard let model else { return }
         let p = NSOpenPanel()
-        p.title = "Add PDFs to Margins"
+        p.title = privately ? "Add PDFs privately (no online lookups)" : "Add PDFs to Margins"
         p.allowedContentTypes = [.pdf]
         p.allowsMultipleSelection = true
         guard p.runModal() == .OK, !p.urls.isEmpty else { return }
         let urls = p.urls
-        Task { await model.addPDFs(urls) }
+        Task { await model.addPDFs(urls, privately: privately) }
     }
 
     private func importPDFFolder() {

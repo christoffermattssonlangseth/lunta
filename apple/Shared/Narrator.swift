@@ -435,50 +435,82 @@ struct NarrationBar: View {
     var close: () -> Void
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             ProgressView(value: narrator.progress).tint(.marginsTeal)
+            #if os(iOS)
+            VStack(alignment: .leading, spacing: 10) {
+                info
+                HStack(spacing: 0) {
+                    speedMenu
+                    Spacer()
+                    controls
+                    Spacer()
+                    Button(action: close) { Image(systemName: "xmark").font(.body.weight(.semibold)) }
+                        .frame(width: 44, height: 44)
+                }
+            }
+            #else
             HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(narrator.currentSection.isEmpty ? "Listening" : narrator.currentSection)
-                        .font(.subheadline.weight(.semibold)).lineLimit(1)
-                    HStack(spacing: 4) {
-                        if narrator.neural || narrator.live { Pill(text: "Natural voice", icon: "waveform", color: .marginsTeal) }
-                        if narrator.waiting { ProgressView().controlSize(.mini) }
-                        Text(narrator.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                }
+                info
                 Spacer(minLength: 6)
-                Button { narrator.previous() } label: { Image(systemName: "backward.fill") }
-                Button { narrator.toggle() } label: {
-                    Image(systemName: narrator.playing ? "pause.circle.fill" : "play.circle.fill").font(.system(size: 34))
-                }
-                Button { narrator.next() } label: { Image(systemName: "forward.fill") }
-                Button { narrator.nextSection() } label: { Image(systemName: "forward.end.fill") }.help("Next section")
-                Menu {
-                    Picker("Speed", selection: $narrator.speed) {
-                        ForEach([0.8, 1.0, 1.15, 1.3, 1.5, 1.75, 2.0], id: \.self) { Text(String(format: "%.2g×", $0)).tag($0) }
-                    }
-                    if !narrator.neural && !narrator.live {
-                        Picker("Voice", selection: $narrator.voiceID) {
-                            ForEach(Narrator.voices.prefix(25), id: \.identifier) { Text(Narrator.label($0)).tag($0.identifier) }
-                        }
-                    }
-                } label: {
-                    Text(String(format: "%.2g×", narrator.speed)).font(.callout.monospacedDigit().weight(.semibold))
-                }
-                .fixedSize()
+                controls
+                speedMenu
                 Button(action: close) { Image(systemName: "xmark") }.help("Stop listening")
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(Color.marginsTeal)
+            #endif
             if let note = narrator.note {
-                Text(note).font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                Text(note).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
             } else if !narrator.neural && !narrator.live && !narrator.hasGoodVoice {
                 Text("Tip: download a Premium voice for much more natural speech (Settings › Accessibility › Spoken Content › Voices).")
                     .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
+        .buttonStyle(.borderless)
+        .foregroundStyle(Color.marginsTeal)
+        .padding(.horizontal, 16).padding(.vertical, 10)
         .background(.regularMaterial)
+    }
+
+    private var info: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(narrator.currentSection.isEmpty ? "Listening" : narrator.currentSection)
+                .font(.subheadline.weight(.semibold)).lineLimit(1)
+            HStack(spacing: 6) {
+                if narrator.neural || narrator.live {
+                    Pill(text: "Natural voice", icon: "waveform", color: .marginsTeal).fixedSize()
+                }
+                if narrator.waiting { ProgressView().controlSize(.mini) }
+                Text(narrator.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+    }
+
+    private var controls: some View {
+        HStack(spacing: 22) {
+            Button { narrator.previous() } label: { Image(systemName: "backward.fill") }
+            Button { narrator.toggle() } label: {
+                Image(systemName: narrator.playing ? "pause.circle.fill" : "play.circle.fill").font(.system(size: 40))
+            }
+            Button { narrator.next() } label: { Image(systemName: "forward.fill") }
+            Button { narrator.nextSection() } label: { Image(systemName: "forward.end.fill") }.help("Next section")
+        }
+        .font(.title3)
+    }
+
+    private var speedMenu: some View {
+        Menu {
+            Picker("Speed", selection: $narrator.speed) {
+                ForEach([0.8, 1.0, 1.15, 1.3, 1.5, 1.75, 2.0], id: \.self) { Text(String(format: "%.2g×", $0)).tag($0) }
+            }
+            if !narrator.neural && !narrator.live {
+                Picker("Voice", selection: $narrator.voiceID) {
+                    ForEach(Narrator.voices.prefix(25), id: \.identifier) { Text(Narrator.label($0)).tag($0.identifier) }
+                }
+            }
+        } label: {
+            Text(String(format: "%.2g×", narrator.speed)).font(.callout.monospacedDigit().weight(.semibold))
+                .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+        }
+        .fixedSize()
     }
 }

@@ -11,6 +11,7 @@ struct PaperInfoView: View {
     @State private var busy: String?
     @State private var note: String?
     @State private var copied = false
+    @State private var editing = false
 
     var body: some View {
         if let p = model.paper(paperID) {
@@ -56,7 +57,11 @@ struct PaperInfoView: View {
                     Button { model.toggleStar(p) } label: { Image(systemName: p.starred ? "star.fill" : "star") }
                         .tint(.marginsCopper)
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { editing = true } label: { Image(systemName: "pencil") }
+                }
             }
+            .sheet(isPresented: $editing) { MetadataEditor(paperID: paperID).environmentObject(model) }
         }
     }
 

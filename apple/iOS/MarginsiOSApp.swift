@@ -62,6 +62,17 @@ final class ModelHolder: ObservableObject {
                     }
                     print("download test: done"); fflush(stdout)
                 }
+                if ProcessInfo.processInfo.arguments.contains("-testVoice") {
+                    var t = Date()
+                    let ok = await PhoneVoice.shared.prepare()
+                    print("voice test: prepared=\(ok) \(String(format: "%.1f", Date().timeIntervalSince(t)))s"); fflush(stdout)
+                    for text in ["Methods", "CSF lactate was higher in RRMS patients compared to controls. A negative correlation was found between CSF lactate and the progression index, and higher lactate levels were associated with greater disability over the follow-up period."] {
+                        t = Date()
+                        let u = await PhoneVoice.shared.clip(text, kind: "text")
+                        let size = (try? FileManager.default.attributesOfItem(atPath: u?.path ?? "")[.size] as? Int) ?? 0
+                        print("voice test: clip ok=\(u != nil) \(size / 48000)s audio in \(String(format: "%.2f", Date().timeIntervalSince(t)))s"); fflush(stdout)
+                    }
+                }
             } catch {
                 NSLog("Margins: open failed: %@", error.localizedDescription)
                 self.error = error.localizedDescription

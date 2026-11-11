@@ -28,6 +28,15 @@ struct ReaderWindow: View {
 
     enum Mode: String, CaseIterable { case reading = "Reading", pdf = "PDF" }
 
+    /// The view a reader window should show when it opens (or switch to, if it's already open).
+    static var requestedMode: [String: Mode] = [:]
+
+    static func open(_ id: String, mode: Mode, _ openWindow: OpenWindowAction) {
+        requestedMode[id] = mode
+        NotificationCenter.default.post(name: .marginsReaderMode, object: id)
+        openWindow(value: id)
+    }
+
     var body: some View {
         let paper = model.paper(paperID)
         NavigationSplitView {
@@ -107,6 +116,9 @@ struct ReaderWindow: View {
                 .inspectorColumnWidth(min: 300, ideal: 380, max: 560)
         }
         .sheet(item: $figure) { f in FigureViewer(figure: f) }
+        .onReceive(NotificationCenter.default.publisher(for: .marginsReaderMode)) { n in
+            if n.object as? String == paperID, let m = Self.requestedMode.removeValue(forKey: paperID) { mode = m }
+        }
         .navigationTitle(paper?.meta.title ?? "Reader")
         .task {
             controller.onFigure = { figure = $0 }
@@ -121,6 +133,7 @@ struct ReaderWindow: View {
 
     private func load() async {
         guard let p = model.paper(paperID) else { return }
+        if let m = Self.requestedMode.removeValue(forKey: paperID) { mode = m }
         if !p.hasEpub { mode = p.hasPdf ? .pdf : .reading; error = "Use “Make Reading View” in the library."; return }
         guard await model.ensureLocal(paperID, .epub) != nil else { error = "Couldn't download the reading view from iCloud."; return }
         do {
@@ -248,4 +261,8 @@ struct PDFKitView: NSViewRepresentable {
     func updateNSView(_ v: PDFView, context: Context) {
         if v.document?.documentURL != url { v.document = PDFDocument(url: url) }
     }
+}
+
+extension Notification.Name {
+    static let marginsReaderMode = Notification.Name("marginsReaderMode")
 }
