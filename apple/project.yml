@@ -1,0 +1,51 @@
+# Generate the Xcode project with:  cd apple && xcodegen generate
+name: Margins
+options:
+  bundleIdPrefix: com.cmlangseth
+  deploymentTarget:
+    macOS: "14.0"
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+packages:
+  MarginsCore:
+    path: MarginsCore
+  Paper2EpubKit:
+    path: Paper2EpubKit
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: 7R6QL53THM
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  MarginsMac:
+    type: application
+    platform: macOS
+    sources: [Mac, Shared, Assets.xcassets]
+    dependencies:
+      - package: MarginsCore
+        product: MarginsCore
+      - package: Paper2EpubKit
+        product: Paper2EpubKit
+    info:
+      path: Mac/Info.plist
+      properties:
+        CFBundleDisplayName: Margins
+        CFBundleName: Margins
+        LSApplicationCategoryType: public.app-category.education
+        CFBundleURLTypes:
+          - CFBundleURLName: com.cmlangseth.margins
+            CFBundleURLSchemes: [margins]
+        NSHumanReadableCopyright: ""
+    settings:
+      base:
+        PRODUCT_NAME: Margins
+        PRODUCT_BUNDLE_IDENTIFIER: com.cmlangseth.margins
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        OTHER_LDFLAGS: ["-lc++"]

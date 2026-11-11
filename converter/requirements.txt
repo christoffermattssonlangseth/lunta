@@ -1,0 +1,5 @@
+pymupdf>=1.24
+lxml>=5
+pillow>=10
+anthropic>=0.40      # optional: Claude page transcription for PDFs
+epubcheck>=5.1       # optional: EPUB validation (needs Java)

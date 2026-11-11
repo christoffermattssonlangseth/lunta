@@ -1,0 +1,20 @@
+[project]
+name = "paper2epub"
+version = "0.1.0"
+description = "Turn a scientific paper (DOI, arXiv, PMCID, PDF, JATS, LaTeX) into a clean EPUB"
+requires-python = ">=3.9"
+dependencies = ["pymupdf>=1.24", "lxml>=5", "pillow>=10"]
+
+[project.optional-dependencies]
+llm = ["anthropic>=0.40"]
+check = ["epubcheck>=5.1"]
+
+[project.scripts]
+paper2epub = "paper2epub:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["paper2epub"]
