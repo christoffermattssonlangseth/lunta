@@ -76,7 +76,10 @@ struct ReaderView: View {
         Task {
             let items = await controller.narrationItems()
             guard !items.isEmpty else { return }
-            narrator.load(items, title: model.paper(paperID)?.meta.title ?? "")
+            // natural (neural) narration when it has been rendered, otherwise the system voice
+            if !(await model.loadNeuralNarration(paperID, into: narrator, pageItems: items)) {
+                narrator.load(items, title: model.paper(paperID)?.meta.title ?? "")
+            }
             narrator.onHighlight = { [weak controller] id in controller?.highlight(id) }
             controller.onTapParagraph = { [weak narrator] id in narrator?.play(fromID: id) }
             controller.setListening(true)

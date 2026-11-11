@@ -282,12 +282,44 @@ final class LibraryModel: ObservableObject {
         var meta = PaperMeta.empty
         if let doi { meta = (await Task.detached { try? resolveMetadata(input: doi) }.value) ?? meta }
         if meta.title.isEmpty, let conv { meta = Self.meta(from: conv) }
+        // no DOI in the PDF: look the title up on OpenAlex and adopt the matching record
+        if (doi == nil || meta.doi.isEmpty), meta.title.count > 15, let found = await lookUpByTitle(meta.title) {
+            var m = found
+            if !found.doi.isEmpty, let full = await Task.detached(operation: { try? resolveMetadata(input: found.doi) }).value { m = full }
+            if m.abstractText.isEmpty { m.abstractText = found.abstractText.isEmpty ? meta.abstractText : found.abstractText }
+            meta = m
+            // the PDF may be a paper that is already in the library
+            if !meta.doi.isEmpty, let existing = lib.findByDoi(doi: meta.doi) {
+                try? await Task.detached { try lib.attachFile(id: existing.id, kind: .pdf, data: data) }.value
+                if !existing.hasEpub, let conv, let epub = try? Data(contentsOf: conv.file) {
+                    let text = Data(conv.fulltext.utf8)
+                    try? await Task.detached {
+                        try lib.attachFile(id: existing.id, kind: .epub, data: epub)
+                        try lib.attachFile(id: existing.id, kind: .fulltext, data: text)
+                    }.value
+                }
+                try? FileManager.default.removeItem(at: tmp)
+                return lib.paper(id: existing.id)
+            }
+        }
         if meta.title.isEmpty { meta.title = (name as NSString).deletingPathExtension }
         let m = meta
         let epub = conv.flatMap { try? Data(contentsOf: $0.file) }
         let p = try? await Task.detached { try lib.addPaper(meta: m, pdf: data, epub: epub, fulltext: conv?.fulltext) }.value
         try? FileManager.default.removeItem(at: tmp)
         return p
+    }
+
+    /// Finds the published record for a title on OpenAlex (only accepts a close title match).
+    func lookUpByTitle(_ title: String) async -> PaperMeta? {
+        let lib = self.lib
+        let hits = await Task.detached { (try? lib.discover(query: title, limit: 5)) ?? [] }.value
+        func norm(_ s: String) -> String { s.lowercased().filter { $0.isLetter || $0.isNumber } }
+        let want = norm(title)
+        return hits.first { h in
+            let t = norm(h.meta.title)
+            return !t.isEmpty && (t == want || (min(t.count, want.count) > 25 && (t.hasPrefix(want) || want.hasPrefix(t))))
+        }?.meta
     }
 
     static func meta(from c: ConversionResult?) -> PaperMeta {
@@ -359,6 +391,17 @@ final class LibraryModel: ObservableObject {
         NSLog("Margins: PDF import: %d by DOI, %d by title, %d already had a PDF, %d unmatched", byDOI, byTitle, already, unmatched.count)
         if !unmatched.isEmpty { NSLog("Margins: unmatched PDFs: %@", unmatched.joined(separator: ", ")) }
         status = "PDFs: \(byDOI + byTitle) attached (\(byDOI) by DOI, \(byTitle) by title), \(unmatched.count) not matched to a paper."
+    }
+
+    // MARK: - Natural narration
+
+    /// Loads the rendered neural narration for a paper into `narrator`, if there is one.
+    func loadNeuralNarration(_ id: String, into narrator: Narrator, pageItems: [NarrationItem]) async -> Bool {
+        guard paper(id)?.hasAudio == true,
+              let idx = await ensureLocal(id, .audioIndex), let audio = await ensureLocal(id, .audio),
+              let data = try? Data(contentsOf: idx),
+              let timings = try? JSONDecoder().decode(NarrationTimings.self, from: data) else { return false }
+        return narrator.loadAudio(audio, timings: timings, pageItems: pageItems, title: paper(id)?.meta.title ?? "")
     }
 
     // MARK: - Discover

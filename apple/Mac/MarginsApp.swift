@@ -30,6 +30,11 @@ struct MarginsApp: App {
                 Button("Next Section") { Narrator.active?.nextSection() }.keyboardShortcut(.downArrow, modifiers: [.command, .option])
                 Divider()
                 Button("Stop") { Narrator.active?.stop() }
+                Divider()
+                Picker("Natural Voice", selection: Binding(get: { NarrationRenderer.shared.voice },
+                                                          set: { NarrationRenderer.shared.voice = $0 })) {
+                    ForEach(NarrationRenderer.voices, id: \.id) { Text($0.name).tag($0.id) }
+                }
             }
         }
 
@@ -63,6 +68,7 @@ final class ModelHolder: ObservableObject {
         if let model {
             server = ExtensionServer(model: model)
             server?.start()
+            NarrationRenderer.shared.model = model
         }
         // scripting hook: `Margins -import <file.bib|.ris> [-pdfs <folder>]`
         let args = ProcessInfo.processInfo.arguments
@@ -70,6 +76,8 @@ final class ModelHolder: ObservableObject {
             let file = URL(fileURLWithPath: args[i + 1])
             let pdfs = args.firstIndex(of: "-pdfs").flatMap { $0 + 1 < args.count ? URL(fileURLWithPath: args[$0 + 1]) : nil }
             Task { await model.importExport(file: file, pdfFolder: pdfs) }
+        } else if let i = args.firstIndex(of: "-narrate"), i + 1 < args.count {
+            NarrationRenderer.shared.enqueue([args[i + 1]])
         } else if let model, let i = args.firstIndex(of: "-importPDFs"), i + 1 < args.count {
             let folder = URL(fileURLWithPath: args[i + 1])
             Task { await model.importPDFFolder(folder); await model.makeReadingViews() }
@@ -87,6 +95,8 @@ struct MarginsCommands: Commands {
         CommandGroup(after: .newItem) {
             Button("Add Paper…") { NotificationCenter.default.post(name: .marginsAddPaper, object: nil) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
+            Button("Add PDF…") { addPDFs() }
+                .keyboardShortcut("o", modifiers: [.command])
             Divider()
             Button("Import from ReadCube Papers / BibTeX / RIS…") { importExport() }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
@@ -109,6 +119,18 @@ struct MarginsCommands: Commands {
         f.canChooseFiles = false
         let folder = f.runModal() == .OK ? f.url : nil
         Task { await model.importExport(file: file, pdfFolder: folder) }
+    }
+
+    /// Pick PDFs; each becomes a library entry with metadata from its DOI or an OpenAlex title match.
+    private func addPDFs() {
+        guard let model else { return }
+        let p = NSOpenPanel()
+        p.title = "Add PDFs to Margins"
+        p.allowedContentTypes = [.pdf]
+        p.allowsMultipleSelection = true
+        guard p.runModal() == .OK, !p.urls.isEmpty else { return }
+        let urls = p.urls
+        Task { await model.addPDFs(urls) }
     }
 
     private func importPDFFolder() {

@@ -141,6 +141,7 @@ struct PaperRow: View {
                 HStack(spacing: 4) {
                     if paper.hasEpub { Pill(text: "Read", icon: "book", color: .marginsTeal) }
                     if paper.hasPdf { Pill(text: "PDF", color: .marginsCopper) }
+                    if paper.hasAudio { Pill(text: "Audio", icon: "waveform", color: .purple) }
                     if paper.annotationCount > 0 { Pill(text: "\(paper.annotationCount)", icon: "highlighter", color: .secondary) }
                 }
             }

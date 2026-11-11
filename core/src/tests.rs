@@ -136,6 +136,7 @@ fn citations_and_exports() {
         modified: 0,
         has_pdf: false,
         has_epub: false,
+        has_audio: false,
         read: false,
         starred: false,
         collections: vec![],
@@ -310,6 +311,8 @@ fn icloud_placeholders_count_as_present() {
     assert_eq!(lib.file_status(p.id.clone(), FileKind::Pdf), FileStatus::Missing);
     assert!(lib.expected_file_path(p.id.clone(), FileKind::Epub).ends_with("book.epub"));
     assert_eq!(lib.pending_downloads().len(), 1);
+    lib.attach_file(p.id.clone(), FileKind::AudioIndex, b"{}".to_vec()).unwrap();
+    assert!(lib.paper(p.id.clone()).unwrap().has_audio);
 }
 
 #[test]

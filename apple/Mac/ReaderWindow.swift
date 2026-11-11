@@ -73,6 +73,13 @@ struct ReaderWindow: View {
                         }
                         .help(listening ? "Stop listening" : "Listen to this paper")
                         .disabled(book == nil)
+                        if paper?.hasAudio != true {
+                            Button { NarrationRenderer.shared.enqueue([paperID]) } label: {
+                                Image(systemName: NarrationRenderer.shared.rendering.contains(paperID) ? "waveform.badge.ellipsis" : "waveform.badge.plus")
+                            }
+                            .help("Make natural-voice narration (renders on this Mac, syncs to iPhone)")
+                            .disabled(book == nil || NarrationRenderer.shared.rendering.contains(paperID))
+                        }
                         Button { fontScale = max(0.7, fontScale - 0.1) } label: { Image(systemName: "textformat.size.smaller") }
                             .help("Smaller text")
                         Button { fontScale = min(1.8, fontScale + 0.1) } label: { Image(systemName: "textformat.size.larger") }
@@ -101,7 +108,10 @@ struct ReaderWindow: View {
         Task {
             let items = await controller.narrationItems()
             guard !items.isEmpty else { return }
-            narrator.load(items, title: model.paper(paperID)?.meta.title ?? "")
+            // natural (neural) narration when it has been rendered, otherwise the system voice
+            if !(await model.loadNeuralNarration(paperID, into: narrator, pageItems: items)) {
+                narrator.load(items, title: model.paper(paperID)?.meta.title ?? "")
+            }
             narrator.onHighlight = { [weak controller] id in controller?.highlight(id) }
             controller.onTapParagraph = { [weak narrator] id in narrator?.play(fromID: id) }
             controller.setListening(true)

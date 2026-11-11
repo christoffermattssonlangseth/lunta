@@ -38,6 +38,8 @@ pub struct Paper {
     pub modified: i64,
     pub has_pdf: bool,
     pub has_epub: bool,
+    /// A rendered neural narration (narration.m4a + narration.json) exists.
+    pub has_audio: bool,
     pub read: bool,
     pub starred: bool,
     pub collections: Vec<String>,
@@ -108,6 +110,10 @@ pub enum FileKind {
     Pdf,
     Epub,
     Fulltext,
+    /// Neural narration audio (AAC).
+    Audio,
+    /// Timing map for the narration: which paragraph plays when.
+    AudioIndex,
 }
 
 impl FileKind {
@@ -116,6 +122,8 @@ impl FileKind {
             FileKind::Pdf => "paper.pdf",
             FileKind::Epub => "book.epub",
             FileKind::Fulltext => "fulltext.txt",
+            FileKind::Audio => "narration.m4a",
+            FileKind::AudioIndex => "narration.json",
         }
     }
 }

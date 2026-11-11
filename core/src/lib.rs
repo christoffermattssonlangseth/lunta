@@ -25,7 +25,7 @@ struct Inner {
     index: index::Index,
     cache: PathBuf,
     /// paper id -> (has PDF, has reading view); refreshed by reindex(), avoids disk checks per listing
-    files: std::collections::HashMap<String, (bool, bool)>,
+    files: std::collections::HashMap<String, (bool, bool, bool)>,
 }
 
 /// A paper library rooted at a folder (local or in iCloud Drive).
@@ -82,7 +82,7 @@ impl Library {
         }
         let files = ids
             .iter()
-            .map(|id| (id.clone(), (g.store.has_file(id, FileKind::Pdf), g.store.has_file(id, FileKind::Epub))))
+            .map(|id| (id.clone(), (g.store.has_file(id, FileKind::Pdf), g.store.has_file(id, FileKind::Epub), g.store.has_file(id, FileKind::AudioIndex))))
             .collect();
         g.files = files;
         let keep: BTreeSet<String> = ids.into_iter().collect();
@@ -145,7 +145,7 @@ impl Library {
         }
         let files = ids
             .iter()
-            .map(|id| (id.clone(), (g.store.has_file(id, FileKind::Pdf), g.store.has_file(id, FileKind::Epub))))
+            .map(|id| (id.clone(), (g.store.has_file(id, FileKind::Pdf), g.store.has_file(id, FileKind::Epub), g.store.has_file(id, FileKind::AudioIndex))))
             .collect();
         g.files = files;
         let keep: BTreeSet<String> = ids.into_iter().collect();
@@ -529,6 +529,7 @@ fn paper_of(g: &Inner, id: &str) -> Paper {
         modified: p.modified,
         has_pdf: g.files.get(id).map(|f| f.0).unwrap_or(false),
         has_epub: g.files.get(id).map(|f| f.1).unwrap_or(false),
+        has_audio: g.files.get(id).map(|f| f.2).unwrap_or(false),
         read: p.read,
         starred: p.starred,
         collections: p.collections.iter().cloned().collect(),

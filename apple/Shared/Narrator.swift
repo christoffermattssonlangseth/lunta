@@ -10,15 +10,31 @@ struct NarrationItem: Decodable, Equatable {
     let kind: String   // "heading" | "text" | "caption"
 }
 
-/// Reads a paper aloud with the system's on-device voices (no network), paragraph by paragraph.
+/// Timing map written next to a rendered neural narration (narration.json).
+struct NarrationTimings: Decodable {
+    struct Segment: Decodable { let id: String; let kind: String; let start: Double; let end: Double }
+    let voice: String
+    let segments: [Segment]
+}
+
+/// Reads a paper aloud: either a pre-rendered neural narration (Kokoro, made on the Mac) or,
+/// as a fallback, the system's on-device voices, paragraph by paragraph.
 @MainActor
 final class Narrator: NSObject, ObservableObject {
     @Published private(set) var items: [NarrationItem] = []
     @Published private(set) var index = 0
     @Published private(set) var playing = false
     @Published var speed: Double = UserDefaults.standard.object(forKey: "narrationSpeed") as? Double ?? 1.0 {
-        didSet { UserDefaults.standard.set(speed, forKey: "narrationSpeed"); restartCurrent() }
+        didSet {
+            UserDefaults.standard.set(speed, forKey: "narrationSpeed")
+            if neural { player?.rate = Float(speed) } else { restartCurrent() }
+        }
     }
+    /// True when playing a rendered neural narration rather than the system voice.
+    @Published private(set) var neural = false
+    private var player: AVAudioPlayer?
+    private var times: [(start: Double, end: Double)] = []
+    private var tick: Timer?
     @Published var voiceID: String = UserDefaults.standard.string(forKey: "narrationVoice") ?? Narrator.bestVoice()?.identifier ?? "" {
         didSet { UserDefaults.standard.set(voiceID, forKey: "narrationVoice"); restartCurrent() }
     }
@@ -65,9 +81,28 @@ final class Narrator: NSObject, ObservableObject {
 
     func load(_ items: [NarrationItem], title: String) {
         stop()
+        neural = false
+        player = nil
         self.items = items
         self.title = title
         index = 0
+    }
+
+    /// Loads a rendered narration. `pageItems` (from the reading view) supply the text of headings.
+    func loadAudio(_ audio: URL, timings: NarrationTimings, pageItems: [NarrationItem], title: String) -> Bool {
+        stop()
+        guard let p = try? AVAudioPlayer(contentsOf: audio), !timings.segments.isEmpty else { return false }
+        p.enableRate = true
+        p.delegate = self
+        p.prepareToPlay()
+        let text = Dictionary(pageItems.map { ($0.id, $0.text) }, uniquingKeysWith: { a, _ in a })
+        items = timings.segments.map { NarrationItem(id: $0.id, text: text[$0.id] ?? "", kind: $0.kind) }
+        times = timings.segments.map { ($0.start, $0.end) }
+        player = p
+        neural = true
+        self.title = title
+        index = 0
+        return true
     }
 
     func play(from i: Int? = nil) {
@@ -76,6 +111,15 @@ final class Narrator: NSObject, ObservableObject {
         playing = true
         if Narrator.active !== self { Narrator.active?.pause(); Narrator.active = self; setUpRemoteCommands() }
         activateAudio()
+        if neural, let player {
+            player.currentTime = times[index].start
+            player.rate = Float(speed)
+            player.play()
+            startTick()
+            onHighlight?(items[index].id)
+            updateNowPlaying()
+            return
+        }
         speakCurrent()
     }
 
@@ -86,6 +130,12 @@ final class Narrator: NSObject, ObservableObject {
     func toggle() {
         if playing {
             pause()
+        } else if neural, let player {
+            playing = true
+            activateAudio()
+            player.play()
+            startTick()
+            updateNowPlaying()
         } else if synth.isPaused {
             playing = true
             synth.continueSpeaking()
@@ -97,7 +147,7 @@ final class Narrator: NSObject, ObservableObject {
 
     func pause() {
         playing = false
-        synth.pauseSpeaking(at: .word)
+        if neural { player?.pause(); stopTick() } else { synth.pauseSpeaking(at: .word) }
         updateNowPlaying()
     }
 
@@ -105,6 +155,8 @@ final class Narrator: NSObject, ObservableObject {
         playing = false
         current = nil
         synth.stopSpeaking(at: .immediate)
+        player?.stop()
+        stopTick()
         if Narrator.active === self {
             Narrator.active = nil
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
@@ -124,7 +176,47 @@ final class Narrator: NSObject, ObservableObject {
         return items[...min(index, items.count - 1)].last { $0.kind == "heading" }?.text ?? ""
     }
 
-    var progress: Double { items.isEmpty ? 0 : Double(index) / Double(items.count) }
+    var progress: Double {
+        if neural, let p = player, p.duration > 0 { return p.currentTime / p.duration }
+        return items.isEmpty ? 0 : Double(index) / Double(items.count)
+    }
+
+    // MARK: Neural playback
+
+    private func startTick() {
+        stopTick()
+        tick = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.syncToPlayer() }
+        }
+    }
+
+    private func stopTick() {
+        tick?.invalidate()
+        tick = nil
+    }
+
+    /// Follows the audio: highlights the paragraph that is playing.
+    private func syncToPlayer() {
+        guard let p = player else { return }
+        let t = p.currentTime
+        var lo = 0, hi = times.count - 1
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            if times[mid].start <= t + 0.05 { lo = mid } else { hi = mid - 1 }
+        }
+        if lo != index {
+            index = lo
+            onHighlight?(items[lo].id)
+            updateNowPlaying()
+        }
+        objectWillChange.send()   // progress bar
+    }
+
+    fileprivate func audioFinished() {
+        playing = false
+        stopTick()
+        updateNowPlaying()
+    }
 
     // MARK: Speaking
 
@@ -213,8 +305,12 @@ final class Narrator: NSObject, ObservableObject {
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyArtist: currentSection.isEmpty ? "Margins" : currentSection,
-            MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyPlaybackRate: playing ? (neural ? speed : 1.0) : 0.0,
         ]
+        if neural, let p = player {
+            info[MPMediaItemPropertyPlaybackDuration] = p.duration
+            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = p.currentTime
+        }
         info[MPNowPlayingInfoPropertyPlaybackProgress] = progress
         MPNowPlayingInfoCenter.default().nowPlayingInfo = items.isEmpty ? nil : info
         #if os(macOS)
@@ -236,6 +332,12 @@ final class Narrator: NSObject, ObservableObject {
     }
 }
 
+extension Narrator: AVAudioPlayerDelegate {
+    nonisolated func audioPlayerDidFinishPlaying(_ p: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in self.audioFinished() }
+    }
+}
+
 extension Narrator: AVSpeechSynthesizerDelegate {
     nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish u: AVSpeechUtterance) {
         Task { @MainActor in self.finished(u) }
@@ -254,7 +356,10 @@ struct NarrationBar: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(narrator.currentSection.isEmpty ? "Listening" : narrator.currentSection)
                         .font(.subheadline.weight(.semibold)).lineLimit(1)
-                    Text(narrator.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    HStack(spacing: 4) {
+                        if narrator.neural { Pill(text: "Natural voice", icon: "waveform", color: .marginsTeal) }
+                        Text(narrator.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
                 }
                 Spacer(minLength: 6)
                 Button { narrator.previous() } label: { Image(systemName: "backward.fill") }
@@ -267,8 +372,10 @@ struct NarrationBar: View {
                     Picker("Speed", selection: $narrator.speed) {
                         ForEach([0.8, 1.0, 1.15, 1.3, 1.5, 1.75, 2.0], id: \.self) { Text(String(format: "%.2g×", $0)).tag($0) }
                     }
-                    Picker("Voice", selection: $narrator.voiceID) {
-                        ForEach(Narrator.voices.prefix(25), id: \.identifier) { Text(Narrator.label($0)).tag($0.identifier) }
+                    if !narrator.neural {
+                        Picker("Voice", selection: $narrator.voiceID) {
+                            ForEach(Narrator.voices.prefix(25), id: \.identifier) { Text(Narrator.label($0)).tag($0.identifier) }
+                        }
                     }
                 } label: {
                     Text(String(format: "%.2g×", narrator.speed)).font(.callout.monospacedDigit().weight(.semibold))
@@ -278,7 +385,7 @@ struct NarrationBar: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(Color.marginsTeal)
-            if !narrator.hasGoodVoice {
+            if !narrator.neural && !narrator.hasGoodVoice {
                 Text("Tip: download a Premium voice for much more natural speech (Settings › Accessibility › Spoken Content › Voices).")
                     .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
             }

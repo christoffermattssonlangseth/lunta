@@ -181,6 +181,7 @@ struct PaperTable: View {
                 HStack(spacing: 4) {
                     if p.hasEpub { Pill(text: "Read", icon: "book", color: .marginsTeal) }
                     if p.hasPdf { Pill(text: "PDF", color: .marginsCopper) }
+                    if p.hasAudio { Pill(text: "Audio", icon: "waveform", color: .purple) }
                     if p.annotationCount > 0 { Pill(text: "\(p.annotationCount)", icon: "highlighter", color: .secondary) }
                 }
             }
@@ -264,6 +265,7 @@ struct PaperMenu: View {
         Divider()
         Button("Find PDF") { Task { for id in ids { await model.findPDF(id) } } }
         Button("Make Reading View") { Task { for id in ids { await model.makeReadingView(id) }; model.reload() } }
+        Button("Make Natural Narration") { NarrationRenderer.shared.enqueue(ids.filter { model.paper($0)?.hasEpub == true }) }
         Divider()
         Button("Delete", role: .destructive) { model.delete(ids) }
     }
