@@ -19,6 +19,13 @@ struct AssistantPanel: View {
             if let why = engine.unavailableReason {
                 ContentUnavailableView("Assistant unavailable", systemImage: "apple.intelligence", description: Text(why))
                     .frame(maxHeight: .infinity)
+                    .task {
+                        // check again every few seconds; the panel switches on when the model is ready
+                        while engine.unavailableReason != nil, !Task.isCancelled {
+                            try? await Task.sleep(for: .seconds(4))
+                            engine.objectWillChange.send()
+                        }
+                    }
             } else {
                 conversation
                 Divider()

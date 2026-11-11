@@ -584,7 +584,12 @@ final class AskEngine: ObservableObject {
         case .available: return nil
         case .unavailable(.deviceNotEligible): return "This device can't run Apple Intelligence."
         case .unavailable(.appleIntelligenceNotEnabled): return "Turn on Apple Intelligence in System Settings to use the assistant."
-        case .unavailable(.modelNotReady): return "Apple Intelligence is still downloading its model. Try again in a little while."
+        case .unavailable(.modelNotReady):
+            #if os(iOS)
+            return "Apple Intelligence is still getting its model ready on this iPhone. It downloads in the background over Wi‑Fi, fastest while charging (see Settings › Apple Intelligence & Siri). This panel opens by itself as soon as it's ready."
+            #else
+            return "Apple Intelligence is still getting its model ready on this Mac (see System Settings › Apple Intelligence & Siri). This panel opens by itself as soon as it's ready."
+            #endif
         default: return "Apple's language model isn't available right now."
         }
     }
