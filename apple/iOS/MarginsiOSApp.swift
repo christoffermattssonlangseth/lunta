@@ -26,7 +26,9 @@ struct MarginsiOSApp: App {
             }
             .tint(.marginsTeal)
         }
-        .onChange(of: phase) { _, p in if p == .active { holder.model?.refresh() } }
+        .onChange(of: phase) { _, p in
+            if p == .active, let m = holder.model { m.refresh(); Task { await m.importShared() } }
+        }
     }
 }
 
@@ -52,6 +54,7 @@ final class ModelHolder: ObservableObject {
                 NSLog("Margins: core opened after %.1fs", Date().timeIntervalSince(t0))
                 model = LibraryModel(lib: m, root: url, inCloud: cloud)
                 NSLog("Margins: ready after %.1fs, %d papers", Date().timeIntervalSince(t0), model?.counts.all ?? -1)
+                if let model { Task { await model.importShared() } }
                 if ProcessInfo.processInfo.arguments.contains("-testDownload"), let model {
                     // diagnostics: fetch a few reading views from iCloud and report how long it took
                     for p in model.papers.filter(\.hasEpub).prefix(4) {
@@ -77,6 +80,38 @@ final class ModelHolder: ObservableObject {
                 NSLog("Margins: open failed: %@", error.localizedDescription)
                 self.error = error.localizedDescription
             }
+        }
+    }
+}
+
+extension LibraryModel {
+    /// Adds what was shared to Margins from other apps (PDFs and links waiting in the share inbox).
+    func importShared() async {
+        let items = ShareInbox.pending()
+        guard !items.isEmpty, !importingShared else { return }
+        importingShared = true
+        defer { importingShared = false }
+        var pdfs: [(URL, ShareInbox.Item)] = []
+        for item in items {
+            switch item.kind {
+            case .pdf(let u): pdfs.append((u, item))
+            case .link(let s):
+                await add(s)
+                ShareInbox.remove(item)
+            }
+        }
+        if !pdfs.isEmpty {
+            // copy out of the inbox first: adding may take a while and the inbox file is removed after
+            let tmp = FileManager.default.temporaryDirectory
+            var urls: [URL] = []
+            for (u, item) in pdfs {
+                let name = u.lastPathComponent.split(separator: "-", maxSplits: 2).last.map(String.init) ?? u.lastPathComponent
+                let dest = tmp.appendingPathComponent(name)
+                try? FileManager.default.removeItem(at: dest)
+                if (try? FileManager.default.copyItem(at: u, to: dest)) != nil { urls.append(dest) }
+                ShareInbox.remove(item)
+            }
+            _ = await addPDFs(urls)
         }
     }
 }

@@ -22,6 +22,7 @@ final class LibraryModel: ObservableObject {
     @Published var snippets: [String: String] = [:]
     @Published var collections: [PaperCollection] = []
     @Published var tags: [String] = []
+    var importingShared = false
     @Published var source: SidebarItem = .all { didSet { reloadList() } }
     @Published var query = "" { didSet { scheduleSearch() } }
     private var searchTask: Task<Void, Never>?
