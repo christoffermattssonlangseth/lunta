@@ -8,6 +8,8 @@ struct LibraryView: View {
     @State private var asking = false
     @State private var askPath: [String] = []
     @State private var sharing: ShareTargetIOS?
+    @State private var organizing: ShareTargetIOS?
+    @State private var prompt: NameRequest?
     @StateObject private var ask = AskEngine(scope: .library)
 
     var body: some View {
@@ -47,6 +49,8 @@ struct LibraryView: View {
                 }
                 .environmentObject(model)
             }
+            .sheet(item: $organizing) { t in OrganizeView(ids: [t.id]).environmentObject(model) }
+            .namePrompt($prompt)
             .sheet(item: $sharing) { t in
                 ScrollView { SharePanel(ids: [t.id]) }.environmentObject(model).presentationDetents([.medium, .large])
             }
@@ -69,6 +73,21 @@ struct LibraryView: View {
                     .swipeActions(edge: .trailing) {
                         Button { sharing = ShareTargetIOS(id: p.id) } label: { Label("Share", systemImage: "square.and.arrow.up") }
                             .tint(.blue)
+                        Button { organizing = ShareTargetIOS(id: p.id) } label: { Label("Folders & Tags", systemImage: "folder") }
+                            .tint(.marginsTeal)
+                    }
+                    .contextMenu {
+                        Button("Folders & Tags…", systemImage: "folder") { organizing = ShareTargetIOS(id: p.id) }
+                        FolderMenu(ids: [p.id]) {
+                            prompt = NameRequest(title: "New Folder", action: "Create") { model.newFolder($0, with: [p.id]) }
+                        }
+                        TagMenu(ids: [p.id]) {
+                            prompt = NameRequest(title: "New Tag", action: "Add") { model.setTag([p.id], $0, true) }
+                        }
+                        if case .collection(let cid) = model.source {
+                            Button("Remove from This Folder", systemImage: "folder.badge.minus") { model.setMembership([p.id], collection: cid, false) }
+                        }
+                        Button("Share…", systemImage: "square.and.arrow.up") { sharing = ShareTargetIOS(id: p.id) }
                     }
                     .swipeActions(edge: .leading) {
                         Button { model.toggleStar(p) } label: { Label(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") }
@@ -101,6 +120,7 @@ struct LibraryView: View {
 
 struct SourceMenu: View {
     @EnvironmentObject var model: LibraryModel
+    @State private var managing = false
     var body: some View {
         Menu {
             Picker("Show", selection: $model.source) {
@@ -110,8 +130,14 @@ struct SourceMenu: View {
                 Label("Discover New Papers", systemImage: "globe.europe.africa").tag(SidebarItem.discover)
             }
             if !model.collections.isEmpty {
-                Picker("Collections", selection: $model.source) {
-                    ForEach(model.collections) { c in Label(c.name, systemImage: "folder").tag(SidebarItem.collection(c.id)) }
+                Menu("Folders") {
+                    Picker("Folders", selection: $model.source) {
+                        ForEach(model.foldersFlat, id: \.folder.id) { item in
+                            Label(String(repeating: "    ", count: item.depth) + item.folder.name,
+                                  systemImage: item.depth == 0 ? "folder" : "folder.fill")
+                                .tag(SidebarItem.collection(item.folder.id))
+                        }
+                    }
                 }
             }
             if !model.tags.isEmpty {
@@ -121,6 +147,7 @@ struct SourceMenu: View {
                     }
                 }
             }
+            Button("Manage Folders & Tags…", systemImage: "folder.badge.gearshape") { managing = true }
             Divider()
             Picker("Sort", selection: $model.sort) {
                 Text("Recently added").tag(SortKey.added)
@@ -131,6 +158,7 @@ struct SourceMenu: View {
         } label: {
             Image(systemName: "line.3.horizontal.decrease.circle")
         }
+        .sheet(isPresented: $managing) { ManageFoldersView().environmentObject(model) }
     }
 }
 

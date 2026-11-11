@@ -8,7 +8,6 @@ struct LibraryWindow: View {
     @State private var selection = Set<String>()
     @State private var discoverSelection: String?
     @State private var addingPaper = false
-    @State private var newCollection = false
     @State private var asking = false
     @State private var dropping = false
     @State private var editing: EditTarget?
@@ -16,7 +15,7 @@ struct LibraryWindow: View {
 
     var body: some View {
         NavigationSplitView {
-            Sidebar(newCollection: $newCollection)
+            Sidebar()
                 .navigationSplitViewColumnWidth(min: 180, ideal: 210)
         } content: {
             Group {
@@ -107,7 +106,6 @@ struct LibraryWindow: View {
         .alert("Margins", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK") { model.errorMessage = nil }
         } message: { Text(model.errorMessage ?? "") }
-        .alert("New Collection", isPresented: $newCollection) { NewCollectionField() }
         .tint(.marginsTeal)
     }
 
@@ -140,21 +138,13 @@ struct LibraryWindow: View {
     }
 }
 
-struct NewCollectionField: View {
-    @EnvironmentObject var model: LibraryModel
-    @State private var name = ""
-    var body: some View {
-        TextField("Name", text: $name)
-        Button("Create") { model.newCollection(name) }
-        Button("Cancel", role: .cancel) {}
-    }
-}
 
 // MARK: - Sidebar
 
 struct Sidebar: View {
     @EnvironmentObject var model: LibraryModel
-    @Binding var newCollection: Bool
+    @State private var prompt: NameRequest?
+    @State private var deleting: PaperCollection?
 
     var body: some View {
         List(selection: Binding(get: { model.source }, set: { model.source = $0 ?? .all })) {
@@ -167,30 +157,98 @@ struct Sidebar: View {
                 Label("Discover New Papers", systemImage: "globe.europe.africa").tag(SidebarItem.discover)
             }
             Section {
-                ForEach(model.collections) { c in
-                    Label(c.name, systemImage: "folder").badge(Int(c.paperCount)).tag(SidebarItem.collection(c.id))
-                        .contextMenu {
-                            Button("Delete Collection", role: .destructive) {
-                                try? model.lib.deleteCollection(id: c.id); model.reload()
-                            }
-                        }
+                if model.collections.isEmpty {
+                    Button { newFolder(parent: nil) } label: {
+                        Label("New Folder…", systemImage: "folder.badge.plus").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Make a folder, then drag papers onto it")
+                }
+                OutlineGroup(model.folderTree, children: \.children) { node in
+                    folderRow(node.folder)
+                }
+                .dropDestination(for: String.self) { items, _ in
+                    // dropped on the section, not a folder: folders go to the top level
+                    let folders = items.filter { $0.hasPrefix(LibraryModel.folderDragPrefix) }
+                    for f in folders { model.moveFolder(String(f.dropFirst(LibraryModel.folderDragPrefix.count)), into: nil) }
+                    return !folders.isEmpty
                 }
             } header: {
                 HStack {
-                    Text("Collections")
+                    Text("Folders")
                     Spacer()
-                    Button { newCollection = true } label: { Image(systemName: "plus") }.buttonStyle(.borderless)
+                    Button { newFolder(parent: nil) } label: { Image(systemName: "plus") }
+                        .buttonStyle(.borderless).help("New Folder")
                 }
             }
             if !model.tags.isEmpty {
                 Section("Tags") {
                     ForEach(model.tags, id: \.self) { t in
                         Label(t, systemImage: "tag").tag(SidebarItem.tag(t))
+                            .dropDestination(for: String.self) { items, _ in
+                                let ids = items.filter { !$0.hasPrefix(LibraryModel.folderDragPrefix) }
+                                model.setTag(ids, t, true)
+                                return !ids.isEmpty
+                            }
+                            .contextMenu {
+                                Button("Rename Tag…") {
+                                    prompt = NameRequest(title: "Rename Tag", initial: t) { model.renameTag(t, $0) }
+                                }
+                                Button("Remove Tag from All Papers", role: .destructive) { model.deleteTag(t) }
+                            }
                     }
                 }
             }
         }
         .listStyle(.sidebar)
+        .namePrompt($prompt)
+        .confirmationDialog("Delete “\(deleting?.name ?? "")”?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            Button("Delete Folder", role: .destructive) { if let f = deleting { model.deleteFolder(f.id) }; deleting = nil }
+        } message: { Text("Its subfolders are deleted too. The papers stay in your library.") }
+        .onReceive(NotificationCenter.default.publisher(for: .marginsNewFolder)) { n in
+            let ids = n.object as? [String] ?? []
+            prompt = NameRequest(title: ids.isEmpty ? "New Folder" : "New Folder with \(ids.count) Paper\(ids.count == 1 ? "" : "s")", action: "Create") {
+                model.newFolder($0, with: ids)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .marginsNewTag)) { n in
+            let ids = n.object as? [String] ?? []
+            prompt = NameRequest(title: "New Tag", message: "Added to \(ids.count) paper\(ids.count == 1 ? "" : "s").", action: "Add") {
+                model.setTag(ids, $0, true)
+            }
+        }
+    }
+
+    private func folderRow(_ c: PaperCollection) -> some View {
+        Label(c.name, systemImage: "folder").badge(Int(c.paperCount)).tag(SidebarItem.collection(c.id))
+            .draggable(LibraryModel.folderDragPrefix + c.id)
+            .dropDestination(for: String.self) { items, _ in
+                var handled = false
+                for item in items where item.hasPrefix(LibraryModel.folderDragPrefix) {
+                    let f = String(item.dropFirst(LibraryModel.folderDragPrefix.count))
+                    if f != c.id { model.moveFolder(f, into: c.id); handled = true }
+                }
+                let ids = items.filter { !$0.hasPrefix(LibraryModel.folderDragPrefix) }
+                if !ids.isEmpty { model.setMembership(ids, collection: c.id, true); handled = true }
+                return handled
+            }
+            .contextMenu {
+                Button("New Subfolder…") { newFolder(parent: c) }
+                Button("Rename…") {
+                    prompt = NameRequest(title: "Rename Folder", initial: c.name) { model.renameFolder(c.id, $0) }
+                }
+                if c.parent != nil {
+                    Button("Move to Top Level") { model.moveFolder(c.id, into: nil) }
+                }
+                Divider()
+                Button("Delete Folder…", role: .destructive) { deleting = c }
+            }
+    }
+
+    private func newFolder(parent: PaperCollection?) {
+        prompt = NameRequest(title: parent.map { "New Folder inside “\($0.name)”" } ?? "New Folder", action: "Create") {
+            model.newFolder($0, parent: parent?.id)
+        }
     }
 }
 
@@ -202,7 +260,7 @@ struct PaperTable: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Table(model.papers, selection: $selection) {
+        Table(of: Paper.self, selection: $selection) {
             TableColumn("") { p in
                 Group {
                     if p.starred {
@@ -240,6 +298,8 @@ struct PaperTable: View {
                 }
             }
             .width(min: 60, ideal: 110)
+        } rows: {
+            ForEach(model.papers) { p in TableRow(p).draggable(p.id) }
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
         .safeAreaInset(edge: .bottom) {
@@ -311,14 +371,16 @@ struct PaperMenu: View {
             Button("Share \(ids.count) Papers…") { NotificationCenter.default.post(name: .marginsSharePapers, object: ids) }
             Button("Copy BibTeX") { copyToPasteboard(model.bibtex(ids)) }
         }
-        if !model.collections.isEmpty {
-            Menu("Add to Collection") {
-                ForEach(model.collections) { c in Button(c.name) { model.setMembership(ids, collection: c.id, true) } }
-            }
-        }
+        Divider()
+        FolderMenu(ids: ids) { NotificationCenter.default.post(name: .marginsNewFolder, object: ids) }
         if case .collection(let cid) = model.source {
-            Button("Remove from Collection") { model.setMembership(ids, collection: cid, false) }
+            Button("Remove from “\(model.collections.first { $0.id == cid }?.name ?? "Folder")”") { model.setMembership(ids, collection: cid, false) }
         }
+        TagMenu(ids: ids) { NotificationCenter.default.post(name: .marginsNewTag, object: ids) }
+        if case .tag(let t) = model.source {
+            Button("Remove Tag “\(t)”") { model.setTag(ids, t, false) }
+        }
+        Button("Folders & Tags…") { NotificationCenter.default.post(name: .marginsOrganize, object: ids) }
         Divider()
         Button("Find PDF") { Task { for id in ids { await model.findPDF(id) } } }
         Button("Make Reading View") { Task { for id in ids { await model.makeReadingView(id) }; model.reload() } }
@@ -374,7 +436,8 @@ struct PaperDetail: View {
                         Text(paper.meta.abstractText).textSelection(.enabled).lineSpacing(4)
                     }
                 }
-                Card(title: "Tags") {
+                Card(title: "Folders & Tags") {
+                    PaperFolders(paper: paper)
                     FlowTags(paper: paper, newTag: $newTag)
                 }
                 Card(title: "Identifiers") { LinksRow(meta: paper.meta) }
@@ -648,6 +711,9 @@ struct ShareTarget: Identifiable { let id = UUID(); let ids: [String] }
 extension Notification.Name {
     static let marginsEditPaper = Notification.Name("marginsEditPaper")
     static let marginsSharePapers = Notification.Name("marginsSharePapers")
+    static let marginsOrganize = Notification.Name("marginsOrganize")
+    static let marginsNewFolder = Notification.Name("marginsNewFolder")
+    static let marginsNewTag = Notification.Name("marginsNewTag")
 }
 
 /// Shown while PDFs are dragged over the library window.
@@ -678,6 +744,7 @@ struct DropHint: View {
 struct EditSheet: ViewModifier {
     @Binding var editing: EditTarget?
     @State private var sharing: ShareTarget?
+    @State private var organizing: ShareTarget?
     func body(content: Content) -> some View {
         content
             .sheet(item: $editing) { t in MetadataEditor(paperID: t.id) }
@@ -686,6 +753,10 @@ struct EditSheet: ViewModifier {
                     SharePanel(ids: t.ids)
                     HStack { Spacer(); Button("Done") { sharing = nil }.keyboardShortcut(.defaultAction) }.padding([.horizontal, .bottom], 16)
                 }
+            }
+            .sheet(item: $organizing) { t in OrganizeView(ids: t.ids) }
+            .onReceive(NotificationCenter.default.publisher(for: .marginsOrganize)) { n in
+                if let ids = n.object as? [String], !ids.isEmpty { organizing = ShareTarget(ids: ids) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .marginsSharePapers)) { n in
                 if let ids = n.object as? [String], !ids.isEmpty { sharing = ShareTarget(ids: ids) }

@@ -323,3 +323,18 @@ fn discovers_papers_on_openalex() {
     assert!(hits.iter().any(|h| !h.meta.abstract_text.is_empty() && !h.meta.authors.is_empty()));
     for h in hits.iter().take(5) { println!("{} | {} | {} | cited {}", h.meta.title, h.meta.journal, h.meta.date, h.cited_by); }
 }
+
+#[test]
+fn folders_nest_and_refuse_cycles() {
+    let root = tmp().join("lib");
+    let lib = open(&root, "mac");
+    let a = lib.create_collection("Thesis".into(), None).unwrap();
+    let b = lib.create_collection("Chapter 1".into(), None).unwrap();
+    lib.move_collection(b.id.clone(), Some(a.id.clone())).unwrap();
+    let cols = lib.collections();
+    assert_eq!(cols.iter().find(|c| c.id == b.id).unwrap().parent.as_deref(), Some(a.id.as_str()));
+    assert!(lib.move_collection(a.id.clone(), Some(b.id.clone())).is_err());
+    assert!(lib.move_collection(a.id.clone(), Some(a.id.clone())).is_err());
+    lib.move_collection(b.id.clone(), None).unwrap();
+    assert!(lib.collections().iter().all(|c| c.parent.is_none()));
+}

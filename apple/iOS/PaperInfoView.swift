@@ -32,6 +32,12 @@ struct PaperInfoView: View {
                     if !p.meta.abstractText.isEmpty {
                         Card(title: "Abstract") { Text(p.meta.abstractText).font(.callout).lineSpacing(3).textSelection(.enabled) }
                     }
+                    Card(title: "Folders & Tags") {
+                        PaperFolders(paper: p)
+                        if !p.tags.isEmpty {
+                            TagChips(tags: p.tags.sorted()) { _ in true } toggle: { t, on in model.setTag([p.id], t, on) }
+                        }
+                    }
                     Card(title: "Cite") {
                         HStack {
                             ForEach([("APA", CitationStyle.apa), ("Vancouver", .vancouver), ("Nature", .nature)], id: \.0) { name, style in

@@ -330,6 +330,24 @@ impl Library {
         self.op(OpKind::CollectionUpsert { id, name, parent })
     }
 
+    /// Moves a collection under another one (None = top level). Refuses to move it into itself
+    /// or one of its own subcollections.
+    pub fn move_collection(&self, id: String, parent: Option<String>) -> Result<()> {
+        let name = {
+            let g = self.inner.lock().unwrap();
+            let name = g.state.collections.get(&id).ok_or(CoreError::NotFound(id.clone()))?.0.clone();
+            let mut cur = parent.clone();
+            while let Some(c) = cur {
+                if c == id {
+                    return Err(CoreError::Invalid("a folder can't go inside itself".into()));
+                }
+                cur = g.state.collections.get(&c).and_then(|x| x.1.clone());
+            }
+            name
+        };
+        self.op(OpKind::CollectionUpsert { id, name, parent })
+    }
+
     pub fn delete_collection(&self, id: String) -> Result<()> {
         self.op(OpKind::CollectionDelete { id })
     }
