@@ -9,8 +9,7 @@ highlight and annotate, search everything, and export citations.</p>
 
 ---
 
-A reference manager for Mac and iPhone: collect papers, read them comfortably on the phone,
-highlight and annotate, search everything, and export citations. The library syncs through iCloud Drive.
+The library syncs between your Mac and iPhone through iCloud Drive.
 
 ## Architecture
 
