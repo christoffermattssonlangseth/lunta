@@ -152,6 +152,27 @@ final class LibraryModel: ObservableObject {
         }
     }
 
+    /// Picks up changes written by agents (margins-mcp) or synced from other devices while the app is open:
+    /// checks the change logs' sizes every few seconds and reloads only when one grew.
+    func watchForOutsideChanges() {
+        let ops = libraryURL.appendingPathComponent("ops")
+        var last: [String: Int] = [:]
+        Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            var now: [String: Int] = [:]
+            for f in (try? FileManager.default.contentsOfDirectory(at: ops, includingPropertiesForKeys: [.fileSizeKey])) ?? [] {
+                now[f.lastPathComponent] = (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            }
+            guard now != last else { return }
+            let first = last.isEmpty
+            last = now
+            if !first { Task { @MainActor in self?.refreshFromDisk() } }
+        }
+    }
+
+    private func refreshFromDisk() {
+        if (try? lib.refresh()) == true { reload() }
+    }
+
     func refresh() {
         downloadSmallFiles()
         if (try? lib.refresh()) == true { reload() }

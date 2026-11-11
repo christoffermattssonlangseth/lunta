@@ -40,6 +40,9 @@ struct MarginsApp: App {
 
         .handlesExternalEvents(matching: ["library"])
 
+        Window("Connect AI Agents", id: "agents") { AgentConnectView().tint(.marginsTeal) }
+            .windowResizability(.contentSize)
+
         WindowGroup("Reader", for: String.self) { $paperID in
             if let model = holder.model, let id = paperID {
                 ReaderWindow(paperID: id).environmentObject(model)
@@ -68,6 +71,7 @@ final class ModelHolder: ObservableObject {
         if let model {
             server = ExtensionServer(model: model)
             server?.start()
+            model.watchForOutsideChanges()
             NarrationRenderer.shared.model = model
         }
         // scripting hook: `Margins -import <file.bib|.ris> [-pdfs <folder>]`
@@ -103,8 +107,12 @@ final class ModelHolder: ObservableObject {
 
 struct MarginsCommands: Commands {
     let model: LibraryModel?
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        CommandGroup(after: .appSettings) {
+            Button("Connect AI Agents…") { openWindow(id: "agents") }
+        }
         CommandGroup(after: .newItem) {
             Button("Add Paper…") { NotificationCenter.default.post(name: .marginsAddPaper, object: nil) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])

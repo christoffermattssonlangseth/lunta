@@ -304,9 +304,11 @@ struct PaperMenu: View {
             Button(p.starred ? "Unstar" : "Star") { model.toggleStar(p) }
             Button(p.read ? "Mark as Unread" : "Mark as Read") { model.setRead(p, !p.read) }
             Button("Edit Details…") { NotificationCenter.default.post(name: .marginsEditPaper, object: id) }
+            Button("Share…") { NotificationCenter.default.post(name: .marginsSharePapers, object: ids) }
             Divider()
             CiteMenu(ids: ids)
         } else {
+            Button("Share \(ids.count) Papers…") { NotificationCenter.default.post(name: .marginsSharePapers, object: ids) }
             Button("Copy BibTeX") { copyToPasteboard(model.bibtex(ids)) }
         }
         if !model.collections.isEmpty {
@@ -359,6 +361,7 @@ struct PaperDetail: View {
     @State private var busy: String?
     @State private var newTag = ""
     @State private var note: String?
+    @State private var sharing = false
 
     var body: some View {
         ScrollView {
@@ -388,6 +391,9 @@ struct PaperDetail: View {
                 if !paper.meta.journal.isEmpty { Pill(text: paper.meta.journal, color: .marginsTeal) }
                 if !paper.meta.year.isEmpty { Pill(text: paper.meta.year, color: .secondary) }
                 Spacer()
+                Button { sharing = true } label: { Image(systemName: "square.and.arrow.up") }
+                    .buttonStyle(.borderless).help("Share the PDF, reading view, citation or link")
+                    .popover(isPresented: $sharing, arrowEdge: .bottom) { SharePanel(ids: [paper.id]) }
                 Button { NotificationCenter.default.post(name: .marginsEditPaper, object: paper.id) } label: { Image(systemName: "pencil") }
                     .buttonStyle(.borderless).help("Edit title, authors and other details (⌘E)")
                     .keyboardShortcut("e", modifiers: .command)
@@ -494,9 +500,10 @@ struct MultiSelection: View {
     var body: some View {
         VStack(spacing: 12) {
             Text("\(ids.count) papers selected").font(.title3)
-            Button("Copy BibTeX") { copyToPasteboard(model.bibtex(ids)) }
             Button("Find PDFs") { Task { for id in ids { await model.findPDF(id) } } }
             Button("Make Reading Views") { Task { for id in ids { await model.makeReadingView(id) }; model.reload() } }
+            SharePanel(ids: ids).id(ids)
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -636,9 +643,11 @@ struct DiscoverList: View {
 }
 
 struct EditTarget: Identifiable { let id: String }
+struct ShareTarget: Identifiable { let id = UUID(); let ids: [String] }
 
 extension Notification.Name {
     static let marginsEditPaper = Notification.Name("marginsEditPaper")
+    static let marginsSharePapers = Notification.Name("marginsSharePapers")
 }
 
 /// Shown while PDFs are dragged over the library window.
@@ -668,9 +677,19 @@ struct DropHint: View {
 /// Presents the details editor when a paper asks to be edited.
 struct EditSheet: ViewModifier {
     @Binding var editing: EditTarget?
+    @State private var sharing: ShareTarget?
     func body(content: Content) -> some View {
         content
             .sheet(item: $editing) { t in MetadataEditor(paperID: t.id) }
+            .sheet(item: $sharing) { t in
+                VStack(spacing: 0) {
+                    SharePanel(ids: t.ids)
+                    HStack { Spacer(); Button("Done") { sharing = nil }.keyboardShortcut(.defaultAction) }.padding([.horizontal, .bottom], 16)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .marginsSharePapers)) { n in
+                if let ids = n.object as? [String], !ids.isEmpty { sharing = ShareTarget(ids: ids) }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .marginsEditPaper)) { n in
                 if let id = n.object as? String { editing = EditTarget(id: id) }
             }

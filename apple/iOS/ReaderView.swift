@@ -16,6 +16,7 @@ struct ReaderView: View {
     @State private var showInfo = false
     @AppStorage("readerFontScale") private var fontScale = 1.0
     @State private var figure: ReaderFigure?
+    @State private var sharing = false
     @State private var current: String?
     @State private var scrollRequest = ScrollRequest()
     @StateObject private var narrator = Narrator()
@@ -72,6 +73,7 @@ struct ReaderView: View {
                         }
                     } label: { Image(systemName: "textformat.size") }
                 }
+                Button { sharing = true } label: { Image(systemName: "square.and.arrow.up") }
                 Button { showInfo = true } label: { Image(systemName: "info.circle") }
             }
         }
@@ -89,6 +91,9 @@ struct ReaderView: View {
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         }
         .fullScreenCover(item: $figure) { f in FigureViewer(figure: f) }
+        .sheet(isPresented: $sharing) {
+            ScrollView { SharePanel(ids: [paperID]) }.environmentObject(model).presentationDetents([.medium, .large])
+        }
         .sheet(isPresented: $showInfo) { NavigationStack { PaperInfoView(paperID: paperID, embedded: false) } }
         .onChange(of: mode) { _, m in if m == .pdf, pdfURL == nil { Task { await loadPDF() } } }
         .task {

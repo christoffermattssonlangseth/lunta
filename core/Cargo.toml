@@ -13,6 +13,10 @@ crate-type = ["lib", "staticlib", "cdylib"]
 name = "uniffi-bindgen"
 path = "src/bin/uniffi-bindgen.rs"
 
+[[bin]]
+name = "margins-mcp"
+path = "src/bin/margins-mcp.rs"
+
 [dependencies]
 uniffi = { version = "0.32", features = ["cli"] }
 rusqlite = { version = "0.42", features = ["bundled"] }

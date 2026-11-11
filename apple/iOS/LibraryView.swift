@@ -7,6 +7,7 @@ struct LibraryView: View {
     @State private var input = ""
     @State private var asking = false
     @State private var askPath: [String] = []
+    @State private var sharing: ShareTargetIOS?
     @StateObject private var ask = AskEngine(scope: .library)
 
     var body: some View {
@@ -46,6 +47,9 @@ struct LibraryView: View {
                 }
                 .environmentObject(model)
             }
+            .sheet(item: $sharing) { t in
+                ScrollView { SharePanel(ids: [t.id]) }.environmentObject(model).presentationDetents([.medium, .large])
+            }
             .alert("Add Paper", isPresented: $adding) {
                 TextField("DOI, link or PMCID", text: $input)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -62,6 +66,10 @@ struct LibraryView: View {
             List {
               ForEach(model.papers) { p in
                 NavigationLink(value: p.id) { PaperRow(paper: p, snippet: model.snippets[p.id]) }
+                    .swipeActions(edge: .trailing) {
+                        Button { sharing = ShareTargetIOS(id: p.id) } label: { Label("Share", systemImage: "square.and.arrow.up") }
+                            .tint(.blue)
+                    }
                     .swipeActions(edge: .leading) {
                         Button { model.toggleStar(p) } label: { Label(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") }
                             .tint(.marginsCopper)
@@ -187,3 +195,5 @@ struct DiscoverListIOS: View {
         .background(Color.marginsTeal.opacity(0.05))
     }
 }
+
+struct ShareTargetIOS: Identifiable { let id: String }

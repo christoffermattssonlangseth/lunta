@@ -12,6 +12,7 @@ struct PaperInfoView: View {
     @State private var note: String?
     @State private var copied = false
     @State private var editing = false
+    @State private var sharing = false
 
     var body: some View {
         if let p = model.paper(paperID) {
@@ -60,8 +61,14 @@ struct PaperInfoView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { editing = true } label: { Image(systemName: "pencil") }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { sharing = true } label: { Image(systemName: "square.and.arrow.up") }
+                }
             }
             .sheet(isPresented: $editing) { MetadataEditor(paperID: paperID).environmentObject(model) }
+            .sheet(isPresented: $sharing) {
+                ScrollView { SharePanel(ids: [paperID]) }.environmentObject(model).presentationDetents([.medium, .large])
+            }
         }
     }
 

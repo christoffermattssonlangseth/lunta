@@ -54,6 +54,31 @@ notes store the quoted text with a little context (`quote`, `prefix`, `suffix`) 
 position, so a highlight made in the reading view on the phone shows up on the Mac in the reading
 view, and can be matched in the PDF too.
 
+## AI agents (MCP)
+
+Margins ships an [MCP](https://modelcontextprotocol.io) server, `margins-mcp`, inside the Mac app, so AI agents can work with
+your library: Claude Code, Claude Desktop, Cursor or any MCP client. Connect one with **Margins › Connect AI Agents…**, or by hand:
+
+```sh
+claude mcp add --scope user margins -- /Applications/Margins.app/Contents/MacOS/margins-mcp
+```
+
+Tools: `search_papers`, `list_papers`, `get_paper`, `read_paper` (full text, or the passages matching a query), `cite`
+(APA, Vancouver, Nature, BibTeX, RIS), `library_overview`, `find_new_papers` (OpenAlex), `add_paper`, `find_pdf`,
+`tag_papers`, `add_to_collection`, `set_status`, `add_note`, `update_paper`.
+
+The agent writes through its own change log (`ops/agent-….jsonl`), exactly like another device, so it can work while the
+apps are open and its changes sync to the Mac and iPhone. The same binary is a command-line tool:
+
+```sh
+margins search csf lactate
+margins read <id> "how many patients"
+margins cite <id> <id> --style vancouver
+margins path <id> pdf
+```
+
+Inside the apps, **Ask** (✨) runs a small agent on Apple's on-device model with the same kind of tools.
+
 ## Build
 
 ```sh
