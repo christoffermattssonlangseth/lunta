@@ -17,7 +17,8 @@ The library syncs between your Mac and iPhone through iCloud Drive.
   from Safari, Mail or Files); metadata looked up from Crossref, Europe PMC, arXiv and OpenAlex, or read
   from the PDF's first page on-device; edit any field. Import from ReadCube Papers, BibTeX and RIS.
 - **Organise:** folders with subfolders (drag papers and folders in the Mac sidebar), tags, stars,
-  read/unread. Folders & Tags is one tap away on iPhone (swipe, long-press, or the reader's ⋯ menu).
+  read/unread. **Smart folders** fill themselves from rules (words, tag, folder, year range, recently
+  added, unread/starred, PDF or not, highlighted). Folders & Tags is one tap away on iPhone (swipe, long-press, or the reader's ⋯ menu).
 - **Read:** a reflowable reading view made from the paper (large type on iPhone, zoomable figures, wide
   tables scroll in place) next to the original PDF. **Highlights and notes** in four colours; the
   **reading position syncs**, so a paper opens where you stopped on the other device.
@@ -62,6 +63,7 @@ scripts/build-core.sh  builds the Rust core for iOS, the simulator and macOS →
 <library>/papers/<id>/fulltext.txt  plain text for search
 <library>/ops/<device-id>.jsonl     append-only change log, one per device
 <library>/positions/<device>.json   last reading position per paper (changes often, so not in the log)
+<library>/smart-folders.json        smart folder rules
 ```
 
 Blobs are written once. Every change (metadata, read/starred, tags, collections, highlights and
@@ -154,8 +156,8 @@ must be running; the extension talks to it on `127.0.0.1:47480` (extension reque
 5. ✅ Highlights and notes, synced reading position
 6. ✅ Ask (on-device assistant) and MCP server for agents
 7. ✅ Citation add-ins: Word and Google Docs
-8. ✅ Duplicate and metadata cleanup
-9. Smart folders, new-paper alerts, arXiv HTML reading views
+8. ✅ Duplicate and metadata cleanup, smart folders
+9. new-paper alerts, arXiv HTML reading views
 
 ## License
 

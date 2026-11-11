@@ -122,6 +122,8 @@ struct SourceMenu: View {
     @EnvironmentObject var model: LibraryModel
     @State private var managing = false
     @State private var cleaning = false
+    @State private var newSmart = false
+    @State private var editingSmart: SmartFolder?
     var body: some View {
         Menu {
             Picker("Show", selection: $model.source) {
@@ -139,6 +141,18 @@ struct SourceMenu: View {
                                 .tag(SidebarItem.collection(item.folder.id))
                         }
                     }
+                }
+            }
+            Menu("Smart Folders") {
+                if !model.smartFolders.isEmpty {
+                    Picker("Smart Folders", selection: $model.source) {
+                        ForEach(model.smartFolders) { f in Label(f.name, systemImage: "gearshape.2").tag(SidebarItem.smart(f.id)) }
+                    }
+                }
+                Button("New Smart Folder…", systemImage: "plus") { newSmart = true }
+                if case .smart(let id) = model.source, let f = model.smartFolder(id) {
+                    Button("Edit “\(f.name)”…", systemImage: "slider.horizontal.3") { editingSmart = f }
+                    Button("Delete “\(f.name)”", systemImage: "trash", role: .destructive) { model.deleteSmartFolder(id) }
                 }
             }
             if !model.tags.isEmpty {
@@ -161,6 +175,8 @@ struct SourceMenu: View {
             Image(systemName: "line.3.horizontal.decrease.circle")
         }
         .sheet(isPresented: $managing) { ManageFoldersView().environmentObject(model) }
+        .sheet(isPresented: $newSmart) { SmartFolderEditor(folder: SmartFolder(), isNew: true).environmentObject(model) }
+        .sheet(item: $editingSmart) { f in SmartFolderEditor(folder: f).environmentObject(model) }
         .sheet(isPresented: $cleaning) {
             NavigationStack {
                 CleanupView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { cleaning = false } } }

@@ -121,6 +121,7 @@ struct AssistantPanel: View {
         switch model.source {
         case .collection(let id): return (model.collections.first { $0.id == id }?.name ?? "Folder", model.papers.map(\.id))
         case .tag(let t): return ("#\(t)", model.papers.map(\.id))
+        case .smart(let id): return (model.smartFolder(id)?.name ?? "Smart Folder", model.papers.map(\.id))
         default: return nil
         }
     }

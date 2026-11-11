@@ -11,6 +11,7 @@ enum SidebarItem: Hashable {
     case discover
     case collection(String)
     case tag(String)
+    case smart(String)
 }
 
 /// App state shared by the Mac and iPhone apps: wraps the Rust `Library` and runs slow work
@@ -22,6 +23,7 @@ final class LibraryModel: ObservableObject {
     @Published var snippets: [String: String] = [:]
     @Published var collections: [PaperCollection] = []
     @Published var tags: [String] = []
+    @Published var smartFolders: [SmartFolder] = []
     var importingShared = false
     @Published var source: SidebarItem = .all { didSet { reloadList() } }
     @Published var query = "" { didSet { scheduleSearch() } }
@@ -88,6 +90,7 @@ final class LibraryModel: ObservableObject {
         reloadList()
         collections = lib.collections()
         tags = lib.tags()
+        loadSmartFolders()
         let every = lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
         counts = (every.count, every.filter(\.starred).count, every.filter { !$0.read }.count)
     }
@@ -110,6 +113,15 @@ final class LibraryModel: ObservableObject {
         let q = query.trimmingCharacters(in: .whitespaces)
         let lib = self.lib
         let sort = self.sort
+        if case .smart(let sid) = source, let sf = smartFolder(sid) {
+            let all = sf.papers(lib, sort: sort)
+            if q.isEmpty { papers = all; snippets = [:]; return }
+            let allowed = Set(all.map(\.id))
+            let hits = ((try? lib.search(query: q, limit: 300)) ?? []).filter { allowed.contains($0.paper.id) }
+            papers = hits.map(\.paper)
+            snippets = Dictionary(hits.map { ($0.paper.id, $0.snippet) }, uniquingKeysWith: { a, _ in a })
+            return
+        }
         if q.isEmpty {
             papers = lib.papers(filter: filter, sort: sort)
             snippets = [:]
@@ -138,6 +150,7 @@ final class LibraryModel: ObservableObject {
         case .discover: break
         case .collection(let id): filter.collection = id
         case .tag(let t): filter.tag = t
+        case .smart: break
         }
         return filter
     }
@@ -150,6 +163,7 @@ final class LibraryModel: ObservableObject {
         case .discover: return "Discover"
         case .collection(let id): return collections.first { $0.id == id }?.name ?? "Collection"
         case .tag(let t): return "#\(t)"
+        case .smart(let id): return smartFolder(id)?.name ?? "Smart Folder"
         }
     }
 

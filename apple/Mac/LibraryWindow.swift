@@ -158,6 +158,8 @@ struct Sidebar: View {
     @EnvironmentObject var model: LibraryModel
     @State private var prompt: NameRequest?
     @State private var deleting: PaperCollection?
+    @State private var editingSmart: SmartFolder?
+    @State private var newSmart = false
 
     var body: some View {
         List(selection: Binding(get: { model.source }, set: { model.source = $0 ?? .all })) {
@@ -194,6 +196,23 @@ struct Sidebar: View {
                         .buttonStyle(.borderless).help("New Folder")
                 }
             }
+            Section {
+                ForEach(model.smartFolders) { f in
+                    Label(f.name, systemImage: "gearshape.2").tag(SidebarItem.smart(f.id))
+                        .help(f.summary)
+                        .contextMenu {
+                            Button("Edit Smart Folder…") { editingSmart = f }
+                            Button("Delete Smart Folder", role: .destructive) { model.deleteSmartFolder(f.id) }
+                        }
+                }
+            } header: {
+                HStack {
+                    Text("Smart Folders")
+                    Spacer()
+                    Button { newSmart = true } label: { Image(systemName: "plus") }
+                        .buttonStyle(.borderless).help("New Smart Folder")
+                }
+            }
             if !model.tags.isEmpty {
                 Section("Tags") {
                     ForEach(model.tags, id: \.self) { t in
@@ -215,6 +234,8 @@ struct Sidebar: View {
         }
         .listStyle(.sidebar)
         .namePrompt($prompt)
+        .sheet(item: $editingSmart) { f in SmartFolderEditor(folder: f).environmentObject(model) }
+        .sheet(isPresented: $newSmart) { SmartFolderEditor(folder: SmartFolder(), isNew: true).environmentObject(model) }
         .confirmationDialog("Delete “\(deleting?.name ?? "")”?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button("Delete Folder", role: .destructive) { if let f = deleting { model.deleteFolder(f.id) }; deleting = nil }
         } message: { Text("Its subfolders are deleted too. The papers stay in your library.") }
