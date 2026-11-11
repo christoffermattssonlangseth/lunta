@@ -121,6 +121,14 @@ impl FileKind {
 }
 
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FileStatus {
+    Missing,
+    /// In iCloud but not downloaded to this device yet.
+    InCloud,
+    Local,
+}
+
+#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CitationStyle {
     Apa,
     Vancouver,

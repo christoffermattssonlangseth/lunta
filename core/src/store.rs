@@ -173,6 +173,12 @@ impl Store {
         self.paper_dir(id).join(kind.file_name())
     }
 
+    /// True if the file exists on this device or as an iCloud placeholder (".name.icloud").
+    pub fn has_file(&self, id: &str, kind: FileKind) -> bool {
+        let dir = self.paper_dir(id);
+        dir.join(kind.file_name()).exists() || dir.join(format!(".{}.icloud", kind.file_name())).exists()
+    }
+
     /// Writes a blob atomically (temp file + rename) so a half-written file never syncs.
     pub fn write_file(&self, id: &str, kind: FileKind, data: &[u8]) -> Result<()> {
         let dir = self.paper_dir(id);

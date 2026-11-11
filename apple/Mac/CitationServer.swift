@@ -20,7 +20,7 @@ final class CitationServer {
     let token: String
 
     static var tlsDir: URL {
-        LibraryModel.libraryURL.deletingLastPathComponent().appendingPathComponent("tls", isDirectory: true)
+        CloudLibrary.localURL.deletingLastPathComponent().appendingPathComponent("tls", isDirectory: true)
     }
 
     init(model: LibraryModel) {

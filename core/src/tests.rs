@@ -289,3 +289,19 @@ fn finds_open_access_pdfs() {
     let pdf = metadata::download_pdf(&c2[0].url).unwrap();
     assert!(pdf.len() > 100_000);
 }
+
+#[test]
+fn icloud_placeholders_count_as_present() {
+    let root = tmp().join("lib");
+    let lib = open(&root, "phone");
+    let p = lib.add_paper(sample(), None, None, None).unwrap();
+    let dir = root.join("papers").join(&p.id);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(".book.epub.icloud"), b"").unwrap(); // what iOS shows before download
+    lib.reindex().unwrap();
+    assert!(lib.paper(p.id.clone()).unwrap().has_epub);
+    assert_eq!(lib.file_status(p.id.clone(), FileKind::Epub), FileStatus::InCloud);
+    assert_eq!(lib.file_status(p.id.clone(), FileKind::Pdf), FileStatus::Missing);
+    assert!(lib.expected_file_path(p.id.clone(), FileKind::Epub).ends_with("book.epub"));
+    assert_eq!(lib.pending_downloads().len(), 1);
+}

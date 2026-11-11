@@ -81,7 +81,7 @@ impl Library {
         }
         let files = ids
             .iter()
-            .map(|id| (id.clone(), (g.store.file_path(id, FileKind::Pdf).exists(), g.store.file_path(id, FileKind::Epub).exists())))
+            .map(|id| (id.clone(), (g.store.has_file(id, FileKind::Pdf), g.store.has_file(id, FileKind::Epub))))
             .collect();
         g.files = files;
         let keep: BTreeSet<String> = ids.into_iter().collect();
@@ -173,7 +173,24 @@ impl Library {
         Ok(())
     }
 
-    /// Absolute path of a paper's file, if it exists locally (it may still be an iCloud placeholder).
+    /// Where a paper's file is: on this device, only in iCloud (not downloaded yet), or nowhere.
+    pub fn file_status(&self, id: String, kind: FileKind) -> FileStatus {
+        let g = self.inner.lock().unwrap();
+        if g.store.file_path(&id, kind).exists() {
+            FileStatus::Local
+        } else if g.store.has_file(&id, kind) {
+            FileStatus::InCloud
+        } else {
+            FileStatus::Missing
+        }
+    }
+
+    /// Absolute path the file has (or will have once downloaded) — for asking iCloud to download it.
+    pub fn expected_file_path(&self, id: String, kind: FileKind) -> String {
+        self.inner.lock().unwrap().store.file_path(&id, kind).to_string_lossy().to_string()
+    }
+
+    /// Absolute path of a paper's file, if it is on this device.
     pub fn file_path(&self, id: String, kind: FileKind) -> Option<String> {
         let g = self.inner.lock().unwrap();
         let p = g.store.file_path(&id, kind);

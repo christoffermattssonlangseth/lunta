@@ -32,10 +32,8 @@ final class LibraryModel: ObservableObject {
     private var refreshTimer: Timer?
     private var converting = false
 
-    static var libraryURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Margins/Library", isDirectory: true)
-    }
+    let libraryURL: URL
+    let inCloud: Bool
 
     static var cacheURL: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -54,8 +52,11 @@ final class LibraryModel: ObservableObject {
         return id
     }
 
-    init() throws {
-        lib = try Library.open(root: Self.libraryURL.path, cacheDir: Self.cacheURL.path, deviceId: Self.deviceID)
+    init(root: URL, inCloud: Bool) throws {
+        libraryURL = root
+        self.inCloud = inCloud
+        lib = try Library.open(root: root.path, cacheDir: Self.cacheURL.path, deviceId: Self.deviceID)
+        downloadSmallFiles()
         reload()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
@@ -132,7 +133,27 @@ final class LibraryModel: ObservableObject {
     }
 
     func refresh() {
+        downloadSmallFiles()
         if (try? lib.refresh()) == true { reload() }
+    }
+
+    /// iCloud: fetch change logs and full texts eagerly (small); PDFs and reading views on demand.
+    private func downloadSmallFiles() {
+        guard inCloud else { return }
+        for p in lib.pendingDownloads() where p.contains("/ops/") || p.hasSuffix(".fulltext.txt.icloud") {
+            CloudLibrary.startDownload(CloudLibrary.realURL(forPlaceholder: p))
+        }
+    }
+
+    /// Makes sure a paper's file is on this device (downloading it from iCloud if needed).
+    func ensureLocal(_ id: String, _ kind: FileKind) async -> URL? {
+        switch lib.fileStatus(id: id, kind: kind) {
+        case .local: return fileURL(id, kind)
+        case .missing: return nil
+        case .inCloud:
+            let url = URL(fileURLWithPath: lib.expectedFilePath(id: id, kind: kind))
+            return await CloudLibrary.download(url) ? url : nil
+        }
     }
 
     func paper(_ id: String) -> Paper? { lib.paper(id: id) }

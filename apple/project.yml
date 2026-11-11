@@ -41,6 +41,12 @@ targets:
           - CFBundleURLName: com.cmlangseth.margins
             CFBundleURLSchemes: [margins]
         NSHumanReadableCopyright: ""
+    entitlements:
+      path: Mac/Margins.entitlements
+      properties:
+        com.apple.developer.icloud-container-identifiers: [iCloud.com.cmlangseth.margins]
+        com.apple.developer.ubiquity-container-identifiers: [iCloud.com.cmlangseth.margins]
+        com.apple.developer.icloud-services: [CloudDocuments]
     settings:
       base:
         PRODUCT_NAME: Margins
@@ -49,3 +55,34 @@ targets:
         ENABLE_APP_SANDBOX: NO
         ENABLE_HARDENED_RUNTIME: YES
         OTHER_LDFLAGS: ["-lc++"]
+
+  MarginsiOS:
+    type: application
+    platform: iOS
+    sources: [iOS, Shared, Assets.xcassets]
+    dependencies:
+      - package: MarginsCore
+        product: MarginsCore
+      - package: Paper2EpubKit
+        product: Paper2EpubKit
+    info:
+      path: iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Margins
+        UILaunchScreen: {}
+        ITSAppUsesNonExemptEncryption: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+    entitlements:
+      path: iOS/Margins.entitlements
+      properties:
+        com.apple.developer.icloud-container-identifiers: [iCloud.com.cmlangseth.margins]
+        com.apple.developer.ubiquity-container-identifiers: [iCloud.com.cmlangseth.margins]
+        com.apple.developer.icloud-services: [CloudDocuments]
+    settings:
+      base:
+        PRODUCT_NAME: Margins
+        PRODUCT_BUNDLE_IDENTIFIER: com.cmlangseth.margins.ios
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+        TARGETED_DEVICE_FAMILY: "1,2"

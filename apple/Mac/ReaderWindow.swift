@@ -71,12 +71,13 @@ struct ReaderWindow: View {
             }
         }
         .navigationTitle(paper?.meta.title ?? "Reader")
-        .onAppear(perform: load)
+        .task { await load() }
     }
 
-    private func load() {
+    private func load() async {
         guard let p = model.paper(paperID) else { return }
         if !p.hasEpub { mode = p.hasPdf ? .pdf : .reading; error = "Use “Make Reading View” in the library."; return }
+        guard await model.ensureLocal(paperID, .epub) != nil else { error = "Couldn't download the reading view from iCloud."; return }
         do {
             book = try model.lib.openEpub(id: paperID)
             if !p.read { model.setRead(p, true) }
@@ -108,36 +109,10 @@ struct EpubWebView: NSViewRepresentable {
     let scrollRequest: ScrollRequest
     let onPosition: (String) -> Void
 
-    static let readerCSS = """
-    html { font-size: 112%; scroll-behavior: smooth; }
-    body { max-width: 42em; margin: 2.2em auto !important; padding: 0 2em 6em; font-family: "Iowan Old Style", Georgia, serif;
-           line-height: 1.6; color: #1d1d1f; background: #fffdf8; }
-    @media (prefers-color-scheme: dark) { body { color: #e6e3dc; background: #1c1b19; } a { color: #9ec9d8; } img { opacity: .92; } }
-    h1, h2, h3 { font-family: -apple-system, "Helvetica Neue", sans-serif; scroll-margin-top: 1em; }
-    h1 { margin-top: 2.4em; padding-top: 1.2em; border-top: 1px solid rgba(127,127,127,.25); }
-    .titlepage h1, .section-start + section > h1:first-child { border-top: none; }
-    figure img, .table-wrap img { border-radius: 4px; }
-    .section-start { scroll-margin-top: 1em; }
-    """
-
-    static let trackingJS = """
-    (function(){
-      var t = null;
-      function report(){
-        var cur = null, hs = document.querySelectorAll('h1[id],h2[id],h3[id],.section-start');
-        for (var i = 0; i < hs.length; i++) { if (hs[i].getBoundingClientRect().top < 140) cur = hs[i].id; else break; }
-        if (cur) window.webkit.messageHandlers.pos.postMessage(cur);
-      }
-      window.addEventListener('scroll', function(){ clearTimeout(t); t = setTimeout(report, 90); });
-    })();
-    """
-
     func makeNSView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
-        let css = Self.readerCSS.replacingOccurrences(of: "`", with: "")
-        let js = "var s=document.createElement('style');s.textContent=`\(css)`;document.documentElement.appendChild(s);"
-        cfg.userContentController.addUserScript(WKUserScript(source: js, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-        cfg.userContentController.addUserScript(WKUserScript(source: Self.trackingJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        cfg.userContentController.addUserScript(WKUserScript(source: ReaderAssets.styleScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        cfg.userContentController.addUserScript(WKUserScript(source: ReaderAssets.trackingJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         cfg.userContentController.add(context.coordinator, name: "pos")
         let v = WKWebView(frame: .zero, configuration: cfg)
         v.setValue(false, forKey: "drawsBackground")
@@ -155,8 +130,7 @@ struct EpubWebView: NSViewRepresentable {
         }
         if scrollRequest != context.coordinator.lastScroll, let a = scrollRequest.anchor {
             context.coordinator.lastScroll = scrollRequest
-            let safe = a.replacingOccurrences(of: "'", with: "\\'")
-            v.evaluateJavaScript("var e=document.getElementById('\(safe)'); if(e) e.scrollIntoView({behavior:'smooth', block:'start'});")
+            v.evaluateJavaScript(ReaderAssets.scrollJS(a))
         }
     }
 
