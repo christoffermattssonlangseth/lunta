@@ -15,6 +15,15 @@ packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio.git
     from: "0.18.3"
+  mlx-swift-lm:
+    url: https://github.com/ml-explore/mlx-swift-lm
+    minorVersion: "3.32.3"
+  swift-huggingface:
+    url: https://github.com/huggingface/swift-huggingface
+    from: "0.9.0"
+  swift-transformers:
+    url: https://github.com/huggingface/swift-transformers
+    from: "1.3.0"
 
 settings:
   base:
@@ -39,6 +48,16 @@ targets:
         product: MarginsCore
       - package: Paper2EpubKit
         product: Paper2EpubKit
+      - package: mlx-swift-lm
+        product: MLXLLM
+      - package: mlx-swift-lm
+        product: MLXLMCommon
+      - package: mlx-swift-lm
+        product: MLXFoundationModels
+      - package: swift-huggingface
+        product: HuggingFace
+      - package: swift-transformers
+        product: Tokenizers
     postCompileScripts:
       - name: Embed margins-mcp (agent server and CLI)
         basedOnDependencyAnalysis: false
@@ -83,6 +102,16 @@ targets:
         product: MarginsCore
       - package: Paper2EpubKit
         product: Paper2EpubKit
+      - package: mlx-swift-lm
+        product: MLXLLM
+      - package: mlx-swift-lm
+        product: MLXLMCommon
+      - package: mlx-swift-lm
+        product: MLXFoundationModels
+      - package: swift-huggingface
+        product: HuggingFace
+      - package: swift-transformers
+        product: Tokenizers
       - package: FluidAudio
         product: FluidAudio
     info:
@@ -97,6 +126,7 @@ targets:
     entitlements:
       path: iOS/Margins.entitlements
       properties:
+        com.apple.developer.kernel.increased-memory-limit: true
         com.apple.developer.icloud-container-identifiers: [iCloud.com.cmlangseth.margins]
         com.apple.developer.ubiquity-container-identifiers: [iCloud.com.cmlangseth.margins]
         com.apple.developer.icloud-services: [CloudDocuments]

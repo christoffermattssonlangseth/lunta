@@ -16,7 +16,9 @@ struct AssistantPanel: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if let why = engine.unavailableReason {
+            if engine.unavailableReason == AskEngine.openModelPending {
+                if #available(iOS 27.0, macOS 27.0, *) { OpenModelDownload(engine: engine) }
+            } else if let why = engine.unavailableReason {
                 ContentUnavailableView("Assistant unavailable", systemImage: "apple.intelligence", description: Text(why))
                     .frame(maxHeight: .infinity)
                     .task {
@@ -44,12 +46,10 @@ struct AssistantPanel: View {
             }
             Spacer()
             Menu {
-                if AskEngine.cloudEntitled {
-                    Picker("Model", selection: $engine.choice) {
-                        ForEach(AskModelChoice.allCases) { Text($0.title).tag($0) }
-                    }
-                    Divider()
+                Picker("Model", selection: $engine.choice) {
+                    ForEach(AskModelChoice.allCases.filter { $0 != .privateCloud || AskEngine.cloudEntitled }) { Text($0.title).tag($0) }
                 }
+                Divider()
                 Button("New Conversation", systemImage: "square.and.pencil") { engine.reset() }
                     .disabled(engine.messages.isEmpty)
             } label: { Image(systemName: "ellipsis.circle") }
@@ -277,5 +277,39 @@ private struct ProposalCard: View {
         }
         .padding(10)
         .background(Color.marginsCopper.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// Offers the one-time download of the open model where Apple Intelligence isn't available.
+@available(iOS 27.0, macOS 27.0, *)
+private struct OpenModelDownload: View {
+    @ObservedObject var engine: AskEngine
+    @ObservedObject private var open = OpenModel.shared
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "cpu").font(.system(size: 40)).foregroundStyle(Color.marginsTeal)
+            Text("Ask with an open model").font(.title3.weight(.semibold))
+            Text("Apple Intelligence isn't available here, so Ask can use \(OpenModel.displayName), a free open model that runs entirely on this device: private, offline, no account. It's a one-time download of \(OpenModel.downloadSize); Wi‑Fi recommended.")
+                .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            switch open.state {
+            case .notDownloaded:
+                Button { Task { await open.prepare(); engine.objectWillChange.send() } } label: {
+                    Label("Download \(OpenModel.displayName)", systemImage: "arrow.down.circle.fill").padding(.horizontal, 6)
+                }
+                .buttonStyle(.borderedProminent).tint(.marginsTeal)
+            case .downloading(let f):
+                ProgressView(value: f) { Text("Downloading… \(Int(f * 100))%").font(.caption) }.frame(maxWidth: 260)
+            case .loading:
+                ProgressView("Loading the model…")
+            case .ready:
+                ProgressView().task { engine.objectWillChange.send() }
+            case .failed(let m):
+                Text(m).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center)
+                Button("Try Again") { Task { await open.prepare(); engine.objectWillChange.send() } }
+            }
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

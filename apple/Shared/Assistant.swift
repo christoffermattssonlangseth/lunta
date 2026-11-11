@@ -49,12 +49,13 @@ struct ProposedChange: Identifiable, Equatable {
 }
 
 enum AskModelChoice: String, CaseIterable, Identifiable {
-    case automatic, onDevice, privateCloud
+    case automatic, onDevice, openModel, privateCloud
     var id: String { rawValue }
     var title: String {
         switch self {
         case .automatic: return "Best available"
-        case .onDevice: return "On this device only"
+        case .onDevice: return "Apple Intelligence (on device)"
+        case .openModel: return "Open model (Qwen3 4B, on device)"
         case .privateCloud: return "Private Cloud Compute"
         }
     }
@@ -580,6 +581,7 @@ final class AskEngine: ObservableObject {
     /// nil when a model is ready, otherwise why not.
     var unavailableReason: String? {
         if cloudAvailable { return nil }
+        if usesOpenModel { return needsOpenModel ? Self.openModelPending : nil }
         switch SystemLanguageModel.default.availability {
         case .available: return nil
         case .unavailable(.deviceNotEligible): return "This device can't run Apple Intelligence."
@@ -600,7 +602,26 @@ final class AskEngine: ObservableObject {
         return false
     }
 
-    var modelLabel: String { usingCloud ? "Apple · Private Cloud Compute" : "Apple · on this device" }
+    var modelLabel: String {
+        if usesOpenModel { return "Qwen3 4B · on this device" }
+        return usingCloud ? "Apple · Private Cloud Compute" : "Apple · on this device"
+    }
+
+    static let openModelPending = "open-model"
+
+    /// Apple Intelligence isn't usable here (e.g. iPhones in the EU) or the user picked the open model.
+    var usesOpenModel: Bool {
+        guard #available(iOS 27.0, macOS 27.0, *) else { return false }
+        if choice == .openModel { return true }
+        if choice == .onDevice || cloudAvailable { return false }
+        return !SystemLanguageModel.default.isAvailable
+    }
+
+    /// The open model still has to be downloaded (the panel offers the download).
+    var needsOpenModel: Bool {
+        guard #available(iOS 27.0, macOS 27.0, *) else { return false }
+        return !OpenModel.shared.isReady
+    }
 
     func reset() {
         task?.cancel()
@@ -631,7 +652,12 @@ final class AskEngine: ObservableObject {
         defer { busy = false }
         do {
             if session == nil { try await start() }
+            let before = proposals.count
             try await stream(q)
+            // small models sometimes describe a change instead of proposing it: nudge once
+            if scope == .library, proposals.count == before, Self.asksForChange(q), !Task.isCancelled {
+                try await stream("Call propose_change now for the papers you listed (use their numbers). Then confirm in one short sentence.")
+            }
         } catch let e where Self.isOverflow(e) {
             // the model's memory is full: start a fresh conversation, read less, and try once more
             messages.removeAll { $0.role == .assistant && $0.text.isEmpty }
@@ -664,6 +690,18 @@ final class AskEngine: ObservableObject {
     /// Set when Private Cloud Compute failed this run; later sessions go straight to the device model.
     static var cloudRefused = false
 
+    static func asksForChange(_ q: String) -> Bool {
+        q.range(of: #"\b(tag|tags|tagging|collection|organi[sz]e|mark (them|these|those|as)|add (it|them|these|this)|propose)\b"#,
+                options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// Open "thinking" models may stream a <think>…</think> trace before the answer; show only the answer.
+    static func withoutThinking(_ s: String) -> String {
+        guard s.contains("<think>") else { return s }
+        if let end = s.range(of: "</think>") { return String(s[end.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines) }
+        return ""
+    }
+
     static func isOverflow(_ e: Error) -> Bool {
         if let g = e as? LanguageModelSession.GenerationError, case .exceededContextWindowSize = g { return true }
         let d = String(describing: e)
@@ -690,7 +728,7 @@ final class AskEngine: ObservableObject {
         messages.append(AskMessage(role: .assistant, text: ""))
         for try await snap in session.streamResponse(to: q, options: GenerationOptions(temperature: 0.2)) {
             if Task.isCancelled { break }
-            messages[i].text = snap.content
+            messages[i].text = Self.withoutThinking(snap.content)
         }
         if messages[i].text.trimmingCharacters(in: .whitespaces).isEmpty { messages.remove(at: i) }
     }
@@ -719,7 +757,10 @@ final class AskEngine: ObservableObject {
             instructions = libraryInstructions(model)
         }
         usingCloud = false
-        if #available(macOS 27.0, iOS 27.0, *), cloudAvailable {
+        if #available(macOS 27.0, iOS 27.0, *), usesOpenModel {
+            await OpenModel.shared.prepare()
+            session = LanguageModelSession(model: OpenModel.shared.model, tools: tools, instructions: instructions)
+        } else if #available(macOS 27.0, iOS 27.0, *), cloudAvailable {
             session = LanguageModelSession(model: PrivateCloudComputeLanguageModel(), tools: tools, instructions: instructions)
             usingCloud = true
         } else {
@@ -739,7 +780,7 @@ final class AskEngine: ObservableObject {
         }
     }
 
-    private var budget: Int { usingCloud || cloudAvailable ? 9000 : 2600 }
+    private var budget: Int { usingCloud || cloudAvailable ? 9000 : usesOpenModel ? 6000 : 2600 }
 
     private func paperInstructions(_ p: Paper?, items: [NarrationItem]) -> String {
         let title = p?.meta.title ?? "this paper"
@@ -768,7 +809,8 @@ final class AskEngine: ObservableObject {
         (\(m.counts.unread) unread, \(m.counts.starred) starred). Tags: \(tags.isEmpty ? "none" : tags). Collections: \(cols.isEmpty ? "none" : cols).
         Always use tools to look things up; never invent papers, findings or citations. Tool results number each paper; \
         cite them like [3], once per paper, right after its title. Papers from find_new_papers are NOT in the library: always call them new papers beyond the \
-        library. You cannot change the library yourself: use propose_change and tell the user to confirm it. \
+        library. You cannot change the library yourself: when the user asks to tag, collect, mark or add papers, call \
+        propose_change right away (don't ask first); the app shows the user a button to confirm it. \
         Be concise; use short bullet lists of papers with their numbers.
         """
     }

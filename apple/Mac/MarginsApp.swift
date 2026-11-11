@@ -94,6 +94,7 @@ final class ModelHolder: ObservableObject {
                 }
                 let t = await engine.transcript(for: q)
                 try? t.write(toFile: "/tmp/margins-ask.txt", atomically: true, encoding: .utf8)
+                exit(0)
             }
         } else if let model, let i = args.firstIndex(of: "-importPDFs"), i + 1 < args.count {
             let folder = URL(fileURLWithPath: args[i + 1])
