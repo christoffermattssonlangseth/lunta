@@ -77,3 +77,7 @@ must be running; the extension talks to it on `127.0.0.1:47480` (extension reque
 5. Highlights and notes in both readers
 6. iPhone app
 7. iCloud Drive sync
+
+## License
+
+MIT, see [LICENSE](LICENSE).

@@ -2,6 +2,7 @@
 name = "margins-core"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "Library, metadata, search, sync and citation core for the Margins reference manager"
 
 [lib]
