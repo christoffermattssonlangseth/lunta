@@ -18,8 +18,7 @@ The library syncs between your Mac and iPhone through iCloud Drive.
   from the PDF's first page on-device; edit any field. Import from ReadCube Papers, BibTeX and RIS.
 - **Organise:** folders with subfolders (drag papers and folders in the Mac sidebar), tags, stars,
   read/unread. **Smart folders** fill themselves from rules (words, tag, folder, year range, recently
-  added, unread/starred, PDF or not, highlighted). Folders & Tags is one tap away on iPhone (swipe, long-press, or the reader's ⋯ menu). On iPhone,
-  swipe in from the left edge for the side panel (library views, folders, smart folders, tags, sorting).
+  added, unread/starred, PDF or not, highlighted). Folders & Tags is one tap away on iPhone (swipe, long-press, or the reader's ⋯ menu).
 - **Read:** a reflowable reading view made from the paper (open-access XML from PMC/Europe PMC, arXiv's
   own HTML with real equations for arXiv papers, or the PDF itself) (large type on iPhone, zoomable figures, wide
   tables scroll in place) next to the original PDF. **Scroll or turn pages**: page mode lays the paper
