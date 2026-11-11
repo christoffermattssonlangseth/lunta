@@ -5,7 +5,7 @@ enum Net {
 
     static let session: URLSession = {
         let c = URLSessionConfiguration.default
-        c.timeoutIntervalForRequest = 60
+        c.timeoutIntervalForRequest = 25
         c.timeoutIntervalForResource = 300
         c.httpAdditionalHeaders = ["User-Agent": userAgent]
         c.httpMaximumConnectionsPerHost = 6
@@ -19,14 +19,41 @@ enum Net {
         var contentType: String
     }
 
+    /// Skips hosts that are down: after 3 failures in a row, requests fail fast for 5 minutes.
+    actor Breaker {
+        static let shared = Breaker()
+        private var failures: [String: Int] = [:]
+        private var openUntil: [String: Date] = [:]
+        func check(_ host: String) throws {
+            if let until = openUntil[host], until > Date() {
+                throw fail("\(host) is not responding; skipping it for a few minutes")
+            }
+        }
+        func success(_ host: String) { failures[host] = 0; openUntil[host] = nil }
+        func failure(_ host: String) {
+            failures[host, default: 0] += 1
+            if failures[host]! >= 3 { openUntil[host] = Date().addingTimeInterval(300); failures[host] = 0 }
+        }
+    }
+
     /// GET a URL. Throws for transport errors; returns non-2xx responses so callers can decide.
-    static func fetch(_ url: URL, accept: String? = nil, timeout: TimeInterval = 60) async throws -> Response {
-        var req = URLRequest(url: url, timeoutInterval: timeout)
+    static func fetch(_ url: URL, accept: String? = nil, timeout: TimeInterval = 25) async throws -> Response {
+        let host = url.host ?? ""
+        try await Breaker.shared.check(host)
+        var req = URLRequest(url: url, timeoutInterval: min(timeout, 45))
         if let accept { req.setValue(accept, forHTTPHeaderField: "Accept") }
-        let (data, resp) = try await session.data(for: req)
-        let http = resp as? HTTPURLResponse
-        return Response(data: data, status: http?.statusCode ?? 0, url: http?.url ?? url,
-                        contentType: http?.value(forHTTPHeaderField: "Content-Type") ?? "")
+        do {
+            let (data, resp) = try await session.data(for: req)
+            let http = resp as? HTTPURLResponse
+            if let code = http?.statusCode, code >= 500 { await Breaker.shared.failure(host) } else { await Breaker.shared.success(host) }
+            return Response(data: data, status: http?.statusCode ?? 0, url: http?.url ?? url,
+                            contentType: http?.value(forHTTPHeaderField: "Content-Type") ?? "")
+        } catch {
+            if let e = error as? URLError, [.timedOut, .cannotConnectToHost, .networkConnectionLost, .cannotFindHost].contains(e.code) {
+                await Breaker.shared.failure(host)
+            }
+            throw error
+        }
     }
 
     /// GET a URL and require a 2xx status.
@@ -47,14 +74,14 @@ enum Net {
     }
 
     /// Retries transient failures (5xx, timeouts) a couple of times; Europe PMC has bad minutes.
-    static func withRetry<T>(attempts: Int = 3, _ op: () async throws -> T) async throws -> T {
+    static func withRetry<T>(attempts: Int = 2, _ op: () async throws -> T) async throws -> T {
         var lastError: Error?
         for i in 0..<attempts {
             do { return try await op() } catch {
                 lastError = error
                 let msg = "\(error)"
-                let transient = msg.contains("HTTP 5") || (error as? URLError)?.code == .timedOut
-                    || (error as? URLError)?.code == .networkConnectionLost
+                // timeouts are not retried: a slow service would just stall the queue
+                let transient = msg.contains("HTTP 5") || (error as? URLError)?.code == .networkConnectionLost
                 if !transient || i == attempts - 1 { break }
                 try await Task.sleep(nanoseconds: UInt64(1_500_000_000 * (i + 1)))
             }

@@ -8,30 +8,13 @@ struct LibraryView: View {
 
     var body: some View {
         NavigationStack {
-            List(model.papers) { p in
-                NavigationLink(value: p.id) { PaperRow(paper: p, snippet: model.snippets[p.id]) }
-                    .swipeActions(edge: .leading) {
-                        Button { model.toggleStar(p) } label: { Label(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") }
-                            .tint(.marginsCopper)
-                        Button { model.setRead(p, !p.read) } label: { Label(p.read ? "Unread" : "Read", systemImage: p.read ? "circle" : "checkmark.circle") }
-                            .tint(.marginsTeal)
-                    }
+            Group {
+                if model.source == .discover { DiscoverListIOS() } else { libraryList }
             }
-            .listStyle(.plain)
             .navigationTitle(model.sourceTitle)
-            .searchable(text: $model.query, prompt: "Titles, authors, full text, notes")
+            .searchable(text: $model.query, prompt: model.source == .discover ? "Search new papers, then tap Search" : "Titles, authors, full text, notes")
+            .onSubmit(of: .search) { if model.source == .discover { Task { await model.discover(model.query) } } }
             .navigationDestination(for: String.self) { id in ReaderView(paperID: id) }
-            .refreshable { model.refresh() }
-            .overlay {
-                if model.papers.isEmpty {
-                    if !model.query.isEmpty {
-                        ContentUnavailableView.search(text: model.query)
-                    } else if model.counts.all == 0 {
-                        ContentUnavailableView("No papers yet", systemImage: "books.vertical",
-                                               description: Text(model.inCloud ? "Your library is syncing from iCloud…" : "Tap + to add a paper by DOI or link."))
-                    }
-                }
-            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { SourceMenu() }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -60,6 +43,38 @@ struct LibraryView: View {
             } message: { Text(model.errorMessage ?? "") }
         }
     }
+
+    private var libraryList: some View {
+            List {
+              ForEach(model.papers) { p in
+                NavigationLink(value: p.id) { PaperRow(paper: p, snippet: model.snippets[p.id]) }
+                    .swipeActions(edge: .leading) {
+                        Button { model.toggleStar(p) } label: { Label(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") }
+                            .tint(.marginsCopper)
+                        Button { model.setRead(p, !p.read) } label: { Label(p.read ? "Unread" : "Read", systemImage: p.read ? "circle" : "checkmark.circle") }
+                            .tint(.marginsTeal)
+                    }
+              }
+              if !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
+                  Button { model.searchBeyondLibrary() } label: {
+                      Label("Search beyond your library for “\(model.query)”", systemImage: "globe.europe.africa")
+                          .foregroundStyle(Color.marginsTeal)
+                  }
+              }
+            }
+            .listStyle(.plain)
+            .refreshable { model.refresh() }
+            .overlay {
+                if model.papers.isEmpty {
+                    if !model.query.isEmpty {
+                        ContentUnavailableView.search(text: model.query)
+                    } else if model.counts.all == 0 {
+                        ContentUnavailableView("No papers yet", systemImage: "books.vertical",
+                                               description: Text(model.inCloud ? "Your library is syncing from iCloud…" : "Tap + to add a paper by DOI or link."))
+                    }
+                }
+            }
+    }
 }
 
 struct SourceMenu: View {
@@ -70,6 +85,7 @@ struct SourceMenu: View {
                 Label("All Papers", systemImage: "books.vertical").tag(SidebarItem.all)
                 Label("Starred", systemImage: "star").tag(SidebarItem.starred)
                 Label("Unread", systemImage: "circle.badge").tag(SidebarItem.unread)
+                Label("Discover New Papers", systemImage: "globe.europe.africa").tag(SidebarItem.discover)
             }
             if !model.collections.isEmpty {
                 Picker("Collections", selection: $model.source) {
@@ -130,5 +146,29 @@ struct PaperRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+struct DiscoverListIOS: View {
+    @EnvironmentObject var model: LibraryModel
+    var body: some View {
+        List {
+            Section { BeyondBanner().listRowInsets(EdgeInsets()).listRowBackground(Color.clear) }
+            if model.discovering {
+                HStack { Spacer(); ProgressView("Searching OpenAlex…"); Spacer() }
+            } else if let e = model.discoverError {
+                Text(e).foregroundStyle(.secondary)
+            } else if model.discoverResults.isEmpty {
+                Text(model.discoverQuery.isEmpty ? "Type in the search field and tap Search." : "No results. Try other words.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(model.discoverResults) { hit in
+                    NavigationLink { DiscoverDetail(hit: hit) } label: { DiscoverRow(hit: hit) }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Color.marginsTeal.opacity(0.05))
     }
 }

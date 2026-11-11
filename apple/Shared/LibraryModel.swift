@@ -8,6 +8,7 @@ extension PaperCollection: Identifiable {}
 
 enum SidebarItem: Hashable {
     case all, starred, unread
+    case discover
     case collection(String)
     case tag(String)
 }
@@ -29,6 +30,11 @@ final class LibraryModel: ObservableObject {
     @Published var progress: Double?
     @Published var errorMessage: String?
     @Published var counts = (all: 0, starred: 0, unread: 0)
+    // Discover: searching beyond the library (OpenAlex)
+    @Published var discoverQuery = ""
+    @Published var discoverResults: [DiscoverHit] = []
+    @Published var discovering = false
+    @Published var discoverError: String?
     private var refreshTimer: Timer?
     private var converting = false
 
@@ -87,6 +93,7 @@ final class LibraryModel: ObservableObject {
     /// Only the paper list (cheap): used for sidebar selection, sorting and search.
     func reloadList() {
         searchTask?.cancel()
+        if source == .discover { return }
         let filter = currentFilter()
         let q = query.trimmingCharacters(in: .whitespaces)
         let lib = self.lib
@@ -116,6 +123,7 @@ final class LibraryModel: ObservableObject {
         case .all: break
         case .starred: filter.starredOnly = true
         case .unread: filter.unreadOnly = true
+        case .discover: break
         case .collection(let id): filter.collection = id
         case .tag(let t): filter.tag = t
         }
@@ -127,6 +135,7 @@ final class LibraryModel: ObservableObject {
         case .all: return "All Papers"
         case .starred: return "Starred"
         case .unread: return "Unread"
+        case .discover: return "Discover"
         case .collection(let id): return collections.first { $0.id == id }?.name ?? "Collection"
         case .tag(let t): return "#\(t)"
         }
@@ -284,39 +293,87 @@ final class LibraryModel: ObservableObject {
         }
     }
 
+    /// Matches a folder of PDFs (e.g. ReadCube Papers' “Export PDFs”) to papers in the library:
+    /// by the DOI printed in the PDF, else by finding a paper's title on the first pages.
+    /// PDFs that match nothing are reported, not added (avoids duplicates).
     func importPDFFolder(_ folder: URL) async {
         let fm = FileManager.default
         let pdfs = (fm.enumerator(at: folder, includingPropertiesForKeys: nil)?.compactMap { $0 as? URL } ?? [])
             .filter { $0.pathExtension.lowercased() == "pdf" }
-        var matched = 0, added = 0
         let lib = self.lib
+        let norm: @Sendable (String) -> String = { s in s.lowercased().filter { $0.isLetter || $0.isNumber } }
+        let all = lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
+        let titles: [(String, String)] = all.map { ($0.id, norm($0.meta.title)) }.filter { $0.1.count >= 25 }
+        var byDOI = 0, byTitle = 0, already = 0
+        var unmatched: [String] = []
         for (i, url) in pdfs.enumerated() {
             status = "Matching PDFs: \(i + 1) of \(pdfs.count)"
             progress = Double(i) / Double(max(1, pdfs.count))
             guard let data = try? Data(contentsOf: url) else { continue }
-            if let doi = Paper2Epub.doi(inPDF: data), let p = lib.findByDoi(doi: doi) {
-                if !p.hasPdf { try? await Task.detached { try lib.attachFile(id: p.id, kind: .pdf, data: data) }.value }
-                matched += 1
-            } else if let p = matchByTitle(url) {
-                if !p.hasPdf { try? await Task.detached { try lib.attachFile(id: p.id, kind: .pdf, data: data) }.value }
-                matched += 1
-            } else {
-                await addPDF(data, name: url.lastPathComponent)
-                added += 1
-            }
+            let match: (id: String, how: Int)? = await Task.detached {
+                if let doi = Paper2Epub.doi(inPDF: data), let p = lib.findByDoi(doi: doi) { return (p.id, 0) }
+                let text = norm(Paper2Epub.firstPagesText(ofPDF: data))
+                // longest title found on the first pages wins (avoids short generic titles)
+                if let hit = titles.filter({ text.contains($0.1) }).max(by: { $0.1.count < $1.1.count }) { return (hit.0, 1) }
+                return nil
+            }.value
+            guard let match else { unmatched.append(url.lastPathComponent); continue }
+            if lib.paper(id: match.id)?.hasPdf == true { already += 1; continue }
+            try? await Task.detached { try lib.attachFile(id: match.id, kind: .pdf, data: data) }.value
+            if match.how == 0 { byDOI += 1 } else { byTitle += 1 }
+            if (byDOI + byTitle) % 25 == 0 { reload() }
         }
         progress = nil
         reload()
-        status = "PDFs: \(matched) matched to papers, \(added) added as new papers."
+        NSLog("Margins: PDF import: %d by DOI, %d by title, %d already had a PDF, %d unmatched", byDOI, byTitle, already, unmatched.count)
+        if !unmatched.isEmpty { NSLog("Margins: unmatched PDFs: %@", unmatched.joined(separator: ", ")) }
+        status = "PDFs: \(byDOI + byTitle) attached (\(byDOI) by DOI, \(byTitle) by title), \(unmatched.count) not matched to a paper."
     }
 
-    /// Exported PDFs are often named after the title; match on the normalised file name.
-    private func matchByTitle(_ url: URL) -> Paper? {
-        func norm(_ s: String) -> String { s.lowercased().filter { $0.isLetter || $0.isNumber } }
-        let n = norm(url.deletingPathExtension().lastPathComponent)
-        guard n.count >= 20 else { return nil }
-        return lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
-            .first { let t = norm($0.meta.title); return !t.isEmpty && (t.hasPrefix(n) || n.hasPrefix(t) || n.contains(t)) }
+    // MARK: - Discover
+
+    /// Searches beyond the library (OpenAlex).
+    func discover(_ query: String) async {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        discoverQuery = q
+        guard !q.isEmpty else { discoverResults = []; return }
+        discovering = true
+        discoverError = nil
+        let lib = self.lib
+        do {
+            discoverResults = try await Task.detached { try lib.discover(query: q, limit: 40) }.value
+        } catch {
+            discoverError = "Search failed: \(error.localizedDescription)"
+        }
+        discovering = false
+    }
+
+    /// Opens Discover with the current library search.
+    func searchBeyondLibrary() {
+        let q = query
+        source = .discover
+        Task { await discover(q) }
+    }
+
+    /// Adds a discovered paper (with a reading view when an open version exists). Returns its id.
+    @discardableResult
+    func addDiscovered(_ hit: DiscoverHit) async -> String? {
+        if let id = hit.inLibrary { return id }
+        var id: String?
+        if !hit.meta.doi.isEmpty {
+            await add(hit.meta.doi)
+            id = lib.findByDoi(doi: hit.meta.doi)?.id
+        }
+        if id == nil {
+            let lib = self.lib
+            let meta = hit.meta
+            id = try? await Task.detached { try lib.addPaper(meta: meta, pdf: nil, epub: nil, fulltext: nil) }.value.id
+            reload()
+        }
+        if let id, let i = discoverResults.firstIndex(where: { $0.meta.doi == hit.meta.doi && $0.meta.title == hit.meta.title }) {
+            discoverResults[i].inLibrary = id
+        }
+        return id
     }
 
     // MARK: - Finding PDFs
@@ -363,14 +420,25 @@ final class LibraryModel: ObservableObject {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("margins-conv-\(UUID())")
         defer { try? FileManager.default.removeItem(at: tmp) }
         var result: ConversionResult?
-        if let pdf = fileURL(id, .pdf) {
+        if let pdf = await ensureLocal(id, .pdf) {
             result = try? await Paper2Epub.convert(file: pdf, into: tmp)
         } else {
             for input in [p.meta.pmcid, p.meta.doi] where !input.isEmpty {
                 if let r = try? await Paper2Epub.convert(input, into: tmp) { result = r; break }
             }
+            // no open XML: look for a legal open-access PDF (published, accepted or preprint) and use that
+            if result == nil, !p.meta.doi.isEmpty || !p.meta.arxiv.isEmpty {
+                let lib = self.lib
+                if (await Task.detached { (try? lib.findPdf(id: id)) ?? nil }.value) != nil, let pdf = fileURL(id, .pdf) {
+                    result = try? await Paper2Epub.convert(file: pdf, into: tmp)
+                }
+            }
         }
-        guard let r = result, let epub = try? Data(contentsOf: r.file) else { return false }
+        NSLog("Margins: reading view %@ for %@", result == nil ? "FAILED" : "ok", p.meta.title.prefix(60).description)
+        guard let r = result, let epub = try? Data(contentsOf: r.file) else {
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "noFullText.\(id)")
+            return false
+        }
         let lib = self.lib
         let text = Data(r.fulltext.utf8)
         try? await Task.detached {
@@ -386,13 +454,17 @@ final class LibraryModel: ObservableObject {
         converting = true
         defer { converting = false; progress = nil }
         let all = lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
+        let weekAgo = Date().timeIntervalSince1970 - 7 * 86400
         let todo = all.filter { !$0.hasEpub && ($0.hasPdf || !$0.meta.pmcid.isEmpty || !$0.meta.doi.isEmpty) }
-            .sorted { (!$0.meta.pmcid.isEmpty ? 0 : 1, $0.hasPdf ? 0 : 1) < (!$1.meta.pmcid.isEmpty ? 0 : 1, $1.hasPdf ? 0 : 1) }
+            .filter { $0.hasPdf || UserDefaults.standard.double(forKey: "noFullText.\($0.id)") < weekAgo }
+            // papers with a PDF first (no network needed), then PubMed Central papers, then the rest
+            .sorted { ($0.hasPdf ? 0 : 1, !$0.meta.pmcid.isEmpty ? 0 : 1) < ($1.hasPdf ? 0 : 1, !$1.meta.pmcid.isEmpty ? 0 : 1) }
+        NSLog("Margins: reading views to make: %d (of %d papers)", todo.count, all.count)
         guard !todo.isEmpty else { return }
         var done = 0, ok = 0
         await withTaskGroup(of: Bool.self) { group in
             var it = todo.makeIterator()
-            for _ in 0..<4 { if let p = it.next() { group.addTask { await self.makeReadingView(p.id) } } }
+            for _ in 0..<6 { if let p = it.next() { group.addTask { await self.makeReadingView(p.id) } } }
             for await success in group {
                 done += 1
                 if success { ok += 1 }
@@ -403,7 +475,7 @@ final class LibraryModel: ObservableObject {
             }
         }
         reload()
-        status = "Reading views ready for \(ok) of \(todo.count) papers. The rest have no open full text yet: add their PDFs."
+        status = "Reading views: \(ok) more ready. The rest have no open version yet: save their PDF with the browser extension or drop it on the window."
     }
 }
 

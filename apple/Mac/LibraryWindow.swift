@@ -6,6 +6,7 @@ struct LibraryWindow: View {
     @EnvironmentObject var model: LibraryModel
     @Environment(\.openWindow) private var openWindow
     @State private var selection = Set<String>()
+    @State private var discoverSelection: String?
     @State private var addingPaper = false
     @State private var newCollection = false
 
@@ -14,10 +15,23 @@ struct LibraryWindow: View {
             Sidebar(newCollection: $newCollection)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 210)
         } content: {
-            PaperTable(selection: $selection)
-                .navigationSplitViewColumnWidth(min: 420, ideal: 560)
+            Group {
+                if model.source == .discover {
+                    DiscoverList(selection: $discoverSelection)
+                } else {
+                    PaperTable(selection: $selection)
+                }
+            }
+            .navigationSplitViewColumnWidth(min: 420, ideal: 560)
         } detail: {
-            if selection.count == 1, let id = selection.first, let p = model.paper(id) {
+            if model.source == .discover {
+                if let id = discoverSelection, let hit = model.discoverResults.first(where: { $0.id == id }) {
+                    DiscoverDetail(hit: hit)
+                } else {
+                    ContentUnavailableView("Find new papers", systemImage: "globe",
+                                           description: Text("Search above to explore papers beyond your library."))
+                }
+            } else if selection.count == 1, let id = selection.first, let p = model.paper(id) {
                 PaperDetail(paper: p)
             } else if selection.count > 1 {
                 MultiSelection(ids: Array(selection))
@@ -26,7 +40,11 @@ struct LibraryWindow: View {
                                        description: Text("Add papers with ⇧⌘N, or import your ReadCube library with ⇧⌘I."))
             }
         }
-        .searchable(text: $model.query, placement: .toolbar, prompt: "Search titles, authors, full text, notes")
+        .searchable(text: $model.query, placement: .toolbar,
+                    prompt: model.source == .discover ? "Search new papers (OpenAlex) — press Return" : "Search your library: titles, authors, full text, notes")
+        .onSubmit(of: .search) {
+            if model.source == .discover { Task { await model.discover(model.query) } }
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { addingPaper = true } label: { Label("Add Paper", systemImage: "plus") }
@@ -90,6 +108,9 @@ struct Sidebar: View {
                 Label("All Papers", systemImage: "books.vertical").badge(model.counts.all).tag(SidebarItem.all)
                 Label("Starred", systemImage: "star").badge(model.counts.starred).tag(SidebarItem.starred)
                 Label("Unread", systemImage: "circle.badge").badge(model.counts.unread).tag(SidebarItem.unread)
+            }
+            Section("Beyond your library") {
+                Label("Discover New Papers", systemImage: "globe.europe.africa").tag(SidebarItem.discover)
             }
             Section {
                 ForEach(model.collections) { c in
@@ -166,6 +187,17 @@ struct PaperTable: View {
             .width(min: 60, ideal: 110)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
+        .safeAreaInset(edge: .bottom) {
+            if !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
+                Button { model.searchBeyondLibrary() } label: {
+                    Label("Search beyond your library for “\(model.query)”", systemImage: "globe.europe.africa")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered).tint(.marginsTeal).controlSize(.large)
+                .padding(10)
+                .background(.bar)
+            }
+        }
         .contextMenu(forSelectionType: String.self) { ids in
             PaperMenu(ids: Array(ids))
         } primaryAction: { ids in
@@ -449,5 +481,36 @@ struct AddPaperSheet: View {
         let i = input
         dismiss()
         Task { await model.add(i) }
+    }
+}
+
+// MARK: - Discover
+
+struct DiscoverList: View {
+    @EnvironmentObject var model: LibraryModel
+    @Binding var selection: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            BeyondBanner().padding(12)
+            if model.discovering {
+                ProgressView("Searching OpenAlex…").frame(maxHeight: .infinity)
+            } else if let e = model.discoverError {
+                ContentUnavailableView("Search failed", systemImage: "wifi.exclamationmark", description: Text(e))
+            } else if model.discoverResults.isEmpty {
+                ContentUnavailableView(model.discoverQuery.isEmpty ? "Search for new papers" : "No results",
+                                       systemImage: "magnifyingglass",
+                                       description: Text(model.discoverQuery.isEmpty ? "Type in the search field and press Return." : "Try other words."))
+            } else {
+                List(model.discoverResults, selection: $selection) { hit in
+                    DiscoverRow(hit: hit).tag(hit.id)
+                }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+            }
+        }
+        .background(Color.marginsTeal.opacity(0.04))
+        .navigationTitle("Discover")
+        .navigationSubtitle(model.discoverQuery.isEmpty ? "Beyond your library" : "\(model.discoverResults.count) results for “\(model.discoverQuery)”")
     }
 }

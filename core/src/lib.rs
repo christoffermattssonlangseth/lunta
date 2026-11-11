@@ -326,6 +326,17 @@ impl Library {
         self.paper(id).map(|p| export::citation(&p, style))
     }
 
+    // ---- discovering new papers ----
+
+    /// Searches beyond the library (OpenAlex) and marks hits that are already in it (blocking).
+    pub fn discover(&self, query: String, limit: u32) -> Result<Vec<metadata::DiscoverHit>> {
+        let mut hits = metadata::discover(&query, limit)?;
+        for h in hits.iter_mut() {
+            h.in_library = self.find_by_doi(h.meta.doi.clone()).or_else(|| self.find_by_title(&h.meta.title)).map(|p| p.id);
+        }
+        Ok(hits)
+    }
+
     // ---- finding PDFs ----
 
     /// Searches open-access sources for the paper's PDF, downloads the best one and attaches it.

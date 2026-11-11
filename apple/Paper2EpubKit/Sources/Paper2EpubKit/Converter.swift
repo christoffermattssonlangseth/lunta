@@ -110,3 +110,11 @@ extension Paper2Epub {
         return PDFAnalyzer.quickDOI(doc)
     }
 }
+
+extension Paper2Epub {
+    /// Plain text of the first pages of a PDF (for matching a PDF to a known paper by its title).
+    public static func firstPagesText(ofPDF data: Data, pages: Int = 2) -> String {
+        guard let doc = PDFDocument(data: data) else { return "" }
+        return (0..<min(pages, doc.pageCount)).compactMap { doc.page(at: $0)?.string }.joined(separator: " ")
+    }
+}

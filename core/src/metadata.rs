@@ -343,3 +343,83 @@ pub fn download_pdf(url: &str) -> Result<Vec<u8>> {
     }
     Ok(data)
 }
+
+// ---------------------------------------------------------------- discovering new papers
+
+/// A paper found outside the library (OpenAlex).
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct DiscoverHit {
+    pub meta: PaperMeta,
+    pub cited_by: u32,
+    pub open_access: bool,
+    /// Id of the paper if it is already in the library (filled in by `Library::discover`).
+    pub in_library: Option<String>,
+}
+
+/// Searches OpenAlex (≈250M works) by relevance.
+pub fn discover(query: &str, limit: u32) -> Result<Vec<DiscoverHit>> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(vec![]);
+    }
+    let url = format!(
+        "https://api.openalex.org/works?search={}&per_page={}&select=title,authorships,publication_date,primary_location,doi,ids,cited_by_count,open_access,abstract_inverted_index,biblio",
+        enc(q).replace('/', "%2F"),
+        limit.clamp(1, 50)
+    );
+    let j = get_json(&url)?;
+    let mut out = vec![];
+    for w in j["results"].as_array().cloned().unwrap_or_default() {
+        let doi = s(&w["doi"]).trim_start_matches("https://doi.org/").to_string();
+        let pmid = s(&w["ids"]["pmid"]).rsplit('/').next().unwrap_or("").to_string();
+        let pmcid = s(&w["ids"]["pmcid"]).rsplit('/').next().unwrap_or("").to_string();
+        let authors = w["authorships"]
+            .as_array()
+            .map(|a| a.iter().map(|x| s(&x["author"]["display_name"])).filter(|n| !n.is_empty()).collect())
+            .unwrap_or_default();
+        let b = &w["biblio"];
+        let pages = match (s(&b["first_page"]), s(&b["last_page"])) {
+            (f, l) if !f.is_empty() && !l.is_empty() && f != l => format!("{f}-{l}"),
+            (f, _) => f,
+        };
+        let meta = PaperMeta {
+            title: strip_tags(&s(&w["title"])),
+            authors,
+            date: s(&w["publication_date"]),
+            journal: s(&w["primary_location"]["source"]["display_name"]),
+            volume: s(&b["volume"]),
+            issue: s(&b["issue"]),
+            pages,
+            doi,
+            pmid,
+            pmcid: if pmcid.to_uppercase().starts_with("PMC") { pmcid.to_uppercase() } else { String::new() },
+            abstract_text: inverted_abstract(&w["abstract_inverted_index"]),
+            ..Default::default()
+        };
+        if meta.title.is_empty() {
+            continue;
+        }
+        out.push(DiscoverHit {
+            meta,
+            cited_by: w["cited_by_count"].as_u64().unwrap_or(0) as u32,
+            open_access: w["open_access"]["is_oa"].as_bool().unwrap_or(false),
+            in_library: None,
+        });
+    }
+    Ok(out)
+}
+
+/// OpenAlex stores abstracts as {word: [positions]}.
+fn inverted_abstract(v: &Value) -> String {
+    let Some(map) = v.as_object() else { return String::new() };
+    let mut words: Vec<(u64, &str)> = vec![];
+    for (w, pos) in map {
+        for p in pos.as_array().into_iter().flatten() {
+            if let Some(i) = p.as_u64() {
+                words.push((i, w.as_str()));
+            }
+        }
+    }
+    words.sort_by_key(|x| x.0);
+    words.into_iter().map(|x| x.1).collect::<Vec<_>>().join(" ")
+}

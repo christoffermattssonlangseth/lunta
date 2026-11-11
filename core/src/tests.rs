@@ -305,3 +305,12 @@ fn icloud_placeholders_count_as_present() {
     assert!(lib.expected_file_path(p.id.clone(), FileKind::Epub).ends_with("book.epub"));
     assert_eq!(lib.pending_downloads().len(), 1);
 }
+
+#[test]
+#[ignore] // network
+fn discovers_papers_on_openalex() {
+    let hits = metadata::discover("spatial transcriptomics multiple sclerosis lesions", 10).unwrap();
+    assert!(!hits.is_empty());
+    assert!(hits.iter().any(|h| !h.meta.abstract_text.is_empty() && !h.meta.authors.is_empty()));
+    for h in hits.iter().take(5) { println!("{} | {} | {} | cited {}", h.meta.title, h.meta.journal, h.meta.date, h.cited_by); }
+}

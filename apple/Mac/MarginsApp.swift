@@ -56,8 +56,12 @@ final class ModelHolder: ObservableObject {
             let file = URL(fileURLWithPath: args[i + 1])
             let pdfs = args.firstIndex(of: "-pdfs").flatMap { $0 + 1 < args.count ? URL(fileURLWithPath: args[$0 + 1]) : nil }
             Task { await model.importExport(file: file, pdfFolder: pdfs) }
-        } else if let model, args.contains("-resume") {
-            Task { await model.makeReadingViews() }
+        } else if let model, let i = args.firstIndex(of: "-importPDFs"), i + 1 < args.count {
+            let folder = URL(fileURLWithPath: args[i + 1])
+            Task { await model.importPDFFolder(folder); await model.makeReadingViews() }
+        } else if let model {
+            // keep making reading views in the background whenever the app is open
+            Task { try? await Task.sleep(nanoseconds: 3_000_000_000); await model.makeReadingViews() }
         }
     }
 }
