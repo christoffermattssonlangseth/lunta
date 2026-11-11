@@ -17,6 +17,9 @@ struct ReaderView: View {
     @AppStorage("readerFontScale") private var fontScale = 1.0
     @State private var figure: ReaderFigure?
     @State private var sharing = false
+    @State private var organizing = false
+    @State private var editing = false
+    @State private var chromeHidden = false
     @State private var current: String?
     @State private var scrollRequest = ScrollRequest()
     @StateObject private var narrator = Narrator()
@@ -39,7 +42,11 @@ struct ReaderView: View {
                 ProgressView(message ?? "Opening…")
             } else if mode == .reading, let book {
                 EpubWebViewIOS(url: URL(fileURLWithPath: book.combined), readAccess: URL(fileURLWithPath: book.dir),
-                               fontScale: fontScale, scrollRequest: scrollRequest, controller: controller) { current = $0 }
+                               fontScale: fontScale, scrollRequest: scrollRequest, controller: controller,
+                               onChrome: { hide in
+                                   guard hide != chromeHidden, !(hide && listening) else { return }
+                                   withAnimation(.easeInOut(duration: 0.22)) { chromeHidden = hide }
+                               }) { current = $0 }
                     .ignoresSafeArea(edges: listening ? [] : .bottom)
                     .safeAreaInset(edge: .bottom) {
                         if listening { NarrationBar(narrator: narrator) { stopListening() } }
@@ -51,6 +58,9 @@ struct ReaderView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarVisibility(chromeHidden && mode == .reading ? .hidden : .visible, for: .navigationBar)
+        .statusBarHidden(chromeHidden && mode == .reading)
+        .onChange(of: listening) { _, on in if on { chromeHidden = false } }
         .toolbar {
             if book != nil && paper?.hasPdf == true {
                 ToolbarItem(placement: .principal) {
@@ -65,18 +75,28 @@ struct ReaderView: View {
                     }
                     Button { asking = true } label: { Image(systemName: "sparkles") }
                     Button { showContents = true } label: { Image(systemName: "list.bullet") }
-                    Menu {
-                        Button { fontScale = min(2.2, fontScale + 0.1) } label: { Label("Larger Text", systemImage: "textformat.size.larger") }
-                        Button { fontScale = max(0.7, fontScale - 0.1) } label: { Label("Smaller Text", systemImage: "textformat.size.smaller") }
-                        Picker("Natural Voice", selection: Binding(get: { PhoneVoice.shared.voice }, set: { PhoneVoice.shared.voice = $0 })) {
-                            ForEach(PhoneVoice.voices, id: \.id) { Text($0.name).tag($0.id) }
-                        }
-                    } label: { Image(systemName: "textformat.size") }
                 }
-                Button { sharing = true } label: { Image(systemName: "square.and.arrow.up") }
-                Button { showInfo = true } label: { Image(systemName: "info.circle") }
+                Menu {
+                    if mode == .reading, book != nil {
+                        ControlGroup {
+                            Button { fontScale = max(0.7, fontScale - 0.1) } label: { Label("Smaller", systemImage: "textformat.size.smaller") }
+                            Button { fontScale = min(2.2, fontScale + 0.1) } label: { Label("Larger", systemImage: "textformat.size.larger") }
+                        } label: { Text("Text Size") }
+                        Picker(selection: Binding(get: { PhoneVoice.shared.voice }, set: { PhoneVoice.shared.voice = $0 })) {
+                            ForEach(PhoneVoice.voices, id: \.id) { Text($0.name).tag($0.id) }
+                        } label: { Label("Natural Voice", systemImage: "waveform") }
+                        .pickerStyle(.menu)
+                        Divider()
+                    }
+                    Button { organizing = true } label: { Label("Folders & Tags…", systemImage: "folder") }
+                    Button { editing = true } label: { Label("Edit Details…", systemImage: "pencil") }
+                    Button { sharing = true } label: { Label("Share…", systemImage: "square.and.arrow.up") }
+                    Button { showInfo = true } label: { Label("Paper Info", systemImage: "info.circle") }
+                } label: { Image(systemName: "ellipsis.circle") }
             }
         }
+        .sheet(isPresented: $organizing) { OrganizeView(ids: [paperID]).environmentObject(model) }
+        .sheet(isPresented: $editing) { MetadataEditor(paperID: paperID).environmentObject(model) }
         .sheet(isPresented: $showContents) {
             if let book { ContentsSheet(book: book, current: current) { a in current = a; scrollRequest = ScrollRequest(anchor: a); showContents = false } }
         }
@@ -220,6 +240,7 @@ struct EpubWebViewIOS: UIViewRepresentable {
     let fontScale: Double
     let scrollRequest: ScrollRequest
     let controller: ReaderController
+    var onChrome: (Bool) -> Void = { _ in }
     let onPosition: (String) -> Void
 
     func makeUIView(context: Context) -> WKWebView {
@@ -242,11 +263,14 @@ struct EpubWebViewIOS: UIViewRepresentable {
         v.scrollView.showsHorizontalScrollIndicator = false
         v.loadFileURL(url, allowingReadAccessTo: readAccess)
         context.coordinator.loaded = url
+        context.coordinator.onChrome = onChrome
+        context.coordinator.watch(v.scrollView)
         return v
     }
 
     func updateUIView(_ v: WKWebView, context: Context) {
         context.coordinator.onPosition = onPosition
+        context.coordinator.onChrome = onChrome
         v.pageZoom = fontScale
         if context.coordinator.loaded != url {
             context.coordinator.loaded = url
@@ -264,7 +288,34 @@ struct EpubWebViewIOS: UIViewRepresentable {
         var loaded: URL?
         var lastScroll = ScrollRequest()
         var onPosition: (String) -> Void
+        var onChrome: (Bool) -> Void = { _ in }
+        private var observation: NSKeyValueObservation?
+        private var lastY: CGFloat = 0
+        private var quietUntil = Date.distantPast
         init(onPosition: @escaping (String) -> Void) { self.onPosition = onPosition }
+
+        /// Hides the bars while scrolling down through the text and brings them back on scrolling up.
+        func watch(_ sv: UIScrollView) {
+            observation = sv.observe(\.contentOffset, options: [.new]) { [weak self] sv, _ in
+                MainActor.assumeIsolated { self?.scrolled(sv) }
+            }
+        }
+
+        @MainActor private func scrolled(_ sv: UIScrollView) {
+            let y = sv.contentOffset.y + sv.adjustedContentInset.top
+            defer { lastY = y }
+            guard sv.isTracking || sv.isDecelerating, Date() > quietUntil else { return }
+            let dy = y - lastY
+            var hide: Bool?
+            if y < 40 { hide = false }
+            else if dy > 6 { hide = true }
+            else if dy < -10 { hide = false }
+            if let hide {
+                // the bar's own animation shifts the content: ignore that
+                quietUntil = Date().addingTimeInterval(0.35)
+                onChrome(hide)
+            }
+        }
         func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
             if let id = m.body as? String { onPosition(id) }
         }
