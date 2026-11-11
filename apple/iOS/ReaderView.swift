@@ -26,6 +26,7 @@ struct ReaderView: View {
     @State private var scrollRequest = ScrollRequest()
     @StateObject private var narrator = Narrator()
     @StateObject private var controller = ReaderController()
+    @StateObject private var position = PositionKeeper()
     @State private var listening = false
     @State private var asking = false
     @StateObject private var ask: AskEngine
@@ -53,6 +54,7 @@ struct ReaderView: View {
                     .safeAreaInset(edge: .bottom) {
                         if listening { NarrationBar(narrator: narrator) { stopListening() } }
                     }
+                    .overlay(alignment: .top) { ResumeNote(text: position.note).animation(.easeOut, value: position.note) }
             } else if mode == .pdf, let pdfURL {
                 PDFKitViewIOS(url: pdfURL).ignoresSafeArea(edges: .bottom)
             } else {
@@ -137,7 +139,7 @@ struct ReaderView: View {
         .onChange(of: mode) { _, m in if m == .pdf, pdfURL == nil { Task { await loadPDF() } } }
         .task {
             controller.onFigure = { figure = $0 }
-            controller.onPageReady = { refreshHighlights() }
+            controller.onPageReady = { refreshHighlights(); position.pageReady(paperID, model: model, controller: controller) }
             controller.onAnnotation = { id in editingAnnotation = model.annotations(paperID).first { $0.id == id } }
             controller.onMenu = { action in
                 Task {
@@ -156,7 +158,7 @@ struct ReaderView: View {
             ask.selection = { [weak controller] in await controller?.selectedText() }
             await load()
         }
-        .onDisappear { if listening { stopListening() } }
+        .onDisappear { if listening { stopListening() }; position.stop(paperID, model: model, controller: controller) }
     }
 
     private func refreshHighlights() { controller.showAnnotations(model.annotations(paperID)) }

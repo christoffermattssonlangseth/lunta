@@ -388,6 +388,7 @@ extension WKWebViewConfiguration {
     /// Adds the highlight script and its message handler.
     func addAnnotations(_ controller: ReaderController) {
         userContentController.addUserScript(WKUserScript(source: ReaderAssets.annotationJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        userContentController.addUserScript(WKUserScript(source: ReaderAssets.positionJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         let h = AnnotationMessageHandler()
         h.controller = controller
         userContentController.add(h, name: "ann")

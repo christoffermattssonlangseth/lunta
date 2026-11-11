@@ -16,6 +16,7 @@ struct ReaderWindow: View {
     @State private var error: String?
     @StateObject private var narrator = Narrator()
     @StateObject private var controller = ReaderController()
+    @StateObject private var position = PositionKeeper()
     @State private var listening = false
     @State private var asking = false
     @State private var editingAnnotation: Annotation?
@@ -68,6 +69,7 @@ struct ReaderWindow: View {
                             .safeAreaInset(edge: .bottom) {
                                 if listening { NarrationBar(narrator: narrator) { stopListening() } }
                             }
+                            .overlay(alignment: .top) { ResumeNote(text: position.note).animation(.easeOut, value: position.note) }
                     } else if let error {
                         ContentUnavailableView("No reading view", systemImage: "book", description: Text(error))
                     } else {
@@ -135,13 +137,14 @@ struct ReaderWindow: View {
         .sheet(item: $figure) { f in FigureViewer(figure: f) }
         .sheet(item: $editingAnnotation) { a in AnnotationEditor(annotation: a) { refreshHighlights() } }
         .onChange(of: paper?.annotationCount) { refreshHighlights() }
+        .onDisappear { position.stop(paperID, model: model, controller: controller) }
         .onReceive(NotificationCenter.default.publisher(for: .marginsReaderMode)) { n in
             if n.object as? String == paperID, let m = Self.requestedMode.removeValue(forKey: paperID) { mode = m }
         }
         .navigationTitle(paper?.meta.title ?? "Reader")
         .task {
             controller.onFigure = { figure = $0 }
-            controller.onPageReady = { refreshHighlights() }
+            controller.onPageReady = { refreshHighlights(); position.pageReady(paperID, model: model, controller: controller) }
             controller.onAnnotation = { id in editingAnnotation = model.annotations(paperID).first { $0.id == id } }
             controller.onMenu = { action in
                 switch action {
