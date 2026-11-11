@@ -8,12 +8,21 @@ struct LibraryView: View {
     @State private var asking = false
     @State private var askPath: [String] = []
     @State private var path: [String] = []
+    @State private var panel = false
     @State private var sharing: ShareTargetIOS?
     @State private var organizing: ShareTargetIOS?
     @State private var prompt: NameRequest?
     @StateObject private var ask = AskEngine(scope: .library)
 
     var body: some View {
+        SidePanelHost(shown: $panel, edgeEnabled: path.isEmpty) {
+            stack
+        } panel: {
+            SourcePanel { withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) { panel = false } }
+        }
+    }
+
+    private var stack: some View {
         NavigationStack(path: $path) {
             Group {
                 if model.source == .discover { DiscoverListIOS() }
@@ -33,7 +42,15 @@ struct LibraryView: View {
             }
             #endif
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { SourceMenu() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) { panel = true } } label: {
+                        Image(systemName: "sidebar.leading")
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        // something new from a watch
+                        if WatchCenter.shared.newCount > 0 { Circle().fill(Color.marginsCopper).frame(width: 8, height: 8).offset(x: 3, y: -2) }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { asking = true } label: { Image(systemName: "sparkles") }
                 }
@@ -81,13 +98,19 @@ struct LibraryView: View {
             List {
               ForEach(model.papers) { p in
                 NavigationLink(value: p.id) { PaperRow(paper: p, snippet: model.snippets[p.id]) }
-                    .swipeActions(edge: .trailing) {
-                        Button { sharing = ShareTargetIOS(id: p.id) } label: { Label("Share", systemImage: "square.and.arrow.up") }
-                            .tint(.blue)
+                    // only from the right: a swipe from the left edge opens the side panel
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button { organizing = ShareTargetIOS(id: p.id) } label: { Label("Folders & Tags", systemImage: "folder") }
                             .tint(.marginsTeal)
+                        Button { model.toggleStar(p) } label: { Label(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") }
+                            .tint(.marginsCopper)
+                        Button { model.setRead(p, !p.read) } label: { Label(p.read ? "Unread" : "Read", systemImage: p.read ? "circle" : "checkmark.circle") }
+                            .tint(.gray)
                     }
                     .contextMenu {
+                        Button(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") { model.toggleStar(p) }
+                        Button(p.read ? "Mark as Unread" : "Mark as Read", systemImage: p.read ? "circle" : "checkmark.circle") { model.setRead(p, !p.read) }
+                        Divider()
                         Button("Folders & Tags…", systemImage: "folder") { organizing = ShareTargetIOS(id: p.id) }
                         FolderMenu(ids: [p.id]) {
                             prompt = NameRequest(title: "New Folder", action: "Create") { model.newFolder($0, with: [p.id]) }
@@ -100,12 +123,6 @@ struct LibraryView: View {
                         }
                         Button("Share…", systemImage: "square.and.arrow.up") { sharing = ShareTargetIOS(id: p.id) }
                         Menu("Watch", systemImage: "bell") { WatchMenu(paper: p) }
-                    }
-                    .swipeActions(edge: .leading) {
-                        Button { model.toggleStar(p) } label: { Label(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") }
-                            .tint(.marginsCopper)
-                        Button { model.setRead(p, !p.read) } label: { Label(p.read ? "Unread" : "Read", systemImage: p.read ? "circle" : "checkmark.circle") }
-                            .tint(.marginsTeal)
                     }
               }
               if !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -130,74 +147,6 @@ struct LibraryView: View {
     }
 }
 
-struct SourceMenu: View {
-    @EnvironmentObject var model: LibraryModel
-    @State private var managing = false
-    @State private var cleaning = false
-    @State private var newSmart = false
-    @State private var editingSmart: SmartFolder?
-    var body: some View {
-        Menu {
-            Picker("Show", selection: $model.source) {
-                Label("All Papers", systemImage: "books.vertical").tag(SidebarItem.all)
-                Label("Starred", systemImage: "star").tag(SidebarItem.starred)
-                Label("Unread", systemImage: "circle.badge").tag(SidebarItem.unread)
-                Label("Discover New Papers", systemImage: "globe.europe.africa").tag(SidebarItem.discover)
-                Label("New for You", systemImage: "bell.badge").tag(SidebarItem.alerts)
-            }
-            if !model.collections.isEmpty {
-                Menu("Folders") {
-                    Picker("Folders", selection: $model.source) {
-                        ForEach(model.foldersFlat, id: \.folder.id) { item in
-                            Label(String(repeating: "    ", count: item.depth) + item.folder.name,
-                                  systemImage: item.depth == 0 ? "folder" : "folder.fill")
-                                .tag(SidebarItem.collection(item.folder.id))
-                        }
-                    }
-                }
-            }
-            Menu("Smart Folders") {
-                if !model.smartFolders.isEmpty {
-                    Picker("Smart Folders", selection: $model.source) {
-                        ForEach(model.smartFolders) { f in Label(f.name, systemImage: "gearshape.2").tag(SidebarItem.smart(f.id)) }
-                    }
-                }
-                Button("New Smart Folder…", systemImage: "plus") { newSmart = true }
-                if case .smart(let id) = model.source, let f = model.smartFolder(id) {
-                    Button("Edit “\(f.name)”…", systemImage: "slider.horizontal.3") { editingSmart = f }
-                    Button("Delete “\(f.name)”", systemImage: "trash", role: .destructive) { model.deleteSmartFolder(id) }
-                }
-            }
-            if !model.tags.isEmpty {
-                Menu("Tags") {
-                    Picker("Tags", selection: $model.source) {
-                        ForEach(model.tags, id: \.self) { t in Label(t, systemImage: "tag").tag(SidebarItem.tag(t)) }
-                    }
-                }
-            }
-            Button("Manage Folders & Tags…", systemImage: "folder.badge.gearshape") { managing = true }
-            Button("Clean Up Library…", systemImage: "wand.and.sparkles") { cleaning = true }
-            Divider()
-            Picker("Sort", selection: $model.sort) {
-                Text("Recently added").tag(SortKey.added)
-                Text("Year").tag(SortKey.year)
-                Text("Title").tag(SortKey.title)
-                Text("First author").tag(SortKey.firstAuthor)
-            }
-        } label: {
-            Image(systemName: "line.3.horizontal.decrease.circle")
-        }
-        .sheet(isPresented: $managing) { ManageFoldersView().environmentObject(model) }
-        .sheet(isPresented: $newSmart) { SmartFolderEditor(folder: SmartFolder(), isNew: true).environmentObject(model) }
-        .sheet(item: $editingSmart) { f in SmartFolderEditor(folder: f).environmentObject(model) }
-        .sheet(isPresented: $cleaning) {
-            NavigationStack {
-                CleanupView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { cleaning = false } } }
-            }
-            .environmentObject(model)
-        }
-    }
-}
 
 struct PaperRow: View {
     let paper: Paper
