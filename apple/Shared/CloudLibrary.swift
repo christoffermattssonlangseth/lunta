@@ -130,10 +130,10 @@ private final class Flag: @unchecked Sendable {
 /// Reader styling and scripts shared by the Mac and iPhone reading views.
 enum ReaderAssets {
     static let css = """
-    html { font-size: 112%; scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+    html { font-size: calc(112% * var(--m-scale, 1)); scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
     body { max-width: 42em; margin: 2.2em auto !important; padding: 0 2em 6em; font-family: "Iowan Old Style", Georgia, serif;
            line-height: 1.6; color: #1d1d1f; background: #fffdf8; }
-    @media (max-width: 640px) { html { font-size: 122%; } body { margin-top: 1em !important; padding: 0 1.05em 5em; line-height: 1.55; } }
+    @media (max-width: 640px) { html { font-size: calc(122% * var(--m-scale, 1)); } body { margin-top: 1em !important; padding: 0 1.05em 5em; line-height: 1.55; } }
     @media (prefers-color-scheme: dark) { body { color: #e6e3dc; background: #1c1b19; } a { color: #9ec9d8; } img { opacity: .92; } }
     h1, h2, h3 { font-family: -apple-system, "Helvetica Neue", sans-serif; scroll-margin-top: 1em; }
     h1 { margin-top: 2.4em; padding-top: 1.2em; border-top: 1px solid rgba(127,127,127,.25); }
@@ -203,7 +203,8 @@ enum ReaderAssets {
         let c = css.replacingOccurrences(of: "`", with: "")
         // the books don't declare a mobile viewport; without one the iPhone lays the page out 980 px wide and shrinks it
         return "var s=document.createElement('style');s.textContent=`\(c)`;document.documentElement.appendChild(s);"
-            + "if(!document.querySelector('meta[name=viewport]')){var m=document.createElement('meta');m.name='viewport';m.content='width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover';(document.head||document.documentElement).appendChild(m);}"
+            // never magnified: the page always fits the screen (pinching changes the text size instead)
+            + "var m=document.querySelector('meta[name=viewport]');if(!m){m=document.createElement('meta');m.name='viewport';(document.head||document.documentElement).appendChild(m);}m.content='width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';"
             + figureJS + overflowJS
     }
 

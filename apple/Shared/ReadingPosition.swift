@@ -81,7 +81,8 @@ extension ReaderAssets {
       window.marginsReadingOffset = function(){
         var ns = nodes(), pos = 0;
         // pages: the exact character at the start of the page, so the place survives new page sizes
-        var o = window.marginsPageOrigin && window.marginsPageOrigin();
+        // scroll: the character in the first line under the top edge (the middle of the line, clear of margins)
+        var o = (window.marginsPageOrigin && window.marginsPageOrigin()) || { x: window.innerWidth / 2, y: 64 };
         var c = o && document.caretRangeFromPoint ? document.caretRangeFromPoint(o.x, o.y) : null;
         if (c && c.startContainer.nodeType === 3) {
           for (var j = 0; j < ns.length; j++) { if (ns[j] === c.startContainer) return pos + c.startOffset; pos += ns[j].nodeValue.length; }
@@ -110,7 +111,11 @@ extension ReaderAssets {
               var rs = r.getClientRects();
               return window.marginsShowRect(rs.length ? rs[0] : el.getBoundingClientRect(), false);
             }
-            var top = el.getBoundingClientRect().top + window.scrollY - 60;
+            // the line holding that exact character, just under the top edge
+            var cr = document.createRange(), ck = Math.max(0, Math.min(len - 1, off - pos));
+            cr.setStart(ns[i], ck); cr.setEnd(ns[i], Math.min(len, ck + 1));
+            var crs = cr.getClientRects(), box = crs.length ? crs[0] : el.getBoundingClientRect();
+            var top = box.top + window.scrollY - 60;
             window.scrollTo({ top: Math.max(0, top), behavior: 'instant' });
             return true;
           }

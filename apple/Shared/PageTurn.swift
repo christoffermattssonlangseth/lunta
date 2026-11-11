@@ -13,7 +13,7 @@ import WebKit
 extension ReaderAssets {
     static let pagedJS = #"""
     (function(){
-      var on = false, top = 24, bottom = 34, native = false, W = 0, Hh = 0, anchor = null, settle = null, busy = false, checks = [], heldPage = -1;
+      var on = false, top = 24, bottom = 34, native = false, W = 0, Hh = 0, anchor = null, settle = null, busy = false, checks = [], heldPage = -1, target = 0;
       var style = document.createElement('style'); document.documentElement.appendChild(style);
       var label = document.createElement('div'); label.id = 'm-page-no';
       function post(m){ try { window.webkit.messageHandlers.page.postMessage(m); } catch (x) {} }
@@ -69,8 +69,11 @@ extension ReaderAssets {
       window.marginsGoToPage = function(n, smooth){
         if (!on) return;
         n = Math.max(0, Math.min(pages() - 1, n));
-        window.scrollTo({ left: n * W, top: 0, behavior: smooth ? 'smooth' : 'instant' });
-        setTimeout(show, smooth ? 380 : 0);
+        target = n;
+        // iPhone: the scroll view moves itself (WebKit can override a script's scroll after a text-size change)
+        if (native) post({ page: n, smooth: !!smooth });
+        else window.scrollTo({ left: n * W, top: 0, behavior: smooth ? 'smooth' : 'instant' });
+        setTimeout(show, smooth ? 380 : 30);
       };
       window.marginsTurn = function(d){ window.marginsGoToPage(page() + d, true); };
 
@@ -96,7 +99,16 @@ extension ReaderAssets {
       }
       // while you stay on the page a relayout put you on, keep the place you were at (re-reading it
       // would give that page's first word, and the place would creep back with every change)
-      function relayout(){ busy = true; layout(); restore(); busy = false; heldPage = page(); show(); }
+      function relayout(){ busy = true; layout(); restore(); busy = false; heldPage = target; show(); }
+
+      // for the app after a text-size change: lay out again if the size changed, and say which page
+      // holds the place being read (the app then moves the scroll view there)
+      window.marginsTargetPage = function(){
+        if (!on) return -1;
+        if (Math.abs(vw() - W) > 0.01 || Math.abs(vh() - Hh) > 0.01) relayout();
+        else restore();
+        return target;
+      };
 
       // A text-size change reaches the page a moment after the app asks for new pages, and the
       // resize event doesn't always follow: keep checking the size for a second and lay the
@@ -117,6 +129,23 @@ extension ReaderAssets {
         on = want; top = t; bottom = b; native = !!isNative;
         relayout();
         watchSize();
+      };
+
+      // iPhone text size: the font is scaled (the page isn't zoomed, which iOS would magnify past
+      // the screen's edge); the place being read is kept in both layouts
+      window.marginsSetTextScale = function(x){
+        var root = document.documentElement;
+        if (root.style.getPropertyValue('--m-scale') === String(x)) return;
+        if (on) {
+          root.style.setProperty('--m-scale', String(x));
+          relayout(); watchSize();
+          setTimeout(function(){ relayout(); }, 400);     // again once images have settled
+        } else {
+          var off = window.marginsReadingOffset ? window.marginsReadingOffset() : null;
+          root.style.setProperty('--m-scale', String(x));
+          if (off != null && off > 0 && window.marginsScrollToOffset) window.marginsScrollToOffset(off);
+          if (window.marginsFixOverflow) window.marginsFixOverflow();
+        }
       };
 
       window.addEventListener('scroll', function(){
@@ -193,11 +222,32 @@ final class PageMessageHandler: NSObject, WKScriptMessageHandler {
     var state: PagedState?
     var onChrome: () -> Void = {}
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
+        #if os(iOS)
+        if let d = m.body as? [String: Any], let n = d["page"] as? Int, let v = m.webView {
+            Self.show(page: n, in: v, animated: d["smooth"] as? Bool ?? false)
+            return
+        }
+        #endif
         guard let s = m.body as? String else { return }
         if s == "hello", let state, let v = m.webView { v.evaluateJavaScript(state.call) }
         if s == "chrome" { Task { @MainActor in self.onChrome() } }
     }
 }
+
+#if os(iOS)
+extension PageMessageHandler {
+    /// Moves the scroll view to a page (a page is exactly the view's width).
+    @MainActor static func show(page n: Int, in v: WKWebView, animated: Bool) {
+        let sv = v.scrollView
+        let w = sv.bounds.width
+        guard w > 0 else { return }
+        let maxX = max(0, sv.contentSize.width - w)
+        let x = min(CGFloat(n) * w, (maxX / w).rounded(.up) * w)
+        sv.setContentOffset(CGPoint(x: max(0, x), y: 0), animated: animated)
+    }
+
+}
+#endif
 
 extension WKWebViewConfiguration {
     /// Adds page turning (off until `state.on`); returns the handler to update later.

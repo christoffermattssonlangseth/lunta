@@ -26,7 +26,9 @@ struct BeyondBanner: View {
 extension LibraryModel {
     /// The library id of a search result, including papers added since the search ran.
     func libraryID(of hit: DiscoverHit) -> String? {
-        hit.inLibrary ?? discoverResults.first { $0.id == hit.id }?.inLibrary
+        if let id = hit.inLibrary ?? discoverResults.first(where: { $0.id == hit.id })?.inLibrary { return id }
+        let key = Self.hitKey(hit)
+        return WatchCenter.shared.finds.first { $0.hit.inLibrary != nil && Self.hitKey($0.hit) == key }?.hit.inLibrary
     }
 }
 
@@ -63,6 +65,7 @@ struct AnyButtonStyle: PrimitiveButtonStyle {
 
 struct DiscoverRow: View {
     @EnvironmentObject var model: LibraryModel
+    @ObservedObject private var watches = WatchCenter.shared   // redraw when a watch's find is added
     let hit: DiscoverHit
     @State private var adding = false
 
@@ -97,6 +100,7 @@ struct DiscoverRow: View {
 
 struct DiscoverDetail: View {
     @EnvironmentObject var model: LibraryModel
+    @ObservedObject private var watches = WatchCenter.shared   // redraw when a watch's find is added
     let hit: DiscoverHit
     @State private var adding = false
 

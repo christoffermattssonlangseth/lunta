@@ -23,7 +23,7 @@ The library syncs between your Mac and iPhone through iCloud Drive.
   own HTML with real equations for arXiv papers, or the PDF itself) (large type on iPhone, zoomable figures, wide
   tables scroll in place) next to the original PDF. **Scroll or turn pages**: page mode lays the paper
   out as pages (two side by side on a wide Mac window); swipe or tap the edges on iPhone, arrow keys,
-  space or a swipe on the Mac. **Highlights and notes** in four colours; the
+  space or a swipe on the Mac. Pinch to change the text size on iPhone. **Highlights and notes** in four colours; the
   **reading position syncs**, so a paper opens where you stopped on the other device.
 - **Listen:** natural-voice narration (Kokoro) on the Mac and on the iPhone, following along in the text.
 - **Clean up:** *Clean Up Library…* finds papers with missing or broken details (fixed from the DOI, or

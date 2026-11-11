@@ -170,14 +170,6 @@ extension LibraryModel {
         h.meta.doi.isEmpty ? titleKey(h.meta.title) : doiKey(h.meta.doi)
     }
 
-    /// Adds a paper found by a watch and remembers it on the watch's find.
-    func addFind(_ f: WatchFind) async -> String? {
-        let id = await addDiscovered(f.hit)
-        if let id, let i = WatchCenter.shared.finds.firstIndex(where: { $0.id == f.id }) {
-            WatchCenter.shared.finds[i] = WatchFind(watch: f.watch, hit: { var h = f.hit; h.inLibrary = id; return h }())
-        }
-        return id
-    }
 }
 
 // MARK: - Views

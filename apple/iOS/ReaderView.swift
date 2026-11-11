@@ -47,6 +47,7 @@ struct ReaderView: View {
             } else if mode == .reading, let book {
                 EpubWebViewIOS(url: URL(fileURLWithPath: book.combined), readAccess: URL(fileURLWithPath: book.dir),
                                fontScale: fontScale, paged: paged, scrollRequest: scrollRequest, controller: controller,
+                               onPinch: { step in fontScale = min(2.2, max(0.7, ((fontScale + step * 0.1) * 10).rounded() / 10)) },
                                onToggleChrome: {
                                    withAnimation(.easeInOut(duration: 0.22)) { chromeHidden.toggle() }
                                },
@@ -289,6 +290,7 @@ struct EpubWebViewIOS: UIViewRepresentable {
     var paged = false
     let scrollRequest: ScrollRequest
     let controller: ReaderController
+    var onPinch: (Double) -> Void = { _ in }
     var onToggleChrome: () -> Void = {}
     var onChrome: (Bool) -> Void = { _ in }
     let onPosition: (String) -> Void
@@ -306,7 +308,10 @@ struct EpubWebViewIOS: UIViewRepresentable {
         fig.controller = controller
         cfg.userContentController.add(fig, name: "fig")
         cfg.addAnnotations(controller)
-        let state = pagedState(fontScale)
+        // text size: the font scales, the page itself is never zoomed
+        cfg.userContentController.addUserScript(WKUserScript(source: "document.documentElement.style.setProperty('--m-scale', '\(fontScale)');", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        context.coordinator.textScale = fontScale
+        let state = pagedState()
         context.coordinator.paging = cfg.addPaging(state)
         context.coordinator.applied = state
         let v = ReaderWebView(frame: .zero, configuration: cfg)
@@ -321,16 +326,21 @@ struct EpubWebViewIOS: UIViewRepresentable {
         context.coordinator.onChrome = onChrome
         context.coordinator.watch(v.scrollView)
         configureScroll(v.scrollView)
+        // pinching changes the text size (the text reflows) instead of magnifying the page
+        v.scrollView.minimumZoomScale = 1
+        v.scrollView.maximumZoomScale = 1
+        let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pinched(_:)))
+        pinch.delegate = context.coordinator
+        v.addGestureRecognizer(pinch)
         return v
     }
 
     /// Margins for page mode, in CSS pixels: clear of the notch / Dynamic Island and the home bar,
     /// with room for the page number. Taken from the window so they don't change with the bars.
-    private func pagedState(_ zoom: Double) -> PagedState {
+    private func pagedState() -> PagedState {
         let win = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
         let inset = win?.safeAreaInsets ?? UIEdgeInsets(top: 50, left: 0, bottom: 34, right: 0)
-        let z = max(zoom, 0.5)
-        return PagedState(on: paged, top: (inset.top + 14) / z, bottom: (max(inset.bottom, 12) + 22) / z, native: true)
+        return PagedState(on: paged, top: inset.top + 14, bottom: max(inset.bottom, 12) + 22, native: true)
     }
 
     private func configureScroll(_ sv: UIScrollView) {
@@ -347,9 +357,14 @@ struct EpubWebViewIOS: UIViewRepresentable {
         context.coordinator.onChrome = onChrome
         context.coordinator.paged = paged
         context.coordinator.paging?.onChrome = onToggleChrome
+        context.coordinator.onPinch = onPinch
         configureScroll(v.scrollView)
-        v.pageZoom = fontScale
-        let state = pagedState(fontScale)
+        if v.scrollView.zoomScale != 1 { v.scrollView.setZoomScale(1, animated: false) }
+        if context.coordinator.textScale != fontScale {
+            context.coordinator.textScale = fontScale
+            v.evaluateJavaScript("marginsSetTextScale(\(fontScale))")
+        }
+        let state = pagedState()
         if state != context.coordinator.applied {
             context.coordinator.applied = state
             context.coordinator.paging?.state = state
@@ -367,7 +382,7 @@ struct EpubWebViewIOS: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(onPosition: onPosition) }
 
-    final class Coordinator: NSObject, WKScriptMessageHandler {
+    final class Coordinator: NSObject, WKScriptMessageHandler, UIGestureRecognizerDelegate {
         var loaded: URL?
         var lastScroll = ScrollRequest()
         var onPosition: (String) -> Void
@@ -375,6 +390,23 @@ struct EpubWebViewIOS: UIViewRepresentable {
         var paging: PageMessageHandler?
         var applied: PagedState?
         var paged = false
+        var onPinch: (Double) -> Void = { _ in }
+        var textScale: Double?
+        private var pinchBase: CGFloat = 1
+
+        /// One text-size step for every ~15% of pinch, so the text grows as you pinch.
+        @objc func pinched(_ g: UIPinchGestureRecognizer) {
+            switch g.state {
+            case .began: pinchBase = 1
+            case .changed:
+                let r = g.scale / pinchBase
+                if r > 1.15 { onPinch(1); pinchBase = g.scale }
+                else if r < 0.87 { onPinch(-1); pinchBase = g.scale }
+            default: break
+            }
+        }
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
         private var observation: NSKeyValueObservation?
         private var lastY: CGFloat = 0
         private var quietUntil = Date.distantPast
