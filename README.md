@@ -1,4 +1,13 @@
-# Margins
+<p align="center">
+  <img src="design/logo-1024.png" width="140" alt="Margins logo">
+</p>
+
+<h1 align="center">Margins</h1>
+
+<p align="center">A reference manager for Mac and iPhone: collect papers, read them comfortably on the phone,
+highlight and annotate, search everything, and export citations.</p>
+
+---
 
 A reference manager for Mac and iPhone: collect papers, read them comfortably on the phone,
 highlight and annotate, search everything, and export citations. The library syncs through iCloud Drive.
