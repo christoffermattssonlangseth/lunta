@@ -171,13 +171,16 @@ enum ReaderAssets {
     static let overflowJS = """
     (function(){
       function fix(){
-        var W = document.documentElement.clientWidth;
+        // in page-turning mode the limit is one column, wherever on the page it sits
+        var paged = window.marginsPaged && window.marginsPaged();
+        var W = paged ? document.body.getBoundingClientRect().width : document.documentElement.clientWidth;
+        if (paged) { var cs = getComputedStyle(document.body); W = parseFloat(cs.columnWidth) || W; }
         var all = document.body ? document.body.getElementsByTagName('*') : [];
         for (var i = 0; i < all.length; i++) {
           var el = all[i];
           if (el.closest('.m-scroll')) continue;
           var r = el.getBoundingClientRect();
-          if (r.right <= W + 1 && el.scrollWidth <= el.clientWidth + 1) continue;
+          if ((paged ? r.width <= W + 1 : r.right <= W + 1) && el.scrollWidth <= el.clientWidth + 1) continue;
           var tag = el.tagName.toLowerCase();
           if (tag === 'table' || tag === 'pre' || tag === 'math' || el.classList.contains('table-wrap') || el.classList.contains('disp-formula')) {
             var box = document.createElement('div'); box.className = 'm-scroll';
@@ -188,6 +191,7 @@ enum ReaderAssets {
           }
         }
       }
+      window.marginsFixOverflow = fix;
       fix();
       window.addEventListener('load', fix);
       setTimeout(fix, 600);
@@ -209,7 +213,7 @@ enum ReaderAssets {
       var t = null;
       function report(){
         var cur = null, hs = document.querySelectorAll('h1[id],h2[id],h3[id],.section-start');
-        for (var i = 0; i < hs.length; i++) { if (hs[i].getBoundingClientRect().top < 140) cur = hs[i].id; else break; }
+        for (var i = 0; i < hs.length; i++) { var r = hs[i].getBoundingClientRect(); if (window.marginsPaged && window.marginsPaged() ? r.left < window.innerWidth - 1 : r.top < 140) cur = hs[i].id; else break; }
         if (cur) window.webkit.messageHandlers.pos.postMessage(cur);
       }
       window.addEventListener('scroll', function(){ clearTimeout(t); t = setTimeout(report, 90); });
@@ -253,7 +257,7 @@ enum ReaderAssets {
       };
       window.marginsFirstVisible = function(){
         var els = document.querySelectorAll('[id^="narr-"], h1[id], h2[id], h3[id], p[id], li[id]');
-        for (var i = 0; i < els.length; i++) { var r = els[i].getBoundingClientRect(); if (r.bottom > 60) return els[i].id; }
+        for (var i = 0; i < els.length; i++) { var r = els[i].getBoundingClientRect(); if (r.bottom > 60 && r.right > 0) return els[i].id; }
         return '';
       };
       document.addEventListener('click', function(ev){

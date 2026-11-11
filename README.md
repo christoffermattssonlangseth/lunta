@@ -21,7 +21,9 @@ The library syncs between your Mac and iPhone through iCloud Drive.
   added, unread/starred, PDF or not, highlighted). Folders & Tags is one tap away on iPhone (swipe, long-press, or the reader's ⋯ menu).
 - **Read:** a reflowable reading view made from the paper (open-access XML from PMC/Europe PMC, arXiv's
   own HTML with real equations for arXiv papers, or the PDF itself) (large type on iPhone, zoomable figures, wide
-  tables scroll in place) next to the original PDF. **Highlights and notes** in four colours; the
+  tables scroll in place) next to the original PDF. **Scroll or turn pages**: page mode lays the paper
+  out as pages (two side by side on a wide Mac window); swipe or tap the edges on iPhone, arrow keys,
+  space or a swipe on the Mac. **Highlights and notes** in four colours; the
   **reading position syncs**, so a paper opens where you stopped on the other device.
 - **Listen:** natural-voice narration (Kokoro) on the Mac and on the iPhone, following along in the text.
 - **Clean up:** *Clean Up Library…* finds papers with missing or broken details (fixed from the DOI, or
@@ -84,6 +86,11 @@ rendered in-app with WebKit). Both apps offer both views:
 
 - iPhone: reading view by default (text reflows to the screen), PDF one tap away.
 - Mac: PDF by default, reading view one tap away.
+
+The reading view scrolls or turns pages (⋯ › Layout on iPhone, the book button or ⌥⌘P on the Mac).
+Page mode cuts the page into screen-sized CSS columns (`apple/Shared/PageTurn.swift`); on iPhone the
+web view's scroll view pages natively, so a page follows your finger. Contents, narration, highlights
+and the synced reading position all turn to the right page.
 
 There is no conversion back to PDF: the original PDF is kept, so nothing is lost. Highlights and
 notes store the quoted text with a little context (`quote`, `prefix`, `suffix`) and a character offset,
@@ -165,6 +172,7 @@ must be running; the extension talks to it on `127.0.0.1:47480` (extension reque
 8. ✅ Duplicate and metadata cleanup, smart folders
 9. ✅ New-paper alerts
 10. ✅ arXiv HTML reading views (arXiv HTML, ar5iv, then PDF)
+11. ✅ Page-turning reading view
 
 ## License
 

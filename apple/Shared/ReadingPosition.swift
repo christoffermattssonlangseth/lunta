@@ -85,7 +85,7 @@ extension ReaderAssets {
           if (n.nodeValue.trim()) {
             var r = document.createRange(); r.selectNodeContents(n);
             var b = r.getBoundingClientRect();
-            if (b.height > 0 && b.bottom > 40) return pos;
+            if (b.height > 0 && b.bottom > 40 && b.right > 1 && b.left < window.innerWidth) return pos;
           }
           pos += len;
         }
@@ -97,6 +97,12 @@ extension ReaderAssets {
           var len = ns[i].nodeValue.length;
           if (pos + len > off) {
             var el = ns[i].parentElement; if (!el) return false;
+            if (window.marginsPaged && window.marginsPaged()) {
+              var r = document.createRange(), k = Math.max(0, Math.min(len - 1, off - pos));
+              r.setStart(ns[i], k); r.setEnd(ns[i], Math.min(len, k + 1));
+              var rs = r.getClientRects();
+              return window.marginsShowRect(rs.length ? rs[0] : el.getBoundingClientRect(), false);
+            }
             var top = el.getBoundingClientRect().top + window.scrollY - 60;
             window.scrollTo({ top: Math.max(0, top), behavior: 'instant' });
             return true;

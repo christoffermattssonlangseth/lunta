@@ -12,6 +12,7 @@ struct ReaderWindow: View {
     @State private var current: String?          // anchor of the section being read
     @State private var scrollRequest = ScrollRequest()
     @AppStorage("readerFontScale") private var fontScale = 1.0
+    @AppStorage("readerPagedMac") private var paged = false
     @State private var figure: ReaderFigure?
     @State private var error: String?
     @StateObject private var narrator = Narrator()
@@ -65,7 +66,7 @@ struct ReaderWindow: View {
                 case .reading:
                     if let book {
                         EpubWebView(url: URL(fileURLWithPath: book.combined), readAccess: URL(fileURLWithPath: book.dir),
-                                    fontScale: fontScale, scrollRequest: scrollRequest, controller: controller) { id in current = id }
+                                    fontScale: fontScale, paged: paged, scrollRequest: scrollRequest, controller: controller) { id in current = id }
                             .safeAreaInset(edge: .bottom) {
                                 if listening { NarrationBar(narrator: narrator) { stopListening() } }
                             }
@@ -120,6 +121,10 @@ struct ReaderWindow: View {
                         Button { asking.toggle() } label: { Image(systemName: asking ? "sparkles.rectangle.stack.fill" : "sparkles") }
                             .help("Ask about this paper (Apple Intelligence)")
                             .keyboardShortcut("j", modifiers: .command)
+                            .disabled(book == nil)
+                        Button { paged.toggle() } label: { Image(systemName: paged ? "book.fill" : "book") }
+                            .help(paged ? "Scroll instead of turning pages" : "Turn pages (arrow keys, space or swipe)")
+                            .keyboardShortcut("p", modifiers: [.command, .option])
                             .disabled(book == nil)
                         Button { fontScale = max(0.7, fontScale - 0.1) } label: { Image(systemName: "textformat.size.smaller") }
                             .help("Smaller text")
@@ -249,9 +254,15 @@ struct EpubWebView: NSViewRepresentable {
     let url: URL
     let readAccess: URL
     let fontScale: Double
+    var paged = false
     let scrollRequest: ScrollRequest
     let controller: ReaderController
     let onPosition: (String) -> Void
+
+    private func pagedState(_ zoom: Double) -> PagedState {
+        let z = max(zoom, 0.5)
+        return PagedState(on: paged, top: 30 / z, bottom: 40 / z, native: false)
+    }
 
     func makeNSView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
@@ -266,6 +277,9 @@ struct EpubWebView: NSViewRepresentable {
         fig.controller = controller
         cfg.userContentController.add(fig, name: "fig")
         cfg.addAnnotations(controller)
+        let state = pagedState(fontScale)
+        context.coordinator.paging = cfg.addPaging(state)
+        context.coordinator.applied = state
         let v = ReaderWebView(frame: .zero, configuration: cfg)
         v.controller = controller
         v.setValue(false, forKey: "drawsBackground")
@@ -278,6 +292,14 @@ struct EpubWebView: NSViewRepresentable {
     func updateNSView(_ v: WKWebView, context: Context) {
         context.coordinator.onPosition = onPosition
         v.pageZoom = fontScale
+        let state = pagedState(fontScale)
+        if state != context.coordinator.applied {
+            context.coordinator.applied = state
+            context.coordinator.paging?.state = state
+            v.evaluateJavaScript(state.call)
+            // keys go to the page
+            if state.on { v.window?.makeFirstResponder(v) }
+        }
         if context.coordinator.loaded != url {
             context.coordinator.loaded = url
             v.loadFileURL(url, allowingReadAccessTo: readAccess)
@@ -294,6 +316,8 @@ struct EpubWebView: NSViewRepresentable {
         var loaded: URL?
         var lastScroll = ScrollRequest()
         var onPosition: (String) -> Void
+        var paging: PageMessageHandler?
+        var applied: PagedState?
         init(onPosition: @escaping (String) -> Void) { self.onPosition = onPosition }
         func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
             if let id = m.body as? String { onPosition(id) }

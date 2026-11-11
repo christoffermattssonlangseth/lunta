@@ -15,6 +15,7 @@ struct ReaderView: View {
     @State private var showContents = false
     @State private var showInfo = false
     @AppStorage("readerFontScale") private var fontScale = 1.0
+    @AppStorage("readerPaged") private var paged = false
     @State private var figure: ReaderFigure?
     @State private var sharing = false
     @State private var organizing = false
@@ -45,12 +46,16 @@ struct ReaderView: View {
                 ProgressView(message ?? "Opening…")
             } else if mode == .reading, let book {
                 EpubWebViewIOS(url: URL(fileURLWithPath: book.combined), readAccess: URL(fileURLWithPath: book.dir),
-                               fontScale: fontScale, scrollRequest: scrollRequest, controller: controller,
+                               fontScale: fontScale, paged: paged, scrollRequest: scrollRequest, controller: controller,
+                               onToggleChrome: {
+                                   withAnimation(.easeInOut(duration: 0.22)) { chromeHidden.toggle() }
+                               },
                                onChrome: { hide in
                                    guard hide != chromeHidden, !(hide && listening) else { return }
                                    withAnimation(.easeInOut(duration: 0.22)) { chromeHidden = hide }
                                }) { current = $0 }
-                    .ignoresSafeArea(edges: listening ? [] : .bottom)
+                    // pages stay put when the bars come and go: the view always fills the screen
+                    .ignoresSafeArea(edges: paged ? (listening ? .top : .all) : (listening ? [] : .bottom))
                     .safeAreaInset(edge: .bottom) {
                         if listening { NarrationBar(narrator: narrator) { stopListening() } }
                     }
@@ -86,6 +91,11 @@ struct ReaderView: View {
                             Button { fontScale = max(0.7, fontScale - 0.1) } label: { Label("Smaller", systemImage: "textformat.size.smaller") }
                             Button { fontScale = min(2.2, fontScale + 0.1) } label: { Label("Larger", systemImage: "textformat.size.larger") }
                         } label: { Text("Text Size") }
+                        Picker(selection: $paged) {
+                            Label("Scroll", systemImage: "scroll").tag(false)
+                            Label("Turn Pages", systemImage: "book").tag(true)
+                        } label: { Label("Layout", systemImage: paged ? "book" : "scroll") }
+                        .pickerStyle(.menu)
                         Picker(selection: Binding(get: { PhoneVoice.shared.voice }, set: { PhoneVoice.shared.voice = $0 })) {
                             ForEach(PhoneVoice.voices, id: \.id) { Text($0.name).tag($0.id) }
                         } label: { Label("Natural Voice", systemImage: "waveform") }
@@ -139,7 +149,9 @@ struct ReaderView: View {
         .onChange(of: mode) { _, m in if m == .pdf, pdfURL == nil { Task { await loadPDF() } } }
         .task {
             controller.onFigure = { figure = $0 }
-            controller.onPageReady = { refreshHighlights(); position.pageReady(paperID, model: model, controller: controller) }
+            controller.onPageReady = {
+                refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
+            }
             controller.onAnnotation = { id in editingAnnotation = model.annotations(paperID).first { $0.id == id } }
             controller.onMenu = { action in
                 Task {
@@ -274,8 +286,10 @@ struct EpubWebViewIOS: UIViewRepresentable {
     let url: URL
     let readAccess: URL
     let fontScale: Double
+    var paged = false
     let scrollRequest: ScrollRequest
     let controller: ReaderController
+    var onToggleChrome: () -> Void = {}
     var onChrome: (Bool) -> Void = { _ in }
     let onPosition: (String) -> Void
 
@@ -292,6 +306,9 @@ struct EpubWebViewIOS: UIViewRepresentable {
         fig.controller = controller
         cfg.userContentController.add(fig, name: "fig")
         cfg.addAnnotations(controller)
+        let state = pagedState(fontScale)
+        context.coordinator.paging = cfg.addPaging(state)
+        context.coordinator.applied = state
         let v = ReaderWebView(frame: .zero, configuration: cfg)
         v.controller = controller
         controller.webView = v
@@ -303,13 +320,41 @@ struct EpubWebViewIOS: UIViewRepresentable {
         context.coordinator.loaded = url
         context.coordinator.onChrome = onChrome
         context.coordinator.watch(v.scrollView)
+        configureScroll(v.scrollView)
         return v
+    }
+
+    /// Margins for page mode, in CSS pixels: clear of the notch / Dynamic Island and the home bar,
+    /// with room for the page number. Taken from the window so they don't change with the bars.
+    private func pagedState(_ zoom: Double) -> PagedState {
+        let win = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
+        let inset = win?.safeAreaInsets ?? UIEdgeInsets(top: 50, left: 0, bottom: 34, right: 0)
+        let z = max(zoom, 0.5)
+        return PagedState(on: paged, top: (inset.top + 14) / z, bottom: (max(inset.bottom, 12) + 22) / z, native: true)
+    }
+
+    private func configureScroll(_ sv: UIScrollView) {
+        guard sv.isPagingEnabled != paged else { return }
+        sv.isPagingEnabled = paged
+        sv.contentInsetAdjustmentBehavior = paged ? .never : .automatic
+        sv.alwaysBounceVertical = !paged
+        sv.showsVerticalScrollIndicator = !paged
+        sv.isDirectionalLockEnabled = paged
     }
 
     func updateUIView(_ v: WKWebView, context: Context) {
         context.coordinator.onPosition = onPosition
         context.coordinator.onChrome = onChrome
+        context.coordinator.paged = paged
+        context.coordinator.paging?.onChrome = onToggleChrome
+        configureScroll(v.scrollView)
         v.pageZoom = fontScale
+        let state = pagedState(fontScale)
+        if state != context.coordinator.applied {
+            context.coordinator.applied = state
+            context.coordinator.paging?.state = state
+            v.evaluateJavaScript(state.call)
+        }
         if context.coordinator.loaded != url {
             context.coordinator.loaded = url
             v.loadFileURL(url, allowingReadAccessTo: readAccess)
@@ -327,6 +372,9 @@ struct EpubWebViewIOS: UIViewRepresentable {
         var lastScroll = ScrollRequest()
         var onPosition: (String) -> Void
         var onChrome: (Bool) -> Void = { _ in }
+        var paging: PageMessageHandler?
+        var applied: PagedState?
+        var paged = false
         private var observation: NSKeyValueObservation?
         private var lastY: CGFloat = 0
         private var quietUntil = Date.distantPast
@@ -342,6 +390,11 @@ struct EpubWebViewIOS: UIViewRepresentable {
         @MainActor private func scrolled(_ sv: UIScrollView) {
             let y = sv.contentOffset.y + sv.adjustedContentInset.top
             defer { lastY = y }
+            if paged {
+                // pages only move sideways (text-size changes can leave the page a bit taller)
+                if sv.contentOffset.y != 0 { sv.contentOffset.y = 0 }
+                return                        // the middle tap shows and hides the bars
+            }
             guard sv.isTracking || sv.isDecelerating, Date() > quietUntil else { return }
             let dy = y - lastY
             var hide: Bool?

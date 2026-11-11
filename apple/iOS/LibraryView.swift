@@ -7,13 +7,14 @@ struct LibraryView: View {
     @State private var input = ""
     @State private var asking = false
     @State private var askPath: [String] = []
+    @State private var path: [String] = []
     @State private var sharing: ShareTargetIOS?
     @State private var organizing: ShareTargetIOS?
     @State private var prompt: NameRequest?
     @StateObject private var ask = AskEngine(scope: .library)
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if model.source == .discover { DiscoverListIOS() }
                 else if model.source == .alerts { WatchInbox(selection: .constant(nil)).listStyle(.insetGrouped) }
@@ -23,6 +24,14 @@ struct LibraryView: View {
             .searchable(text: $model.query, prompt: model.source == .discover ? "Search new papers, then tap Search" : "Titles, authors, full text, notes")
             .onSubmit(of: .search) { if model.source == .discover { Task { await model.discover(model.query) } } }
             .navigationDestination(for: String.self) { id in ReaderView(paperID: id) }
+            #if DEBUG
+            .task {
+                // testing in the Simulator: -openFirstPaper opens the first paper's reader
+                guard ProcessInfo.processInfo.arguments.contains("-openFirstPaper") else { return }
+                for _ in 0..<40 where model.papers.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
+                if let p = model.papers.first { path = [p.id] }
+            }
+            #endif
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { SourceMenu() }
                 ToolbarItem(placement: .topBarTrailing) {
