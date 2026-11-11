@@ -37,6 +37,11 @@ fn two_devices_sync_through_shared_folder() {
     // the phone opens the same (synced) folder
     let phone = open(&root, "phone");
     assert_eq!(phone.papers(PaperFilter::default(), SortKey::Added).len(), 1);
+    // full text is indexed in the background on the second device
+    assert!(phone.search("oligodendrocytes".into(), 10).unwrap().is_empty());
+    assert_eq!(phone.index_fulltext(50).unwrap(), 1);
+    assert_eq!(phone.index_fulltext(50).unwrap(), 0);
+    assert_eq!(phone.search("oligodendrocytes".into(), 10).unwrap().len(), 1);
     let a = phone
         .save_annotation(Annotation {
             id: String::new(),
@@ -58,6 +63,7 @@ fn two_devices_sync_through_shared_folder() {
     phone.set_membership(col.id.clone(), p.id.clone(), true).unwrap();
 
     assert!(mac.refresh().unwrap());
+    mac.reindex().unwrap();
     let anns = mac.annotations(p.id.clone());
     assert_eq!(anns.len(), 1);
     assert_eq!(anns[0].id, a.id);

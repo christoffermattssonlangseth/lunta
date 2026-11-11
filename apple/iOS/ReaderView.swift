@@ -98,10 +98,14 @@ struct ReaderView: View {
     private func load() async {
         guard let p = model.paper(paperID) else { loading = false; return }
         if p.hasEpub {
-            message = model.lib.fileStatus(id: paperID, kind: .epub) == .inCloud ? "Downloading from iCloud…" : nil
-            if await model.ensureLocal(paperID, .epub) != nil, let b = try? model.lib.openEpub(id: paperID) {
-                book = b
-                mode = .reading
+            message = model.needsDownload(paperID, .epub) ? "Downloading from iCloud…" : nil
+            if await model.ensureLocal(paperID, .epub) != nil {
+                let lib = model.lib
+                let id = paperID
+                if let b = await Task.detached(operation: { try? lib.openEpub(id: id) }).value {
+                    book = b
+                    mode = .reading
+                }
             }
         }
         if book == nil, p.hasPdf {
@@ -113,7 +117,7 @@ struct ReaderView: View {
     }
 
     private func loadPDF() async {
-        message = model.lib.fileStatus(id: paperID, kind: .pdf) == .inCloud ? "Downloading PDF from iCloud…" : nil
+        message = model.needsDownload(paperID, .pdf) ? "Downloading PDF from iCloud…" : nil
         pdfURL = await model.ensureLocal(paperID, .pdf)
     }
 }

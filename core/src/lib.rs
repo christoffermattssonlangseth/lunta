@@ -44,7 +44,7 @@ impl Library {
         let state = store.replay()?;
         let index = index::Index::open(&PathBuf::from(&cache_dir).join("index.sqlite"))?;
         let lib = Library { inner: Mutex::new(Inner { store, state, index, cache: PathBuf::from(&cache_dir), files: Default::default() }) };
-        lib.reindex()?;
+        lib.reindex_quick()?;
         Ok(Arc::new(lib))
     }
 
@@ -57,8 +57,72 @@ impl Library {
             }
             g.state = g.store.replay()?;
         }
-        self.reindex()?;
+        self.reindex_quick()?;
         Ok(true)
+    }
+
+    /// Indexes metadata and notes for new or changed papers without reading full texts (which
+    /// may still be in iCloud). Full texts are added later by `index_fulltext`.
+    pub fn reindex_quick(&self) -> Result<u32> {
+        let mut g = self.inner.lock().unwrap();
+        let ids: Vec<String> = g.state.papers.keys().cloned().collect();
+        let mut n = 0;
+        for id in &ids {
+            let meta = g.state.papers[id].meta.clone();
+            let notes = notes_text(&g.state, id);
+            let quick = format!("quick-{}", index::signature(&meta, &notes, 0));
+            let have = g.index.signature_of(id)?;
+            // keep rows that already have full text for the same metadata
+            let full_prefix = index::signature(&meta, &notes, 0).split('-').next().unwrap_or("").to_string();
+            if have.as_deref() == Some(quick.as_str()) || have.as_deref().map_or(false, |h| h.starts_with(&full_prefix)) {
+                continue;
+            }
+            g.index.upsert(id, &meta, &notes, "", &quick)?;
+            n += 1;
+        }
+        let files = ids
+            .iter()
+            .map(|id| (id.clone(), (g.store.has_file(id, FileKind::Pdf), g.store.has_file(id, FileKind::Epub))))
+            .collect();
+        g.files = files;
+        let keep: BTreeSet<String> = ids.into_iter().collect();
+        g.index.remove_missing(&keep)?;
+        Ok(n)
+    }
+
+    /// Adds full texts to the search index, at most `max` papers per call (reading a file may wait
+    /// for iCloud to download it, so call this off the main thread, repeatedly). Returns how many
+    /// papers it indexed; 0 means the index is complete.
+    pub fn index_fulltext(&self, max: u32) -> Result<u32> {
+        let todo: Vec<(String, PaperMeta, String, PathBuf, u64)> = {
+            let g = self.inner.lock().unwrap();
+            let mut v = vec![];
+            for (id, p) in &g.state.papers {
+                let notes = notes_text(&g.state, id);
+                let path = g.store.file_path(id, FileKind::Fulltext);
+                let len = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                if len == 0 {
+                    continue;
+                }
+                let sig = index::signature(&p.meta, &notes, len);
+                if g.index.signature_of(id)?.as_deref() != Some(sig.as_str()) {
+                    v.push((id.clone(), p.meta.clone(), notes, path, len));
+                    if v.len() as u32 >= max {
+                        break;
+                    }
+                }
+            }
+            v
+        };
+        let mut n = 0;
+        for (id, meta, notes, path, len) in todo {
+            // read without holding the lock: this may block while iCloud downloads the file
+            let text = std::fs::read_to_string(&path).unwrap_or_default();
+            let mut g = self.inner.lock().unwrap();
+            g.index.upsert(&id, &meta, &notes, &text, &index::signature(&meta, &notes, len))?;
+            n += 1;
+        }
+        Ok(n)
     }
 
     /// Updates search-index rows whose metadata, notes or full text changed (incremental).

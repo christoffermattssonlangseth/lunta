@@ -1,9 +1,7 @@
 import Foundation
 import AVFoundation
 import SwiftUI
-#if os(iOS)
 import MediaPlayer
-#endif
 
 /// One spoken unit: a heading, paragraph, list item or caption from the reading view.
 struct NarrationItem: Decodable, Equatable {
@@ -32,12 +30,12 @@ final class Narrator: NSObject, ObservableObject {
     private let synth = AVSpeechSynthesizer()
     private var current: AVSpeechUtterance?
 
+    /// The narrator of the reader that is playing (for menus and media keys).
+    static weak var active: Narrator?
+
     override init() {
         super.init()
         synth.delegate = self
-        #if os(iOS)
-        setUpRemoteCommands()
-        #endif
     }
 
     // MARK: Voices
@@ -76,6 +74,7 @@ final class Narrator: NSObject, ObservableObject {
         guard !items.isEmpty else { return }
         if let i { index = max(0, min(i, items.count - 1)) }
         playing = true
+        if Narrator.active !== self { Narrator.active?.pause(); Narrator.active = self; setUpRemoteCommands() }
         activateAudio()
         speakCurrent()
     }
@@ -106,6 +105,10 @@ final class Narrator: NSObject, ObservableObject {
         playing = false
         current = nil
         synth.stopSpeaking(at: .immediate)
+        if Narrator.active === self {
+            Narrator.active = nil
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        }
     }
 
     func next() { if index + 1 < items.count { play(from: index + 1) } }
@@ -207,7 +210,6 @@ final class Narrator: NSObject, ObservableObject {
     }
 
     private func updateNowPlaying() {
-        #if os(iOS)
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyArtist: currentSection.isEmpty ? "Margins" : currentSection,
@@ -215,19 +217,23 @@ final class Narrator: NSObject, ObservableObject {
         ]
         info[MPNowPlayingInfoPropertyPlaybackProgress] = progress
         MPNowPlayingInfoCenter.default().nowPlayingInfo = items.isEmpty ? nil : info
+        #if os(macOS)
+        MPNowPlayingInfoCenter.default().playbackState = playing ? .playing : .paused
         #endif
     }
 
-    #if os(iOS)
+    /// Lock screen, AirPods, the Mac's play/pause key and Control Center's Now Playing.
     private func setUpRemoteCommands() {
         let c = MPRemoteCommandCenter.shared()
+        for cmd in [c.playCommand, c.pauseCommand, c.togglePlayPauseCommand, c.nextTrackCommand, c.previousTrackCommand] {
+            cmd.removeTarget(nil)
+        }
         c.playCommand.addTarget { [weak self] _ in Task { @MainActor in self?.toggle() }; return .success }
         c.pauseCommand.addTarget { [weak self] _ in Task { @MainActor in self?.pause() }; return .success }
         c.togglePlayPauseCommand.addTarget { [weak self] _ in Task { @MainActor in self?.toggle() }; return .success }
         c.nextTrackCommand.addTarget { [weak self] _ in Task { @MainActor in self?.next() }; return .success }
         c.previousTrackCommand.addTarget { [weak self] _ in Task { @MainActor in self?.previous() }; return .success }
     }
-    #endif
 }
 
 extension Narrator: AVSpeechSynthesizerDelegate {

@@ -17,7 +17,11 @@ struct MarginsiOSApp: App {
                 } else if let error = holder.error {
                     ContentUnavailableView("Can't open the library", systemImage: "exclamationmark.triangle", description: Text(error))
                 } else {
-                    ProgressView("Opening library…")
+                    VStack(spacing: 14) {
+                        ProgressView()
+                        Text(holder.progress).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    }
+                    .padding()
                 }
             }
             .tint(.marginsTeal)
@@ -30,11 +34,28 @@ struct MarginsiOSApp: App {
 final class ModelHolder: ObservableObject {
     @Published var model: LibraryModel?
     @Published var error: String?
+    @Published var progress = "Opening library…"
 
     init() {
         Task {
+            let t0 = Date()
+            NSLog("Margins: resolving iCloud container")
             let (url, cloud) = await Task.detached { CloudLibrary.resolve() }.value
-            do { model = try LibraryModel(root: url, inCloud: cloud) } catch { self.error = error.localizedDescription }
+            NSLog("Margins: library at %@ (iCloud: %d) after %.1fs", url.path, cloud ? 1 : 0, Date().timeIntervalSince(t0))
+            if cloud {
+                await CloudLibrary.prepareLogs(url) { text in Task { @MainActor in self.progress = text } }
+                NSLog("Margins: change logs ready after %.1fs", Date().timeIntervalSince(t0))
+            }
+            progress = "Opening library…"
+            do {
+                let m = try await Task.detached { try LibraryModel.openLibrary(root: url) }.value
+                NSLog("Margins: core opened after %.1fs", Date().timeIntervalSince(t0))
+                model = LibraryModel(lib: m, root: url, inCloud: cloud)
+                NSLog("Margins: ready after %.1fs, %d papers", Date().timeIntervalSince(t0), model?.counts.all ?? -1)
+            } catch {
+                NSLog("Margins: open failed: %@", error.localizedDescription)
+                self.error = error.localizedDescription
+            }
         }
     }
 }

@@ -42,6 +42,32 @@ enum CloudLibrary {
         }
     }
 
+    /// Waits until the library's change logs are on this device (they are what lists the papers).
+    /// Reports progress text; returns when all logs are downloaded or none are expected yet.
+    static func prepareLogs(_ lib: URL, report: @escaping @Sendable (String) -> Void) async {
+        let fm = FileManager.default
+        let ops = lib.appendingPathComponent("ops")
+        try? fm.createDirectory(at: ops, withIntermediateDirectories: true)
+        // a brand-new device may not have the folder listing yet: give iCloud a moment to deliver it
+        var waited = 0.0
+        while true {
+            let names = (try? fm.contentsOfDirectory(atPath: ops.path)) ?? []
+            let logs = names.filter { $0.hasSuffix(".jsonl") || $0.hasSuffix(".jsonl.icloud") }
+                .map { $0.hasSuffix(".icloud") ? realURL(forPlaceholder: ops.appendingPathComponent($0).path) : ops.appendingPathComponent($0) }
+            if logs.isEmpty {
+                if waited > 20 { return }   // nothing in iCloud yet (new library): open empty
+                report("Looking for your library in iCloud…")
+            } else {
+                let missing = logs.filter { !isDownloaded($0) }
+                if missing.isEmpty { return }
+                missing.forEach(startDownload)
+                report("Getting your library from iCloud… (\(logs.count - missing.count) of \(logs.count))")
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            waited += 0.5
+        }
+    }
+
     /// The real file behind an iCloud placeholder path (".name.icloud" → "name").
     static func realURL(forPlaceholder path: String) -> URL {
         let u = URL(fileURLWithPath: path)
@@ -51,18 +77,27 @@ enum CloudLibrary {
         return u.deletingLastPathComponent().appendingPathComponent(name)
     }
 
+    /// True when the file's contents are on this device. iCloud Drive keeps not-yet-downloaded
+    /// files as "dataless" entries that look normal but block when read.
+    static func isDownloaded(_ url: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        guard let v = try? url.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey]),
+              v.isUbiquitousItem == true else { return true }
+        return v.ubiquitousItemDownloadingStatus == .current
+    }
+
     static func startDownload(_ url: URL) {
         try? FileManager.default.startDownloadingUbiquitousItem(at: url)
     }
 
     /// Asks iCloud for the file and waits until it is on this device.
     static func download(_ url: URL, timeout: TimeInterval = 180) async -> Bool {
-        if FileManager.default.fileExists(atPath: url.path) { return true }
+        if isDownloaded(url) { return true }
         startDownload(url)
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             try? await Task.sleep(nanoseconds: 400_000_000)
-            if FileManager.default.fileExists(atPath: url.path) { return true }
+            if isDownloaded(url) { return true }
         }
         return false
     }

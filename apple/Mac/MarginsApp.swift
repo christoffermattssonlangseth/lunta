@@ -21,7 +21,17 @@ struct MarginsApp: App {
             }
             .frame(minWidth: 980, minHeight: 600)
         }
-        .commands { MarginsCommands(model: holder.model) }
+        .commands {
+            MarginsCommands(model: holder.model)
+            CommandMenu("Listen") {
+                Button("Play / Pause") { Narrator.active?.toggle() }.keyboardShortcut("p", modifiers: [.command, .option])
+                Button("Next Paragraph") { Narrator.active?.next() }.keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                Button("Previous Paragraph") { Narrator.active?.previous() }.keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                Button("Next Section") { Narrator.active?.nextSection() }.keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                Divider()
+                Button("Stop") { Narrator.active?.stop() }
+            }
+        }
 
         .handlesExternalEvents(matching: ["library"])
 
@@ -45,7 +55,11 @@ final class ModelHolder: ObservableObject {
 
     private func open() async {
         let (url, cloud) = await Task.detached { CloudLibrary.resolve() }.value
-        do { model = try LibraryModel(root: url, inCloud: cloud) } catch { self.error = "Could not open the library: \(error.localizedDescription)" }
+        if cloud { await CloudLibrary.prepareLogs(url) { _ in } }
+        do {
+            let lib = try await Task.detached { try LibraryModel.openLibrary(root: url) }.value
+            model = LibraryModel(lib: lib, root: url, inCloud: cloud)
+        } catch { self.error = "Could not open the library: \(error.localizedDescription)" }
         if let model {
             server = ExtensionServer(model: model)
             server?.start()

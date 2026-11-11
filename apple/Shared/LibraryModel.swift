@@ -41,12 +41,12 @@ final class LibraryModel: ObservableObject {
     let libraryURL: URL
     let inCloud: Bool
 
-    static var cacheURL: URL {
+    nonisolated static var cacheURL: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Margins", isDirectory: true)
     }
 
-    static var deviceID: String {
+    nonisolated static var deviceID: String {
         if let id = UserDefaults.standard.string(forKey: "deviceID") { return id }
         #if os(macOS)
         let prefix = "mac"
@@ -58,11 +58,22 @@ final class LibraryModel: ObservableObject {
         return id
     }
 
-    init(root: URL, inCloud: Bool) throws {
+    /// Opens the Rust library (reads all change logs, updates the search index). Slow on first
+    /// launch, so call it off the main thread.
+    nonisolated static func openLibrary(root: URL) throws -> Library {
+        try Library.open(root: root.path, cacheDir: cacheURL.path, deviceId: deviceID)
+    }
+
+    convenience init(root: URL, inCloud: Bool) throws {
+        self.init(lib: try Self.openLibrary(root: root), root: root, inCloud: inCloud)
+    }
+
+    init(lib: Library, root: URL, inCloud: Bool) {
         libraryURL = root
         self.inCloud = inCloud
-        lib = try Library.open(root: root.path, cacheDir: Self.cacheURL.path, deviceId: Self.deviceID)
+        self.lib = lib
         downloadSmallFiles()
+        indexFullTextInBackground()
         reload()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
@@ -156,12 +167,32 @@ final class LibraryModel: ObservableObject {
 
     /// Makes sure a paper's file is on this device (downloading it from iCloud if needed).
     func ensureLocal(_ id: String, _ kind: FileKind) async -> URL? {
-        switch lib.fileStatus(id: id, kind: kind) {
-        case .local: return fileURL(id, kind)
-        case .missing: return nil
-        case .inCloud:
-            let url = URL(fileURLWithPath: lib.expectedFilePath(id: id, kind: kind))
-            return await CloudLibrary.download(url) ? url : nil
+        guard lib.fileStatus(id: id, kind: kind) != .missing else { return nil }
+        let url = URL(fileURLWithPath: lib.expectedFilePath(id: id, kind: kind))
+        if !inCloud { return url }
+        return await CloudLibrary.download(url) ? url : nil
+    }
+
+    /// True if the file still has to come down from iCloud (for "Downloading…" messages).
+    func needsDownload(_ id: String, _ kind: FileKind) -> Bool {
+        guard inCloud, lib.fileStatus(id: id, kind: kind) != .missing else { return false }
+        return !CloudLibrary.isDownloaded(URL(fileURLWithPath: lib.expectedFilePath(id: id, kind: kind)))
+    }
+
+    /// Adds full texts to the search index a few papers at a time (files may first have to
+    /// download from iCloud), without blocking the app.
+    func indexFullTextInBackground() {
+        let lib = self.lib
+        let cloud = inCloud
+        Task.detached(priority: .utility) {
+            if cloud {
+                // ask iCloud for all full texts up front; they are small
+                for p in lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added) {
+                    let u = URL(fileURLWithPath: lib.expectedFilePath(id: p.id, kind: .fulltext))
+                    if FileManager.default.fileExists(atPath: u.path) && !CloudLibrary.isDownloaded(u) { CloudLibrary.startDownload(u) }
+                }
+            }
+            while let n = try? lib.indexFulltext(max: 10), n > 0 {}
         }
     }
 
