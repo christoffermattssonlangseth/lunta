@@ -9,6 +9,8 @@ struct LibraryWindow: View {
     @State private var discoverSelection: String?
     @State private var addingPaper = false
     @State private var newCollection = false
+    @State private var asking = false
+    @StateObject private var ask = AskEngine(scope: .library)
 
     var body: some View {
         NavigationSplitView {
@@ -49,6 +51,19 @@ struct LibraryWindow: View {
             ToolbarItem(placement: .primaryAction) {
                 Button { addingPaper = true } label: { Label("Add Paper", systemImage: "plus") }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { asking.toggle() } label: { Label("Ask", systemImage: "sparkles") }
+                    .help("Ask your library (Apple Intelligence)")
+                    .keyboardShortcut("j", modifiers: .command)
+            }
+        }
+        .inspector(isPresented: $asking) {
+            AssistantPanel(engine: ask, onPaper: { id in
+                if model.source == .discover { model.source = .all }
+                selection = [id]
+                openWindow(value: id)
+            })
+            .inspectorColumnWidth(min: 300, ideal: 380, max: 560)
         }
         .safeAreaInset(edge: .bottom) { StatusBar() }
         .sheet(isPresented: $addingPaper) { AddPaperSheet() }

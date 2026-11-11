@@ -52,6 +52,16 @@ final class ModelHolder: ObservableObject {
                 NSLog("Margins: core opened after %.1fs", Date().timeIntervalSince(t0))
                 model = LibraryModel(lib: m, root: url, inCloud: cloud)
                 NSLog("Margins: ready after %.1fs, %d papers", Date().timeIntervalSince(t0), model?.counts.all ?? -1)
+                if ProcessInfo.processInfo.arguments.contains("-testDownload"), let model {
+                    // diagnostics: fetch a few reading views from iCloud and report how long it took
+                    for p in model.papers.filter(\.hasEpub).prefix(4) {
+                        let t = Date()
+                        let before = model.needsDownload(p.id, .epub)
+                        let url = await model.ensureLocal(p.id, .epub)
+                        print("download test: needed=\(before) ok=\(url != nil) \(String(format: "%.1f", Date().timeIntervalSince(t)))s \(p.meta.title.prefix(40))")
+                    }
+                    print("download test: done"); fflush(stdout)
+                }
             } catch {
                 NSLog("Margins: open failed: %@", error.localizedDescription)
                 self.error = error.localizedDescription

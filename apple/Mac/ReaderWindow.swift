@@ -11,11 +11,20 @@ struct ReaderWindow: View {
     @State private var book: EpubBook?
     @State private var current: String?          // anchor of the section being read
     @State private var scrollRequest = ScrollRequest()
-    @State private var fontScale = 1.0
+    @AppStorage("readerFontScale") private var fontScale = 1.0
+    @State private var figure: ReaderFigure?
     @State private var error: String?
     @StateObject private var narrator = Narrator()
     @StateObject private var controller = ReaderController()
     @State private var listening = false
+    @State private var asking = false
+    @StateObject private var ask: AskEngine
+    @Environment(\.openWindow) private var openWindow
+
+    init(paperID: String) {
+        self.paperID = paperID
+        _ask = StateObject(wrappedValue: AskEngine(scope: .paper(paperID)))
+    }
 
     enum Mode: String, CaseIterable { case reading = "Reading", pdf = "PDF" }
 
@@ -80,6 +89,10 @@ struct ReaderWindow: View {
                             .help("Make natural-voice narration (renders on this Mac, syncs to iPhone)")
                             .disabled(book == nil || NarrationRenderer.shared.rendering.contains(paperID))
                         }
+                        Button { asking.toggle() } label: { Image(systemName: asking ? "sparkles.rectangle.stack.fill" : "sparkles") }
+                            .help("Ask about this paper (Apple Intelligence)")
+                            .keyboardShortcut("j", modifiers: .command)
+                            .disabled(book == nil)
                         Button { fontScale = max(0.7, fontScale - 0.1) } label: { Image(systemName: "textformat.size.smaller") }
                             .help("Smaller text")
                         Button { fontScale = min(1.8, fontScale + 0.1) } label: { Image(systemName: "textformat.size.larger") }
@@ -88,8 +101,22 @@ struct ReaderWindow: View {
                 }
             }
         }
+        .inspector(isPresented: $asking) {
+            AssistantPanel(engine: ask, onPassage: { id in mode = .reading; controller.flash(id) },
+                           onPaper: { id in openWindow(value: id) })
+                .inspectorColumnWidth(min: 300, ideal: 380, max: 560)
+        }
+        .sheet(item: $figure) { f in FigureViewer(figure: f) }
         .navigationTitle(paper?.meta.title ?? "Reader")
-        .task { await load() }
+        .task {
+            controller.onFigure = { figure = $0 }
+            ask.model = model
+            ask.passages = { [weak controller] in await controller?.narrationItems(includeCaptions: true) ?? [] }
+            ask.selection = { [weak controller] in await controller?.selectedText() }
+            // warm up the natural voice so Listen starts right away
+            if KokoroLive.shared.installed { Task { _ = await KokoroLive.shared.start() } }
+            await load()
+        }
     }
 
     private func load() async {
@@ -109,8 +136,16 @@ struct ReaderWindow: View {
             let items = await controller.narrationItems()
             guard !items.isEmpty else { return }
             // natural (neural) narration when it has been rendered, otherwise the system voice
-            if !(await model.loadNeuralNarration(paperID, into: narrator, pageItems: items)) {
-                narrator.load(items, title: model.paper(paperID)?.meta.title ?? "")
+            let title = model.paper(paperID)?.meta.title ?? ""
+            if await model.loadNeuralNarration(paperID, into: narrator, pageItems: items) {
+                // a full natural-voice narration was rendered earlier
+            } else if KokoroLive.shared.installed {
+                // natural voice, made paragraph by paragraph as it plays
+                narrator.loadLive(items, title: title) { item in
+                    await KokoroLive.shared.clip(Narrator.spoken(item), kind: item.kind)
+                }
+            } else {
+                narrator.load(items, title: title)
             }
             narrator.onHighlight = { [weak controller] id in controller?.highlight(id) }
             controller.onTapParagraph = { [weak narrator] id in narrator?.play(fromID: id) }
@@ -164,6 +199,9 @@ struct EpubWebView: NSViewRepresentable {
         let narr = NarrationMessageHandler()
         narr.controller = controller
         cfg.userContentController.add(narr, name: "narr")
+        let fig = FigureMessageHandler()
+        fig.controller = controller
+        cfg.userContentController.add(fig, name: "fig")
         let v = WKWebView(frame: .zero, configuration: cfg)
         v.setValue(false, forKey: "drawsBackground")
         controller.webView = v

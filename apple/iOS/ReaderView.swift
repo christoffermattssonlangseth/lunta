@@ -14,12 +14,20 @@ struct ReaderView: View {
     @State private var message: String?
     @State private var showContents = false
     @State private var showInfo = false
-    @State private var fontScale = 1.0
+    @AppStorage("readerFontScale") private var fontScale = 1.0
+    @State private var figure: ReaderFigure?
     @State private var current: String?
     @State private var scrollRequest = ScrollRequest()
     @StateObject private var narrator = Narrator()
     @StateObject private var controller = ReaderController()
     @State private var listening = false
+    @State private var asking = false
+    @StateObject private var ask: AskEngine
+
+    init(paperID: String) {
+        self.paperID = paperID
+        _ask = StateObject(wrappedValue: AskEngine(scope: .paper(paperID)))
+    }
 
     enum Mode: String, CaseIterable { case reading = "Reading", pdf = "PDF" }
 
@@ -54,9 +62,10 @@ struct ReaderView: View {
                     Button { listening ? stopListening() : startListening() } label: {
                         Image(systemName: listening ? "headphones.circle.fill" : "headphones")
                     }
+                    Button { asking = true } label: { Image(systemName: "sparkles") }
                     Button { showContents = true } label: { Image(systemName: "list.bullet") }
                     Menu {
-                        Button { fontScale = min(1.8, fontScale + 0.1) } label: { Label("Larger Text", systemImage: "textformat.size.larger") }
+                        Button { fontScale = min(2.2, fontScale + 0.1) } label: { Label("Larger Text", systemImage: "textformat.size.larger") }
                         Button { fontScale = max(0.7, fontScale - 0.1) } label: { Label("Smaller Text", systemImage: "textformat.size.smaller") }
                     } label: { Image(systemName: "textformat.size") }
                 }
@@ -66,9 +75,26 @@ struct ReaderView: View {
         .sheet(isPresented: $showContents) {
             if let book { ContentsSheet(book: book, current: current) { a in current = a; scrollRequest = ScrollRequest(anchor: a); showContents = false } }
         }
+        .sheet(isPresented: $asking) {
+            AssistantPanel(engine: ask, onPassage: { id in
+                asking = false
+                mode = .reading
+                Task { try? await Task.sleep(for: .milliseconds(350)); controller.flash(id) }
+            })
+            .environmentObject(model)
+            .presentationDetents([.medium, .large])
+            .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        }
+        .fullScreenCover(item: $figure) { f in FigureViewer(figure: f) }
         .sheet(isPresented: $showInfo) { NavigationStack { PaperInfoView(paperID: paperID, embedded: false) } }
         .onChange(of: mode) { _, m in if m == .pdf, pdfURL == nil { Task { await loadPDF() } } }
-        .task { await load() }
+        .task {
+            controller.onFigure = { figure = $0 }
+            ask.model = model
+            ask.passages = { [weak controller] in await controller?.narrationItems(includeCaptions: true) ?? [] }
+            ask.selection = { [weak controller] in await controller?.selectedText() }
+            await load()
+        }
         .onDisappear { if listening { stopListening() } }
     }
 
@@ -177,6 +203,9 @@ struct EpubWebViewIOS: UIViewRepresentable {
         let narr = NarrationMessageHandler()
         narr.controller = controller
         cfg.userContentController.add(narr, name: "narr")
+        let fig = FigureMessageHandler()
+        fig.controller = controller
+        cfg.userContentController.add(fig, name: "fig")
         let v = WKWebView(frame: .zero, configuration: cfg)
         controller.webView = v
         v.isOpaque = false

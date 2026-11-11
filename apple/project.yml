@@ -3,8 +3,8 @@ name: Margins
 options:
   bundleIdPrefix: com.cmlangseth
   deploymentTarget:
-    macOS: "14.0"
-    iOS: "17.0"
+    macOS: "26.0"
+    iOS: "26.0"
   createIntermediateGroups: true
 
 packages:

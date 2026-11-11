@@ -7,6 +7,10 @@ segments.json: [{"id": "...", "text": "...", "kind": "heading|text|caption"}, ..
 Writes DIR/narration.wav (24 kHz mono) and DIR/narration.json:
     {"voice": "...", "segments": [{"id", "kind", "start", "end"}, ...]}   (seconds)
 Prints "PROGRESS i n" lines so the app can show progress. Runs entirely on this Mac.
+
+Live mode (--serve): keeps the model loaded and reads one JSON request per line from stdin,
+    {"key": "...", "text": "...", "kind": "text", "voice": "af_heart"}
+writes DIR/<key>.wav and prints "CLIP <key> <path>" (or "FAIL <key> <message>") per request.
 """
 import argparse, json, os, sys, wave
 
@@ -26,12 +30,50 @@ RATE = 24000
 PAUSE = {"heading": (0.55, 0.45), "text": (0.0, 0.35), "caption": (0.2, 0.4)}
 
 
+def synth(model, text, voice, speed=1.0):
+    chunks = [np.array(r.audio).reshape(-1) for r in
+              model.generate(text=text, voice=voice, speed=speed, lang_code=voice[0])]
+    return np.concatenate(chunks) if chunks else np.zeros(1, dtype=np.float32)
+
+
+def serve(out):
+    os.makedirs(out, exist_ok=True)
+    model = load_model(MODEL)
+    print("READY", flush=True)
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        key = "?"
+        try:
+            req = json.loads(line)
+            key = req["key"]
+            before, after = PAUSE.get(req.get("kind", "text"), PAUSE["text"])
+            audio = synth(model, req["text"], req.get("voice", "af_heart"))
+            path = os.path.join(out, f"{key}.wav")
+            tmp = path + ".part"
+            with wave.open(tmp, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(RATE)
+                w.writeframes(b"\x00\x00" * int(before * RATE))
+                w.writeframes((np.clip(audio, -1, 1) * 32767).astype("<i2").tobytes())
+                w.writeframes(b"\x00\x00" * int(after * RATE))
+            os.replace(tmp, path)
+            print("CLIP", key, path, flush=True)
+        except Exception as e:  # keep serving
+            print("FAIL", key, str(e).replace("\n", " "), flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--voice", default="af_heart")
     ap.add_argument("--speed", type=float, default=1.0)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--serve", action="store_true")
     args = ap.parse_args()
+    if args.serve:
+        return serve(args.out)
     segments = json.load(sys.stdin)
     os.makedirs(args.out, exist_ok=True)
     model = load_model(MODEL)

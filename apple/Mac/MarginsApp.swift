@@ -78,6 +78,19 @@ final class ModelHolder: ObservableObject {
             Task { await model.importExport(file: file, pdfFolder: pdfs) }
         } else if let i = args.firstIndex(of: "-narrate"), i + 1 < args.count {
             NarrationRenderer.shared.enqueue([args[i + 1]])
+        } else if let model, let i = args.firstIndex(of: "-ask"), i + 1 < args.count {
+            // test hook: `Margins -ask "<question>" [-paper <id>]` writes the transcript to /tmp/margins-ask.txt
+            let q = args[i + 1]
+            let paper = args.firstIndex(of: "-paper").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+            Task {
+                let engine = AskEngine(scope: paper.map { .paper($0) } ?? .library)
+                engine.model = model
+                if let paper, let book = try? model.lib.openEpub(id: paper) {
+                    engine.passages = { await PageTextExtractor.items(of: URL(fileURLWithPath: book.combined), readAccess: URL(fileURLWithPath: book.dir)) }
+                }
+                let t = await engine.transcript(for: q)
+                try? t.write(toFile: "/tmp/margins-ask.txt", atomically: true, encoding: .utf8)
+            }
         } else if let model, let i = args.firstIndex(of: "-importPDFs"), i + 1 < args.count {
             let folder = URL(fileURLWithPath: args[i + 1])
             Task { await model.importPDFFolder(folder); await model.makeReadingViews() }

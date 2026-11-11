@@ -80,27 +80,51 @@ enum CloudLibrary {
     /// True when the file's contents are on this device. iCloud Drive keeps not-yet-downloaded
     /// files as "dataless" entries that look normal but block when read.
     static func isDownloaded(_ url: URL) -> Bool {
-        guard FileManager.default.fileExists(atPath: url.path) else { return false }
-        guard let v = try? url.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey]),
+        // a fresh URL every time: Foundation caches resource values on a URL, so polling the same
+        // one never notices that the download finished
+        var u = URL(fileURLWithPath: url.path)
+        u.removeAllCachedResourceValues()
+        guard FileManager.default.fileExists(atPath: u.path) else { return false }
+        guard let v = try? u.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey]),
               v.isUbiquitousItem == true else { return true }
-        return v.ubiquitousItemDownloadingStatus == .current
+        // .downloaded = a local copy that may not be the newest version; library files never change
+        return v.ubiquitousItemDownloadingStatus == .current || v.ubiquitousItemDownloadingStatus == .downloaded
     }
 
     static func startDownload(_ url: URL) {
-        try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+        try? FileManager.default.startDownloadingUbiquitousItem(at: URL(fileURLWithPath: url.path))
     }
 
     /// Asks iCloud for the file and waits until it is on this device.
     static func download(_ url: URL, timeout: TimeInterval = 180) async -> Bool {
         if isDownloaded(url) { return true }
         startDownload(url)
+        // a coordinated read makes iOS fetch the file and only returns once it's readable
+        let path = url.path
+        let coordinated = Task.detached(priority: .userInitiated) { () -> Bool in
+            var err: NSError?
+            var ok = false
+            NSFileCoordinator().coordinate(readingItemAt: URL(fileURLWithPath: path), options: [], error: &err) { u in
+                ok = FileManager.default.isReadableFile(atPath: u.path)
+            }
+            return ok && err == nil
+        }
         let deadline = Date().addingTimeInterval(timeout)
+        let done = Flag()
+        Task { if await coordinated.value { done.set() } }
         while Date() < deadline {
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            if isDownloaded(url) { return true }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if done.isSet || isDownloaded(url) { return true }
         }
         return false
     }
+}
+
+private final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    func set() { lock.lock(); value = true; lock.unlock() }
+    var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
 }
 
 /// Reader styling and scripts shared by the Mac and iPhone reading views.
@@ -109,12 +133,13 @@ enum ReaderAssets {
     html { font-size: 112%; scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
     body { max-width: 42em; margin: 2.2em auto !important; padding: 0 2em 6em; font-family: "Iowan Old Style", Georgia, serif;
            line-height: 1.6; color: #1d1d1f; background: #fffdf8; }
-    @media (max-width: 640px) { html { font-size: 106%; } body { margin-top: 1em !important; padding: 0 1.1em 5em; } }
+    @media (max-width: 640px) { html { font-size: 122%; } body { margin-top: 1em !important; padding: 0 1.05em 5em; line-height: 1.55; } }
     @media (prefers-color-scheme: dark) { body { color: #e6e3dc; background: #1c1b19; } a { color: #9ec9d8; } img { opacity: .92; } }
     h1, h2, h3 { font-family: -apple-system, "Helvetica Neue", sans-serif; scroll-margin-top: 1em; }
     h1 { margin-top: 2.4em; padding-top: 1.2em; border-top: 1px solid rgba(127,127,127,.25); }
     .titlepage h1 { border-top: none; padding-top: 0; margin-top: .6em; }
     figure img, .table-wrap img { border-radius: 4px; }
+    img { max-width: 100%; height: auto; cursor: zoom-in; }
     .section-start { scroll-margin-top: 1em; }
     .narr-current { background: rgba(242,180,90,.30); border-radius: 6px; box-shadow: 0 0 0 5px rgba(242,180,90,.30);
                     transition: background .25s; }
@@ -122,10 +147,24 @@ enum ReaderAssets {
     body.listening p, body.listening li, body.listening h1, body.listening h2, body.listening h3, body.listening figcaption { cursor: pointer; }
     """
 
+    /// Tapping a figure (or any image) asks the app to show it full screen, zoomable.
+    static let figureJS = """
+    document.addEventListener('click', function(e){
+      var img = e.target.closest && e.target.closest('img'); if (!img) return;
+      var fig = img.closest('figure, .fig, .table-wrap');
+      var cap = fig ? fig.querySelector('figcaption, .caption') : null;
+      try { window.webkit.messageHandlers.fig.postMessage({ src: img.src, caption: cap ? cap.innerText : (img.alt || '') }); } catch (x) { return; }
+      e.preventDefault(); e.stopPropagation();
+    }, true);
+    """
+
     /// Injects `css` into the page.
     static var styleScript: String {
         let c = css.replacingOccurrences(of: "`", with: "")
+        // the books don't declare a mobile viewport; without one the iPhone lays the page out 980 px wide and shrinks it
         return "var s=document.createElement('style');s.textContent=`\(c)`;document.documentElement.appendChild(s);"
+            + "if(!document.querySelector('meta[name=viewport]')){var m=document.createElement('meta');m.name='viewport';m.content='width=device-width, initial-scale=1';(document.head||document.documentElement).appendChild(m);}"
+            + figureJS
     }
 
     /// Reports the id of the heading currently at the top of the screen to the "pos" handler.

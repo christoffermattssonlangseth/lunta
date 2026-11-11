@@ -5,6 +5,9 @@ struct LibraryView: View {
     @EnvironmentObject var model: LibraryModel
     @State private var adding = false
     @State private var input = ""
+    @State private var asking = false
+    @State private var askPath: [String] = []
+    @StateObject private var ask = AskEngine(scope: .library)
 
     var body: some View {
         NavigationStack {
@@ -17,6 +20,9 @@ struct LibraryView: View {
             .navigationDestination(for: String.self) { id in ReaderView(paperID: id) }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { SourceMenu() }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { asking = true } label: { Image(systemName: "sparkles") }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { adding = true } label: { Image(systemName: "plus") }
                 }
@@ -31,6 +37,14 @@ struct LibraryView: View {
                     .frame(maxWidth: .infinity)
                     .background(.bar)
                 }
+            }
+            .sheet(isPresented: $asking) {
+                NavigationStack(path: $askPath) {
+                    AssistantPanel(engine: ask, onPaper: { id in askPath.append(id) })
+                        .navigationDestination(for: String.self) { id in ReaderView(paperID: id) }
+                        .toolbar(.hidden, for: .navigationBar)
+                }
+                .environmentObject(model)
             }
             .alert("Add Paper", isPresented: $adding) {
                 TextField("DOI, link or PMCID", text: $input)

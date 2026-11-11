@@ -27,12 +27,20 @@ final class Narrator: NSObject, ObservableObject {
     @Published var speed: Double = UserDefaults.standard.object(forKey: "narrationSpeed") as? Double ?? 1.0 {
         didSet {
             UserDefaults.standard.set(speed, forKey: "narrationSpeed")
-            if neural { player?.rate = Float(speed) } else { restartCurrent() }
+            if neural || live { player?.rate = Float(speed) } else { restartCurrent() }
         }
     }
     /// True when playing a rendered neural narration rather than the system voice.
     @Published private(set) var neural = false
     private var player: AVAudioPlayer?
+    /// Live natural voice: each paragraph is synthesized on demand (Kokoro on the Mac) just before it plays.
+    typealias ClipProvider = (_ item: NarrationItem) async -> URL?
+    @Published private(set) var live = false
+    /// Waiting for the natural voice to finish the next paragraph.
+    @Published private(set) var waiting = false
+    private var clips: ClipProvider?
+    private var clipTask: Task<Void, Never>?
+    private var clipToken = 0
     private var times: [(start: Double, end: Double)] = []
     private var tick: Timer?
     @Published var voiceID: String = UserDefaults.standard.string(forKey: "narrationVoice") ?? Narrator.bestVoice()?.identifier ?? "" {
@@ -82,6 +90,8 @@ final class Narrator: NSObject, ObservableObject {
     func load(_ items: [NarrationItem], title: String) {
         stop()
         neural = false
+        live = false
+        clips = nil
         player = nil
         self.items = items
         self.title = title
@@ -100,9 +110,23 @@ final class Narrator: NSObject, ObservableObject {
         times = timings.segments.map { ($0.start, $0.end) }
         player = p
         neural = true
+        live = false
+        clips = nil
         self.title = title
         index = 0
         return true
+    }
+
+    /// Natural voice without waiting for a full render: paragraphs are made as they're needed.
+    func loadLive(_ items: [NarrationItem], title: String, clips: @escaping ClipProvider) {
+        stop()
+        neural = false
+        player = nil
+        live = true
+        self.clips = clips
+        self.items = items
+        self.title = title
+        index = 0
     }
 
     func play(from i: Int? = nil) {
@@ -111,6 +135,7 @@ final class Narrator: NSObject, ObservableObject {
         playing = true
         if Narrator.active !== self { Narrator.active?.pause(); Narrator.active = self; setUpRemoteCommands() }
         activateAudio()
+        if live { playClip(); return }
         if neural, let player {
             player.currentTime = times[index].start
             player.rate = Float(speed)
@@ -130,6 +155,13 @@ final class Narrator: NSObject, ObservableObject {
     func toggle() {
         if playing {
             pause()
+        } else if live, let player, !waiting, player.currentTime > 0 {
+            playing = true
+            activateAudio()
+            player.play()
+            updateNowPlaying()
+        } else if live {
+            play()
         } else if neural, let player {
             playing = true
             activateAudio()
@@ -147,7 +179,8 @@ final class Narrator: NSObject, ObservableObject {
 
     func pause() {
         playing = false
-        if neural { player?.pause(); stopTick() } else { synth.pauseSpeaking(at: .word) }
+        if live { player?.pause(); clipTask?.cancel(); waiting = false }
+        else if neural { player?.pause(); stopTick() } else { synth.pauseSpeaking(at: .word) }
         updateNowPlaying()
     }
 
@@ -156,6 +189,8 @@ final class Narrator: NSObject, ObservableObject {
         current = nil
         synth.stopSpeaking(at: .immediate)
         player?.stop()
+        clipTask?.cancel()
+        waiting = false
         stopTick()
         if Narrator.active === self {
             Narrator.active = nil
@@ -210,6 +245,52 @@ final class Narrator: NSObject, ObservableObject {
             updateNowPlaying()
         }
         objectWillChange.send()   // progress bar
+    }
+
+    // MARK: Live natural voice
+
+    private func playClip() {
+        guard index < items.count else { playing = false; updateNowPlaying(); return }
+        clipToken += 1
+        let token = clipToken
+        player?.stop()
+        let i = index
+        onHighlight?(items[i].id)
+        updateNowPlaying()
+        clipTask?.cancel()
+        waiting = true
+        clipTask = Task { [weak self] in
+            guard let self, let clips = self.clips else { return }
+            let url = await clips(self.items[i])
+            guard token == self.clipToken, self.playing else { return }
+            self.waiting = false
+            // have the next paragraphs ready by the time this one ends
+            for j in (i + 1)..<min(i + 3, self.items.count) {
+                let item = self.items[j]
+                Task { _ = await clips(item) }
+            }
+            guard let url, let p = try? AVAudioPlayer(contentsOf: url) else {
+                if i + 1 < self.items.count { self.index = i + 1; self.playClip() } else { self.playing = false }
+                return
+            }
+            p.enableRate = true
+            p.rate = Float(self.speed)
+            p.delegate = self
+            self.player = p
+            p.play()
+            self.updateNowPlaying()
+        }
+    }
+
+    fileprivate func clipFinished(_ p: AVAudioPlayer) {
+        guard live, p === player, playing else { return }
+        if index + 1 < items.count {
+            index += 1
+            playClip()
+        } else {
+            playing = false
+            updateNowPlaying()
+        }
     }
 
     fileprivate func audioFinished() {
@@ -334,7 +415,9 @@ final class Narrator: NSObject, ObservableObject {
 
 extension Narrator: AVAudioPlayerDelegate {
     nonisolated func audioPlayerDidFinishPlaying(_ p: AVAudioPlayer, successfully flag: Bool) {
-        Task { @MainActor in self.audioFinished() }
+        Task { @MainActor in
+            if self.live { self.clipFinished(p) } else { self.audioFinished() }
+        }
     }
 }
 
@@ -357,7 +440,8 @@ struct NarrationBar: View {
                     Text(narrator.currentSection.isEmpty ? "Listening" : narrator.currentSection)
                         .font(.subheadline.weight(.semibold)).lineLimit(1)
                     HStack(spacing: 4) {
-                        if narrator.neural { Pill(text: "Natural voice", icon: "waveform", color: .marginsTeal) }
+                        if narrator.neural || narrator.live { Pill(text: "Natural voice", icon: "waveform", color: .marginsTeal) }
+                        if narrator.waiting { ProgressView().controlSize(.mini) }
                         Text(narrator.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
@@ -372,7 +456,7 @@ struct NarrationBar: View {
                     Picker("Speed", selection: $narrator.speed) {
                         ForEach([0.8, 1.0, 1.15, 1.3, 1.5, 1.75, 2.0], id: \.self) { Text(String(format: "%.2g×", $0)).tag($0) }
                     }
-                    if !narrator.neural {
+                    if !narrator.neural && !narrator.live {
                         Picker("Voice", selection: $narrator.voiceID) {
                             ForEach(Narrator.voices.prefix(25), id: \.identifier) { Text(Narrator.label($0)).tag($0.identifier) }
                         }
@@ -385,7 +469,7 @@ struct NarrationBar: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(Color.marginsTeal)
-            if !narrator.neural && !narrator.hasGoodVoice {
+            if !narrator.neural && !narrator.live && !narrator.hasGoodVoice {
                 Text("Tip: download a Premium voice for much more natural speech (Settings › Accessibility › Spoken Content › Voices).")
                     .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
             }

@@ -210,3 +210,136 @@ final class PageTextExtractor: NSObject, WKNavigationDelegate {
         Task { @MainActor in self.cont?.resume(); self.cont = nil }
     }
 }
+
+/// Live natural voice: keeps Kokoro loaded in the background and renders paragraphs on request,
+/// so any paper can be listened to in the natural voice right away (no full render first).
+@MainActor
+final class KokoroLive {
+    static let shared = KokoroLive()
+
+    private var process: Process?
+    private var input: FileHandle?
+    private var starting: Task<Bool, Never>?
+    private var waiters: [String: [CheckedContinuation<URL?, Never>]] = [:]
+    private var ready: [String: URL] = [:]
+    private let dir = FileManager.default.temporaryDirectory.appendingPathComponent("margins-live", isDirectory: true)
+
+    /// True when the speech engine is installed (made by the first natural-voice render or setup).
+    var installed: Bool { FileManager.default.fileExists(atPath: NarrationRenderer.python.path) }
+
+    /// Audio for one paragraph in the current natural voice; nil if the engine can't make it.
+    func clip(_ text: String, kind: String) async -> URL? {
+        let voice = NarrationRenderer.shared.voice
+        let key = Self.key(voice + "|" + kind + "|" + text)
+        if let u = ready[key], FileManager.default.fileExists(atPath: u.path) { return u }
+        let first = waiters[key] == nil
+        let url: URL? = await withCheckedContinuation { c in
+            waiters[key, default: []].append(c)
+            guard first else { return }
+            Task {
+                guard await self.start() else { self.finish(key, nil); return }
+                let req: [String: String] = ["key": key, "text": text, "kind": kind, "voice": voice]
+                guard let data = try? JSONSerialization.data(withJSONObject: req) else { self.finish(key, nil); return }
+                self.input?.write(data + Data([0x0A]))
+            }
+        }
+        return url
+    }
+
+    /// Starts the engine (once) and waits until the model is loaded.
+    func start() async -> Bool {
+        if process?.isRunning == true { return true }
+        if let starting { return await starting.value }
+        let t = Task<Bool, Never> {
+            do { try await NarrationRenderer.shared.ensureEngine() } catch {
+                NSLog("Margins live voice: engine setup failed: %@", error.localizedDescription)
+                return false
+            }
+            guard let script = Bundle.main.url(forResource: "margins_tts", withExtension: "py") else { return false }
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let p = Process()
+            p.executableURL = NarrationRenderer.python
+            p.arguments = [script.path, "--serve", "--out", dir.path]
+            var env = ProcessInfo.processInfo.environment
+            env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+            env["TOKENIZERS_PARALLELISM"] = "false"
+            p.environment = env
+            let inPipe = Pipe(), outPipe = Pipe()
+            p.standardInput = inPipe
+            p.standardOutput = outPipe
+            p.standardError = FileHandle.nullDevice
+            return await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+                var signalled = false
+                let lines = LiveLines { line in
+                    Task { @MainActor in
+                        if line == "READY", !signalled { signalled = true; c.resume(returning: true) }
+                        else { self.handle(line) }
+                    }
+                }
+                outPipe.fileHandleForReading.readabilityHandler = { h in lines.feed(h.availableData) }
+                p.terminationHandler = { _ in
+                    Task { @MainActor in
+                        outPipe.fileHandleForReading.readabilityHandler = nil
+                        self.process = nil
+                        self.input = nil
+                        for key in Array(self.waiters.keys) { self.finish(key, nil) }
+                        if !signalled { signalled = true; c.resume(returning: false) }
+                    }
+                }
+                do {
+                    try p.run()
+                    self.process = p
+                    self.input = inPipe.fileHandleForWriting
+                } catch {
+                    signalled = true
+                    c.resume(returning: false)
+                }
+            }
+        }
+        starting = t
+        let ok = await t.value
+        starting = nil
+        return ok
+    }
+
+    func shutdown() { process?.terminate() }
+
+    private func handle(_ line: String) {
+        let parts = line.split(separator: " ", maxSplits: 2).map(String.init)
+        guard parts.count >= 2 else { return }
+        switch parts[0] {
+        case "CLIP" where parts.count == 3: finish(parts[1], URL(fileURLWithPath: parts[2]))
+        case "FAIL": NSLog("Margins live voice: %@", line); finish(parts[1], nil)
+        default: break
+        }
+    }
+
+    private func finish(_ key: String, _ url: URL?) {
+        if let url { ready[key] = url }
+        for c in waiters.removeValue(forKey: key) ?? [] { c.resume(returning: url) }
+    }
+
+    private static func key(_ s: String) -> String {
+        var h: UInt64 = 0xcbf29ce484222325
+        for b in s.utf8 { h = (h ^ UInt64(b)) &* 0x100000001b3 }
+        return String(h, radix: 36)
+    }
+}
+
+/// Splits a pipe's output into lines.
+private final class LiveLines: @unchecked Sendable {
+    private let lock = NSLock()
+    private var buffer = Data()
+    private let onLine: @Sendable (String) -> Void
+    init(_ onLine: @escaping @Sendable (String) -> Void) { self.onLine = onLine }
+    func feed(_ d: Data) {
+        guard !d.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
+        buffer.append(d)
+        while let nl = buffer.firstIndex(of: 0x0A) {
+            let line = String(decoding: buffer[buffer.startIndex..<nl], as: UTF8.self)
+            buffer.removeSubrange(buffer.startIndex...nl)
+            onLine(line)
+        }
+    }
+}
