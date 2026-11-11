@@ -9,6 +9,7 @@ extension PaperCollection: Identifiable {}
 enum SidebarItem: Hashable {
     case all, starred, unread
     case discover
+    case alerts
     case collection(String)
     case tag(String)
     case smart(String)
@@ -108,7 +109,7 @@ final class LibraryModel: ObservableObject {
     /// Only the paper list (cheap): used for sidebar selection, sorting and search.
     func reloadList() {
         searchTask?.cancel()
-        if source == .discover { return }
+        if source == .discover || source == .alerts { return }
         let filter = currentFilter()
         let q = query.trimmingCharacters(in: .whitespaces)
         let lib = self.lib
@@ -147,7 +148,7 @@ final class LibraryModel: ObservableObject {
         case .all: break
         case .starred: filter.starredOnly = true
         case .unread: filter.unreadOnly = true
-        case .discover: break
+        case .discover, .alerts: break
         case .collection(let id): filter.collection = id
         case .tag(let t): filter.tag = t
         case .smart: break
@@ -161,6 +162,7 @@ final class LibraryModel: ObservableObject {
         case .starred: return "Starred"
         case .unread: return "Unread"
         case .discover: return "Discover"
+        case .alerts: return "New for You"
         case .collection(let id): return collections.first { $0.id == id }?.name ?? "Collection"
         case .tag(let t): return "#\(t)"
         case .smart(let id): return smartFolder(id)?.name ?? "Smart Folder"

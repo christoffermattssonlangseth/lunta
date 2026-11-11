@@ -367,7 +367,66 @@ pub fn discover(query: &str, limit: u32) -> Result<Vec<DiscoverHit>> {
         enc(q).replace('/', "%2F"),
         limit.clamp(1, 50)
     );
-    let j = get_json(&url)?;
+    works(&url)
+}
+
+const WORK_FIELDS: &str = "title,authorships,publication_date,primary_location,doi,ids,cited_by_count,open_access,abstract_inverted_index,biblio";
+
+/// What a watch follows.
+#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WatchKind {
+    /// Words, as in Discover.
+    Topic,
+    /// An author's name.
+    Author,
+    /// Papers citing the work with this DOI.
+    Citing,
+}
+
+/// Papers published on or after `since` (YYYY-MM-DD) for a watch, newest first.
+pub fn watch_new(kind: WatchKind, value: &str, since: &str, limit: u32) -> Result<Vec<DiscoverHit>> {
+    let v = value.trim();
+    if v.is_empty() {
+        return Ok(vec![]);
+    }
+    let per = limit.clamp(1, 50);
+    let date = format!("from_publication_date:{}", since.trim());
+    let url = match kind {
+        WatchKind::Topic => format!(
+            // keep relevance order (sorting a search by date surfaces loose matches); callers sort
+            "https://api.openalex.org/works?search={}&filter={}&per_page={}&select={}",
+            enc(v).replace('/', "%2F"), date, per, WORK_FIELDS
+        ),
+        WatchKind::Author => {
+            let a = get_json(&format!("https://api.openalex.org/authors?search={}&per_page=1&select=id", enc(v)))?;
+            let id = s(&a["results"][0]["id"]).rsplit('/').next().unwrap_or("").to_string();
+            if id.is_empty() {
+                return Ok(vec![]);
+            }
+            format!(
+                "https://api.openalex.org/works?filter=author.id:{},{}&sort=publication_date:desc&per_page={}&select={}",
+                id, date, per, WORK_FIELDS
+            )
+        }
+        WatchKind::Citing => {
+            let doi = v.trim_start_matches("https://doi.org/").trim_start_matches("doi:");
+            let w = get_json(&format!("https://api.openalex.org/works/doi:{}?select=id", doi))?;
+            let id = s(&w["id"]).rsplit('/').next().unwrap_or("").to_string();
+            if id.is_empty() {
+                return Ok(vec![]);
+            }
+            format!(
+                "https://api.openalex.org/works?filter=cites:{},{}&sort=publication_date:desc&per_page={}&select={}",
+                id, date, per, WORK_FIELDS
+            )
+        }
+    };
+    works(&url)
+}
+
+/// Parses an OpenAlex /works list.
+fn works(url: &str) -> Result<Vec<DiscoverHit>> {
+    let j = get_json(url)?;
     let mut out = vec![];
     for w in j["results"].as_array().cloned().unwrap_or_default() {
         let doi = s(&w["doi"]).trim_start_matches("https://doi.org/").to_string();

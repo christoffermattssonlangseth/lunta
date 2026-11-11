@@ -26,6 +26,9 @@ The library syncs between your Mac and iPhone through iCloud Drive.
 - **Clean up:** *Clean Up Library…* finds papers with missing or broken details (fixed from the DOI, or
   read from the PDF on the device) and duplicates (merged, keeping tags, folders, highlights and the PDF).
 - **Discover:** search 250 million papers on OpenAlex, add with one click, open what you added.
+- **New for You:** watch authors, topics, or the papers citing one of yours (right-click a paper › Watch,
+  or *Watch this search* in Discover). Margins checks OpenAlex when it opens and twice a day, and
+  notifies you when something new appears.
 - **Cite:** APA, Vancouver, Nature, BibTeX, RIS, Markdown; share PDFs, EPUBs and citations. **Word and
   Google Docs add-ins** insert citations from the library and build the reference list.
 - **Ask (✨):** an assistant that runs on the device: Apple Intelligence, or the open Qwen3 4B model where
@@ -64,6 +67,7 @@ scripts/build-core.sh  builds the Rust core for iOS, the simulator and macOS →
 <library>/ops/<device-id>.jsonl     append-only change log, one per device
 <library>/positions/<device>.json   last reading position per paper (changes often, so not in the log)
 <library>/smart-folders.json        smart folder rules
+<library>/watches.json              watched authors, topics and citations
 ```
 
 Blobs are written once. Every change (metadata, read/starred, tags, collections, highlights and
@@ -157,7 +161,8 @@ must be running; the extension talks to it on `127.0.0.1:47480` (extension reque
 6. ✅ Ask (on-device assistant) and MCP server for agents
 7. ✅ Citation add-ins: Word and Google Docs
 8. ✅ Duplicate and metadata cleanup, smart folders
-9. new-paper alerts, arXiv HTML reading views
+9. ✅ New-paper alerts
+10. arXiv HTML reading views
 
 ## License
 

@@ -15,7 +15,9 @@ struct LibraryView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if model.source == .discover { DiscoverListIOS() } else { libraryList }
+                if model.source == .discover { DiscoverListIOS() }
+                else if model.source == .alerts { WatchInbox(selection: .constant(nil)).listStyle(.insetGrouped) }
+                else { libraryList }
             }
             .navigationTitle(model.sourceTitle)
             .searchable(text: $model.query, prompt: model.source == .discover ? "Search new papers, then tap Search" : "Titles, authors, full text, notes")
@@ -88,6 +90,7 @@ struct LibraryView: View {
                             Button("Remove from This Folder", systemImage: "folder.badge.minus") { model.setMembership([p.id], collection: cid, false) }
                         }
                         Button("Share…", systemImage: "square.and.arrow.up") { sharing = ShareTargetIOS(id: p.id) }
+                        Menu("Watch", systemImage: "bell") { WatchMenu(paper: p) }
                     }
                     .swipeActions(edge: .leading) {
                         Button { model.toggleStar(p) } label: { Label(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") }
@@ -131,6 +134,7 @@ struct SourceMenu: View {
                 Label("Starred", systemImage: "star").tag(SidebarItem.starred)
                 Label("Unread", systemImage: "circle.badge").tag(SidebarItem.unread)
                 Label("Discover New Papers", systemImage: "globe.europe.africa").tag(SidebarItem.discover)
+                Label("New for You", systemImage: "bell.badge").tag(SidebarItem.alerts)
             }
             if !model.collections.isEmpty {
                 Menu("Folders") {

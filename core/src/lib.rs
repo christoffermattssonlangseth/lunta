@@ -419,6 +419,15 @@ impl Library {
         Ok(hits)
     }
 
+    /// New papers for a watch (author, topic, or citing a paper) published since `since` (YYYY-MM-DD).
+    pub fn watch_new(&self, kind: metadata::WatchKind, value: String, since: String, limit: u32) -> Result<Vec<metadata::DiscoverHit>> {
+        let mut hits = metadata::watch_new(kind, &value, &since, limit)?;
+        for h in hits.iter_mut() {
+            h.in_library = self.find_by_doi(h.meta.doi.clone()).or_else(|| self.find_by_title(&h.meta.title)).map(|p| p.id);
+        }
+        Ok(hits)
+    }
+
     // ---- finding PDFs ----
 
     /// Searches open-access sources for the paper's PDF, downloads the best one and attaches it.

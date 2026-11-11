@@ -80,6 +80,9 @@ final class ModelHolder: ObservableObject {
             citations?.start()
             model.watchForOutsideChanges()
             NarrationRenderer.shared.model = model
+            if !ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("-ask") || $0 == "-cleanupReport" }) {
+                WatchCenter.shared.start(model)
+            }
         }
         // scripting hook: `Margins -import <file.bib|.ris> [-pdfs <folder>]`
         let args = ProcessInfo.processInfo.arguments

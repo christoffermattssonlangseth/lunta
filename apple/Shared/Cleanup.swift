@@ -71,11 +71,11 @@ extension LibraryModel {
         }
     }
 
-    static func titleKey(_ t: String) -> String {
+    nonisolated static func titleKey(_ t: String) -> String {
         String(t.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(Character.init).prefix(70))
     }
 
-    static func doiKey(_ d: String) -> String {
+    nonisolated static func doiKey(_ d: String) -> String {
         var s = d.lowercased().trimmingCharacters(in: .whitespaces)
         for p in ["https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "doi:"] where s.hasPrefix(p) { s.removeFirst(p.count) }
         return s

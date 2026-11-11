@@ -338,3 +338,18 @@ fn folders_nest_and_refuse_cycles() {
     lib.move_collection(b.id.clone(), None).unwrap();
     assert!(lib.collections().iter().all(|c| c.parent.is_none()));
 }
+
+#[test]
+#[ignore] // online
+fn watches_find_recent_papers() {
+    use crate::metadata::{watch_new, WatchKind};
+    let since = "2024-01-01";
+    let t = watch_new(WatchKind::Topic, "velocity-based training", since, 5).unwrap();
+    assert!(!t.is_empty() && t.iter().all(|h| h.meta.date.as_str() >= since), "{:?}", t.iter().map(|h| &h.meta.date).collect::<Vec<_>>());
+    let a = watch_new(WatchKind::Author, "Jonathon Weakley", since, 5).unwrap();
+    assert!(!a.is_empty());
+    let c = watch_new(WatchKind::Citing, "10.1519/SSC.0000000000000560", "2021-01-01", 5).unwrap();
+    assert!(!c.is_empty());
+    println!("topic {} author {} citing {}", t.len(), a.len(), c.len());
+    for h in t.iter().chain(&a).chain(&c) { println!("{} | {}", h.meta.date, h.meta.title); }
+}

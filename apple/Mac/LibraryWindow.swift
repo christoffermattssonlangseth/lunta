@@ -21,13 +21,22 @@ struct LibraryWindow: View {
             Group {
                 if model.source == .discover {
                     DiscoverList(selection: $discoverSelection)
+                } else if model.source == .alerts {
+                    WatchInbox(selection: $discoverSelection)
                 } else {
                     PaperTable(selection: $selection)
                 }
             }
             .navigationSplitViewColumnWidth(min: 420, ideal: 560)
         } detail: {
-            if model.source == .discover {
+            if model.source == .alerts {
+                if let id = discoverSelection, let f = WatchCenter.shared.finds.first(where: { $0.id == id }) {
+                    DiscoverDetail(hit: f.hit)
+                } else {
+                    ContentUnavailableView("New for You", systemImage: "bell.badge",
+                                           description: Text("Papers your watches found. Select one to read its abstract."))
+                }
+            } else if model.source == .discover {
                 if let id = discoverSelection, let hit = model.discoverResults.first(where: { $0.id == id }) {
                     DiscoverDetail(hit: hit)
                 } else {
@@ -156,6 +165,7 @@ struct LibraryWindow: View {
 
 struct Sidebar: View {
     @EnvironmentObject var model: LibraryModel
+    @ObservedObject private var watches = WatchCenter.shared
     @State private var prompt: NameRequest?
     @State private var deleting: PaperCollection?
     @State private var editingSmart: SmartFolder?
@@ -170,6 +180,7 @@ struct Sidebar: View {
             }
             Section("Beyond your library") {
                 Label("Discover New Papers", systemImage: "globe.europe.africa").tag(SidebarItem.discover)
+                Label("New for You", systemImage: "bell.badge").badge(WatchCenter.shared.newCount).tag(SidebarItem.alerts)
             }
             Section {
                 if model.collections.isEmpty {
@@ -400,6 +411,7 @@ struct PaperMenu: View {
             Button(p.starred ? "Unstar" : "Star") { model.toggleStar(p) }
             Button(p.read ? "Mark as Unread" : "Mark as Read") { model.setRead(p, !p.read) }
             Button("Edit Details…") { NotificationCenter.default.post(name: .marginsEditPaper, object: id) }
+            Menu("Watch") { WatchMenu(paper: p) }
             Button("Share…") { NotificationCenter.default.post(name: .marginsSharePapers, object: ids) }
             Divider()
             CiteMenu(ids: ids)
@@ -726,6 +738,12 @@ struct DiscoverList: View {
     var body: some View {
         VStack(spacing: 0) {
             BeyondBanner().padding(12)
+            if !model.discoverQuery.isEmpty {
+                Button { WatchCenter.shared.add(Watch(kind: .topic, value: model.discoverQuery, label: model.discoverQuery)) } label: {
+                    Label("Watch “\(model.discoverQuery)” for new papers", systemImage: "bell")
+                }
+                .buttonStyle(.borderless).padding(.bottom, 6)
+            }
             if model.discovering {
                 ProgressView("Searching OpenAlex…").frame(maxHeight: .infinity)
             } else if let e = model.discoverError {
