@@ -68,6 +68,7 @@ struct FeedRecord: Codable, Hashable {
     var score: Double
     var found: Date
     var inLibrary: String?
+    var boosted: Bool?              // thumbs up: more like this
 
     init(_ h: DiscoverHit, reason: String, score: Double, source: String) {
         key = LibraryModel.hitKey(h)
@@ -102,6 +103,7 @@ struct ForYouState: Codable {
     var shown: [String] = []       // keys already offered (never offered twice)
     var liked: [FeedbackSnip] = []
     var disliked: [FeedbackSnip] = []
+    var boosted: [FeedbackSnip] = []   // thumbs up: counts more than an add
     var lastRun: Date?
 
     init() {}
@@ -116,6 +118,7 @@ struct ForYouState: Codable {
         shown = try c.decodeIfPresent([String].self, forKey: .shown) ?? []
         liked = try c.decodeIfPresent([FeedbackSnip].self, forKey: .liked) ?? []
         disliked = try c.decodeIfPresent([FeedbackSnip].self, forKey: .disliked) ?? []
+        boosted = try c.decodeIfPresent([FeedbackSnip].self, forKey: .boosted) ?? []
         lastRun = try c.decodeIfPresent(Date.self, forKey: .lastRun)
     }
 }
@@ -238,6 +241,21 @@ final class WatchCenter: ObservableObject {
             s.items.removeAll { $0.key == f.id }
             s.disliked.append(FeedbackSnip(key: f.id, text: Self.snip(f.record.title, f.record.abstract)))
             s.disliked = Array(s.disliked.suffix(150))
+        }
+    }
+
+    /// Thumbs up ("more like this"): ranks similar papers higher and shows the model what you want.
+    /// Tapping again takes it back.
+    func boost(_ f: WatchFind) {
+        change { s in
+            guard let i = s.items.firstIndex(where: { $0.key == f.id }) else { return }
+            let on = !(s.items[i].boosted ?? false)
+            s.items[i].boosted = on
+            s.boosted.removeAll { $0.key == f.id }
+            if on {
+                s.boosted.append(FeedbackSnip(key: f.id, text: Self.snip(f.record.title, f.record.abstract)))
+                s.boosted = Array(s.boosted.suffix(100))
+            }
         }
     }
 
@@ -364,10 +382,10 @@ final class WatchCenter: ObservableObject {
         stage = "Ranking \(candidates.count) papers…"
         await refreshLibraryVectors(every)
         let libVecs = Array(libraryVectors.values)
-        let liked = state.liked.map(\.text), disliked = state.disliked.map(\.text)
+        let liked = state.liked.map(\.text), disliked = state.disliked.map(\.text), boosted = state.boosted.map(\.text)
         let texts = candidates.map { Self.snip($0.hit.meta.title, $0.hit.meta.abstractText) }
         let scores = await Task.detached(priority: .utility) {
-            Self.score(texts, interests: interests, library: libVecs, liked: liked, disliked: disliked)
+            Self.score(texts, interests: interests, library: libVecs, liked: liked, disliked: disliked, boosted: boosted)
         }.value
         lastStats = "pool \(pool.count), new candidates \(candidates.count) (" +
             Dictionary(grouping: candidates, by: { $0.source.hasPrefix("search") ? "searches" : $0.source.hasPrefix("Cites") ? "citing library" : $0.source })
@@ -383,11 +401,12 @@ final class WatchCenter: ObservableObject {
         let open = Array(ranked.filter { !$0.c.explicit }.prefix(40))
         var nearMisses: [(FeedRecord, Double)] = []      // scored 6: used on a quiet day
         let judge = interests.isEmpty ? nil : AskEngine(scope: .paper("__for-you__"))
+        let examples = state.items.filter { $0.boosted == true }.map(\.title).suffix(8)
         var kept = 0
         for (i, r) in open.enumerated() where kept < state.perDay {
             stage = "Reading abstracts (\(i + 1) of \(open.count))…"
             if let judge, judge.unavailableReason == nil {
-                guard let verdict = await Self.screen(r.c.hit, interests: interests, with: judge) else { continue }
+                guard let verdict = await Self.screen(r.c.hit, interests: interests, liked: Array(examples), with: judge) else { continue }
                 if verdict.score >= 7 {
                     picked.append(FeedRecord(r.c.hit, reason: verdict.why, score: r.s, source: r.c.source)); kept += 1
                 } else {
@@ -430,11 +449,12 @@ final class WatchCenter: ObservableObject {
     }
 
     nonisolated static func score(_ texts: [String], interests: String, library: [[Double]],
-                                  liked: [String], disliked: [String]) -> [Double] {
+                                  liked: [String], disliked: [String], boosted: [String] = []) -> [Double] {
         guard let e = NLEmbedding.sentenceEmbedding(for: .english) else { return texts.map { _ in 0 } }
         let p = interests.isEmpty ? nil : e.vector(for: interests)
         let likedV = liked.compactMap { e.vector(for: $0) }
         let dislikedV = disliked.compactMap { e.vector(for: $0) }
+        let boostedV = boosted.compactMap { e.vector(for: $0) }
         return texts.map { t in
             guard let v = e.vector(for: t) else { return 0 }
             let toInterests = p.map { cos($0, v) } ?? 0
@@ -443,7 +463,8 @@ final class WatchCenter: ObservableObject {
             let up = likedV.map { cos($0, v) }.max() ?? 0
             let down = dislikedV.map { cos($0, v) }.max() ?? 0
             let base = p == nil ? toLibrary : 0.55 * toInterests + 0.35 * toLibrary
-            return base + 0.25 * (up - down)
+            let boost = boostedV.map { cos($0, v) }.max() ?? 0
+            return base + 0.25 * (up - down) + 0.3 * boost
         }
     }
 
@@ -498,11 +519,14 @@ final class WatchCenter: ObservableObject {
     }
 
     /// Does the paper really fit, and why (one sentence)? nil when the model didn't answer.
-    static func screen(_ h: DiscoverHit, interests: String, with engine: AskEngine) async -> (score: Double, why: String)? {
+    static func screen(_ h: DiscoverHit, interests: String, liked: [String] = [],
+                       with engine: AskEngine) async -> (score: Double, why: String)? {
         let abstract = h.meta.abstractText.isEmpty ? "(no abstract)" : String(h.meta.abstractText.prefix(1100))
+        let examples = liked.isEmpty ? "" : "\n\nRecent papers they marked as exactly what they want:\n" +
+            liked.map { "- \($0)" }.joined(separator: "\n")
         let prompt = """
             The researcher's interests:
-            \(interests)
+            \(interests)\(examples)
 
             New paper:
             Title: \(h.meta.title)
@@ -706,10 +730,16 @@ struct WatchInbox: View {
     @ViewBuilder private func row(_ f: WatchFind) -> some View {
         #if os(iOS)
         NavigationLink { DiscoverDetail(hit: f.hit) } label: { FeedRow(find: f) }
-            .swipeActions { Button("Not for Me", systemImage: "hand.thumbsdown") { center.dismiss(f) }.tint(.gray) }
+            .swipeActions {
+                Button("Not for Me", systemImage: "hand.thumbsdown") { center.dismiss(f) }.tint(.gray)
+                Button("More Like This", systemImage: "hand.thumbsup") { center.boost(f) }.tint(.marginsTeal)
+            }
         #else
         FeedRow(find: f)
-            .contextMenu { Button("Not for Me") { center.dismiss(f) } }
+            .contextMenu {
+                Button(f.record.boosted == true ? "Undo More Like This" : "More Like This", systemImage: "hand.thumbsup") { center.boost(f) }
+                Button("Not for Me", systemImage: "hand.thumbsdown") { center.dismiss(f) }
+            }
         #endif
     }
 }
@@ -744,6 +774,12 @@ struct FeedRow: View {
                     } label: { Label(adding ? "Adding…" : "Add", systemImage: "plus") }
                     .buttonStyle(.borderedProminent).tint(.marginsTeal).disabled(adding)
                 }
+                Button { center.boost(find) } label: {
+                    Image(systemName: r.boosted == true ? "hand.thumbsup.fill" : "hand.thumbsup")
+                        .accessibilityLabel(r.boosted == true ? "Undo More Like This" : "More Like This")
+                }
+                .buttonStyle(.bordered).tint(r.boosted == true ? .marginsTeal : nil)
+                .help("More like this: papers like it rank higher")
                 Button { center.dismiss(find) } label: { Label("Not for Me", systemImage: "hand.thumbsdown") }
                     .buttonStyle(.bordered)
                 Spacer()
