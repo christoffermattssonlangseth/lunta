@@ -18,6 +18,8 @@ The library syncs between your Mac and iPhone through iCloud Drive.
 - **Library:** add papers by DOI, link, PMCID or PDF (drag and drop on the Mac; share sheet on iPhone,
   from Safari, Mail or Files); metadata looked up from Crossref, Europe PMC, arXiv and OpenAlex, or read
   from the PDF's first page on-device; edit any field. Import from ReadCube Papers, BibTeX and RIS.
+  Give a paper its PDF yourself: drop it on the paper (in the list or its details) or use **Add PDF…**
+  (Mac) / **Add it from Files** (iPhone); **Replace PDF…** swaps it.
 - **Organise:** folders with subfolders (drag papers and folders in the Mac sidebar), tags, stars,
   read/unread. **Smart folders** fill themselves from rules (words, tag, folder, year range, recently
   added, unread/starred, PDF or not, highlighted). Folders & Tags is one tap away on iPhone (swipe, long-press, or the reader's ⋯ menu). The iPhone

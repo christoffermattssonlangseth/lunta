@@ -110,7 +110,7 @@ struct LibraryWindow: View {
         .onDrop(of: [.pdf, .fileURL], isTargeted: $dropping) { providers in
             let privately = NSEvent.modifierFlags.contains(.option)
             Task {
-                let urls = await pdfURLs(providers)
+                let urls = await Self.pdfURLs(providers)
                 guard !urls.isEmpty else { model.errorMessage = "Only PDF files can be dropped here."; return }
                 let out = await model.addPDFs(urls, privately: privately)
                 if let id = out.first(where: { $0.paperID != nil })?.paperID {
@@ -136,7 +136,7 @@ struct LibraryWindow: View {
         .tint(.luntaTeal)
     }
 
-    private func pdfURLs(_ providers: [NSItemProvider]) async -> [URL] {
+    static func pdfURLs(_ providers: [NSItemProvider]) async -> [URL] {
         var out: [URL] = []
         for p in providers {
             if p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier),
@@ -310,6 +310,7 @@ struct PaperTable: View {
     @EnvironmentObject var model: LibraryModel
     @Binding var selection: Set<String>
     @Environment(\.openWindow) private var openWindow
+    @State private var pendingPDF: PendingPDF?
 
     var body: some View {
         Table(of: Paper.self, selection: $selection) {
@@ -351,9 +352,18 @@ struct PaperTable: View {
             }
             .width(min: 60, ideal: 110)
         } rows: {
-            ForEach(model.papers) { p in TableRow(p).draggable(p.id) }
+            ForEach(model.papers) { p in
+                TableRow(p).draggable(p.id)
+                    // a PDF dropped on a paper goes onto that paper
+                    .dropDestination(for: URL.self) { urls in
+                        guard let url = urls.first(where: { $0.pathExtension.lowercased() == "pdf" }) else { return }
+                        selection = [p.id]
+                        model.offerPDF(url, to: p, pending: $pendingPDF)
+                    }
+            }
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
+        .modifier(ReplacePDFConfirm(pending: $pendingPDF))
         .safeAreaInset(edge: .bottom) {
             if !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
                 Button { model.searchBeyondLibrary() } label: {
@@ -477,6 +487,9 @@ struct PaperDetail: View {
     @State private var newTag = ""
     @State private var note: String?
     @State private var sharing = false
+    @State private var choosingPDF = false
+    @State private var dropping = false
+    @State private var pendingPDF: PendingPDF?
 
     var body: some View {
         ScrollView {
@@ -499,6 +512,26 @@ struct PaperDetail: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onChange(of: paper.id) { _, _ in note = nil }
+        // drop a PDF here to add it to this paper (not as a new paper)
+        .onDrop(of: [.fileURL, .pdf], isTargeted: $dropping) { providers in
+            Task {
+                if let url = await LibraryWindow.pdfURLs(providers).first { model.offerPDF(url, to: paper, pending: $pendingPDF) }
+            }
+            return true
+        }
+        .overlay {
+            if dropping {
+                RoundedRectangle(cornerRadius: 14).strokeBorder(Color.luntaTeal, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    .background(RoundedRectangle(cornerRadius: 14).fill(Color.luntaTeal.opacity(0.08)))
+                    .overlay(Label(paper.hasPdf ? "Drop to replace this paper's PDF" : "Drop to add the PDF to this paper",
+                                   systemImage: "doc.badge.plus").font(.headline).foregroundStyle(Color.luntaTeal))
+                    .padding(8).allowsHitTesting(false)
+            }
+        }
+        .fileImporter(isPresented: $choosingPDF, allowedContentTypes: [.pdf]) { r in
+            if case .success(let url) = r { model.offerPDF(url, to: paper, pending: $pendingPDF) }
+        }
+        .modifier(ReplacePDFConfirm(pending: $pendingPDF))
     }
 
     private var header: some View {
@@ -542,12 +575,17 @@ struct PaperDetail: View {
                     .disabled(!paper.hasEpub && !paper.hasPdf)
                 if let pdf = model.fileURL(paper.id, .pdf) {
                     Button { ReaderWindow.open(paper.id, mode: .pdf, openWindow) } label: { Label("PDF", systemImage: "doc.richtext") }
-                        .contextMenu { Button("Open in Preview") { NSWorkspace.shared.open(pdf) } }
+                        .contextMenu {
+                            Button("Open in Preview") { NSWorkspace.shared.open(pdf) }
+                            Button("Replace PDF…") { choosingPDF = true }
+                        }
                 } else {
                     Button { run("Searching open-access sources…") { await findPDF() } } label: {
                         Label("Find PDF", systemImage: "magnifyingglass")
                     }
                     .disabled(busy != nil)
+                    Button { choosingPDF = true } label: { Label("Add PDF…", systemImage: "doc.badge.plus") }
+                        .help("Add a PDF you downloaded to this paper (or drop it here)")
                 }
                 if !paper.hasEpub && paper.hasPdf {
                     Button { run("Making reading view…") { _ = await model.makeReadingView(paper.id); model.reload() } } label: {
@@ -569,7 +607,7 @@ struct PaperDetail: View {
         if let source = await model.findPDF(paper.id) {
             note = "PDF found via \(source)."
         } else {
-            note = "No open-access PDF found. Download it with your institution's access and drop it onto the window."
+            note = "No open-access PDF found. Download it with your institution's access, then drop it here or use Add PDF…."
             if !paper.meta.doi.isEmpty, let u = URL(string: "https://doi.org/\(paper.meta.doi)") { NSWorkspace.shared.open(u) }
         }
     }

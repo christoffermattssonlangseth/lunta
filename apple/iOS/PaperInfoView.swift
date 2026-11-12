@@ -19,6 +19,8 @@ struct PaperInfoView: View {
     @State private var editing = false
     @State private var sharing = false
     @State private var deleting: Paper?
+    @State private var choosingPDF = false
+    @State private var pendingPDF: PendingPDF?
 
     var body: some View {
         if let p = model.paper(paperID) {
@@ -33,6 +35,10 @@ struct PaperInfoView: View {
                         Text(p.meta.authors.joined(separator: ", ")).font(.subheadline).foregroundStyle(.secondary).lineLimit(5)
                     }
                     actions(p)
+                    if !p.hasPdf {
+                        Button { choosingPDF = true } label: { Label("Have the PDF? Add it from Files…", systemImage: "doc.badge.plus") }
+                            .font(.callout).tint(.luntaTeal)
+                    }
                     if let busy { HStack { ProgressView(); Text(busy).font(.footnote).foregroundStyle(.secondary) } }
                     if let note { Text(note).font(.footnote).foregroundStyle(.secondary) }
                     if !p.meta.abstractText.isEmpty {
@@ -59,6 +65,10 @@ struct PaperInfoView: View {
                     if !p.meta.doi.isEmpty, let u = URL(string: "https://doi.org/\(p.meta.doi)") {
                         Link("Open publisher page", destination: u).font(.callout)
                     }
+                    if p.hasPdf {
+                        Button { choosingPDF = true } label: { Label("Replace PDF…", systemImage: "doc.badge.plus") }
+                            .font(.callout).tint(.luntaTeal)
+                    }
                     Button(role: .destructive) { deleting = p } label: { Label("Delete Paper", systemImage: "trash") }
                         .font(.callout).padding(.top, 8)
                 }
@@ -80,6 +90,10 @@ struct PaperInfoView: View {
                 }
             }
             .modifier(DeletePaperConfirm(paper: $deleting) { dismiss() })
+            .fileImporter(isPresented: $choosingPDF, allowedContentTypes: [.pdf]) { r in
+                if case .success(let url) = r { model.offerPDF(url, to: p, pending: $pendingPDF) }
+            }
+            .modifier(ReplacePDFConfirm(pending: $pendingPDF))
             .sheet(isPresented: $editing) { MetadataEditor(paperID: paperID).environmentObject(model) }
             .sheet(isPresented: $sharing) {
                 ScrollView { SharePanel(ids: [paperID]) }.environmentObject(model).presentationDetents([.medium, .large])
@@ -100,7 +114,7 @@ struct PaperInfoView: View {
                 Button {
                     run("Searching open-access sources…") {
                         if let s = await model.findPDF(p.id) { note = "PDF found via \(s)." }
-                        else { note = "No open-access PDF found. Open the publisher page and share the PDF to Lunta." }
+                        else { note = "No open-access PDF found. Download it from the publisher, then add it from Files (or share it to Lunta)." }
                     }
                 } label: { Label("Find PDF", systemImage: "magnifyingglass") }
                 .buttonStyle(canRead && p.hasEpub ? AnyButtonStyle(.bordered) : AnyButtonStyle(.borderedProminent)).tint(.luntaTeal)
