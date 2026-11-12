@@ -96,8 +96,25 @@ extension ReaderAssets {
             if (/\s/.test(c)) { if (flat.length && flat[flat.length - 1] === ' ') continue; c = ' '; }
             map.push(k); flat += c;
           }
-          var j = flat.indexOf(q); if (j < 0) return null;
-          return [map[j], map[j + q.length - 1] + 1];
+          var j = flat.indexOf(q);
+          if (j >= 0) return [map[j], map[j + q.length - 1] + 1];
+          // made in the PDF view: spacing ("(Fig. 2)" vs "( Fig. 2 )"), dashes, quotes and µ differ;
+          // match with all of that left out
+          var foldc = function(c){
+            if (c === '\u00B5') return '\u03BC';
+            if (/[\u2018\u2019]/.test(c)) return "'";
+            if (/[\u201C\u201D]/.test(c)) return '"';
+            if (/[\u2010-\u2014\u2212]/.test(c)) return '-';
+            return c.toLowerCase();
+          };
+          var dq = ''; for (var u = 0; u < a.quote.length; u++) { if (!/\s/.test(a.quote[u])) dq += foldc(a.quote[u]); }
+          if (dq.length < 4) return null;
+          var dmap = [], dense = '';
+          for (var k2 = 0; k2 < text.length; k2++) { if (!/\s/.test(text[k2])) { dmap.push(k2); dense += foldc(text[k2]); } }
+          var d = dense.indexOf(dq);
+          if (d < 0 && dq.length > 140) { dq = dq.slice(0, 100); d = dense.indexOf(dq); }
+          if (d < 0) return null;
+          return [dmap[d], dmap[d + dq.length - 1] + 1];
         }
         return [best, best + a.quote.length];
       }
@@ -193,9 +210,10 @@ extension LibraryModel {
     func annotations(_ paper: String) -> [Annotation] { lib.annotations(paper: paper) }
 
     @discardableResult
-    func addHighlight(_ paper: String, _ s: PageSelection, color: HighlightColor = .yellow, note: String = "") -> Annotation? {
+    func addHighlight(_ paper: String, _ s: PageSelection, color: HighlightColor = .yellow, note: String = "",
+                      location: String = "epub") -> Annotation? {
         let a = Annotation(id: "", paperId: paper, kind: note.isEmpty ? .highlight : .note, color: color.rawValue,
-                           location: "epub", position: String(s.start), quote: s.quote, prefix: s.prefix, suffix: s.suffix,
+                           location: location, position: String(s.start), quote: s.quote, prefix: s.prefix, suffix: s.suffix,
                            note: note, created: 0, modified: 0)
         do { let saved = try lib.saveAnnotation(a: a); reload(); return saved }
         catch { errorMessage = error.localizedDescription; return nil }

@@ -22,6 +22,7 @@ struct ReaderView: View {
     @State private var editing = false
     @State private var chromeHidden = false
     @State private var editingAnnotation: Annotation?
+    @StateObject private var pdfHighlights = PDFHighlighter()
     @State private var showHighlights = false
     @State private var current: String?
     @State private var scrollRequest = ScrollRequest()
@@ -62,7 +63,8 @@ struct ReaderView: View {
                     }
                     .overlay(alignment: .top) { ResumeNote(text: position.note).animation(.easeOut, value: position.note) }
             } else if mode == .pdf, let pdfURL {
-                PDFKitViewIOS(url: pdfURL).ignoresSafeArea(edges: .bottom)
+                PDFReader(url: pdfURL, paperID: paperID, highlighter: pdfHighlights) { a in editingAnnotation = a }
+                    .ignoresSafeArea(edges: .bottom)
             } else {
                 PaperInfoView(paperID: paperID, embedded: true)
             }
@@ -103,7 +105,7 @@ struct ReaderView: View {
                         .pickerStyle(.menu)
                         Divider()
                     }
-                    if mode == .reading, book != nil {
+                    if (mode == .reading && book != nil) || mode == .pdf {
                         Button { showHighlights = true } label: { Label("Highlights & Notes", systemImage: "highlighter") }
                     }
                     Button { organizing = true } label: { Label("Folders & Tags…", systemImage: "folder") }
@@ -118,7 +120,10 @@ struct ReaderView: View {
             NavigationStack {
                 AnnotationsList(paperID: paperID, onShow: { a in
                     showHighlights = false
-                    Task { try? await Task.sleep(for: .milliseconds(350)); controller.showAnnotation(a.id) }
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(350))
+                        if mode == .pdf { pdfHighlights.show(a) } else { controller.showAnnotation(a.id) }
+                    }
                 }, onEdit: { a in showHighlights = false; editingAnnotation = a })
                 .navigationTitle("Highlights & Notes").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showHighlights = false } } }
@@ -445,14 +450,4 @@ struct EpubWebViewIOS: UIViewRepresentable {
     }
 }
 
-struct PDFKitViewIOS: UIViewRepresentable {
-    let url: URL
-    func makeUIView(context: Context) -> PDFView {
-        let v = PDFView()
-        v.autoScales = true
-        v.displayMode = .singlePageContinuous
-        v.document = PDFDocument(url: url)
-        return v
-    }
-    func updateUIView(_ v: PDFView, context: Context) {}
-}
+

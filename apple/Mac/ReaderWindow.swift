@@ -21,6 +21,7 @@ struct ReaderWindow: View {
     @State private var listening = false
     @State private var asking = false
     @State private var editingAnnotation: Annotation?
+    @StateObject private var pdfHighlights = PDFHighlighter()
     @State private var showHighlights = false
     @StateObject private var ask: AskEngine
     @Environment(\.openWindow) private var openWindow
@@ -78,7 +79,7 @@ struct ReaderWindow: View {
                     }
                 case .pdf:
                     if let url = model.fileURL(paperID, .pdf) {
-                        PDFKitView(url: url)
+                        PDFReader(url: url, paperID: paperID, highlighter: pdfHighlights) { a in editingAnnotation = a }
                     } else {
                         ContentUnavailableView("No PDF", systemImage: "doc", description: Text("Use Find PDF in the library, or drop the PDF onto the library window."))
                     }
@@ -106,14 +107,15 @@ struct ReaderWindow: View {
                         Button { highlightSelection(.yellow) } label: { Image(systemName: "highlighter") }
                             .help("Highlight the selected text (⇧⌘H). Right-click a selection for colors and notes.")
                             .keyboardShortcut("h", modifiers: [.command, .shift])
-                            .disabled(book == nil)
+                            .disabled(book == nil && mode != .pdf)
                         Button { showHighlights.toggle() } label: {
                             Image(systemName: "list.bullet.rectangle")
                         }
                         .help("Highlights and notes")
-                        .disabled(book == nil)
+                        .disabled(book == nil && mode != .pdf)
                         .popover(isPresented: $showHighlights, arrowEdge: .bottom) {
-                            AnnotationsList(paperID: paperID, onShow: { a in controller.showAnnotation(a.id) },
+                            AnnotationsList(paperID: paperID, onShow: { a in
+                                                if mode == .pdf { pdfHighlights.show(a) } else { controller.showAnnotation(a.id) } },
                                             onEdit: { a in showHighlights = false; editingAnnotation = a })
                                 .frame(width: 380, height: 460)
                                 .environmentObject(model)
@@ -182,6 +184,13 @@ struct ReaderWindow: View {
     private func refreshHighlights() { controller.showAnnotations(model.annotations(paperID)) }
 
     private func highlightSelection(_ c: HighlightColor) {
+        if mode == .pdf {
+            guard let sel = pdfHighlights.selection() else { return }
+            model.addHighlight(paperID, sel, color: c, location: "pdf")
+            pdfHighlights.clearSelection()
+            pdfHighlights.apply(model.annotations(paperID))
+            return
+        }
         Task {
             guard let sel = await controller.pageSelection() else { return }
             model.addHighlight(paperID, sel, color: c)
@@ -322,20 +331,6 @@ struct EpubWebView: NSViewRepresentable {
         func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
             if let id = m.body as? String { onPosition(id) }
         }
-    }
-}
-
-struct PDFKitView: NSViewRepresentable {
-    let url: URL
-    func makeNSView(context: Context) -> PDFView {
-        let v = PDFView()
-        v.autoScales = true
-        v.displayMode = .singlePageContinuous
-        v.document = PDFDocument(url: url)
-        return v
-    }
-    func updateNSView(_ v: PDFView, context: Context) {
-        if v.document?.documentURL != url { v.document = PDFDocument(url: url) }
     }
 }
 
