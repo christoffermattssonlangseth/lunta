@@ -458,7 +458,47 @@ final class WatchCenter: ObservableObject {
 
     /// The papers the digest covers: what's in the feed now (best first, at most 15).
     var digestBatch: [FeedRecord] { Array(state.items.prefix(15)) }
-    var digestKey: String { digestBatch.map(\.key).joined(separator: "|") }
+    var digestKey: String { "v2|" + digestBatch.map(\.key).joined(separator: "|") }
+
+    /// The link a digest uses for a paper in the feed.
+    nonisolated static func feedLink(_ key: String) -> String {
+        "foryou://paper?key=" + (key.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? key)
+    }
+    nonisolated static func feedKey(from url: URL) -> String? {
+        guard url.scheme == "foryou" else { return nil }
+        return URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "key" }?.value
+    }
+
+    /// Turns the model's "[short title](3)" references into links to the papers, and links the short
+    /// names of papers it mentioned without a link (e.g. "HistoTx" for "HistoTx: Early fusion…").
+    nonisolated static func linkDigest(_ text: String, batch: [FeedRecord]) -> String {
+        var out = text
+        // [name](n) → [name](foryou://…)
+        if let re = try? NSRegularExpression(pattern: #"\[([^\]]+)\]\((\d+)\)"#) {
+            for m in re.matches(in: out, range: NSRange(out.startIndex..., in: out)).reversed() {
+                guard let whole = Range(m.range, in: out), let nameR = Range(m.range(at: 1), in: out),
+                      let numR = Range(m.range(at: 2), in: out), let n = Int(out[numR]) else { continue }
+                let name = String(out[nameR])
+                out.replaceSubrange(whole, with: (1...batch.count).contains(n) ? "[\(name)](\(feedLink(batch[n - 1].key)))" : name)
+            }
+        }
+        // stray "(3)" or "[3]" references
+        out = out.replacingOccurrences(of: #"\s?[\(\[](paper\s)?\d{1,2}[\)\]]"#, with: "", options: [.regularExpression, .caseInsensitive])
+        // unlinked short names
+        for r in batch where !out.contains(feedLink(r.key)) {
+            let short = r.title.components(separatedBy: ":").first?.trimmingCharacters(in: .whitespaces) ?? ""
+            guard r.title.contains(":"), short.count >= 3, short.count <= 30,
+                  let range = out.range(of: short), !isInsideLink(out, range) else { continue }
+            out.replaceSubrange(range, with: "[\(short)](\(feedLink(r.key)))")
+        }
+        return out
+    }
+
+    nonisolated private static func isInsideLink(_ s: String, _ r: Range<String.Index>) -> Bool {
+        let before = s[..<r.lowerBound]
+        return before.filter { $0 == "[" }.count > before.filter { $0 == "]" }.count
+            || (before.hasSuffix("(") && before.dropLast().hasSuffix("]"))
+    }
 
     private var summaryJob: Task<Void, Never>?
 
@@ -468,7 +508,8 @@ final class WatchCenter: ObservableObject {
         #if os(iOS)
         // the Mac summarizes (after its daily run, and every 10 minutes); the phone only steps in
         // when no Mac has made the feed for a day and a half
-        guard (state.lastRun ?? .distantPast) < Date().addingTimeInterval(-36 * 3600) else { return }
+        guard (state.lastRun ?? .distantPast) < Date().addingTimeInterval(-36 * 3600)
+                || ProcessInfo.processInfo.arguments.contains("-summarizeHere") else { return }
         #endif
         summaryJob = Task { [weak self] in
             await self?.summarize()
@@ -514,14 +555,15 @@ final class WatchCenter: ObservableObject {
 
             Summarize this feed for the researcher in ONE short paragraph of two or three sentences, \
             at most 70 words: the main themes across the papers, then the one or two most worth their time \
-            and why. Name papers by a short form of their title. No list, no heading, no preamble.
+            and why. Each time you mention a paper, write it as a link: a short form of its title in square \
+            brackets followed by its number in parentheses, e.g. [scPolyA](2). No list, no heading, no preamble.
             """
         guard let a = await engine.plainAnswer(prompt, instructions: "You write short, concrete research digests. You never invent findings that aren't in the summaries.")?
             .trimmingCharacters(in: .whitespacesAndNewlines), a.count > 20 else { return }
         change { s in
-            s.digest = a.replacingOccurrences(of: "**", with: "")
+            s.digest = Self.linkDigest(a.replacingOccurrences(of: "**", with: "")
                 .components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-                .joined(separator: " ")
+                .joined(separator: " "), batch: batch)
             s.digestFor = key
         }
     }
@@ -759,6 +801,8 @@ struct WatchInbox: View {
     @ObservedObject var center = WatchCenter.shared
     @Binding var selection: String?
     @State private var settings = false
+    @State private var pushed: FeedKey?
+    struct FeedKey: Hashable, Identifiable { let id: String }
 
     var body: some View {
         List(selection: $selection) {
@@ -781,6 +825,11 @@ struct WatchInbox: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
         }
+        #if os(iOS)
+        .navigationDestination(item: $pushed) { k in
+            if let f = center.finds.first(where: { $0.id == k.id }) { DiscoverDetail(hit: f.hit) }
+        }
+        #endif
         .onAppear { center.load(); center.markOpened() }
         .onDisappear { center.markOpened() }
         .task(id: center.digestKey) {
@@ -809,7 +858,19 @@ struct WatchInbox: View {
             if center.state.digest.isEmpty {
                 HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Summarizing the papers…").font(.callout).foregroundStyle(.secondary) }
             } else {
-                Text(center.state.digest).font(.callout).textSelection(.enabled)
+                Text((try? AttributedString(markdown: center.state.digest,
+                                            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+                     ?? AttributedString(center.state.digest))
+                    .font(.callout).tint(.marginsTeal)
+                    .environment(\.openURL, OpenURLAction { url in
+                        guard let key = WatchCenter.feedKey(from: url) else { return .systemAction }
+                        #if os(iOS)
+                        pushed = FeedKey(id: key)
+                        #else
+                        selection = key
+                        #endif
+                        return .handled
+                    })
             }
         }
         .padding(.vertical, 4)
