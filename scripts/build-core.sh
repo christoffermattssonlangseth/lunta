@@ -14,13 +14,15 @@ cd $CORE
 for t in $TARGETS; do
   echo "› cargo build --$PROFILE --target $t"
   if [[ $t == *ios* ]]; then export IPHONEOS_DEPLOYMENT_TARGET=17.0; else export MACOSX_DEPLOYMENT_TARGET=14.0; fi
-  cargo build --$PROFILE --target $t --lib --quiet
+  # --no-default-features: the converter (feature "convert") stays out of the Apple static
+  # library; the apps keep using the Swift Paper2EpubKit.
+  cargo build --$PROFILE --target $t --lib --no-default-features --quiet
 done
 
 echo "› generating Swift bindings"
 GEN=$CORE/target/uniffi-swift
 rm -rf $GEN && mkdir -p $GEN
-cargo run --quiet --bin uniffi-bindgen -- generate \
+cargo run --quiet --no-default-features --bin uniffi-bindgen -- generate \
   --library $CORE/target/aarch64-apple-darwin/$PROFILE/libmargins_core.dylib \
   --language swift --out-dir $GEN
 

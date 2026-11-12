@@ -2,9 +2,13 @@
 //!
 //! The Swift apps own the UI and the PDF/JATS → EPUB conversion (PDFKit); this crate owns the
 //! library: storage and sync layout, metadata lookup, annotations, full-text search and export.
+//! `convert` (feature "convert") is a Rust port of that converter for future non-Apple apps;
+//! it is not exported through UniFFI.
 
 uniffi::setup_scaffolding!();
 
+#[cfg(feature = "convert")]
+pub mod convert;
 pub mod epub;
 pub mod export;
 pub mod import;

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE article PUBLIC "-//NLM//DTD JATS (Z39.96) Journal Archiving and Interchange DTD v1.2 20190208//EN" "JATS-archivearticle1.dtd">
+<article xmlns:mml="http://www.w3.org/1998/Math/MathML" xmlns:xlink="http://www.w3.org/1999/xlink" article-type="research-article">
+  <front>
+    <journal-meta>
+      <journal-title-group><journal-title>Journal of Test Fixtures</journal-title></journal-title-group>
+    </journal-meta>
+    <article-meta>
+      <article-id pub-id-type="pmcid">PMC0000001</article-id>
+      <article-id pub-id-type="doi">10.1234/fixture.2024.001</article-id>
+      <title-group><article-title>A <italic>small</italic> sample article &amp; its figures</article-title></title-group>
+      <contrib-group>
+        <contrib contrib-type="author"><name><surname>Lovelace</surname><given-names>Ada</given-names></name><xref ref-type="aff" rid="aff1">1</xref></contrib>
+        <contrib contrib-type="author"><name><surname>Turing</surname><given-names>Alan</given-names></name></contrib>
+        <contrib contrib-type="editor"><name><surname>Editor</surname><given-names>Ed</given-names></name></contrib>
+        <contrib contrib-type="author"><collab>The Fixture Consortium</collab></contrib>
+      </contrib-group>
+      <aff id="aff1"><label>1</label>Department of Engines, <institution>Analytical University</institution>, London</aff>
+      <pub-date pub-type="epub"><day>3</day><month>2</month><year>2024</year></pub-date>
+      <permissions>
+        <license xlink:href="https://creativecommons.org/licenses/by/4.0/"><license-p>CC BY 4.0</license-p></license>
+      </permissions>
+      <abstract><p>We test the converter with &ldquo;quotes&rdquo; and an equation <inline-formula><mml:math id="m1"><mml:mi>x</mml:mi><mml:mo>=</mml:mo><mml:msup><mml:mi>y</mml:mi><mml:mn>2</mml:mn></mml:msup></mml:math></inline-formula>.</p></abstract>
+      <abstract abstract-type="author-summary"><title>Author summary</title><p>Plain words.</p></abstract>
+      <kwd-group><kwd>testing</kwd><kwd>EPUB</kwd></kwd-group>
+    </article-meta>
+  </front>
+  <body>
+    <sec id="s1">
+      <title>Introduction</title>
+      <p>Engines compute<xref ref-type="bibr" rid="B1">1</xref>. See <xref ref-type="fig" rid="F1">Figure 1</xref> and <xref ref-type="table" rid="T1">Table 1</xref>.</p>
+      <sec id="s1-1">
+        <title>Background</title>
+        <p>A list:</p>
+        <list list-type="order"><list-item><p>first</p></list-item><list-item><p>second</p></list-item></list>
+        <disp-formula id="E1"><label>(1)</label><mml:math display="block"><mml:mrow><mml:mi>E</mml:mi><mml:mo>=</mml:mo><mml:mi>m</mml:mi><mml:msup><mml:mi>c</mml:mi><mml:mn>2</mml:mn></mml:msup></mml:mrow></mml:math></disp-formula>
+        <disp-formula id="E2"><tex-math>$\alpha + \beta$</tex-math></disp-formula>
+      </sec>
+    </sec>
+    <sec id="s2">
+      <title>Results</title>
+      <fig id="F1"><label>Figure 1</label><caption><title>An engine.</title><p>The engine has <bold>gears</bold>.</p></caption><graphic xlink:href="fig1"/></fig>
+      <table-wrap id="T1"><label>Table 1</label><caption><title>Numbers</title></caption>
+        <table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td colspan="2">1 &lt; 2</td></tr></tbody></table>
+        <table-wrap-foot><p>Footnote.</p></table-wrap-foot>
+      </table-wrap>
+      <boxed-text><caption><title>Box 1</title></caption><p>Boxed.</p></boxed-text>
+    </sec>
+  </body>
+  <back>
+    <ack><p>Thanks to Charles.</p></ack>
+    <ref-list>
+      <title>References</title>
+      <ref id="B1"><element-citation publication-type="journal"><person-group person-group-type="author"><name><surname>Babbage</surname><given-names>C</given-names></name></person-group><article-title>On engines</article-title><source>Phil Trans</source><year>1837</year><volume>1</volume><fpage>10</fpage><lpage>20</lpage><pub-id pub-id-type="doi">10.1000/engines</pub-id></element-citation></ref>
+      <ref id="B2"><mixed-citation publication-type="other">Somebody, A long free-text reference that is not structured at all, 1999.</mixed-citation></ref>
+    </ref-list>
+  </back>
+</article>

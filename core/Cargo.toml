@@ -17,6 +17,11 @@ path = "src/bin/uniffi-bindgen.rs"
 name = "margins-mcp"
 path = "src/bin/margins-mcp.rs"
 
+[[bin]]
+name = "paper2epub"
+path = "src/bin/paper2epub.rs"
+required-features = ["convert"]
+
 [dependencies]
 uniffi = { version = "0.32", features = ["cli"] }
 rusqlite = { version = "0.42", features = ["bundled"] }
@@ -27,7 +32,19 @@ ureq = "3"
 thiserror = "2"
 regex = "1"
 zip = { version = "9", default-features = false, features = ["deflate"] }
+quick-xml = { version = "0.38", optional = true }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "tiff", "bmp", "webp"], optional = true }
+ab_glyph = { version = "0.2", optional = true }
+url = { version = "2", optional = true }
+ttf-parser = { version = "0.25", optional = true }
 
 [profile.release]
 opt-level = "s"
 lto = true
+
+[features]
+# The paper -> EPUB converter (core/src/convert). On by default for `cargo build/test/run`;
+# scripts/build-core.sh builds the Apple static library with --no-default-features, so the
+# apps' MarginsCore stays as it was (they keep using the Swift Paper2EpubKit).
+default = ["convert"]
+convert = ["dep:quick-xml", "dep:image", "dep:ab_glyph", "dep:ttf-parser", "dep:url"]
