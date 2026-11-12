@@ -954,7 +954,7 @@ impl<'a> Analyzer<'a> {
         for p in out.iter_mut() {
             if p.kind == Kind::Equation {
                 let (page, b) = (p.page, p.bbox());
-                p.asset = self.render(page, b, false, &format!("p{}-eq{}", page + 1, b.y0 as i64));
+                p.asset = self.render(page, b, false, &format!("p{}-eq{}-{}", page + 1, b.y0 as i64, b.x0 as i64));
             }
         }
         out

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="lunta_teal">#2C6E7F</color>
+    <color name="lunta_teal_dark">#173E4C</color>
+    <color name="ic_launcher_background">#214F60</color>
+    <color name="window_light">#FAF9F6</color>
+    <color name="window_dark">#121618</color>
+</resources>

@@ -2,11 +2,14 @@
 //!
 //! The Swift apps own the UI and the PDF/JATS → EPUB conversion (PDFKit); this crate owns the
 //! library: storage and sync layout, metadata lookup, annotations, full-text search and export.
-//! `convert` (feature "convert") is a Rust port of that converter for future non-Apple apps;
-//! it is not exported through UniFFI.
+//! `convert` (feature "convert") is a Rust port of that converter for non-Apple apps; `adder`
+//! exports it to the Android app through UniFFI (add by DOI/link, make reading views). `drive`
+//! (feature "drive") exports Google sign-in and the Syncer. Neither feature is in the Apple build.
 
 uniffi::setup_scaffolding!();
 
+#[cfg(feature = "convert")]
+pub mod adder;
 #[cfg(feature = "convert")]
 pub mod convert;
 #[cfg(feature = "drive")]
@@ -32,6 +35,13 @@ struct Inner {
     cache: PathBuf,
     /// paper id -> (has PDF, has reading view); refreshed by reindex(), avoids disk checks per listing
     files: std::collections::HashMap<String, (bool, bool, bool)>,
+}
+
+/// Receives short progress lines ("Looking up 10.1038/…", "Making the reading view…") from long
+/// operations; implemented by the app.
+#[uniffi::export(with_foreign)]
+pub trait ProgressListener: Send + Sync {
+    fn on_progress(&self, message: String);
 }
 
 /// A paper library rooted at a folder (local or in iCloud Drive).
