@@ -357,7 +357,7 @@ document.addEventListener('keydown', (e) => {
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key === 'n') { e.preventDefault(); addPaper(); return; }
   if (mod && e.key === 'f') { e.preventDefault(); $('#search').focus(); return; }
-  if ((e.target as HTMLElement).closest('input, textarea, select')) return;
+  if ((e.target as HTMLElement).closest?.('input, textarea, select')) return;
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
     const i = rows.findIndex((r) => r.paper.id === selected);

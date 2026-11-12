@@ -237,7 +237,7 @@ function togglePaged(e?: Event) {
 
 // keys for the reader when the page doesn't have the keyboard
 document.addEventListener('keydown', (e) => {
-  if (!paper || $('#reader').hidden || (e.target as HTMLElement).closest('input, textarea')) return;
+  if (!paper || $('#reader').hidden || (e.target as HTMLElement).closest?.('input, textarea')) return;
   if (document.querySelector('.modal-back, #figure')) { if (e.key === 'Escape') closeOverlay(); return; }
   const mod = e.metaKey || e.ctrlKey;
   if (e.key === 'Escape') { closeReader(); return; }
