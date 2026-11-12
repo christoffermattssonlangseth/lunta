@@ -10,6 +10,7 @@ struct LibraryView: View {
     @State private var path = NavigationPath()
     @State private var opened = false
     @State private var reveal: String?
+    @State private var deleting: Paper?
     @State private var sharing: ShareTargetIOS?
     @State private var organizing: ShareTargetIOS?
     @State private var prompt: NameRequest?
@@ -124,6 +125,8 @@ struct LibraryView: View {
                     .listRowBackground(reveal == p.id ? Color.marginsTeal.opacity(0.18) : nil)
                     // only from the right, so a swipe in from the left can't change a paper by accident
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button { deleting = p } label: { Label("Delete", systemImage: "trash") }
+                            .tint(.red)
                         Button { organizing = ShareTargetIOS(id: p.id) } label: { Label("Folders & Tags", systemImage: "folder") }
                             .tint(.marginsTeal)
                         Button { model.toggleStar(p) } label: { Label(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") }
@@ -147,6 +150,8 @@ struct LibraryView: View {
                         }
                         Button("Share…", systemImage: "square.and.arrow.up") { sharing = ShareTargetIOS(id: p.id) }
                         Menu("Watch", systemImage: "bell") { WatchMenu(paper: p) }
+                        Divider()
+                        Button("Delete Paper…", systemImage: "trash", role: .destructive) { deleting = p }
                     }
               }
               if !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -158,6 +163,7 @@ struct LibraryView: View {
             }
             .listStyle(.plain)
             .refreshable { model.refresh() }
+            .modifier(DeletePaperConfirm(paper: $deleting))
             .task(id: reveal) {
                 guard let id = reveal else { return }
                 for _ in 0..<20 where !model.papers.contains(where: { $0.id == id }) {

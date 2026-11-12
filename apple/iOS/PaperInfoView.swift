@@ -18,6 +18,7 @@ struct PaperInfoView: View {
     @State private var copied = false
     @State private var editing = false
     @State private var sharing = false
+    @State private var deleting: Paper?
 
     var body: some View {
         if let p = model.paper(paperID) {
@@ -58,6 +59,8 @@ struct PaperInfoView: View {
                     if !p.meta.doi.isEmpty, let u = URL(string: "https://doi.org/\(p.meta.doi)") {
                         Link("Open publisher page", destination: u).font(.callout)
                     }
+                    Button(role: .destructive) { deleting = p } label: { Label("Delete Paper", systemImage: "trash") }
+                        .font(.callout).padding(.top, 8)
                 }
                 .padding()
             }
@@ -76,6 +79,7 @@ struct PaperInfoView: View {
                     Button { sharing = true } label: { Image(systemName: "square.and.arrow.up") }
                 }
             }
+            .modifier(DeletePaperConfirm(paper: $deleting) { dismiss() })
             .sheet(isPresented: $editing) { MetadataEditor(paperID: paperID).environmentObject(model) }
             .sheet(isPresented: $sharing) {
                 ScrollView { SharePanel(ids: [paperID]) }.environmentObject(model).presentationDetents([.medium, .large])
@@ -117,5 +121,25 @@ struct PaperInfoView: View {
     private func run(_ label: String, _ op: @escaping () async -> Void) {
         busy = label
         Task { await op(); busy = nil }
+    }
+}
+
+/// Asks before deleting a paper (its files, highlights and notes go with it, on every device).
+struct DeletePaperConfirm: ViewModifier {
+    @EnvironmentObject var model: LibraryModel
+    @Binding var paper: Paper?
+    var after: () -> Void = {}
+
+    func body(content: Content) -> some View {
+        content.confirmationDialog("Delete “\(paper?.meta.title ?? "")”?",
+                                   isPresented: Binding(get: { paper != nil }, set: { if !$0 { paper = nil } }),
+                                   titleVisibility: .visible) {
+            Button("Delete Paper", role: .destructive) {
+                if let p = paper { model.delete([p.id]); paper = nil; after() }
+            }
+            Button("Cancel", role: .cancel) { paper = nil }
+        } message: {
+            Text("Its PDF, reading view, highlights and notes are removed from all your devices.")
+        }
     }
 }
