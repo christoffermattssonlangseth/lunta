@@ -9,6 +9,8 @@ uniffi::setup_scaffolding!();
 
 #[cfg(feature = "convert")]
 pub mod convert;
+#[cfg(feature = "drive")]
+pub mod drive;
 pub mod epub;
 pub mod export;
 pub mod import;

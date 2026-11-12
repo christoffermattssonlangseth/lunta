@@ -18,6 +18,11 @@ name = "lunta-mcp"
 path = "src/bin/lunta-mcp.rs"
 
 [[bin]]
+name = "lunta-sync"
+path = "src/bin/lunta-sync.rs"
+required-features = ["drive"]
+
+[[bin]]
 name = "paper2epub"
 path = "src/bin/paper2epub.rs"
 required-features = ["convert"]
@@ -39,6 +44,13 @@ url = { version = "2", optional = true }
 ttf-parser = { version = "0.25", optional = true }
 icu_normalizer = { version = "2", optional = true }
 pdfium-render = { version = "0.9", default-features = false, features = ["pdfium_latest", "thread_safe", "image_025"], optional = true }
+sha2 = { version = "0.10", optional = true }
+md-5 = { version = "0.10", optional = true }
+base64 = { version = "0.22", optional = true }
+getrandom = { version = "0.3", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 opt-level = "s"
@@ -48,8 +60,11 @@ lto = true
 # The paper -> EPUB converter (core/src/convert). On by default for `cargo build/test/run`;
 # scripts/build-core.sh builds the Apple static library with --no-default-features, so the
 # apps' LuntaCore stays as it was (they keep using the Swift Paper2EpubKit).
-default = ["convert", "pdf"]
+default = ["convert", "pdf", "drive"]
 convert = ["dep:quick-xml", "dep:image", "dep:ab_glyph", "dep:ttf-parser", "dep:url"]
 # PDF -> EPUB layout analysis (core/src/convert/pdf) on PDFium, loaded at run time (see README).
 # Off in the Apple build, which converts PDFs with PDFKit.
 pdf = ["convert", "dep:pdfium-render", "dep:icu_normalizer"]
+# Google Drive sync (core/src/drive): RemoteStore trait, Google Drive REST client with OAuth (PKCE),
+# local-folder remote and the Syncer. Not part of the Apple static library (--no-default-features).
+drive = ["dep:sha2", "dep:md-5", "dep:base64", "dep:getrandom"]
