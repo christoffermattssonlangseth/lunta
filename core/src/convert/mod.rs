@@ -6,8 +6,9 @@
 //! PMC / Europe PMC / eLife XML, `arxiv` for arXiv's LaTeXML HTML) and packaged as EPUB 3
 //! (`epub`) with a generated cover (`cover`).
 //!
-//! Not ported yet: PDF analysis (`PDFAnalyzer.swift` / `PDFContent.swift`, built on PDFKit).
-//! Where the Swift code would convert a PDF, this returns [`ConvertError::PdfNotSupported`].
+//! PDFs are analysed by `pdf` (feature "pdf"; a port of `PDFAnalyzer.swift` / `PDFContent.swift`
+//! on PDFium instead of PDFKit). Without that feature, where the Swift code would convert a PDF
+//! this returns [`ConvertError::PdfNotSupported`].
 //!
 //! Everything is synchronous (ureq), like `metadata.rs`.
 
@@ -17,6 +18,8 @@ pub mod epub;
 pub mod images;
 pub mod jats;
 pub mod net;
+#[cfg(feature = "pdf")]
+pub mod pdf;
 pub mod resolver;
 pub mod xml;
 
@@ -120,7 +123,7 @@ pub struct ConversionResult {
 pub enum ConvertError {
     #[error("{0}")]
     Message(String),
-    /// The only usable source is a PDF, and PDF analysis has not been ported to Rust yet.
+    /// The only usable source is a PDF, and this build has no PDF analysis (feature "pdf" off).
     #[error("PDF conversion not yet supported ({0})")]
     PdfNotSupported(String),
     #[error("{0}")]
@@ -138,7 +141,8 @@ pub(crate) fn fail(m: impl Into<String>) -> ConvertError {
 pub struct Options {
     /// Progress messages ("Fetching the arXiv HTML version", …).
     pub log: Option<Box<dyn Fn(&str) + Send + Sync>>,
-    /// When true, converting a file never goes online (no XML lookup by a PDF's DOI).
+    /// When true, converting a file never goes online (no XML lookup by a PDF's DOI, no
+    /// Crossref metadata).
     pub offline: bool,
 }
 
@@ -155,7 +159,7 @@ pub fn convert(input: &str, out_dir: &Path) -> Result<ConversionResult> {
     convert_with(input, out_dir, &Options::default())
 }
 
-/// Converts a file (JATS XML; PDF is not supported yet) into `out_dir/<slug>.epub`.
+/// Converts a file (PDF or JATS XML) into `out_dir/<slug>.epub`.
 pub fn convert_file(path: &Path, out_dir: &Path) -> Result<ConversionResult> {
     convert_file_with(path, out_dir, &Options::default())
 }
@@ -193,28 +197,26 @@ fn run(cands: Vec<Candidate>, out_dir: &Path, opts: &Options) -> Result<Conversi
 
 fn build(src: Source, opts: &Options, earlier: &[String]) -> Result<Book> {
     match src {
-        Source::Pdf { data, meta: _, label } => {
+        Source::Pdf { data, meta, label } => {
             // An open-access XML version beats any PDF analysis: check for one via the PDF's DOI.
-            // (Swift reads the DOI from the page text with PDFKit; here only the document
-            // metadata is searched.)
             if !opts.offline {
-                if let Some(doi) = resolver::doi_in_pdf_metadata(&data) {
+                if let Some(doi) = pdf_doi(&data) {
                     opts.log(&format!("PDF has DOI {doi}; checking for an XML version"));
                     for c in resolver::doi_candidates(&doi) {
                         let Ok(src) = (c.load)(opts) else { continue };
                         match src {
                             Source::Jats { .. } | Source::Html { .. } => return build(src, opts, earlier),
-                            Source::Pdf { .. } => continue,
+                            Source::Pdf { .. } => continue, // the arXiv PDF candidate: we already have this PDF
                         }
                     }
-                    opts.log("No XML version; the PDF itself would have to be converted");
+                    opts.log(if cfg!(feature = "pdf") {
+                        "No XML version; converting the PDF itself"
+                    } else {
+                        "No XML version; the PDF itself would have to be converted"
+                    });
                 }
             }
-            let mut why = format!("the only usable source is {label}");
-            if !earlier.is_empty() {
-                why += &format!("; other sources failed: {}", earlier.join("; "));
-            }
-            Err(ConvertError::PdfNotSupported(why))
+            build_pdf(&data, &meta, &label, opts, earlier)
         }
         Source::Html { doc, base, meta, label } => {
             opts.log(&format!("Converting {label}"));
@@ -316,6 +318,29 @@ fn build(src: Source, opts: &Options, earlier: &[String]) -> Result<Book> {
             Ok(Book { meta, chapters, images: imgs, source_label: label, notes })
         }
     }
+}
+
+/// The DOI printed in the PDF (PDFium: page text and document info), else one in its metadata.
+fn pdf_doi(data: &[u8]) -> Option<String> {
+    #[cfg(feature = "pdf")]
+    if let Ok(Some(d)) = pdf::quick_doi(data) {
+        return Some(d);
+    }
+    resolver::doi_in_pdf_metadata(data)
+}
+
+#[cfg(feature = "pdf")]
+fn build_pdf(data: &[u8], meta: &PaperMeta, _label: &str, opts: &Options, _earlier: &[String]) -> Result<Book> {
+    pdf::build(data, meta, opts)
+}
+
+#[cfg(not(feature = "pdf"))]
+fn build_pdf(_data: &[u8], _meta: &PaperMeta, label: &str, _opts: &Options, earlier: &[String]) -> Result<Book> {
+    let mut why = format!("the only usable source is {label}");
+    if !earlier.is_empty() {
+        why += &format!("; other sources failed: {}", earlier.join("; "));
+    }
+    Err(ConvertError::PdfNotSupported(why))
 }
 
 fn write(book: &Book, dir: &Path, opts: &Options) -> Result<ConversionResult> {

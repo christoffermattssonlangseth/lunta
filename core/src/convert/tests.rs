@@ -213,6 +213,7 @@ fn helpers() {
 }
 
 #[test]
+#[cfg(not(feature = "pdf"))]
 fn pdf_input_is_reported_as_unsupported() {
     let dir = tmp("pdf");
     let pdf = dir.join("paper.pdf");
@@ -221,6 +222,22 @@ fn pdf_input_is_reported_as_unsupported() {
     match convert_file_with(&pdf, &dir, &opts) {
         Err(ConvertError::PdfNotSupported(m)) => assert!(m.contains("PDF file")),
         other => panic!("expected PdfNotSupported, got {:?}", other.map(|r| r.file)),
+    }
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// With PDF support, a broken PDF fails with a message (it can't be opened, or PDFium is
+/// missing) instead of `PdfNotSupported`.
+#[test]
+#[cfg(feature = "pdf")]
+fn broken_pdf_is_an_error_not_unsupported() {
+    let dir = tmp("pdf");
+    let pdf = dir.join("paper.pdf");
+    std::fs::write(&pdf, b"%PDF-1.4\n%nothing here\n").unwrap();
+    let opts = Options { offline: true, ..Default::default() };
+    match convert_file_with(&pdf, &dir, &opts) {
+        Err(ConvertError::Message(m)) => assert!(m == "Could not open the PDF." || m.contains("PDFium"), "{m}"),
+        other => panic!("expected an error message, got {:?}", other.map(|r| r.file)),
     }
     std::fs::remove_dir_all(dir).ok();
 }
