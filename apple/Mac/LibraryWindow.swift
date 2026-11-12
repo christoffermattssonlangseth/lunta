@@ -235,6 +235,7 @@ struct Sidebar: View {
                         Label(t, systemImage: "tag").tag(SidebarItem.tag(t))
                             .dropDestination(for: String.self) { items, _ in
                                 let ids = items.filter { !$0.hasPrefix(LibraryModel.folderDragPrefix) }
+                    .flatMap { $0.split(separator: "\n").map(String.init) }   // a drag of several papers
                                 model.setTag(ids, t, true)
                                 return !ids.isEmpty
                             }
@@ -279,6 +280,7 @@ struct Sidebar: View {
                     if f != c.id { model.moveFolder(f, into: c.id); handled = true }
                 }
                 let ids = items.filter { !$0.hasPrefix(LibraryModel.folderDragPrefix) }
+                    .flatMap { $0.split(separator: "\n").map(String.init) }   // a drag of several papers
                 if !ids.isEmpty { model.setMembership(ids, collection: c.id, true); handled = true }
                 return handled
             }
@@ -353,7 +355,9 @@ struct PaperTable: View {
             .width(min: 60, ideal: 110)
         } rows: {
             ForEach(model.papers) { p in
-                TableRow(p).draggable(p.id)
+                // dragging one of several selected papers drags them all (ids, one per line)
+                TableRow(p).draggable(selection.contains(p.id) && selection.count > 1
+                                      ? selection.sorted().joined(separator: "\n") : p.id)
                     // a PDF dropped on a paper goes onto that paper
                     .dropDestination(for: URL.self) { urls in
                         guard let url = urls.first(where: { $0.pathExtension.lowercased() == "pdf" }) else { return }
