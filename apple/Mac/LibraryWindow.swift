@@ -29,27 +29,37 @@ struct LibraryWindow: View {
             }
             .navigationSplitViewColumnWidth(min: 420, ideal: 560)
         } detail: {
-            if model.source == .alerts {
-                if let id = discoverSelection, let f = WatchCenter.shared.finds.first(where: { $0.id == id }) {
-                    DiscoverDetail(hit: f.hit)
+            Group {
+                if model.source == .alerts {
+                    if let id = discoverSelection, let f = WatchCenter.shared.finds.first(where: { $0.id == id }) {
+                        DiscoverDetail(hit: f.hit)
+                    } else {
+                        ContentUnavailableView("New for You", systemImage: "sparkles",
+                                               description: Text("Papers picked for your research appear here."))
+                    }
+                } else if model.source == .discover {
+                    if let id = discoverSelection, let hit = model.discoverResults.first(where: { $0.id == id }) {
+                        DiscoverDetail(hit: hit)
+                    } else {
+                        ContentUnavailableView("Find new papers", systemImage: "globe",
+                                               description: Text("Search above to explore papers beyond your library."))
+                    }
+                } else if selection.count == 1, let id = selection.first, let p = model.paper(id) {
+                    PaperDetail(paper: p)
+                } else if selection.count > 1 {
+                    MultiSelection(ids: Array(selection))
                 } else {
-                    ContentUnavailableView("New for You", systemImage: "sparkles",
-                                           description: Text("Papers picked for your research appear here."))
+                    ContentUnavailableView("No paper selected", systemImage: "doc.text",
+                                           description: Text("Add papers with ⇧⌘N, or import your ReadCube library with ⇧⌘I."))
                 }
-            } else if model.source == .discover {
-                if let id = discoverSelection, let hit = model.discoverResults.first(where: { $0.id == id }) {
-                    DiscoverDetail(hit: hit)
-                } else {
-                    ContentUnavailableView("Find new papers", systemImage: "globe",
-                                           description: Text("Search above to explore papers beyond your library."))
-                }
-            } else if selection.count == 1, let id = selection.first, let p = model.paper(id) {
-                PaperDetail(paper: p)
-            } else if selection.count > 1 {
-                MultiSelection(ids: Array(selection))
-            } else {
-                ContentUnavailableView("No paper selected", systemImage: "doc.text",
-                                       description: Text("Add papers with ⇧⌘N, or import your ReadCube library with ⇧⌘I."))
+            }
+            .inspector(isPresented: $asking) {
+                AssistantPanel(engine: ask, onPaper: { id in
+                    if model.source == .discover { model.source = .all }
+                    selection = [id]
+                    openWindow(value: id)
+                })
+                .inspectorColumnWidth(min: 300, ideal: 380, max: 560)
             }
         }
         .searchable(text: $model.query, placement: .toolbar,
@@ -67,20 +77,14 @@ struct LibraryWindow: View {
                     .keyboardShortcut("j", modifiers: .command)
             }
         }
-        .inspector(isPresented: $asking) {
-            AssistantPanel(engine: ask, onPaper: { id in
-                if model.source == .discover { model.source = .all }
-                selection = [id]
-                openWindow(value: id)
-            })
-            .inspectorColumnWidth(min: 300, ideal: 380, max: 560)
-        }
         .environment(\.showInLibrary) { id in
             model.query = ""
             model.source = .all
             selection = [id]
         }
-        .safeAreaInset(edge: .bottom) { StatusBar() }
+        // not safeAreaInset: an inset on the window (or the table) stops rows being dragged out of
+        // the paper table onto sidebar folders (SwiftUI on macOS 26)
+        .overlay(alignment: .bottom) { StatusBar() }
         .sheet(isPresented: $addingPaper) { AddPaperSheet() }
         .modifier(EditSheet(editing: $editing))
         .onReceive(NotificationCenter.default.publisher(for: .luntaAddPaper)) { _ in addingPaper = true }
@@ -121,7 +125,7 @@ struct LibraryWindow: View {
             }
             return true
         }
-        .overlay { if dropping { DropHint() } }
+        .overlay { if dropping { DropHint().allowsHitTesting(false) } }
         .overlay(alignment: .bottomTrailing) {
             if !model.addOutcomes.isEmpty {
                 AddedCard(selection: $selection).padding(.trailing, 16).padding(.bottom, 40)
@@ -198,12 +202,6 @@ struct Sidebar: View {
                 OutlineGroup(model.folderTree, children: \.children) { node in
                     folderRow(node.folder)
                 }
-                .dropDestination(for: String.self) { items, _ in
-                    // dropped on the section, not a folder: folders go to the top level
-                    let folders = items.filter { $0.hasPrefix(LibraryModel.folderDragPrefix) }
-                    for f in folders { model.moveFolder(String(f.dropFirst(LibraryModel.folderDragPrefix.count)), into: nil) }
-                    return !folders.isEmpty
-                }
             } header: {
                 HStack {
                     Text("Folders")
@@ -233,12 +231,10 @@ struct Sidebar: View {
                 Section("Tags") {
                     ForEach(model.tags, id: \.self) { t in
                         Label(t, systemImage: "tag").tag(SidebarItem.tag(t))
-                            .dropDestination(for: String.self) { items, _ in
-                                let ids = items.filter { !$0.hasPrefix(LibraryModel.folderDragPrefix) }
-                    .flatMap { $0.split(separator: "\n").map(String.init) }   // a drag of several papers
-                                model.setTag(ids, t, true)
-                                return !ids.isEmpty
-                            }
+                            .modifier(SidebarDrop.Target { items in
+                                let ids = SidebarDrop.paperIDs(items)
+                                if !ids.isEmpty { model.setTag(ids, t, true) }
+                            })
                             .contextMenu {
                                 Button("Rename Tag…") {
                                     prompt = NameRequest(title: "Rename Tag", initial: t) { model.renameTag(t, $0) }
@@ -250,6 +246,7 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
+
         .namePrompt($prompt)
         .sheet(item: $editingSmart) { f in SmartFolderEditor(folder: f).environmentObject(model) }
         .sheet(isPresented: $newSmart) { SmartFolderEditor(folder: SmartFolder(), isNew: true).environmentObject(model) }
@@ -272,18 +269,15 @@ struct Sidebar: View {
 
     private func folderRow(_ c: PaperCollection) -> some View {
         Label(c.name, systemImage: "folder").badge(Int(c.paperCount)).tag(SidebarItem.collection(c.id))
-            .draggable(LibraryModel.folderDragPrefix + c.id)
-            .dropDestination(for: String.self) { items, _ in
-                var handled = false
+            .onDrag { NSItemProvider(object: (LibraryModel.folderDragPrefix + c.id) as NSString) }
+            .modifier(SidebarDrop.Target { items in
                 for item in items where item.hasPrefix(LibraryModel.folderDragPrefix) {
                     let f = String(item.dropFirst(LibraryModel.folderDragPrefix.count))
-                    if f != c.id { model.moveFolder(f, into: c.id); handled = true }
+                    if f != c.id { model.moveFolder(f, into: c.id) }
                 }
-                let ids = items.filter { !$0.hasPrefix(LibraryModel.folderDragPrefix) }
-                    .flatMap { $0.split(separator: "\n").map(String.init) }   // a drag of several papers
-                if !ids.isEmpty { model.setMembership(ids, collection: c.id, true); handled = true }
-                return handled
-            }
+                let ids = SidebarDrop.paperIDs(items)
+                if !ids.isEmpty { model.setMembership(ids, collection: c.id, true) }
+            })
             .contextMenu {
                 Button("Summarize with Ask") { NotificationCenter.default.post(name: .luntaAskFolder, object: c.id) }
                 Divider()
@@ -315,6 +309,22 @@ struct PaperTable: View {
     @State private var pendingPDF: PendingPDF?
 
     var body: some View {
+        // the search-beyond bar sits under the table, not in a safeAreaInset (which stops dragging rows)
+        VStack(spacing: 0) {
+            table
+            if !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
+                Button { model.searchBeyondLibrary() } label: {
+                    Label("Search beyond your library for “\(model.query)”", systemImage: "globe.europe.africa")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered).tint(.luntaTeal).controlSize(.large)
+                .padding(10)
+                .background(.bar)
+            }
+        }
+    }
+
+    private var table: some View {
         Table(of: Paper.self, selection: $selection) {
             TableColumn("") { p in
                 Group {
@@ -355,35 +365,19 @@ struct PaperTable: View {
             .width(min: 60, ideal: 110)
         } rows: {
             ForEach(model.papers) { p in
-                // dragging one of several selected papers drags them all (ids, one per line)
-                TableRow(p).draggable(selection.contains(p.id) && selection.count > 1
-                                      ? selection.sorted().joined(separator: "\n") : p.id)
-                    // a PDF dropped on a paper goes onto that paper
-                    .dropDestination(for: URL.self) { urls in
-                        guard let url = urls.first(where: { $0.pathExtension.lowercased() == "pdf" }) else { return }
-                        selection = [p.id]
-                        model.offerPDF(url, to: p, pending: $pendingPDF)
-                    }
+                TableRow(p)
             }
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
-        .modifier(ReplacePDFConfirm(pending: $pendingPDF))
-        .safeAreaInset(edge: .bottom) {
-            if !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
-                Button { model.searchBeyondLibrary() } label: {
-                    Label("Search beyond your library for “\(model.query)”", systemImage: "globe.europe.africa")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered).tint(.luntaTeal).controlSize(.large)
-                .padding(10)
-                .background(.bar)
-            }
-        }
+        // drag papers onto sidebar folders and tags (AppKit; see PaperDrag.swift). Dragging a
+        // selected paper drags the whole selection, as the table drags all selected rows.
+        .background(PaperDragSource { [papers = model.papers] row in row < papers.count ? papers[row].id : nil })
         .contextMenu(forSelectionType: String.self) { ids in
             PaperMenu(ids: Array(ids))
         } primaryAction: { ids in
             if let id = ids.first { openWindow(value: id) }
         }
+        .modifier(ReplacePDFConfirm(pending: $pendingPDF))
         .overlay {
             if model.papers.isEmpty {
                 if model.query.isEmpty {
@@ -884,5 +878,95 @@ struct EditSheet: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .luntaEditPaper)) { n in
                 if let id = n.object as? String { editing = EditTarget(id: id) }
             }
+    }
+}
+
+
+/// Dropping dragged papers (their ids, one per line) onto sidebar folders and tags.
+///
+/// No drop destination in the sidebar ever receives a drag in this window on macOS 26: not SwiftUI's
+/// dropDestination/onDrop, not NSViews registered for dragged types in the rows, not the sidebar's
+/// NSOutlineView. So the drag source (`PaperDragSource`) resolves the drop itself: while dragging it
+/// highlights the droppable row under the pointer, and on release it runs that row's action. Each
+/// droppable row carries an invisible `Marker` that knows its place on screen and what a drop does.
+enum SidebarDrop {
+    /// Paper ids in the dropped text (several papers come one per line).
+    static func paperIDs(_ items: [String]) -> [String] {
+        items.filter { !$0.hasPrefix(LibraryModel.folderDragPrefix) }
+            .flatMap { $0.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) } }
+            .filter { !$0.isEmpty }
+            .reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+    }
+
+    /// Makes a sidebar row a drop target, highlighted while papers are dragged over it. The highlight
+    /// is drawn by the marker's layer, not SwiftUI state: changing state in a sidebar row mid-drag
+    /// makes the list rebuild the row, and the highlight flickers.
+    struct Target: ViewModifier {
+        let action: @MainActor ([String]) -> Void
+        func body(content: Content) -> some View {
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(MarkerView(action: action).padding(.horizontal, -6).padding(.vertical, -2))
+        }
+    }
+
+    private struct MarkerView: NSViewRepresentable {
+        let action: @MainActor ([String]) -> Void
+        func makeNSView(context: Context) -> Marker { let v = Marker(); v.action = action; return v }
+        func updateNSView(_ v: Marker, context: Context) { v.action = action }
+    }
+
+    final class Marker: NSView {
+        var action: @MainActor ([String]) -> Void = { _ in }
+        var targeted = false {
+            didSet {
+                guard targeted != oldValue else { return }
+                layer?.backgroundColor = targeted ? NSColor(Color.luntaTeal).withAlphaComponent(0.3).cgColor : nil
+            }
+        }
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            layer?.cornerRadius = 5
+        }
+        required init?(coder: NSCoder) { fatalError() }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil { markers.add(self) } else { markers.remove(self); targeted = false }
+        }
+        /// The row's area on screen (full sidebar width, so the gap beside a short name counts).
+        var screenRect: NSRect? {
+            guard let w = window, !isHiddenOrHasHiddenAncestor else { return nil }
+            var r = convert(bounds, to: nil)
+            if let clip = enclosingScrollView {
+                let c = clip.convert(clip.bounds, to: nil)
+                r.origin.x = c.minX; r.size.width = c.width
+                guard c.intersects(r) else { return nil }   // scrolled out of sight
+            }
+            return w.convertToScreen(r.insetBy(dx: 0, dy: -2))
+        }
+    }
+
+    private static let markers = NSHashTable<Marker>.weakObjects()
+    private static weak var highlighted: Marker?
+
+    /// The droppable row at a point on screen.
+    static func marker(at p: NSPoint) -> Marker? {
+        markers.allObjects.first { $0.screenRect?.contains(p) == true }
+    }
+
+    /// Highlights the droppable row under a dragged point (none for nil).
+    static func hover(_ p: NSPoint?) {
+        let m = p.flatMap(marker(at:))
+        if highlighted !== m { highlighted?.targeted = false; m?.targeted = true; highlighted = m }
+    }
+
+    /// Drops the dragged text on the row under a point; false when there is none.
+    @MainActor static func drop(_ items: [String], at p: NSPoint) -> Bool {
+        hover(nil)
+        guard let m = marker(at: p) else { return false }
+        m.action(items)
+        return true
     }
 }
