@@ -1,0 +1,7 @@
+# keep LF everywhere (scripts parse sources; Windows checkouts would otherwise get CRLF)
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
+*.icns binary
+*.ico binary

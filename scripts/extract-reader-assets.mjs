@@ -20,7 +20,7 @@ const check = process.argv.includes('--check');
 
 /** Reads `static let <name> = """…"""` (or the raw `#"""…"""#` form) from a Swift file. */
 function literal(file, name) {
-  const src = readFileSync(join(repo, file), 'utf8');
+  const src = readFileSync(join(repo, file), 'utf8').replace(/\r\n/g, '\n');   // Windows checkouts
   const re = new RegExp(`static let ${name} = (#?)"""\\n([\\s\\S]*?)\\n([ \\t]*)"""\\1([^\\n]*)`);
   const m = src.match(re);
   if (!m) throw new Error(`${file}: no multi-line string literal "${name}"`);
@@ -82,7 +82,7 @@ const annotationJS = ann.text.split('CSS').join(annotationCSS.split('`').join(''
 
 // styleScript (CloudLibrary.swift) puts `css` into a <style> on the root element, then runs the
 // figure and overflow scripts; the same here. (It also adds a mobile viewport tag: kept, harmless.)
-const cloudSrc = readFileSync(join(repo, cloud), 'utf8');
+const cloudSrc = readFileSync(join(repo, cloud), 'utf8').replace(/\r\n/g, '\n');
 for (const piece of ["s.textContent=`\\(c)`;document.documentElement.appendChild(s);", '+ figureJS + overflowJS']) {
   if (!cloudSrc.includes(piece)) throw new Error(`${cloud}: styleScript changed; update extract-reader-assets.mjs`);
 }
@@ -108,7 +108,7 @@ let stale = [];
 for (const [name, [h, body]] of Object.entries(files)) {
   const path = join(out, name);
   const text = h + body + '\n';
-  const old = existsSync(path) ? readFileSync(path, 'utf8') : null;
+  const old = existsSync(path) ? readFileSync(path, 'utf8').replace(/\r\n/g, '\n') : null;
   if (old === text) continue;
   stale.push(relative(repo, path));
   if (!check) writeFileSync(path, text);
