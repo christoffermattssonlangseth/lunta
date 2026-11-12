@@ -1,6 +1,9 @@
 //! Command-line front end for the Rust paper → EPUB converter.
 //!
-//! Usage: paper2epub [--offline] <DOI | PMCID | PubMed ID | arXiv id | link | file.xml> [output-dir]
+//! Usage: paper2epub [--offline] <DOI | PMCID | PubMed ID | arXiv id | link | file.pdf | file.xml> [output-dir]
+//!
+//! A PDF is converted by layout analysis (needs the PDFium library, see the README) unless an
+//! open-access XML version is found through its DOI; `--offline` skips every network lookup.
 
 use lunta_core::convert::{self, Options};
 use std::path::{Path, PathBuf};
@@ -10,7 +13,7 @@ fn main() {
     let offline = args.iter().any(|a| a == "--offline");
     args.retain(|a| a != "--offline");
     let Some(input) = args.first().cloned() else {
-        eprintln!("usage: paper2epub [--offline] <DOI|PMCID|arXiv id|link|file.xml> [output-dir]");
+        eprintln!("usage: paper2epub [--offline] <DOI|PMCID|arXiv id|link|file.pdf|file.xml> [output-dir]");
         std::process::exit(2);
     };
     let out = args.get(1).map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap());
