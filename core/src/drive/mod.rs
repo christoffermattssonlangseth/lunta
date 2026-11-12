@@ -10,10 +10,10 @@
 //! inside "Google Drive for desktop" and API-based devices share one library. See `syncer.rs` for the
 //! merge rules, `gdrive.rs` for the Drive client and `auth.rs` for OAuth.
 //!
-//! Everything here is plain owned types (String, u64, i64, Vec, Arc<dyn Trait>) so it can be exported
-//! through UniFFI later; it is deliberately not exported yet.
+//! The plain types are wrapped for UniFFI in `ffi.rs` (sign-in and the Syncer), which the Android app uses.
 
 pub mod auth;
+pub mod ffi;
 pub mod gdrive;
 pub mod remote;
 pub mod syncer;

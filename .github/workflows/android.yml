@@ -1,0 +1,59 @@
+# Builds the Android app (android/): the Rust core for arm64-v8a with UniFFI Kotlin bindings and
+# PDFium, then the debug APK, uploaded as a workflow artifact. Google sign-in needs an OAuth client
+# id (repository variable LUNTA_GOOGLE_CLIENT_ID); without it the app builds and explains that.
+name: Android app
+
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', 'core/**', 'desktop/src/reader/**', 'scripts/build-core-android.sh', 'scripts/extract-reader-assets.mjs', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', 'core/**', 'desktop/src/reader/**', 'scripts/build-core-android.sh', 'scripts/extract-reader-assets.mjs', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      LUNTA_GOOGLE_CLIENT_ID: ${{ vars.LUNTA_GOOGLE_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0 ndk;28.2.13676358'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+
+      - name: cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Reader assets are up to date
+        run: node scripts/extract-reader-assets.mjs --check
+
+      - name: Core for Android (arm64-v8a, x86_64) + Kotlin bindings + PDFium
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
+          ABIS="arm64-v8a x86_64" scripts/build-core-android.sh
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Debug APK
+        working-directory: android
+        run: ./gradlew :app:assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lunta-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk

@@ -44,8 +44,12 @@ pub fn build(book: &Book, cover: Option<&[u8]>) -> Result<Vec<u8>> {
     for f in &files {
         add(&format!("EPUB/text/{}", f.name), xhtml(&f.title, &f.html, None, "../css/style.css").as_bytes(), true)?;
     }
+    // two images with one name (the zip would refuse the second, and the whole book with it): keep the first
+    let mut seen = std::collections::HashSet::new();
     for img in &book.images {
-        add(&format!("EPUB/images/{}", img.file_name), &img.data, false)?;
+        if seen.insert(img.file_name.clone()) {
+            add(&format!("EPUB/images/{}", img.file_name), &img.data, false)?;
+        }
     }
     add("EPUB/nav.xhtml", nav(book, &files[1..]).as_bytes(), true)?;
     let id = identifier(&book.meta);
@@ -279,8 +283,11 @@ pub fn opf(book: &Book, files: &[XFile], has_cover: bool, id: &str) -> String {
         man += &format!("<item id=\"x{i}\" href=\"text/{}\" media-type=\"application/xhtml+xml\"{props}/>", f.name);
         spine += &format!("<itemref idref=\"x{i}\"/>");
     }
+    let mut seen = std::collections::HashSet::new();
     for (i, img) in book.images.iter().enumerate() {
-        man += &format!("<item id=\"img{i}\" href=\"images/{}\" media-type=\"{}\"/>", esc(&img.file_name), img.media_type);
+        if seen.insert(img.file_name.clone()) {
+            man += &format!("<item id=\"img{i}\" href=\"images/{}\" media-type=\"{}\"/>", esc(&img.file_name), img.media_type);
+        }
     }
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"pub-id\" xml:lang=\"en\">\n<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">{md}</metadata>\n<manifest>{man}</manifest>\n<spine toc=\"ncx\">{spine}</spine>\n</package>"
