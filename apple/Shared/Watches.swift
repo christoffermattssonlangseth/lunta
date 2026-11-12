@@ -69,6 +69,7 @@ struct FeedRecord: Codable, Hashable {
     var found: Date
     var inLibrary: String?
     var boosted: Bool?              // thumbs up: more like this
+    var summary: String?            // one sentence: what the paper does and finds
 
     init(_ h: DiscoverHit, reason: String, score: Double, source: String) {
         key = LibraryModel.hitKey(h)
@@ -105,6 +106,8 @@ struct ForYouState: Codable {
     var disliked: [FeedbackSnip] = []
     var boosted: [FeedbackSnip] = []   // thumbs up: counts more than an add
     var lastRun: Date?
+    var digest = ""                // a few sentences on the latest papers
+    var digestFor: String?         // the feed (its paper keys) the digest describes
 
     init() {}
     init(from d: Decoder) throws {
@@ -120,6 +123,8 @@ struct ForYouState: Codable {
         disliked = try c.decodeIfPresent([FeedbackSnip].self, forKey: .disliked) ?? []
         boosted = try c.decodeIfPresent([FeedbackSnip].self, forKey: .boosted) ?? []
         lastRun = try c.decodeIfPresent(Date.self, forKey: .lastRun)
+        digest = try c.decodeIfPresent(String.self, forKey: .digest) ?? ""
+        digestFor = try? c.decodeIfPresent(String.self, forKey: .digestFor)
     }
 }
 
@@ -435,6 +440,82 @@ final class WatchCenter: ObservableObject {
             s.lastRun = Date()
         }
         if !fresh.isEmpty { notify(fresh.count) }
+        await summarize()
+    }
+
+    @Published var summarizing = false
+
+    /// The papers the digest covers: what's in the feed now (best first, at most 15).
+    var digestBatch: [FeedRecord] { Array(state.items.prefix(15)) }
+    var digestKey: String { digestBatch.map(\.key).joined(separator: "|") }
+
+    private var summaryJob: Task<Void, Never>?
+
+    /// Starts summarize() unless it's running (not tied to a view, which would cancel it on redraw).
+    func summarizeSoon() {
+        guard summaryJob == nil, !checking else { return }
+        summaryJob = Task { [weak self] in
+            await self?.summarize()
+            self?.summaryJob = nil
+        }
+    }
+
+    /// One sentence for each paper without one, then a few sentences on the whole feed. Made by
+    /// whichever device gets there first; both sync with the feed.
+    func summarize() async {
+        guard !summarizing, !state.items.isEmpty else { return }
+        let engine = AskEngine(scope: .paper("__for-you__"))
+        #if DEBUG
+        NSLog("FORYOU summarize: unavailable=%@", engine.unavailableReason ?? "nil")
+        #endif
+        guard engine.unavailableReason == nil else { return }
+        summarizing = true
+        defer { summarizing = false }
+        for r in state.items.prefix(30) where r.summary == nil && !r.abstract.isEmpty {
+            let prompt = """
+                Title: \(r.title)
+                Abstract: \(String(r.abstract.prefix(1500)))
+
+                In one plain sentence of at most 25 words, say what this paper does and what it finds. \
+                Start with the method or finding itself (not "This paper" or "The authors"). No preamble.
+                """
+            guard let a = await engine.plainAnswer(prompt, instructions: "You summarize scientific papers in one accurate sentence, using only what the abstract says.")?
+                .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"*"))), a.count > 15 else {
+                #if DEBUG
+                NSLog("FORYOU summary failed (cancelled=%d)", Task.isCancelled ? 1 : 0)
+                #endif
+                continue
+            }
+            let line = a.components(separatedBy: .newlines).first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? a
+            change { s in
+                if let i = s.items.firstIndex(where: { $0.key == r.key }) { s.items[i].summary = line }
+            }
+        }
+        // the whole feed in a few sentences
+        let batch = digestBatch, key = digestKey
+        guard state.digestFor != key, !batch.isEmpty else { return }
+        let list = batch.enumerated().map { i, r in
+            "\(i + 1). \(r.title)\n   \(r.summary ?? String(r.abstract.prefix(300)))"
+        }.joined(separator: "\n")
+        let prompt = """
+            The researcher's interests:
+            \(state.interests)
+
+            The papers in their feed:
+            \(list)
+
+            Summarize this feed for the researcher in ONE short paragraph of two or three sentences, \
+            at most 70 words: the main themes across the papers, then the one or two most worth their time \
+            and why. Name papers by a short form of their title. No list, no heading, no preamble.
+            """
+        guard let a = await engine.plainAnswer(prompt, instructions: "You write short, concrete research digests. You never invent findings that aren't in the summaries.")?
+            .trimmingCharacters(in: .whitespacesAndNewlines), a.count > 20 else { return }
+        change { s in
+            s.digest = a.replacingOccurrences(of: "**", with: "")
+                .components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                .joined(separator: " ")
+            s.digestFor = key
+        }
     }
 
     private func refreshLibraryVectors(_ every: [Paper]) async {
@@ -539,7 +620,8 @@ final class WatchCenter: ObservableObject {
             Sharing only general words (such as "multi-omics", "AI", "tissue" or "integration") is worth at most 4.
 
             Reply with a single line: SCORE: <number> — <one sentence of at most 20 words on what specifically \
-            connects this paper to their work, addressed to them as "you">
+            connects this paper to their work, addressed to them as "you"; \
+            do not start with "This paper" — start with the specific point, e.g. "A segmentation method for Xenium data, …">
             """
         guard let a = await engine.plainAnswer(prompt, instructions: "You screen new scientific papers for one researcher. You are strict: most papers score below 7.")?
             .trimmingCharacters(in: .whitespacesAndNewlines), !a.isEmpty else { return nil }
@@ -677,6 +759,9 @@ struct WatchInbox: View {
             } else {
                 Section { status }
             }
+            if !center.interests.isEmpty, !center.finds.isEmpty, center.summarizing || !center.state.digest.isEmpty {
+                Section { digest }
+            }
             if !center.finds.isEmpty {
                 Section {
                     ForEach(center.finds) { f in
@@ -690,6 +775,11 @@ struct WatchInbox: View {
         }
         .onAppear { center.markOpened() }
         .onDisappear { center.markOpened() }
+        .task(id: center.digestKey) {
+            // after a pause, so turning down a few papers in a row doesn't redo it each time
+            try? await Task.sleep(for: .seconds(3))
+            center.summarizeSoon()
+        }
         .sheet(isPresented: $settings) { ForYouSettings().environmentObject(model) }
     }
 
@@ -702,6 +792,19 @@ struct WatchInbox: View {
                 .buttonStyle(.borderedProminent).tint(.marginsTeal)
         }
         .padding(.vertical, 6)
+    }
+
+    private var digest: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("In short", systemImage: "text.alignleft").font(.caption.weight(.semibold))
+                .foregroundStyle(Color.marginsTeal).textCase(.uppercase)
+            if center.state.digest.isEmpty {
+                HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Summarizing the papers…").font(.callout).foregroundStyle(.secondary) }
+            } else {
+                Text(center.state.digest).font(.callout).textSelection(.enabled)
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     private var status: some View {
@@ -753,17 +856,23 @@ struct FeedRow: View {
 
     var body: some View {
         let r = find.record
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
             Text(r.title).font(.headline).lineLimit(3)
-            Text(byline(r)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            Label { Text(r.reason) } icon: { Image(systemName: "sparkles") }
-                .font(.callout).foregroundStyle(Color.marginsTeal)
-            if !r.abstract.isEmpty {
+            HStack(spacing: 5) {
+                if r.openAccess { Image(systemName: "lock.open").foregroundStyle(.green).help("Open access") }
+                Text(byline(r)).lineLimit(1)
+            }
+            .font(.caption).foregroundStyle(.secondary)
+            if let sum = r.summary {
+                Text(sum).font(.subheadline)
+            } else if !r.abstract.isEmpty {
                 Text(r.abstract).font(.footnote).foregroundStyle(.secondary).lineLimit(3)
             }
-            HStack(spacing: 10) {
+            (Text(Image(systemName: "sparkles")) + Text(" ") + Text(r.reason))
+                .font(.footnote).foregroundStyle(Color.marginsTeal).lineLimit(3)
+            HStack(spacing: 4) {
                 if let id = model.libraryID(of: find.hit) {
-                    OpenAddedPaper(id: id, compact: true).tint(.marginsTeal)
+                    OpenAddedPaper(id: id, compact: true).tint(.marginsTeal).fixedSize()
                 } else {
                     Button {
                         adding = true
@@ -771,21 +880,36 @@ struct FeedRow: View {
                             if let id = await model.addDiscovered(find.hit) { center.added(key: find.id, id: id) }
                             adding = false
                         }
-                    } label: { Label(adding ? "Adding…" : "Add", systemImage: "plus") }
-                    .buttonStyle(.borderedProminent).tint(.marginsTeal).disabled(adding)
+                    } label: {
+                        HStack(spacing: 4) {
+                            if adding { ProgressView().controlSize(.mini).tint(.white) } else { Image(systemName: "plus") }
+                            Text(adding ? "Adding…" : "Add")
+                        }
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 6)
+                        .background(Capsule().fill(Color.marginsTeal))
+                        .fixedSize()
+                    }
+                    .buttonStyle(.borderless).disabled(adding)
                 }
+                Spacer(minLength: 8)
                 Button { center.boost(find) } label: {
                     Image(systemName: r.boosted == true ? "hand.thumbsup.fill" : "hand.thumbsup")
-                        .accessibilityLabel(r.boosted == true ? "Undo More Like This" : "More Like This")
+                        .foregroundStyle(r.boosted == true ? Color.marginsTeal : Color.secondary)
+                        .frame(width: 40, height: 32).contentShape(Rectangle())
                 }
-                .buttonStyle(.bordered).tint(r.boosted == true ? .marginsTeal : nil)
+                .buttonStyle(.borderless)
+                .accessibilityLabel(r.boosted == true ? "Undo More Like This" : "More Like This")
                 .help("More like this: papers like it rank higher")
-                Button { center.dismiss(find) } label: { Label("Not for Me", systemImage: "hand.thumbsdown") }
-                    .buttonStyle(.bordered)
-                Spacer()
-                if r.openAccess { Image(systemName: "lock.open").font(.caption).foregroundStyle(.green).help("Open access") }
+                Button { center.dismiss(find) } label: {
+                    Image(systemName: "hand.thumbsdown").foregroundStyle(.secondary)
+                        .frame(width: 40, height: 32).contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Not for Me")
+                .help("Not for me: hides it, and papers like it rank lower")
             }
-            .controlSize(.small)
+            .font(.body)
         }
         .padding(.vertical, 6)
     }
