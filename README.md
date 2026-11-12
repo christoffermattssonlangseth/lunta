@@ -92,7 +92,7 @@ apple/citations/       Word add-in, Google Docs Apps Script and the formatting c
 tts/                   Kokoro narration helper for the Mac (mlx-audio)
 extension/             Chrome extension: save papers and PDFs from article pages
 converter/             the original Python paper2epub tool (pandoc-based) and its Claude skill
-design/                logo (SVG + 1024 px PNG)
+design/                logo (SVG + 1024 px PNG) and its dark / tinted variants; Mac icon = Icon Composer bundle apple/Lunta.icon (macOS 26 light/dark/tinted), iPhone icon has dark + tinted appearances
 scripts/build-core.sh  builds the Rust core for iOS, the simulator and macOS → XCFramework
 scripts/extract-reader-assets.mjs  copies the reader CSS/JS out of the Swift into desktop/src/reader/generated/
 scripts/make-desktop-icon.swift    the desktop icon (Mac artwork on the macOS icon grid) for `tauri icon`

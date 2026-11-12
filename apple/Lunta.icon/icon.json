@@ -1,0 +1,80 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "automatic-gradient": "srgb:0.16471,0.39216,0.47059,1.00000"
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "automatic-gradient": "srgb:0.06275,0.13333,0.16471,1.00000"
+      }
+    },
+    {
+      "appearance": "tinted",
+      "value": {
+        "solid": "srgb:0.00000,0.00000,0.00000,1.00000"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "layers": [
+        {
+          "name": "tinted",
+          "image-name": "glyph-tinted.png",
+          "hidden-specializations": [
+            {
+              "appearance": "light",
+              "value": true
+            },
+            {
+              "appearance": "dark",
+              "value": true
+            }
+          ]
+        },
+        {
+          "name": "dark",
+          "image-name": "glyph-dark.png",
+          "hidden-specializations": [
+            {
+              "appearance": "light",
+              "value": true
+            },
+            {
+              "appearance": "tinted",
+              "value": true
+            }
+          ]
+        },
+        {
+          "name": "light",
+          "image-name": "glyph-light.png",
+          "hidden-specializations": [
+            {
+              "appearance": "dark",
+              "value": true
+            },
+            {
+              "appearance": "tinted",
+              "value": true
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}
