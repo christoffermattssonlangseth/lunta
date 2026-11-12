@@ -366,6 +366,19 @@ runs on macOS, for testing.
   stale). `desktop/src/reader/bridge.js` stands in for WKWebView's `window.webkit.messageHandlers`
   (posting to the app window) and for `evaluateJavaScript`. Highlights and notes go through the core's
   op log, positions into `positions/`, so both sync with the Mac and iPhone.
+- **Organising:** select several papers in the list (⌘/Ctrl-click, Shift-click, ⌘/Ctrl-A). Drag papers
+  (the whole selection if you drag one of them) onto a folder in the sidebar to add them to it
+  (membership, not a move), or onto a tag to tag them; drag a folder onto another folder to nest it,
+  or onto the Folders heading for the top level. The target lights up while you drag. (Done with
+  mouse events rather than HTML5 drag and drop, which Tauri's file-drop handling breaks on Windows.)
+- **Edit Details…** (button in the details, or the paper's context menu) edits title, authors,
+  journal, date, volume/issue/pages, publisher, identifiers, abstract and keywords through the core,
+  and can fill them in from the DOI. **Smart folders** are created with ＋ next to Smart Folders and
+  edited or deleted from their context menu; same rules and `smart-folders.json` as the Mac app.
+- **Security:** a content security policy is set in `tauri.conf.json` (own scripts only, the reader
+  iframe and images from `lunta://`, PDF.js worker from blob:/self, IPC). Debug runs of the packaged
+  frontend: `npm run build`, then `cargo build --features tauri/custom-protocol` in `src-tauri`
+  (plain `cargo build` loads the Vite dev server, which has no CSP).
 - **Adding papers** uses the core's metadata lookup and the Rust converter (`core/src/convert`). It
   can't analyse PDFs yet, so a paper whose only full text is a PDF gets no reading view (the converter's
   reason is shown); its PDF still opens.
@@ -390,9 +403,8 @@ For scripted UI checks, debug builds run any `*.js` dropped into `$LUNTA_DEV_EVA
 
 Not in the desktop app yet (the Mac app has them): highlighting in the PDF (PDF highlights made on the
 Mac or iPhone are listed, not drawn), reading views from PDFs, adding a paper from a PDF alone,
-editing metadata, creating/editing smart folders, import (Papers, BibTeX, RIS), Discover, New for You,
-Clean Up, Listen, Ask, the MCP server, the browser extension and the Word / Google Docs add-ins, and
-dragging papers onto folders in the sidebar (use the folder checkboxes in the details).
+import (Papers, BibTeX, RIS), Discover, New for You,
+Clean Up, Listen, Ask, the MCP server, the browser extension and the Word / Google Docs add-ins.
 
 ## Roadmap
 

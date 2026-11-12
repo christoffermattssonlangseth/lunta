@@ -1,6 +1,6 @@
 //! Smart folders, read from `<library>/smart-folders.json` (written by the Mac and iPhone apps;
 //! apple/Shared/SmartFolders.swift) and evaluated the same way. The desktop app shows and opens
-//! them; creating and editing them is left to the Apple apps for now.
+//! them, and creates, edits and deletes them (same JSON, sorted by name, like saveSmartFolder).
 
 use lunta_core::model::{Paper, PaperFilter, SortKey};
 use lunta_core::Library;
@@ -31,6 +31,42 @@ pub fn load(root: &Path) -> Vec<SmartFolder> {
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default()
+}
+
+fn store(root: &Path, list: &[SmartFolder]) -> Result<(), String> {
+    // pretty-printed with sorted keys, like the Swift encoder; every field is written (Swift's
+    // Codable needs them all)
+    let value = serde_json::to_value(list).map_err(|e| e.to_string())?;
+    let text = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    let tmp = root.join("smart-folders.json.tmp");
+    std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, root.join("smart-folders.json")).map_err(|e| e.to_string())
+}
+
+pub fn save(root: &Path, mut f: SmartFolder) -> Result<(), String> {
+    if f.id.is_empty() {
+        f.id = uuid_like();
+    }
+    if !matches!(f.pdf.as_str(), "has" | "missing") {
+        f.pdf = "any".into();
+    }
+    let mut list = load(root);
+    match list.iter().position(|x| x.id == f.id) {
+        Some(i) => list[i] = f,
+        None => list.push(f),
+    }
+    list.sort_by_key(|x| x.name.to_lowercase());
+    store(root, &list)
+}
+
+pub fn delete(root: &Path, id: &str) -> Result<(), String> {
+    let mut list = load(root);
+    list.retain(|x| x.id != id);
+    store(root, &list)
+}
+
+fn uuid_like() -> String {
+    uuid::Uuid::new_v4().to_string().to_uppercase()
 }
 
 fn year(p: &Paper) -> Option<i64> {

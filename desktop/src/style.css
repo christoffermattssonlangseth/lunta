@@ -150,3 +150,25 @@ label.check { display: flex; gap: 6px; align-items: center; }
 /* PDF.js */
 .pdf-container { position: absolute; inset: 0; overflow: auto; background: #8a8a8a; }
 @media (prefers-color-scheme: dark) { .pdf-container { background: #3a3a3a; } }
+
+/* dragging papers and folders onto the sidebar */
+body.dragging, body.dragging * { cursor: grabbing !important; user-select: none; -webkit-user-select: none; }
+.drag-ghost { position: fixed; z-index: 200; pointer-events: none; background: var(--accent); color: #fff; padding: 3px 10px; border-radius: 12px;
+  font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+.drop-over { background: var(--accent) !important; color: #fff !important; box-shadow: 0 0 0 2px var(--accent); border-radius: 6px; }
+.drop-over .icon, .drop-over .count { color: #fff !important; }
+h4.drop-over { color: #fff; padding: 2px 6px; margin-left: 0; }
+.row.multi.on, .row.on.multi { background: var(--sel); }
+.row.on { box-shadow: inset 3px 0 0 var(--accent); }
+#detail .multi { padding: 30px 24px; color: var(--dim); text-align: center; }
+
+/* editors */
+.modal.editor { width: 620px; max-height: 90vh; overflow-y: auto; }
+.modal.editor label.f { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--dim); }
+.modal.editor label.f > input, .modal.editor label.f > textarea, .modal.editor label.f > select { color: var(--text); font-size: 13px; }
+.modal.editor .cols { display: flex; gap: 8px; } .modal.editor .cols > * { flex: 1; min-width: 0; }
+.modal.editor .note { font-size: 12px; color: var(--dim); min-height: 1em; }
+.modal.editor .count { font-size: 12px; color: var(--dim); }
+.modal.editor .examples { display: flex; gap: 6px; flex-wrap: wrap; }
+.modal.editor label.chk { display: flex; gap: 6px; align-items: center; }
+h4 .mini { margin-left: auto; }
