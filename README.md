@@ -43,7 +43,7 @@ The library syncs between your Mac and iPhone through iCloud Drive.
   choices, and has the on-device model read the best abstracts (with the papers you thumbed up as
   examples), keep only clear matches and say why each one fits.
   Authors you follow and papers citing ones you watch always show up. Each paper gets a one-sentence
-  summary, and the top of the feed has a short **In short** digest of all of it. One notification a day.
+  summary, and the top of the feed has a short **In short** digest of all of it (written on the Mac). One notification a day.
 - **Cite:** APA, Vancouver, Nature, BibTeX, RIS, Markdown; share PDFs, EPUBs and citations. **Word and
   Google Docs add-ins** insert citations from the library and build the reference list.
 - **Ask (✨):** an assistant that runs on the device: Apple Intelligence, or the open Qwen3 4B model where

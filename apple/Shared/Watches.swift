@@ -147,6 +147,7 @@ final class WatchCenter: ObservableObject {
     @Published var lastOpened: Date = (UserDefaults.standard.object(forKey: "forYouOpened") as? Date) ?? .distantPast
     weak var model: LibraryModel?
     private var timer: Timer?
+    private var summaryTimer: Timer?
     private var libraryVectors: [String: [Double]] = [:]
 
     /// Testing: keep the files somewhere else than the library.
@@ -168,6 +169,16 @@ final class WatchCenter: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 3 * 3600, repeats: true) { _ in
             Task { @MainActor in await WatchCenter.shared.runIfDue() }
         }
+        #if os(macOS)
+        // the Mac writes the summaries: it picks up papers turned down or added on the phone
+        summaryTimer?.invalidate()
+        summaryTimer = Timer.scheduledTimer(withTimeInterval: 10 * 60, repeats: true) { _ in
+            Task { @MainActor in
+                WatchCenter.shared.load()
+                WatchCenter.shared.summarizeSoon()
+            }
+        }
+        #endif
     }
 
     // MARK: files
@@ -454,6 +465,11 @@ final class WatchCenter: ObservableObject {
     /// Starts summarize() unless it's running (not tied to a view, which would cancel it on redraw).
     func summarizeSoon() {
         guard summaryJob == nil, !checking else { return }
+        #if os(iOS)
+        // the Mac summarizes (after its daily run, and every 10 minutes); the phone only steps in
+        // when no Mac has made the feed for a day and a half
+        guard (state.lastRun ?? .distantPast) < Date().addingTimeInterval(-36 * 3600) else { return }
+        #endif
         summaryJob = Task { [weak self] in
             await self?.summarize()
             self?.summaryJob = nil
@@ -465,9 +481,6 @@ final class WatchCenter: ObservableObject {
     func summarize() async {
         guard !summarizing, !state.items.isEmpty else { return }
         let engine = AskEngine(scope: .paper("__for-you__"))
-        #if DEBUG
-        NSLog("FORYOU summarize: unavailable=%@", engine.unavailableReason ?? "nil")
-        #endif
         guard engine.unavailableReason == nil else { return }
         summarizing = true
         defer { summarizing = false }
@@ -480,12 +493,7 @@ final class WatchCenter: ObservableObject {
                 Start with the method or finding itself (not "This paper" or "The authors"). No preamble.
                 """
             guard let a = await engine.plainAnswer(prompt, instructions: "You summarize scientific papers in one accurate sentence, using only what the abstract says.")?
-                .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"*"))), a.count > 15 else {
-                #if DEBUG
-                NSLog("FORYOU summary failed (cancelled=%d)", Task.isCancelled ? 1 : 0)
-                #endif
-                continue
-            }
+                .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"*"))), a.count > 15 else { continue }
             let line = a.components(separatedBy: .newlines).first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? a
             change { s in
                 if let i = s.items.firstIndex(where: { $0.key == r.key }) { s.items[i].summary = line }
@@ -773,7 +781,7 @@ struct WatchInbox: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
         }
-        .onAppear { center.markOpened() }
+        .onAppear { center.load(); center.markOpened() }
         .onDisappear { center.markOpened() }
         .task(id: center.digestKey) {
             // after a pause, so turning down a few papers in a row doesn't redo it each time
