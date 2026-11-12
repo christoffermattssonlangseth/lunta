@@ -65,6 +65,30 @@
    "platform": "ios",
    "size": "1024x1024",
    "filename": "ios-1024.png"
+  },
+  {
+   "appearances": [
+    {
+     "appearance": "luminosity",
+     "value": "dark"
+    }
+   ],
+   "idiom": "universal",
+   "platform": "ios",
+   "size": "1024x1024",
+   "filename": "ios-1024-dark.png"
+  },
+  {
+   "appearances": [
+    {
+     "appearance": "luminosity",
+     "value": "tinted"
+    }
+   ],
+   "idiom": "universal",
+   "platform": "ios",
+   "size": "1024x1024",
+   "filename": "ios-1024-tinted.png"
   }
  ],
  "info": {
