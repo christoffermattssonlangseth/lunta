@@ -1,6 +1,6 @@
 // Citation formatting shared by the Word add-in and the Google Docs sidebar.
 // A citation is a list of paper ids; papers are numbered by first appearance for numeric styles.
-var MarginsCite = (function () {
+var LuntaCite = (function () {
   var STYLES = {
     apa: { name: 'APA 7', numeric: false },
     vancouver: { name: 'Vancouver', numeric: true },
@@ -86,4 +86,4 @@ var MarginsCite = (function () {
 
   return { STYLES: STYLES, inText: inText, numbering: numbering, bibliography: bibliography, toHTML: toHTML, runs: runs, compress: compress };
 })();
-if (typeof module !== 'undefined') module.exports = MarginsCite;
+if (typeof module !== 'undefined') module.exports = LuntaCite;

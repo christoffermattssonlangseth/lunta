@@ -1,7 +1,7 @@
 import SwiftUI
 import WebKit
 import PDFKit
-import MarginsCore
+import LuntaCore
 
 /// One paper, two views: the reflowable reading view (converted EPUB) and the original PDF.
 struct ReaderWindow: View {
@@ -37,7 +37,7 @@ struct ReaderWindow: View {
 
     static func open(_ id: String, mode: Mode, _ openWindow: OpenWindowAction) {
         requestedMode[id] = mode
-        NotificationCenter.default.post(name: .marginsReaderMode, object: id)
+        NotificationCenter.default.post(name: .luntaReaderMode, object: id)
         openWindow(value: id)
     }
 
@@ -143,7 +143,7 @@ struct ReaderWindow: View {
         .sheet(item: $editingAnnotation) { a in AnnotationEditor(annotation: a) { refreshHighlights() } }
         .onChange(of: paper?.annotationCount) { refreshHighlights() }
         .onDisappear { position.stop(paperID, model: model, controller: controller) }
-        .onReceive(NotificationCenter.default.publisher(for: .marginsReaderMode)) { n in
+        .onReceive(NotificationCenter.default.publisher(for: .luntaReaderMode)) { n in
             if n.object as? String == paperID, let m = Self.requestedMode.removeValue(forKey: paperID) { mode = m }
         }
         .navigationTitle(paper?.meta.title ?? "Reader")
@@ -340,5 +340,5 @@ struct PDFKitView: NSViewRepresentable {
 }
 
 extension Notification.Name {
-    static let marginsReaderMode = Notification.Name("marginsReaderMode")
+    static let luntaReaderMode = Notification.Name("luntaReaderMode")
 }

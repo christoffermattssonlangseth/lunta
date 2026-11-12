@@ -18,18 +18,18 @@ final class ReaderController: ObservableObject {
 
     func narrationItems(includeCaptions: Bool = false) async -> [NarrationItem] {
         guard let v = webView,
-              let json = try? await v.evaluateJavaScript("marginsNarration(\(includeCaptions))") as? String,
+              let json = try? await v.evaluateJavaScript("luntaNarration(\(includeCaptions))") as? String,
               let data = json.data(using: .utf8) else { return [] }
         return (try? JSONDecoder().decode([NarrationItem].self, from: data)) ?? []
     }
 
     func firstVisibleID() async -> String? {
-        (try? await webView?.evaluateJavaScript("marginsFirstVisible()")) as? String
+        (try? await webView?.evaluateJavaScript("luntaFirstVisible()")) as? String
     }
 
     func highlight(_ id: String) {
         let safe = id.replacingOccurrences(of: "'", with: "")
-        webView?.evaluateJavaScript("marginsHighlight('\(safe)')")
+        webView?.evaluateJavaScript("luntaHighlight('\(safe)')")
     }
 
     func selectedText() async -> String? {
@@ -44,7 +44,7 @@ final class ReaderController: ObservableObject {
     }
 
     func setListening(_ on: Bool) {
-        webView?.evaluateJavaScript("marginsListening(\(on))")
+        webView?.evaluateJavaScript("luntaListening(\(on))")
     }
 }
 

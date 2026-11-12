@@ -62,7 +62,7 @@ public struct ConversionResult: Sendable {
     public var words: Int
     public var images: Int
     public var notes: [String]
-    /// Metadata of the converted paper (for reference managers such as Margins).
+    /// Metadata of the converted paper (for reference managers such as Lunta).
     public var meta: PaperMeta = PaperMeta()
     /// Plain text of the whole paper, for full-text search.
     public var fulltext: String = ""

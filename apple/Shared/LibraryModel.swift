@@ -1,6 +1,6 @@
 import Foundation
 import SwiftUI
-import MarginsCore
+import LuntaCore
 import Paper2EpubKit
 
 extension Paper: Identifiable {}
@@ -169,7 +169,7 @@ final class LibraryModel: ObservableObject {
         }
     }
 
-    /// Picks up changes written by agents (margins-mcp) or synced from other devices while the app is open:
+    /// Picks up changes written by agents (lunta-mcp) or synced from other devices while the app is open:
     /// checks the change logs' sizes every few seconds and reloads only when one grew.
     func watchForOutsideChanges() {
         let ops = libraryURL.appendingPathComponent("ops")
@@ -282,7 +282,7 @@ final class LibraryModel: ObservableObject {
         defer { status = nil }
         let lib = self.lib
         let meta = await Task.detached { try? resolveMetadata(input: input) }.value
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("margins-add-\(UUID())")
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("lunta-add-\(UUID())")
         let conv = try? await Paper2Epub.convert(input, into: tmp)
         do {
             var m = meta ?? Self.meta(from: conv)
@@ -368,7 +368,7 @@ final class LibraryModel: ObservableObject {
             if !existing.hasEpub { await makeReadingView(existing.id) }
             return lib.paper(id: existing.id)
         }
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("margins-pdf-\(UUID())")
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("lunta-pdf-\(UUID())")
         try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         let file = tmp.appendingPathComponent(name.hasSuffix(".pdf") ? name : name + ".pdf")
         try? data.write(to: file)
@@ -503,8 +503,8 @@ final class LibraryModel: ObservableObject {
         }
         progress = nil
         reload()
-        NSLog("Margins: PDF import: %d by DOI, %d by title, %d already had a PDF, %d unmatched", byDOI, byTitle, already, unmatched.count)
-        if !unmatched.isEmpty { NSLog("Margins: unmatched PDFs: %@", unmatched.joined(separator: ", ")) }
+        NSLog("Lunta: PDF import: %d by DOI, %d by title, %d already had a PDF, %d unmatched", byDOI, byTitle, already, unmatched.count)
+        if !unmatched.isEmpty { NSLog("Lunta: unmatched PDFs: %@", unmatched.joined(separator: ", ")) }
         status = "PDFs: \(byDOI + byTitle) attached (\(byDOI) by DOI, \(byTitle) by title), \(unmatched.count) not matched to a paper."
     }
 
@@ -608,7 +608,7 @@ final class LibraryModel: ObservableObject {
     @discardableResult
     func makeReadingView(_ id: String) async -> Bool {
         guard let p = lib.paper(id: id) else { return false }
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("margins-conv-\(UUID())")
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("lunta-conv-\(UUID())")
         defer { try? FileManager.default.removeItem(at: tmp) }
         var result: ConversionResult?
         // arXiv: the HTML arXiv renders from the LaTeX (real equations, figures) beats the PDF
@@ -632,7 +632,7 @@ final class LibraryModel: ObservableObject {
                 }
             }
         }
-        NSLog("Margins: reading view %@ for %@", result == nil ? "FAILED" : "ok", p.meta.title.prefix(60).description)
+        NSLog("Lunta: reading view %@ for %@", result == nil ? "FAILED" : "ok", p.meta.title.prefix(60).description)
         guard let r = result, let epub = try? Data(contentsOf: r.file) else {
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "noFullText.\(id)")
             return false
@@ -657,7 +657,7 @@ final class LibraryModel: ObservableObject {
             .filter { $0.hasPdf || UserDefaults.standard.double(forKey: "noFullText.\($0.id)") < weekAgo }
             // papers with a PDF first (no network needed), then PubMed Central papers, then the rest
             .sorted { ($0.hasPdf ? 0 : 1, !$0.meta.pmcid.isEmpty ? 0 : 1) < ($1.hasPdf ? 0 : 1, !$1.meta.pmcid.isEmpty ? 0 : 1) }
-        NSLog("Margins: reading views to make: %d (of %d papers)", todo.count, all.count)
+        NSLog("Lunta: reading views to make: %d (of %d papers)", todo.count, all.count)
         guard !todo.isEmpty else { return }
         var done = 0, ok = 0
         await withTaskGroup(of: Bool.self) { group in

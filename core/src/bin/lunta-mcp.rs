@@ -1,18 +1,18 @@
-//! Margins for agents: an MCP server (stdio) and a small command-line tool over the same library
+//! Lunta for agents: an MCP server (stdio) and a small command-line tool over the same library
 //! the apps use.
 //!
-//!   margins-mcp                     run as an MCP server (Claude Code, Claude Desktop, Cursor, …)
-//!   margins-mcp search <query>      search the library
-//!   margins-mcp show <id>           details of a paper
-//!   margins-mcp read <id> [query]   full text (or the passages matching a query)
-//!   margins-mcp cite <id>… [--style apa|vancouver|nature|bibtex|ris]
-//!   margins-mcp path <id> [pdf|epub|text]
+//!   lunta-mcp                     run as an MCP server (Claude Code, Claude Desktop, Cursor, …)
+//!   lunta-mcp search <query>      search the library
+//!   lunta-mcp show <id>           details of a paper
+//!   lunta-mcp read <id> [query]   full text (or the passages matching a query)
+//!   lunta-mcp cite <id>… [--style apa|vancouver|nature|bibtex|ris]
+//!   lunta-mcp path <id> [pdf|epub|text]
 //!
 //! The agent writes through its own change log (ops/agent-….jsonl), exactly like another device,
 //! so it can work while the Mac and iPhone apps are open, and its changes sync everywhere.
 
-use margins_core::model::*;
-use margins_core::{export, Library};
+use lunta_core::model::*;
+use lunta_core::{export, Library};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
@@ -27,7 +27,7 @@ fn home() -> PathBuf {
 }
 
 fn library_root() -> PathBuf {
-    if let Ok(p) = std::env::var("MARGINS_LIBRARY") {
+    if let Ok(p) = std::env::var("LUNTA_LIBRARY") {
         return PathBuf::from(p);
     }
     let cloud = home().join("Library/Mobile Documents/iCloud~com~cmlangseth~margins/Documents/Library");
@@ -40,9 +40,9 @@ fn library_root() -> PathBuf {
 fn open() -> Result<Arc<Library>, String> {
     let root = library_root();
     if !root.exists() {
-        return Err(format!("No Margins library at {} (open the Margins app once first)", root.display()));
+        return Err(format!("No Lunta library at {} (open the Lunta app once first)", root.display()));
     }
-    let cache = home().join("Library/Caches/Margins/agent");
+    let cache = home().join("Library/Caches/Lunta/agent");
     std::fs::create_dir_all(&cache).map_err(|e| e.to_string())?;
     // one stable id per machine, so the agent's changes form one log
     let idf = cache.join("device-id");
@@ -116,7 +116,7 @@ fn details(lib: &Library, p: &Paper) -> Value {
             "full_text": file(FileKind::Fulltext),
             "narration_audio": file(FileKind::Audio),
         },
-        "open_in_app": format!("margins://open?id={}", p.id),
+        "open_in_app": format!("lunta://open?id={}", p.id),
         "doi_link": if p.meta.doi.is_empty() { Value::Null } else { json!(format!("https://doi.org/{}", p.meta.doi)) },
     })
 }
@@ -235,7 +235,7 @@ fn tools() -> Value {
     }
     let ids = json!({"type": "array", "items": {"type": "string"}, "description": "Paper ids"});
     json!([
-        t("search_papers", "Search the user's Margins library (titles, authors, abstracts, full text, notes). Returns paper summaries with ids.",
+        t("search_papers", "Search the user's Lunta library (titles, authors, abstracts, full text, notes). Returns paper summaries with ids.",
           json!({"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}}), &["query"], true),
         t("list_papers", "List papers in the library, optionally filtered (unread, starred, tag, collection) and sorted.",
           json!({"unread": {"type": "boolean"}, "starred": {"type": "boolean"}, "tag": {"type": "string"},
@@ -252,7 +252,7 @@ fn tools() -> Value {
         t("library_overview", "Size of the library, its tags and collections.", json!({}), &[], true),
         t("find_new_papers", "Search published literature beyond the library (OpenAlex). Marks results already in the library.",
           json!({"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}}), &["query"], true),
-        t("add_paper", "Add a paper to the library by DOI, PubMed ID, PMCID, arXiv id or URL. Fetches its metadata and, when legally available, its open-access PDF. The Margins app makes the reading view.",
+        t("add_paper", "Add a paper to the library by DOI, PubMed ID, PMCID, arXiv id or URL. Fetches its metadata and, when legally available, its open-access PDF. The Lunta app makes the reading view.",
           json!({"identifier": {"type": "string"}, "fetch_pdf": {"type": "boolean", "default": true}}), &["identifier"], false),
         t("find_pdf", "Find and attach a legal open-access PDF for a paper in the library.", json!({"id": {"type": "string"}}), &["id"], false),
         t("tag_papers", "Add (or remove) a tag on papers.",
@@ -261,7 +261,7 @@ fn tools() -> Value {
           json!({"ids": ids, "collection": {"type": "string"}, "remove": {"type": "boolean", "default": false}}), &["ids", "collection"], false),
         t("set_status", "Mark papers read/unread and/or starred/unstarred.",
           json!({"ids": ids, "read": {"type": "boolean"}, "starred": {"type": "boolean"}}), &["ids"], false),
-        t("add_note", "Attach a note to a paper (shown in Margins on Mac and iPhone). Optionally quote the passage it refers to.",
+        t("add_note", "Attach a note to a paper (shown in Lunta on Mac and iPhone). Optionally quote the passage it refers to.",
           json!({"id": {"type": "string"}, "note": {"type": "string"}, "quote": {"type": "string"}}), &["id", "note"], false),
         t("update_paper", "Correct a paper's details. Only the fields given are changed.",
           json!({"id": {"type": "string"}, "title": {"type": "string"}, "authors": {"type": "array", "items": {"type": "string"}},
@@ -316,7 +316,7 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
             let p = need(&id)?;
             let Some(text) = full_text(lib, &id) else {
                 return Ok(json!({"id": id, "title": p.meta.title, "full_text": Value::Null,
-                    "note": "No full text yet (no reading view). The abstract is below; find_pdf may help, then open Margins to convert it.",
+                    "note": "No full text yet (no reading view). The abstract is below; find_pdf may help, then open Lunta to convert it.",
                     "abstract": p.meta.abstract_text}));
             };
             if let Some(q) = arg_str(a, "query") {
@@ -357,7 +357,7 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
         }
         "add_paper" => {
             let ident = arg_str(a, "identifier").ok_or("identifier is required")?;
-            let meta = margins_core::resolve_metadata(ident).map_err(|e| e.to_string())?;
+            let meta = lunta_core::resolve_metadata(ident).map_err(|e| e.to_string())?;
             if !meta.doi.is_empty() {
                 if let Some(p) = lib.find_by_doi(meta.doi.clone()) {
                     return Ok(json!({"already_in_library": true, "paper": summary(&p)}));
@@ -436,7 +436,7 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
 fn serve() {
     let lib = match open() {
         Ok(l) => l,
-        Err(e) => { eprintln!("margins-mcp: {e}"); std::process::exit(1); }
+        Err(e) => { eprintln!("lunta-mcp: {e}"); std::process::exit(1); }
     };
     // full text joins the search index in the background
     { let l = lib.clone(); std::thread::spawn(move || while matches!(l.index_fulltext(25), Ok(n) if n > 0) {}); }
@@ -456,8 +456,8 @@ fn serve() {
             "initialize" => Ok(json!({
                 "protocolVersion": params.get("protocolVersion").and_then(|v| v.as_str()).unwrap_or(PROTOCOL),
                 "capabilities": {"tools": {"listChanged": false}},
-                "serverInfo": {"name": "margins", "title": "Margins", "version": env!("CARGO_PKG_VERSION")},
-                "instructions": "Margins is the user's reference manager (scientific papers). Search or list papers to get ids, \
+                "serverInfo": {"name": "lunta", "title": "Lunta", "version": env!("CARGO_PKG_VERSION")},
+                "instructions": "Lunta is the user's reference manager (scientific papers). Search or list papers to get ids, \
                     read_paper to read full texts (use `query` for long papers), cite for references. Prefer reading the paper \
                     over answering from memory, and quote it. Changes you make sync to the user's Mac and iPhone.",
             })),
@@ -520,7 +520,7 @@ fn cli(args: &[String]) -> Result<(), String> {
             let k = match rest.get(1).map(|s| s.as_str()) { Some("epub") => FileKind::Epub, Some("text") => FileKind::Fulltext, _ => FileKind::Pdf };
             println!("{}", lib.file_path(id.clone(), k).ok_or("no such file")?)
         }
-        "help" | "--help" | "-h" => println!("{}", include_str!("margins-mcp.rs").lines().take(10).map(|l| l.trim_start_matches("//!").trim_start_matches(' ')).collect::<Vec<_>>().join("\n")),
+        "help" | "--help" | "-h" => println!("{}", include_str!("lunta-mcp.rs").lines().take(10).map(|l| l.trim_start_matches("//!").trim_start_matches(' ')).collect::<Vec<_>>().join("\n")),
         other => return Err(format!("unknown command {other} (try: help)")),
     }
     Ok(())
@@ -531,7 +531,7 @@ fn main() {
     if args.is_empty() || args[0] == "serve" {
         serve();
     } else if let Err(e) = cli(&args) {
-        eprintln!("margins-mcp: {e}");
+        eprintln!("lunta-mcp: {e}");
         std::process::exit(1);
     }
 }

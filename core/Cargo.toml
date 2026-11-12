@@ -1,12 +1,12 @@
 [package]
-name = "margins-core"
+name = "lunta-core"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Library, metadata, search, sync and citation core for the Margins reference manager"
+description = "Library, metadata, search, sync and citation core for the Lunta reference manager"
 
 [lib]
-name = "margins_core"
+name = "lunta_core"
 crate-type = ["lib", "staticlib", "cdylib"]
 
 [[bin]]
@@ -14,8 +14,8 @@ name = "uniffi-bindgen"
 path = "src/bin/uniffi-bindgen.rs"
 
 [[bin]]
-name = "margins-mcp"
-path = "src/bin/margins-mcp.rs"
+name = "lunta-mcp"
+path = "src/bin/lunta-mcp.rs"
 
 [[bin]]
 name = "paper2epub"
@@ -45,6 +45,6 @@ lto = true
 [features]
 # The paper -> EPUB converter (core/src/convert). On by default for `cargo build/test/run`;
 # scripts/build-core.sh builds the Apple static library with --no-default-features, so the
-# apps' MarginsCore stays as it was (they keep using the Swift Paper2EpubKit).
+# apps' LuntaCore stays as it was (they keep using the Swift Paper2EpubKit).
 default = ["convert"]
 convert = ["dep:quick-xml", "dep:image", "dep:ab_glyph", "dep:ttf-parser", "dep:url"]

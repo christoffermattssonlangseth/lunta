@@ -1,7 +1,7 @@
 use super::*;
 
 fn tmp() -> PathBuf {
-    let d = std::env::temp_dir().join(format!("margins-test-{}", uuid::Uuid::new_v4()));
+    let d = std::env::temp_dir().join(format!("lunta-test-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&d).unwrap();
     d
 }
@@ -194,7 +194,7 @@ const BIB: &str = r#"
   number = {8},
   pages = {1990--2009},
   doi = {10.1016/j.cell.2024.02.030},
-  file = {Full Text PDF:/tmp/margins-import-test/kukanja.pdf:application/pdf},
+  file = {Full Text PDF:/tmp/lunta-import-test/kukanja.pdf:application/pdf},
   keywords = {multiple sclerosis, spatial transcriptomics},
   mendeley-tags = {MS,ISS}
 }
@@ -221,7 +221,7 @@ fn parses_bibtex_exports() {
     assert_eq!(k.meta.date, "2024-04");
     assert_eq!(k.meta.pages, "1990-2009");
     assert_eq!(k.meta.doi, "10.1016/j.cell.2024.02.030");
-    assert_eq!(k.files, vec!["/tmp/margins-import-test/kukanja.pdf"]);
+    assert_eq!(k.files, vec!["/tmp/lunta-import-test/kukanja.pdf"]);
     assert_eq!(k.tags, vec!["MS", "ISS"]);
     assert_eq!(k.meta.keywords.len(), 2);
     let v = &e[1];
@@ -245,8 +245,8 @@ fn parses_ris_exports() {
 
 #[test]
 fn import_merges_duplicates_and_copies_pdfs() {
-    std::fs::create_dir_all("/tmp/margins-import-test").unwrap();
-    std::fs::write("/tmp/margins-import-test/kukanja.pdf", b"%PDF-1.7 test").unwrap();
+    std::fs::create_dir_all("/tmp/lunta-import-test").unwrap();
+    std::fs::write("/tmp/lunta-import-test/kukanja.pdf", b"%PDF-1.7 test").unwrap();
     let root = tmp().join("lib");
     let lib = open(&root, "mac");
     lib.add_paper(sample(), None, None, None).unwrap(); // already in the library, without PDF
@@ -266,8 +266,8 @@ fn import_merges_duplicates_and_copies_pdfs() {
 
 #[test]
 fn opens_epub_for_reading() {
-    // an EPUB made by the converter: MARGINS_TEST_EPUB=/path/to/attention-is-all-you-need.epub cargo test
-    let Ok(path) = std::env::var("MARGINS_TEST_EPUB") else { return };
+    // an EPUB made by the converter: LUNTA_TEST_EPUB=/path/to/attention-is-all-you-need.epub cargo test
+    let Ok(path) = std::env::var("LUNTA_TEST_EPUB") else { return };
     let src = std::path::Path::new(&path);
     let root = tmp().join("lib");
     let lib = open(&root, "mac");

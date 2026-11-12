@@ -1,12 +1,12 @@
 #!/bin/zsh
 # Builds the Rust core for iPhone, iPhone Simulator and Mac, generates the Swift bindings with
-# UniFFI, and packages everything as apple/MarginsCore (a local Swift package).
+# UniFFI, and packages everything as apple/LuntaCore (a local Swift package).
 set -euo pipefail
 export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 
 ROOT=${0:A:h:h}
 CORE=$ROOT/core
-PKG=$ROOT/apple/MarginsCore
+PKG=$ROOT/apple/LuntaCore
 PROFILE=${PROFILE:-release}
 TARGETS=(aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin)
 
@@ -23,21 +23,21 @@ echo "› generating Swift bindings"
 GEN=$CORE/target/uniffi-swift
 rm -rf $GEN && mkdir -p $GEN
 cargo run --quiet --no-default-features --bin uniffi-bindgen -- generate \
-  --library $CORE/target/aarch64-apple-darwin/$PROFILE/libmargins_core.dylib \
+  --library $CORE/target/aarch64-apple-darwin/$PROFILE/liblunta_core.dylib \
   --language swift --out-dir $GEN
 
 HDR=$CORE/target/uniffi-headers
 rm -rf $HDR && mkdir -p $HDR
-cp $GEN/margins_coreFFI.h $HDR/
-cp $GEN/margins_coreFFI.modulemap $HDR/module.modulemap
+cp $GEN/lunta_coreFFI.h $HDR/
+cp $GEN/lunta_coreFFI.modulemap $HDR/module.modulemap
 
 echo "› creating XCFramework"
-rm -rf $PKG/MarginsCoreFFI.xcframework
-mkdir -p $PKG/Sources/MarginsCore
+rm -rf $PKG/LuntaCoreFFI.xcframework
+mkdir -p $PKG/Sources/LuntaCore
 xcodebuild -create-xcframework \
-  -library $CORE/target/aarch64-apple-ios/$PROFILE/libmargins_core.a -headers $HDR \
-  -library $CORE/target/aarch64-apple-ios-sim/$PROFILE/libmargins_core.a -headers $HDR \
-  -library $CORE/target/aarch64-apple-darwin/$PROFILE/libmargins_core.a -headers $HDR \
-  -output $PKG/MarginsCoreFFI.xcframework >/dev/null
-cp $GEN/margins_core.swift $PKG/Sources/MarginsCore/MarginsCore.swift
+  -library $CORE/target/aarch64-apple-ios/$PROFILE/liblunta_core.a -headers $HDR \
+  -library $CORE/target/aarch64-apple-ios-sim/$PROFILE/liblunta_core.a -headers $HDR \
+  -library $CORE/target/aarch64-apple-darwin/$PROFILE/liblunta_core.a -headers $HDR \
+  -output $PKG/LuntaCoreFFI.xcframework >/dev/null
+cp $GEN/lunta_core.swift $PKG/Sources/LuntaCore/LuntaCore.swift
 echo "✓ $PKG"

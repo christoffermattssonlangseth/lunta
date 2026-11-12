@@ -1,5 +1,5 @@
 import SwiftUI
-import MarginsCore
+import LuntaCore
 
 struct LibraryView: View {
     @EnvironmentObject var model: LibraryModel
@@ -117,7 +117,7 @@ struct LibraryView: View {
                 Button("Add") { let i = input; input = ""; Task { await model.add(i) } }
                 Button("Cancel", role: .cancel) { input = "" }
             }
-            .alert("Margins", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
+            .alert("Lunta", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
                 Button("OK") { model.errorMessage = nil }
             } message: { Text(model.errorMessage ?? "") }
     }
@@ -128,15 +128,15 @@ struct LibraryView: View {
               ForEach(model.papers) { p in
                 NavigationLink(value: p.id) { PaperRow(paper: p, snippet: model.snippets[p.id]) }
                     .id(p.id)
-                    .listRowBackground(reveal == p.id ? Color.marginsTeal.opacity(0.18) : nil)
+                    .listRowBackground(reveal == p.id ? Color.luntaTeal.opacity(0.18) : nil)
                     // only from the right, so a swipe in from the left can't change a paper by accident
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button { deleting = p } label: { Label("Delete", systemImage: "trash") }
                             .tint(.red)
                         Button { organizing = ShareTargetIOS(id: p.id) } label: { Label("Folders & Tags", systemImage: "folder") }
-                            .tint(.marginsTeal)
+                            .tint(.luntaTeal)
                         Button { model.toggleStar(p) } label: { Label(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") }
-                            .tint(.marginsCopper)
+                            .tint(.luntaCopper)
                         Button { model.setRead(p, !p.read) } label: { Label(p.read ? "Unread" : "Read", systemImage: p.read ? "circle" : "checkmark.circle") }
                             .tint(.gray)
                     }
@@ -163,7 +163,7 @@ struct LibraryView: View {
               if !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
                   Button { model.searchBeyondLibrary() } label: {
                       Label("Search beyond your library for “\(model.query)”", systemImage: "globe.europe.africa")
-                          .foregroundStyle(Color.marginsTeal)
+                          .foregroundStyle(Color.luntaTeal)
                   }
               }
             }
@@ -231,7 +231,7 @@ struct LibraryHome: View {
                 }
                 Button {
                     prompt = NameRequest(title: "New Folder", action: "Create") { _ = model.newFolder($0) }
-                } label: { Label("New Folder", systemImage: "plus").foregroundStyle(Color.marginsTeal) }
+                } label: { Label("New Folder", systemImage: "plus").foregroundStyle(Color.luntaTeal) }
             }
             Section("Smart Folders") {
                 ForEach(model.smartFolders) { f in
@@ -241,7 +241,7 @@ struct LibraryHome: View {
                             Button("Delete", systemImage: "trash", role: .destructive) { model.deleteSmartFolder(f.id) }
                         }
                 }
-                Button { newSmart = true } label: { Label("New Smart Folder", systemImage: "plus").foregroundStyle(Color.marginsTeal) }
+                Button { newSmart = true } label: { Label("New Smart Folder", systemImage: "plus").foregroundStyle(Color.luntaTeal) }
             }
             if !model.tags.isEmpty {
                 Section("Tags") {
@@ -254,7 +254,7 @@ struct LibraryHome: View {
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle("Margins")
+        .navigationTitle("Lunta")
         .namePrompt($prompt)
         .sheet(isPresented: $managing) { ManageFoldersView().environmentObject(model) }
         .sheet(isPresented: $newSmart) { SmartFolderEditor(folder: SmartFolder(), isNew: true).environmentObject(model) }
@@ -274,7 +274,7 @@ struct LibraryHome: View {
                 Label {
                     Text(title)
                 } icon: {
-                    Image(systemName: icon).foregroundStyle(Color.marginsTeal)
+                    Image(systemName: icon).foregroundStyle(Color.luntaTeal)
                 }
                 .padding(.leading, CGFloat(indent) * 18)
                 Spacer()
@@ -282,7 +282,7 @@ struct LibraryHome: View {
                     if badge {
                         Text("\(count)").font(.footnote.weight(.semibold).monospacedDigit()).foregroundStyle(.white)
                             .padding(.horizontal, 7).padding(.vertical, 2)
-                            .background(Capsule().fill(Color.marginsTeal))
+                            .background(Capsule().fill(Color.luntaTeal))
                     } else {
                         Text("\(count)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
                     }
@@ -300,9 +300,9 @@ struct PaperRow: View {
         HStack(alignment: .top, spacing: 10) {
             Group {
                 if paper.starred {
-                    Image(systemName: "star.fill").font(.caption2).foregroundStyle(Color.marginsCopper)
+                    Image(systemName: "star.fill").font(.caption2).foregroundStyle(Color.luntaCopper)
                 } else if !paper.read {
-                    Circle().fill(Color.marginsTeal).frame(width: 8, height: 8)
+                    Circle().fill(Color.luntaTeal).frame(width: 8, height: 8)
                 } else {
                     Color.clear.frame(width: 8, height: 8)
                 }
@@ -319,8 +319,8 @@ struct PaperRow: View {
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
                 HStack(spacing: 4) {
-                    if paper.hasEpub { Pill(text: "Read", icon: "book", color: .marginsTeal) }
-                    if paper.hasPdf { Pill(text: "PDF", color: .marginsCopper) }
+                    if paper.hasEpub { Pill(text: "Read", icon: "book", color: .luntaTeal) }
+                    if paper.hasPdf { Pill(text: "PDF", color: .luntaCopper) }
                     if paper.hasAudio { Pill(text: "Audio", icon: "waveform", color: .purple) }
                     if paper.annotationCount > 0 { Pill(text: "\(paper.annotationCount)", icon: "highlighter", color: .secondary) }
                 }
@@ -350,7 +350,7 @@ struct DiscoverListIOS: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color.marginsTeal.opacity(0.05))
+        .background(Color.luntaTeal.opacity(0.05))
     }
 }
 

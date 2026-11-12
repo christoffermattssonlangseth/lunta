@@ -1,5 +1,5 @@
 import SwiftUI
-import MarginsCore
+import LuntaCore
 
 /// Edit a paper's details. Can re-read them from the PDF (on-device) or fetch them by DOI.
 struct MetadataEditor: View {

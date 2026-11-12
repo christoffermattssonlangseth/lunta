@@ -1,5 +1,5 @@
 import SwiftUI
-import MarginsCore
+import LuntaCore
 
 /// Navigation value that opens a paper in the reader (a plain id opens its info page).
 struct ReadTarget: Hashable { let id: String }
@@ -25,7 +25,7 @@ struct PaperInfoView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 6) {
-                        if !p.meta.journal.isEmpty { Pill(text: p.meta.journal, color: .marginsTeal) }
+                        if !p.meta.journal.isEmpty { Pill(text: p.meta.journal, color: .luntaTeal) }
                         if !p.meta.year.isEmpty { Pill(text: p.meta.year, color: .secondary) }
                     }
                     Text(p.meta.title).font(.title3.weight(.bold)).textSelection(.enabled)
@@ -70,7 +70,7 @@ struct PaperInfoView: View {
                 if !embedded { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
                 ToolbarItem(placement: .topBarLeading) {
                     Button { model.toggleStar(p) } label: { Image(systemName: p.starred ? "star.fill" : "star") }
-                        .tint(.marginsCopper)
+                        .tint(.luntaCopper)
                 }
                 ToolbarItem(placement: .topBarLeading) {
                     Button { editing = true } label: { Image(systemName: "pencil") }
@@ -94,16 +94,16 @@ struct PaperInfoView: View {
                 NavigationLink(value: ReadTarget(id: p.id)) {
                     Label("Read", systemImage: "book").frame(minWidth: 90)
                 }
-                .buttonStyle(.borderedProminent).tint(.marginsTeal).controlSize(.large)
+                .buttonStyle(.borderedProminent).tint(.luntaTeal).controlSize(.large)
             }
             if !p.hasPdf {
                 Button {
                     run("Searching open-access sources…") {
                         if let s = await model.findPDF(p.id) { note = "PDF found via \(s)." }
-                        else { note = "No open-access PDF found. Open the publisher page and share the PDF to Margins." }
+                        else { note = "No open-access PDF found. Open the publisher page and share the PDF to Lunta." }
                     }
                 } label: { Label("Find PDF", systemImage: "magnifyingglass") }
-                .buttonStyle(canRead && p.hasEpub ? AnyButtonStyle(.bordered) : AnyButtonStyle(.borderedProminent)).tint(.marginsTeal)
+                .buttonStyle(canRead && p.hasEpub ? AnyButtonStyle(.bordered) : AnyButtonStyle(.borderedProminent)).tint(.luntaTeal)
             }
             if !p.hasEpub && (p.hasPdf || !p.meta.pmcid.isEmpty || !p.meta.doi.isEmpty) {
                 Button {

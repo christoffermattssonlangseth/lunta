@@ -110,7 +110,7 @@ pub struct ConversionResult {
     pub words: usize,
     pub images: usize,
     pub notes: Vec<String>,
-    /// Metadata of the converted paper (for reference managers such as Margins).
+    /// Metadata of the converted paper (for reference managers such as Lunta).
     pub meta: PaperMeta,
     /// Plain text of the whole paper, for full-text search.
     pub fulltext: String,

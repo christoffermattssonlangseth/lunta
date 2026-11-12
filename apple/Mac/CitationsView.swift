@@ -1,6 +1,6 @@
 import SwiftUI
 import Security
-import MarginsCore
+import LuntaCore
 
 /// Window › Citations in Word & Google Docs…: sets up the add-ins that cite from the library.
 struct CitationsView: View {
@@ -12,21 +12,21 @@ struct CitationsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Cite papers from your Margins library while you write. Citations update when you change style, and the reference list is built for you (APA, Vancouver or Nature).")
+                Text("Cite papers from your Lunta library while you write. Citations update when you change style, and the reference list is built for you (APA, Vancouver or Nature).")
                     .foregroundStyle(.secondary)
 
                 GroupBox {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("Microsoft Word", systemImage: "doc.richtext").font(.headline)
-                        step(1, "Let Word talk to Margins securely (adds Margins' own certificate, for this Mac only; macOS asks for your password).",
+                        step(1, "Let Word talk to Lunta securely (adds Lunta' own certificate, for this Mac only; macOS asks for your password).",
                              done: trusted) {
                             Button(trusted ? "Done" : "Trust Certificate…") { trust() }.disabled(trusted)
                         }
-                        step(2, "Add the Margins add-in to Word.", done: wordInstalled) {
+                        step(2, "Add the Lunta add-in to Word.", done: wordInstalled) {
                             Button(wordInstalled ? "Reinstall" : "Install in Word") { installWord() }
                         }
-                        step(3, "Quit and reopen Word. Click **Cite** on the Home tab (or Insert › Add-ins › My Add-ins › Margins Citations). Search, pick papers, Insert Citation. Insert Bibliography where the references go.", done: false) { EmptyView() }
-                        Text("Margins has to be open while you cite.").font(.caption).foregroundStyle(.secondary)
+                        step(3, "Quit and reopen Word. Click **Cite** on the Home tab (or Insert › Add-ins › My Add-ins › Lunta Citations). Search, pick papers, Insert Citation. Insert Bibliography where the references go.", done: false) { EmptyView() }
+                        Text("Lunta has to be open while you cite.").font(.caption).foregroundStyle(.secondary)
                     }
                     .padding(6)
                 }
@@ -41,7 +41,7 @@ struct CitationsView: View {
                         step(3, "Click + › HTML, name it **Sidebar**, and replace its contents with this (it includes your pairing key):", done: false) {
                             Button(copied == "html" ? "Copied" : "Copy Sidebar.html") { copy(CitationsSetup.googleSidebar(), "html") }
                         }
-                        step(4, "Save, reload the document, then use the new **Margins › Cite…** menu. Allow the script when Google asks; if Chrome asks to let the page reach devices on your network, allow it.", done: false) { EmptyView() }
+                        step(4, "Save, reload the document, then use the new **Lunta › Cite…** menu. Allow the script when Google asks; if Chrome asks to let the page reach devices on your network, allow it.", done: false) { EmptyView() }
                     }
                     .padding(6)
                 }
@@ -56,7 +56,7 @@ struct CitationsView: View {
     private func step<V: View>(_ n: Int, _ text: LocalizedStringKey, done: Bool, @ViewBuilder action: () -> V) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: done ? "checkmark.circle.fill" : "\(n).circle")
-                .foregroundStyle(done ? Color.marginsTeal : .secondary).font(.title3)
+                .foregroundStyle(done ? Color.luntaTeal : .secondary).font(.title3)
             Text(text).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             action()
@@ -83,7 +83,7 @@ struct CitationsView: View {
             wordInstalled = true
             message = "Installed. Quit and reopen Word."
         } catch {
-            message = "Couldn't install into Word: \(error.localizedDescription). If macOS asked whether Margins may access other apps' data, allow it and try again."
+            message = "Couldn't install into Word: \(error.localizedDescription). If macOS asked whether Lunta may access other apps' data, allow it and try again."
         }
     }
 }
@@ -108,7 +108,7 @@ enum CitationsSetup {
         try FileManager.default.copyItem(at: resources.appendingPathComponent("word/manifest.xml"), to: dest)
     }
 
-    /// True when this Mac trusts the localhost certificate Margins serves.
+    /// True when this Mac trusts the localhost certificate Lunta serves.
     static func isTrusted() -> Bool {
         guard CitationServer.ensureCertificates(),
               let pem = try? String(contentsOf: CitationServer.tlsDir.appendingPathComponent("server.pem"), encoding: .utf8),
@@ -119,7 +119,7 @@ enum CitationsSetup {
         return SecTrustEvaluateWithError(trust, nil)
     }
 
-    /// Adds Margins' local CA to the login keychain as trusted for SSL (macOS asks for the password).
+    /// Adds Lunta' local CA to the login keychain as trusted for SSL (macOS asks for the password).
     static func trustCertificate() async -> Bool {
         guard CitationServer.ensureCertificates() else { return false }
         return await Task.detached {

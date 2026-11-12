@@ -1,5 +1,5 @@
 import SwiftUI
-import MarginsCore
+import LuntaCore
 
 // Library cleanup: papers whose details look wrong (fixed from the DOI, or read from the PDF on
 // the device) and papers that are in the library twice (merged into one, keeping everything).
@@ -172,7 +172,7 @@ extension LibraryModel {
     }
 
     /// Papers whose text runs words together (PDFs that position words without space characters,
-    /// converted before Margins could tell). Remaking their reading view fixes them.
+    /// converted before Lunta could tell). Remaking their reading view fixes them.
     func runTogetherPapers() async -> [Paper] {
         let papers = everyPaper.filter { $0.hasPdf && $0.hasEpub }
         let lib = self.lib
@@ -250,7 +250,7 @@ struct CleanupView: View {
                             .disabled(remaking).font(.callout)
                     }
                 } footer: {
-                    Text("These were converted from PDFs that leave out the spaces between words. Margins now puts them back; remaking the reading view fixes the text, search and narration.")
+                    Text("These were converted from PDFs that leave out the spaces between words. Lunta now puts them back; remaking the reading view fixes the text, search and narration.")
                 }
             }
             Section {
@@ -297,13 +297,13 @@ struct CleanupView: View {
                 Button { keep[g.id] = p.id } label: {
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: keep[g.id] == p.id ? "largecircle.fill.circle" : "circle")
-                            .foregroundStyle(Color.marginsTeal)
+                            .foregroundStyle(Color.luntaTeal)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(p.meta.title.isEmpty ? "Untitled" : p.meta.title).lineLimit(2)
                             Text(line(p)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                             HStack(spacing: 4) {
-                                if p.hasPdf { Pill(text: "PDF", color: .marginsCopper) }
-                                if p.hasEpub { Pill(text: "Read", icon: "book", color: .marginsTeal) }
+                                if p.hasPdf { Pill(text: "PDF", color: .luntaCopper) }
+                                if p.hasEpub { Pill(text: "Read", icon: "book", color: .luntaTeal) }
                                 if p.annotationCount > 0 { Pill(text: "\(p.annotationCount)", icon: "highlighter", color: .secondary) }
                             }
                         }
@@ -318,7 +318,7 @@ struct CleanupView: View {
                     working.insert(g.id)
                     Task { await model.merge(g, keep: k); working.remove(g.id); refresh() }
                 }
-                .buttonStyle(.borderedProminent).tint(.marginsTeal).disabled(working.contains(g.id))
+                .buttonStyle(.borderedProminent).tint(.luntaTeal).disabled(working.contains(g.id))
                 Button("Not Duplicates") { model.ignoreDuplicates(g); refresh() }.buttonStyle(.bordered)
             }
             .font(.callout)
@@ -332,7 +332,7 @@ struct CleanupView: View {
                 Text(i.paper.meta.title.isEmpty ? "Untitled" : i.paper.meta.title).lineLimit(2)
                 Text(line(i.paper)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Text(notes[i.id] ?? i.problems.joined(separator: ", ").capitalizedFirst)
-                    .font(.caption).foregroundStyle(notes[i.id] == nil ? Color.marginsCopper : .secondary)
+                    .font(.caption).foregroundStyle(notes[i.id] == nil ? Color.luntaCopper : .secondary)
             }
             Spacer()
             if working.contains(i.id) {

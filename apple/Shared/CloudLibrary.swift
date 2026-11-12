@@ -172,7 +172,7 @@ enum ReaderAssets {
     (function(){
       function fix(){
         // in page-turning mode the limit is one column, wherever on the page it sits
-        var paged = window.marginsPaged && window.marginsPaged();
+        var paged = window.luntaPaged && window.luntaPaged();
         var W = paged ? document.body.getBoundingClientRect().width : document.documentElement.clientWidth;
         if (paged) { var cs = getComputedStyle(document.body); W = parseFloat(cs.columnWidth) || W; }
         var all = document.body ? document.body.getElementsByTagName('*') : [];
@@ -191,7 +191,7 @@ enum ReaderAssets {
           }
         }
       }
-      window.marginsFixOverflow = fix;
+      window.luntaFixOverflow = fix;
       fix();
       window.addEventListener('load', fix);
       setTimeout(fix, 600);
@@ -214,7 +214,7 @@ enum ReaderAssets {
       var t = null;
       function report(){
         var cur = null, hs = document.querySelectorAll('h1[id],h2[id],h3[id],.section-start');
-        for (var i = 0; i < hs.length; i++) { var r = hs[i].getBoundingClientRect(); if (window.marginsPaged && window.marginsPaged() ? r.left < window.innerWidth - 1 : r.top < 140) cur = hs[i].id; else break; }
+        for (var i = 0; i < hs.length; i++) { var r = hs[i].getBoundingClientRect(); if (window.luntaPaged && window.luntaPaged() ? r.left < window.innerWidth - 1 : r.top < 140) cur = hs[i].id; else break; }
         if (cur) window.webkit.messageHandlers.pos.postMessage(cur);
       }
       window.addEventListener('scroll', function(){ clearTimeout(t); t = setTimeout(report, 90); });
@@ -224,7 +224,7 @@ enum ReaderAssets {
     /// Narration helpers: list readable units in reading order, highlight one, report taps.
     static let narrationJS = #"""
     (function(){
-      window.marginsNarration = function(includeCaptions){
+      window.luntaNarration = function(includeCaptions){
         var out = [], n = 0;
         var skip = '.references, ol.refs, .refs, .notes, table, .affiliations, .frontmatter, .license, .doi, .journal, nav, .supp';
         var els = document.querySelectorAll('h1, h2, h3, h4, p, li, figcaption, .titlepage .authors');
@@ -247,16 +247,16 @@ enum ReaderAssets {
         }
         return JSON.stringify(out);
       };
-      window.marginsHighlight = function(id){
+      window.luntaHighlight = function(id){
         document.querySelectorAll('.narr-current').forEach(function(e){ e.classList.remove('narr-current'); });
         var e = document.getElementById(id);
         if (e) { e.classList.add('narr-current'); e.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
       };
-      window.marginsListening = function(on){
+      window.luntaListening = function(on){
         document.body.classList.toggle('listening', !!on);
         if (!on) document.querySelectorAll('.narr-current').forEach(function(e){ e.classList.remove('narr-current'); });
       };
-      window.marginsFirstVisible = function(){
+      window.luntaFirstVisible = function(){
         var els = document.querySelectorAll('[id^="narr-"], h1[id], h2[id], h3[id], p[id], li[id]');
         for (var i = 0; i < els.length; i++) { var r = els[i].getBoundingClientRect(); if (r.bottom > 60 && r.right > 0) return els[i].id; }
         return '';

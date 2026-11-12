@@ -1,5 +1,5 @@
 import SwiftUI
-import MarginsCore
+import LuntaCore
 #if os(macOS)
 import AppKit
 #else
@@ -79,7 +79,7 @@ struct SharePanel: View {
                 }
             }
             if let copied {
-                Label("Copied \(copied)", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(Color.marginsTeal)
+                Label("Copied \(copied)", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(Color.luntaTeal)
             }
         }
         .padding(18)
@@ -99,7 +99,7 @@ struct SharePanel: View {
 
     private func row(_ title: String, _ icon: String, _ detail: String?) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon).frame(width: 22).foregroundStyle(Color.marginsTeal)
+            Image(systemName: icon).frame(width: 22).foregroundStyle(Color.luntaTeal)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).foregroundStyle(.primary)
                 if let detail { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
@@ -118,8 +118,8 @@ struct SharePanel: View {
             copied = title
         } label: {
             Text(title).font(.callout).padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Color.marginsTeal.opacity(0.12), in: Capsule())
-                .foregroundStyle(Color.marginsTeal)
+                .background(Color.luntaTeal.opacity(0.12), in: Capsule())
+                .foregroundStyle(Color.luntaTeal)
         }
     }
 
@@ -140,7 +140,7 @@ struct SharePanel: View {
 
     /// Copies files under readable names ("Albanese 2016 - Cerebrospinal fluid lactate….pdf"); APFS makes these copies instant.
     private func prepare() async {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Margins Share", isDirectory: true)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Lunta Share", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var p: [URL] = [], e: [URL] = []
         for paper in papers {
@@ -148,7 +148,7 @@ struct SharePanel: View {
             if paper.hasPdf, let src = await model.ensureLocal(paper.id, .pdf) { if let u = Self.copy(src, to: dir, name: name + ".pdf") { p.append(u) } }
             if paper.hasEpub, let src = await model.ensureLocal(paper.id, .epub) { if let u = Self.copy(src, to: dir, name: name + ".epub") { e.append(u) } }
         }
-        let b = dir.appendingPathComponent(papers.count == 1 ? Self.fileName(papers[0]) + ".bib" : "Margins bibliography (\(papers.count) papers).bib")
+        let b = dir.appendingPathComponent(papers.count == 1 ? Self.fileName(papers[0]) + ".bib" : "Lunta bibliography (\(papers.count) papers).bib")
         try? model.bibtex(ids).write(to: b, atomically: true, encoding: .utf8)
         pdfs = p
         epubs = e

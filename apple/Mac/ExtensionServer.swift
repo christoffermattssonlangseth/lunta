@@ -1,8 +1,8 @@
 import Foundation
 import Network
-import MarginsCore
+import LuntaCore
 
-/// Local endpoint for the Margins browser extension, on 127.0.0.1:47480 only.
+/// Local endpoint for the Lunta browser extension, on 127.0.0.1:47480 only.
 ///
 ///   GET  /status?doi=…&title=…   → {"inLibrary":bool,"id":…,"hasPdf":bool,"hasReadingView":bool,"title":…}
 ///   POST /save   {doi,title,authors,journal,date,url,abstract}  → status JSON of the saved paper
@@ -115,7 +115,7 @@ final class ExtensionServer {
         let fromWebPage = origin.hasPrefix("http://") || origin.hasPrefix("https://") || origin == "null"
         if r.method == "OPTIONS" { return fromWebPage ? (403, [:]) : (200, [:]) }
         guard !fromWebPage, r.headers["x-margins-client"] == "extension" else {
-            return (403, ["error": "only the Margins browser extension may use this endpoint"])
+            return (403, ["error": "only the Lunta browser extension may use this endpoint"])
         }
         guard let model else { return (503, ["error": "library not open"]) }
         switch (r.method, r.path) {

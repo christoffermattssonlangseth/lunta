@@ -1,5 +1,5 @@
 import SwiftUI
-import MarginsCore
+import LuntaCore
 
 extension DiscoverHit: Identifiable {
     public var id: String { meta.doi.isEmpty ? meta.title : meta.doi }
@@ -9,17 +9,17 @@ extension DiscoverHit: Identifiable {
 struct BeyondBanner: View {
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "globe.europe.africa.fill").font(.title2).foregroundStyle(Color.marginsTeal)
+            Image(systemName: "globe.europe.africa.fill").font(.title2).foregroundStyle(Color.luntaTeal)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Beyond your library").font(.headline)
-                Text("Searching 250 million papers on OpenAlex. Add any of them to Margins.")
+                Text("Searching 250 million papers on OpenAlex. Add any of them to Lunta.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.marginsTeal.opacity(0.10)))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.marginsTeal.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.luntaTeal.opacity(0.10)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.luntaTeal.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
     }
 }
 
@@ -91,7 +91,7 @@ struct DiscoverRow: View {
             }
             Spacer(minLength: 6)
             if let id = model.libraryID(of: hit) {
-                OpenAddedPaper(id: id, compact: true).tint(.marginsTeal)
+                OpenAddedPaper(id: id, compact: true).tint(.luntaTeal)
             } else if adding {
                 ProgressView().controlSize(.small)
             } else {
@@ -99,7 +99,7 @@ struct DiscoverRow: View {
                     adding = true
                     Task { await model.addDiscovered(hit); adding = false }
                 } label: { Label("Add", systemImage: "plus.circle.fill").labelStyle(.iconOnly).font(.title3) }
-                .buttonStyle(.borderless).foregroundStyle(Color.marginsTeal)
+                .buttonStyle(.borderless).foregroundStyle(Color.luntaTeal)
                 .help("Add to your library")
             }
         }
@@ -119,7 +119,7 @@ struct DiscoverDetail: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 6) {
                     if model.libraryID(of: hit) == nil {
-                        Pill(text: "Not in your library", icon: "globe", color: .marginsTeal)
+                        Pill(text: "Not in your library", icon: "globe", color: .luntaTeal)
                     }
                     if hit.openAccess { Pill(text: "Open access", icon: "lock.open", color: .green) }
                 }
@@ -132,26 +132,26 @@ struct DiscoverDetail: View {
                     .font(.caption).foregroundStyle(.secondary)
                 if let id = model.libraryID(of: hit) {
                     HStack(spacing: 10) {
-                        OpenAddedPaper(id: id).tint(.marginsTeal)
+                        OpenAddedPaper(id: id).tint(.luntaTeal)
                         if let showInLibrary {
                             Button { showInLibrary(id) } label: { Label("Show in Library", systemImage: "books.vertical") }
-                                .buttonStyle(.bordered).tint(.marginsTeal)
+                                .buttonStyle(.bordered).tint(.luntaTeal)
                         }
                     }
                     Label("In your library", systemImage: "checkmark.circle.fill")
-                        .font(.footnote).foregroundStyle(Color.marginsTeal)
+                        .font(.footnote).foregroundStyle(Color.luntaTeal)
                 } else {
                     Button {
                         adding = true
                         Task { await model.addDiscovered(hit); adding = false }
                     } label: { Label(adding ? "Adding…" : "Add to Library", systemImage: "plus") }
-                    .buttonStyle(.borderedProminent).tint(.marginsTeal).disabled(adding)
+                    .buttonStyle(.borderedProminent).tint(.luntaTeal).disabled(adding)
                 }
                 if !hit.meta.abstractText.isEmpty {
                     Card(title: "Abstract") { Text(hit.meta.abstractText).lineSpacing(3).textSelection(.enabled) }
                 }
                 if !hit.meta.doi.isEmpty, let u = URL(string: "https://doi.org/\(hit.meta.doi)") {
-                    Link("doi:\(hit.meta.doi)", destination: u).font(.callout).tint(.marginsTeal)
+                    Link("doi:\(hit.meta.doi)", destination: u).font(.callout).tint(.luntaTeal)
                 }
             }
             .padding(22)

@@ -1,4 +1,4 @@
-// Margins extension: talks to the Margins Mac app on 127.0.0.1:47480 (the app must be running).
+// Lunta extension: talks to the Lunta Mac app on 127.0.0.1:47480 (the app must be running).
 const API = "http://127.0.0.1:47480";
 
 async function api(path, options = {}) {
@@ -6,10 +6,10 @@ async function api(path, options = {}) {
   try {
     r = await fetch(API + path, { ...options, headers: { ...(options.headers || {}), "X-Margins-Client": "extension" } });
   } catch (e) {
-    throw new Error("Margins isn't running. Open the Margins app and try again.");
+    throw new Error("Lunta isn't running. Open the Lunta app and try again.");
   }
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || `Margins answered ${r.status}`);
+  if (!r.ok) throw new Error(j.error || `Lunta answered ${r.status}`);
   return j;
 }
 
@@ -69,7 +69,7 @@ chrome.action.onClicked.addListener(async (tab) => {
     } catch (e) {
       chrome.action.setBadgeBackgroundColor({ color: "#c2703d", tabId: tab.id });
       chrome.action.setBadgeText({ text: "!", tabId: tab.id });
-      chrome.action.setTitle({ title: "Margins: " + (e.message || e), tabId: tab.id });
+      chrome.action.setTitle({ title: "Lunta: " + (e.message || e), tabId: tab.id });
     }
     return;
   }

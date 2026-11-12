@@ -1,5 +1,5 @@
 import SwiftUI
-import MarginsCore
+import LuntaCore
 
 // Folders (nested collections) and tags: model helpers plus the views both apps share.
 
@@ -275,10 +275,10 @@ struct OrganizeView: View {
         let inSome = !inAll && ids.contains { model.paper($0)?.collections.contains(f.id) == true }
         return Button { model.setMembership(ids, collection: f.id, !inAll) } label: {
             HStack {
-                Image(systemName: depth > 0 ? "folder" : "folder.fill").foregroundStyle(Color.marginsTeal)
+                Image(systemName: depth > 0 ? "folder" : "folder.fill").foregroundStyle(Color.luntaTeal)
                 Text(f.name).foregroundStyle(.primary)
                 Spacer()
-                if inAll { Image(systemName: "checkmark").foregroundStyle(Color.marginsTeal) }
+                if inAll { Image(systemName: "checkmark").foregroundStyle(Color.luntaTeal) }
                 else if inSome { Image(systemName: "minus").foregroundStyle(.secondary) }
             }
             .padding(.leading, CGFloat(depth) * 18)
@@ -308,8 +308,8 @@ struct TagChips: View {
                     Label(t, systemImage: on ? "checkmark" : "tag")
                         .font(.callout)
                         .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(Capsule().fill(on ? Color.marginsTeal.opacity(0.2) : Color.secondary.opacity(0.12)))
-                        .foregroundStyle(on ? Color.marginsTeal : .primary)
+                        .background(Capsule().fill(on ? Color.luntaTeal.opacity(0.2) : Color.secondary.opacity(0.12)))
+                        .foregroundStyle(on ? Color.luntaTeal : .primary)
                 }
                 .buttonStyle(.plain)
             }
@@ -374,7 +374,7 @@ struct ManageFoldersView: View {
                     ForEach(model.foldersFlat, id: \.folder.id) { item in
                         let f = item.folder
                         HStack {
-                            Image(systemName: "folder").foregroundStyle(Color.marginsTeal)
+                            Image(systemName: "folder").foregroundStyle(Color.luntaTeal)
                             Text(f.name)
                             Spacer()
                             Text("\(f.paperCount)").foregroundStyle(.secondary).monospacedDigit()
@@ -471,8 +471,8 @@ struct PaperFolders: View {
                     Label(model.folderPath(f.id), systemImage: "folder")
                         .font(.callout)
                         .padding(.horizontal, 9).padding(.vertical, 4)
-                        .background(Capsule().fill(Color.marginsTeal.opacity(0.14)))
-                        .foregroundStyle(Color.marginsTeal)
+                        .background(Capsule().fill(Color.luntaTeal.opacity(0.14)))
+                        .foregroundStyle(Color.luntaTeal)
                 }
                 .buttonStyle(.plain)
                 .help("Show this folder")

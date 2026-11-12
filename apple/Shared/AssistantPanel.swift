@@ -1,5 +1,5 @@
 import SwiftUI
-import MarginsCore
+import LuntaCore
 
 /// The Ask panel: a conversation with Apple's model about one paper or the whole library.
 struct AssistantPanel: View {
@@ -39,7 +39,7 @@ struct AssistantPanel: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "sparkles").foregroundStyle(Color.marginsTeal)
+            Image(systemName: "sparkles").foregroundStyle(Color.luntaTeal)
             VStack(alignment: .leading, spacing: 1) {
                 Text(engine.scope == .library ? "Ask your library" : "Ask this paper").font(.headline)
                 Text(engine.modelLabel).font(.caption2).foregroundStyle(.secondary)
@@ -131,7 +131,7 @@ struct AssistantPanel: View {
             if let action { action() } else if let fill { draft = fill; focused = true }
         } label: {
             Text(title).font(.callout).padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Color.marginsTeal.opacity(0.10), in: Capsule())
+                .background(Color.luntaTeal.opacity(0.10), in: Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -148,7 +148,7 @@ struct AssistantPanel: View {
                     .buttonStyle(.plain).foregroundStyle(.secondary)
             } else {
                 Button(action: send) { Image(systemName: "arrow.up.circle.fill").font(.title2) }
-                    .buttonStyle(.plain).foregroundStyle(Color.marginsTeal)
+                    .buttonStyle(.plain).foregroundStyle(Color.luntaTeal)
                     .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
@@ -182,20 +182,20 @@ private struct MessageView: View {
                 Spacer(minLength: 30)
                 Text(message.text)
                     .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color.marginsTeal.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
+                    .background(Color.luntaTeal.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
                     .textSelection(.enabled)
             }
         case .activity:
             Label(message.text, systemImage: message.text.hasPrefix("Searching beyond") ? "globe.europe.africa" : "magnifyingglass")
                 .font(.caption).foregroundStyle(.secondary)
         case .notice:
-            Label(message.text, systemImage: "info.circle").font(.caption).foregroundStyle(Color.marginsCopper)
+            Label(message.text, systemImage: "info.circle").font(.caption).foregroundStyle(Color.luntaCopper)
         case .assistant:
             VStack(alignment: .leading, spacing: 8) {
                 Text(rendered)
                     .textSelection(.enabled)
                     .environment(\.openURL, OpenURLAction { url in
-                        if url.scheme == "margins-src", let n = Int(url.host ?? ""), let s = sources[n] { onSource(s) }
+                        if url.scheme == "lunta-src", let n = Int(url.host ?? ""), let s = sources[n] { onSource(s) }
                         return .handled
                     })
                 let cited = citedSources
@@ -220,12 +220,12 @@ private struct MessageView: View {
     /// Markdown with [n] turned into tappable links.
     private var rendered: AttributedString {
         let linked = message.text.replacing(/\[(\d{1,3})\]/) { m in
-            sources[Int(m.1) ?? 0] != nil ? "[\\[\(m.1)\\]](margins-src://\(m.1))" : "[\(m.1)]"
+            sources[Int(m.1) ?? 0] != nil ? "[\\[\(m.1)\\]](lunta-src://\(m.1))" : "[\(m.1)]"
         }
         let opts = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         var a = (try? AttributedString(markdown: linked, options: opts)) ?? AttributedString(message.text)
         for run in a.runs where run.link != nil {
-            a[run.range].foregroundColor = .marginsTeal
+            a[run.range].foregroundColor = .luntaTeal
             a[run.range].font = .body.weight(.semibold)
         }
         return a
@@ -247,7 +247,7 @@ private struct FlowChips: View {
                         Image(systemName: icon(s)).font(.caption2).foregroundStyle(tint(s))
                         Text(s.label).font(.caption).lineLimit(1).foregroundStyle(.secondary)
                         if case .external = s.kind {
-                            Text("beyond your library").font(.caption2.weight(.medium)).foregroundStyle(Color.marginsCopper)
+                            Text("beyond your library").font(.caption2.weight(.medium)).foregroundStyle(Color.luntaCopper)
                         }
                     }
                 }
@@ -265,8 +265,8 @@ private struct FlowChips: View {
     }
 
     private func tint(_ s: AskSource) -> Color {
-        if case .external = s.kind { return .marginsCopper }
-        return .marginsTeal
+        if case .external = s.kind { return .luntaCopper }
+        return .luntaTeal
     }
 }
 
@@ -276,16 +276,16 @@ private struct ProposalCard: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "wand.and.stars").foregroundStyle(Color.marginsCopper)
+            Image(systemName: "wand.and.stars").foregroundStyle(Color.luntaCopper)
             Text(proposal.summary).font(.callout)
             Spacer(minLength: 4)
             switch proposal.state {
             case .pending:
                 Button("Dismiss") { engine.dismiss(proposal) }.buttonStyle(.borderless)
                 Button("Apply") { Task { await engine.apply(proposal) } }
-                    .buttonStyle(.borderedProminent).tint(.marginsTeal).controlSize(.small)
+                    .buttonStyle(.borderedProminent).tint(.luntaTeal).controlSize(.small)
             case .applied:
-                Label("Done", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(Color.marginsTeal)
+                Label("Done", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(Color.luntaTeal)
             case .dismissed:
                 Text("Dismissed").font(.caption).foregroundStyle(.secondary)
             case .failed:
@@ -293,7 +293,7 @@ private struct ProposalCard: View {
             }
         }
         .padding(10)
-        .background(Color.marginsCopper.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color.luntaCopper.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -305,7 +305,7 @@ private struct OpenModelDownload: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "cpu").font(.system(size: 40)).foregroundStyle(Color.marginsTeal)
+            Image(systemName: "cpu").font(.system(size: 40)).foregroundStyle(Color.luntaTeal)
             Text("Ask with an open model").font(.title3.weight(.semibold))
             Text("Apple Intelligence isn't available here, so Ask can use \(OpenModel.displayName), a free open model that runs entirely on this device: private, offline, no account. It's a one-time download of \(OpenModel.downloadSize); Wi‑Fi recommended.")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -314,7 +314,7 @@ private struct OpenModelDownload: View {
                 Button { Task { await open.prepare(); engine.objectWillChange.send() } } label: {
                     Label("Download \(OpenModel.displayName)", systemImage: "arrow.down.circle.fill").padding(.horizontal, 6)
                 }
-                .buttonStyle(.borderedProminent).tint(.marginsTeal)
+                .buttonStyle(.borderedProminent).tint(.luntaTeal)
             case .downloading(let f):
                 ProgressView(value: f) { Text("Downloading… \(Int(f * 100))%").font(.caption) }.frame(maxWidth: 260)
             case .loading:

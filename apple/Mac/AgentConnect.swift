@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Lets AI agents (Claude Code, Claude Desktop, Cursor, any MCP client) work with the library through
-/// the bundled `margins-mcp` server, and installs the `margins` command-line tool.
+/// the bundled `lunta-mcp` server, and installs the `lunta` command-line tool.
 struct AgentConnectView: View {
     @State private var status: [Client: Bool] = [:]
     @State private var cliInstalled = false
@@ -25,13 +25,13 @@ struct AgentConnectView: View {
         }
     }
 
-    static var server: URL { Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("margins-mcp") }
-    static var cliLink: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/margins") }
+    static var server: URL { Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("lunta-mcp") }
+    static var cliLink: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/lunta") }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
-                Image(systemName: "sparkles.rectangle.stack").font(.system(size: 30)).foregroundStyle(Color.marginsTeal)
+                Image(systemName: "sparkles.rectangle.stack").font(.system(size: 30)).foregroundStyle(Color.luntaTeal)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Connect AI Agents").font(.title2.weight(.semibold))
                     Text("Give an AI agent access to your papers: it can search and read them, cite them, add new papers, and tag, collect or annotate them. Its changes show up here and on your iPhone.")
@@ -57,8 +57,8 @@ struct AgentConnectView: View {
                 }
                 .padding(.top, 6)
             }
-            if let message { Text(message).font(.callout).foregroundStyle(Color.marginsCopper) }
-            Text("Agents run on this Mac and reach the library only through Margins' server. What they read is sent to the AI service you use, as with anything you share with it.")
+            if let message { Text(message).font(.callout).foregroundStyle(Color.luntaCopper) }
+            Text("Agents run on this Mac and reach the library only through Lunta' server. What they read is sent to the AI service you use, as with anything you share with it.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(22)
@@ -68,16 +68,16 @@ struct AgentConnectView: View {
 
     private func row(_ c: Client) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: c.icon).frame(width: 22).foregroundStyle(Color.marginsTeal)
+            Image(systemName: c.icon).frame(width: 22).foregroundStyle(Color.luntaTeal)
             Text(c.rawValue).font(.body.weight(.medium))
             Spacer()
             if working == c {
                 ProgressView().controlSize(.small)
             } else if status[c] == true {
-                Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(Color.marginsTeal)
+                Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(Color.luntaTeal)
                 Button("Remove") { Task { await set(c, on: false) } }.buttonStyle(.borderless)
             } else {
-                Button("Connect") { Task { await set(c, on: true) } }.buttonStyle(.borderedProminent).tint(.marginsTeal)
+                Button("Connect") { Task { await set(c, on: true) } }.buttonStyle(.borderedProminent).tint(.luntaTeal)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
@@ -85,16 +85,16 @@ struct AgentConnectView: View {
 
     private var cliRow: some View {
         HStack(spacing: 12) {
-            Image(systemName: "chevron.left.forwardslash.chevron.right").frame(width: 22).foregroundStyle(Color.marginsTeal)
+            Image(systemName: "chevron.left.forwardslash.chevron.right").frame(width: 22).foregroundStyle(Color.luntaTeal)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Command-line tool").font(.body.weight(.medium))
-                Text("margins search … · margins read <id> … · margins cite <id>").font(.caption.monospaced()).foregroundStyle(.secondary)
+                Text("lunta search … · lunta read <id> … · lunta cite <id>").font(.caption.monospaced()).foregroundStyle(.secondary)
             }
             Spacer()
             if cliInstalled {
-                Label("Installed", systemImage: "checkmark.circle.fill").foregroundStyle(Color.marginsTeal)
+                Label("Installed", systemImage: "checkmark.circle.fill").foregroundStyle(Color.luntaTeal)
             } else {
-                Button("Install") { installCLI() }.buttonStyle(.borderedProminent).tint(.marginsTeal)
+                Button("Install") { installCLI() }.buttonStyle(.borderedProminent).tint(.luntaTeal)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
@@ -104,7 +104,7 @@ struct AgentConnectView: View {
         """
         {
           "mcpServers": {
-            "margins": { "command": "\(server.path)" }
+            "lunta": { "command": "\(server.path)" }
           }
         }
         """
@@ -120,12 +120,12 @@ struct AgentConnectView: View {
     private func isConnected(_ c: Client) async -> Bool {
         if c == .claudeCode {
             guard let claude = Self.claudeCLI else { return false }
-            return (try? await Self.run(claude, ["mcp", "get", "margins"])) != nil
+            return (try? await Self.run(claude, ["mcp", "get", "lunta"])) != nil
         }
         guard let f = c.configFile, let d = try? Data(contentsOf: f),
               let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
               let servers = j["mcpServers"] as? [String: Any] else { return false }
-        return servers["margins"] != nil
+        return servers["lunta"] != nil
     }
 
     private func set(_ c: Client, on: Bool) async {
@@ -138,11 +138,13 @@ struct AgentConnectView: View {
                     message = "Claude Code's “claude” command wasn't found. Install Claude Code, then try again."
                     return
                 }
+                // the server was called "margins" before the rename
+                _ = try? await Self.run(claude, ["mcp", "remove", "--scope", "user", "margins"])
                 if on {
-                    _ = try? await Self.run(claude, ["mcp", "remove", "--scope", "user", "margins"])
-                    try await Self.run(claude, ["mcp", "add", "--scope", "user", "margins", "--", Self.server.path])
+                    _ = try? await Self.run(claude, ["mcp", "remove", "--scope", "user", "lunta"])
+                    try await Self.run(claude, ["mcp", "add", "--scope", "user", "lunta", "--", Self.server.path])
                 } else {
-                    try await Self.run(claude, ["mcp", "remove", "--scope", "user", "margins"])
+                    try await Self.run(claude, ["mcp", "remove", "--scope", "user", "lunta"])
                 }
             } else if let f = c.configFile {
                 var j: [String: Any] = [:]
@@ -154,15 +156,16 @@ struct AgentConnectView: View {
                     j = parsed
                 }
                 var servers = j["mcpServers"] as? [String: Any] ?? [:]
-                servers["margins"] = on ? ["command": Self.server.path] : nil
+                servers["lunta"] = on ? ["command": Self.server.path] : nil
+                servers["margins"] = nil   // its name before the rename
                 j["mcpServers"] = servers
                 try FileManager.default.createDirectory(at: f.deletingLastPathComponent(), withIntermediateDirectories: true)
                 if FileManager.default.fileExists(atPath: f.path) {
-                    try? FileManager.default.removeItem(at: f.appendingPathExtension("margins-backup"))
-                    try? FileManager.default.copyItem(at: f, to: f.appendingPathExtension("margins-backup"))
+                    try? FileManager.default.removeItem(at: f.appendingPathExtension("lunta-backup"))
+                    try? FileManager.default.copyItem(at: f, to: f.appendingPathExtension("lunta-backup"))
                 }
                 try JSONSerialization.data(withJSONObject: j, options: [.prettyPrinted, .sortedKeys]).write(to: f, options: .atomic)
-                if on { message = "Restart \(c.rawValue) to load Margins." }
+                if on { message = "Restart \(c.rawValue) to load Lunta." }
             }
         } catch {
             message = error.localizedDescription
@@ -175,9 +178,14 @@ struct AgentConnectView: View {
             let link = Self.cliLink
             try FileManager.default.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? FileManager.default.removeItem(at: link)
+            // the command was called "margins" before the rename
+            let old = link.deletingLastPathComponent().appendingPathComponent("margins")
+            if (try? FileManager.default.destinationOfSymbolicLink(atPath: old.path))?.contains("margins-mcp") == true {
+                try? FileManager.default.removeItem(at: old)
+            }
             try FileManager.default.createSymbolicLink(at: link, withDestinationURL: Self.server)
             cliInstalled = true
-            message = "Installed as ~/.local/bin/margins. Try: margins search lactate"
+            message = "Installed as ~/.local/bin/lunta. Try: lunta search lactate"
         } catch {
             message = error.localizedDescription
         }
@@ -208,7 +216,7 @@ struct AgentConnectView: View {
             let o = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             guard p.terminationStatus == 0 else {
                 let e = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-                throw NSError(domain: "Margins", code: Int(p.terminationStatus), userInfo: [NSLocalizedDescriptionKey: e.isEmpty ? o : e])
+                throw NSError(domain: "Lunta", code: Int(p.terminationStatus), userInfo: [NSLocalizedDescriptionKey: e.isEmpty ? o : e])
             }
             return o
         }.value

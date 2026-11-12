@@ -6,13 +6,13 @@
            xsi:type="TaskPaneApp">
   <Id>6a1f3b2c-6d0e-4c8e-9b8e-4d2f3a7c9e15</Id>
   <Version>1.0.0.0</Version>
-  <ProviderName>Margins</ProviderName>
+  <ProviderName>Lunta</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="Margins Citations"/>
-  <Description DefaultValue="Cite papers from your Margins library and build the reference list."/>
+  <DisplayName DefaultValue="Lunta Citations"/>
+  <Description DefaultValue="Cite papers from your Lunta library and build the reference list."/>
   <IconUrl DefaultValue="https://localhost:47481/icons/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://localhost:47481/icons/icon-80.png"/>
-  <SupportUrl DefaultValue="https://github.com/christoffermattssonlangseth/margins"/>
+  <SupportUrl DefaultValue="https://github.com/christoffermattssonlangseth/lunta"/>
   <AppDomains><AppDomain>https://localhost:47481</AppDomain></AppDomains>
   <Hosts><Host Name="Document"/></Hosts>
   <DefaultSettings><SourceLocation DefaultValue="https://localhost:47481/word/index.html"/></DefaultSettings>
@@ -63,11 +63,11 @@
         <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:47481/word/index.html"/>
       </bt:Urls>
       <bt:ShortStrings>
-        <bt:String id="Group.Label" DefaultValue="Margins"/>
+        <bt:String id="Group.Label" DefaultValue="Lunta"/>
         <bt:String id="Button.Label" DefaultValue="Cite"/>
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="Button.Tip" DefaultValue="Cite papers from your Margins library and build the reference list."/>
+        <bt:String id="Button.Tip" DefaultValue="Cite papers from your Lunta library and build the reference list."/>
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

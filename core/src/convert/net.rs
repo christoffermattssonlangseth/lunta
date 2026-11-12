@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-pub const USER_AGENT: &str = "Paper2Epub/0.1 (Margins core)";
+pub const USER_AGENT: &str = "Paper2Epub/0.1 (Lunta core)";
 
 fn agent() -> &'static ureq::Agent {
     static A: OnceLock<ureq::Agent> = OnceLock::new();

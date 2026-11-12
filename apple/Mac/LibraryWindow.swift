@@ -1,5 +1,5 @@
 import SwiftUI
-import MarginsCore
+import LuntaCore
 import UniformTypeIdentifiers
 
 struct LibraryWindow: View {
@@ -33,8 +33,8 @@ struct LibraryWindow: View {
                 if let id = discoverSelection, let f = WatchCenter.shared.finds.first(where: { $0.id == id }) {
                     DiscoverDetail(hit: f.hit)
                 } else {
-                    ContentUnavailableView("New for You", systemImage: "bell.badge",
-                                           description: Text("Papers your watches found. Select one to read its abstract."))
+                    ContentUnavailableView("New for You", systemImage: "sparkles",
+                                           description: Text("Papers picked for your research appear here."))
                 }
             } else if model.source == .discover {
                 if let id = discoverSelection, let hit = model.discoverResults.first(where: { $0.id == id }) {
@@ -83,14 +83,14 @@ struct LibraryWindow: View {
         .safeAreaInset(edge: .bottom) { StatusBar() }
         .sheet(isPresented: $addingPaper) { AddPaperSheet() }
         .modifier(EditSheet(editing: $editing))
-        .onReceive(NotificationCenter.default.publisher(for: .marginsAddPaper)) { _ in addingPaper = true }
-        .onReceive(NotificationCenter.default.publisher(for: .marginsAskCompare)) { n in
+        .onReceive(NotificationCenter.default.publisher(for: .luntaAddPaper)) { _ in addingPaper = true }
+        .onReceive(NotificationCenter.default.publisher(for: .luntaAskCompare)) { n in
             guard let ids = n.object as? [String] else { return }
             asking = true
             if ask.busy { return }
             ask.compare(ids)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .marginsAskFolder)) { n in
+        .onReceive(NotificationCenter.default.publisher(for: .luntaAskFolder)) { n in
             guard let id = n.object as? String, let c = model.collections.first(where: { $0.id == id }) else { return }
             let ids = model.lib.papers(filter: PaperFilter(collection: id, tag: nil, starredOnly: false, unreadOnly: false), sort: .added).map(\.id)
             asking = true
@@ -98,7 +98,7 @@ struct LibraryWindow: View {
             ask.overview(ids, name: c.name)
         }
         .onOpenURL { url in
-            // margins://open?id=<paper id>  (from the browser extension)
+            // lunta://open?id=<paper id>  (from the browser extension)
             if url.host == "open", let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name == "id" })?.value, model.paper(id) != nil {
                 model.query = ""
@@ -130,10 +130,10 @@ struct LibraryWindow: View {
         }
         .animation(.easeOut(duration: 0.18), value: dropping)
         .animation(.spring(duration: 0.3), value: model.addOutcomes)
-        .alert("Margins", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
+        .alert("Lunta", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK") { model.errorMessage = nil }
         } message: { Text(model.errorMessage ?? "") }
-        .tint(.marginsTeal)
+        .tint(.luntaTeal)
     }
 
     private func pdfURLs(_ providers: [NSItemProvider]) async -> [URL] {
@@ -255,13 +255,13 @@ struct Sidebar: View {
         .confirmationDialog("Delete “\(deleting?.name ?? "")”?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button("Delete Folder", role: .destructive) { if let f = deleting { model.deleteFolder(f.id) }; deleting = nil }
         } message: { Text("Its subfolders are deleted too. The papers stay in your library.") }
-        .onReceive(NotificationCenter.default.publisher(for: .marginsNewFolder)) { n in
+        .onReceive(NotificationCenter.default.publisher(for: .luntaNewFolder)) { n in
             let ids = n.object as? [String] ?? []
             prompt = NameRequest(title: ids.isEmpty ? "New Folder" : "New Folder with \(ids.count) Paper\(ids.count == 1 ? "" : "s")", action: "Create") {
                 model.newFolder($0, with: ids)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .marginsNewTag)) { n in
+        .onReceive(NotificationCenter.default.publisher(for: .luntaNewTag)) { n in
             let ids = n.object as? [String] ?? []
             prompt = NameRequest(title: "New Tag", message: "Added to \(ids.count) paper\(ids.count == 1 ? "" : "s").", action: "Add") {
                 model.setTag(ids, $0, true)
@@ -283,7 +283,7 @@ struct Sidebar: View {
                 return handled
             }
             .contextMenu {
-                Button("Summarize with Ask") { NotificationCenter.default.post(name: .marginsAskFolder, object: c.id) }
+                Button("Summarize with Ask") { NotificationCenter.default.post(name: .luntaAskFolder, object: c.id) }
                 Divider()
                 Button("New Subfolder…") { newFolder(parent: c) }
                 Button("Rename…") {
@@ -316,9 +316,9 @@ struct PaperTable: View {
             TableColumn("") { p in
                 Group {
                     if p.starred {
-                        Image(systemName: "star.fill").font(.caption).foregroundStyle(Color.marginsCopper)
+                        Image(systemName: "star.fill").font(.caption).foregroundStyle(Color.luntaCopper)
                     } else if !p.read {
-                        Circle().fill(Color.marginsTeal).frame(width: 7, height: 7)
+                        Circle().fill(Color.luntaTeal).frame(width: 7, height: 7)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -343,8 +343,8 @@ struct PaperTable: View {
             TableColumn("Year") { p in Text(p.meta.year).monospacedDigit().foregroundStyle(.secondary) }.width(42)
             TableColumn("") { p in
                 HStack(spacing: 4) {
-                    if p.hasEpub { Pill(text: "Read", icon: "book", color: .marginsTeal) }
-                    if p.hasPdf { Pill(text: "PDF", color: .marginsCopper) }
+                    if p.hasEpub { Pill(text: "Read", icon: "book", color: .luntaTeal) }
+                    if p.hasPdf { Pill(text: "PDF", color: .luntaCopper) }
                     if p.hasAudio { Pill(text: "Audio", icon: "waveform", color: .purple) }
                     if p.annotationCount > 0 { Pill(text: "\(p.annotationCount)", icon: "highlighter", color: .secondary) }
                 }
@@ -360,7 +360,7 @@ struct PaperTable: View {
                     Label("Search beyond your library for “\(model.query)”", systemImage: "globe.europe.africa")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered).tint(.marginsTeal).controlSize(.large)
+                .buttonStyle(.bordered).tint(.luntaTeal).controlSize(.large)
                 .padding(10)
                 .background(.bar)
             }
@@ -396,7 +396,7 @@ struct SnippetText: View {
             var hit = AttributedString(String(rest[rest.index(after: open)..<close]))
             hit.font = .caption.bold()
             hit.foregroundColor = .primary
-            hit.backgroundColor = Color.marginsHighlight.opacity(0.35)
+            hit.backgroundColor = Color.luntaHighlight.opacity(0.35)
             a += hit
             rest = rest[rest.index(after: close)...]
         }
@@ -415,25 +415,25 @@ struct PaperMenu: View {
             Button("Open") { openWindow(value: id) }
             Button(p.starred ? "Unstar" : "Star") { model.toggleStar(p) }
             Button(p.read ? "Mark as Unread" : "Mark as Read") { model.setRead(p, !p.read) }
-            Button("Edit Details…") { NotificationCenter.default.post(name: .marginsEditPaper, object: id) }
+            Button("Edit Details…") { NotificationCenter.default.post(name: .luntaEditPaper, object: id) }
             Menu("Watch") { WatchMenu(paper: p) }
-            Button("Share…") { NotificationCenter.default.post(name: .marginsSharePapers, object: ids) }
+            Button("Share…") { NotificationCenter.default.post(name: .luntaSharePapers, object: ids) }
             Divider()
             CiteMenu(ids: ids)
         } else {
-            Button("Share \(ids.count) Papers…") { NotificationCenter.default.post(name: .marginsSharePapers, object: ids) }
+            Button("Share \(ids.count) Papers…") { NotificationCenter.default.post(name: .luntaSharePapers, object: ids) }
             Button("Copy BibTeX") { copyToPasteboard(model.bibtex(ids)) }
         }
         Divider()
-        FolderMenu(ids: ids) { NotificationCenter.default.post(name: .marginsNewFolder, object: ids) }
+        FolderMenu(ids: ids) { NotificationCenter.default.post(name: .luntaNewFolder, object: ids) }
         if case .collection(let cid) = model.source {
             Button("Remove from “\(model.collections.first { $0.id == cid }?.name ?? "Folder")”") { model.setMembership(ids, collection: cid, false) }
         }
-        TagMenu(ids: ids) { NotificationCenter.default.post(name: .marginsNewTag, object: ids) }
+        TagMenu(ids: ids) { NotificationCenter.default.post(name: .luntaNewTag, object: ids) }
         if case .tag(let t) = model.source {
             Button("Remove Tag “\(t)”") { model.setTag(ids, t, false) }
         }
-        Button("Folders & Tags…") { NotificationCenter.default.post(name: .marginsOrganize, object: ids) }
+        Button("Folders & Tags…") { NotificationCenter.default.post(name: .luntaOrganize, object: ids) }
         Divider()
         Button("Find PDF") { Task { for id in ids { await model.findPDF(id) } } }
         Button("Make Reading View") { Task { for id in ids { await model.makeReadingView(id) }; model.reload() } }
@@ -504,19 +504,19 @@ struct PaperDetail: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                if !paper.meta.journal.isEmpty { Pill(text: paper.meta.journal, color: .marginsTeal) }
+                if !paper.meta.journal.isEmpty { Pill(text: paper.meta.journal, color: .luntaTeal) }
                 if !paper.meta.year.isEmpty { Pill(text: paper.meta.year, color: .secondary) }
                 Spacer()
                 Button { sharing = true } label: { Image(systemName: "square.and.arrow.up") }
                     .buttonStyle(.borderless).help("Share the PDF, reading view, citation or link")
                     .popover(isPresented: $sharing, arrowEdge: .bottom) { SharePanel(ids: [paper.id]) }
-                Button { NotificationCenter.default.post(name: .marginsEditPaper, object: paper.id) } label: { Image(systemName: "pencil") }
+                Button { NotificationCenter.default.post(name: .luntaEditPaper, object: paper.id) } label: { Image(systemName: "pencil") }
                     .buttonStyle(.borderless).help("Edit title, authors and other details (⌘E)")
                     .keyboardShortcut("e", modifiers: .command)
                 CiteMenu(ids: [paper.id]).menuStyle(.borderlessButton).fixedSize()
                 Button { model.toggleStar(paper) } label: {
                     Image(systemName: paper.starred ? "star.fill" : "star")
-                        .foregroundStyle(paper.starred ? Color.marginsCopper : .secondary)
+                        .foregroundStyle(paper.starred ? Color.luntaCopper : .secondary)
                 }
                 .buttonStyle(.borderless).help(paper.starred ? "Unstar" : "Star")
             }
@@ -538,7 +538,7 @@ struct PaperDetail: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Button { openWindow(value: paper.id) } label: { Label("Read", systemImage: "book.fill") }
-                    .buttonStyle(.borderedProminent).tint(.marginsTeal)
+                    .buttonStyle(.borderedProminent).tint(.luntaTeal)
                     .disabled(!paper.hasEpub && !paper.hasPdf)
                 if let pdf = model.fileURL(paper.id, .pdf) {
                     Button { ReaderWindow.open(paper.id, mode: .pdf, openWindow) } label: { Label("PDF", systemImage: "doc.richtext") }
@@ -587,7 +587,7 @@ struct FlowTags: View {
     var body: some View {
         HStack(spacing: 6) {
             ForEach(paper.tags, id: \.self) { t in
-                Pill(text: t, icon: "tag", color: .marginsTeal)
+                Pill(text: t, icon: "tag", color: .luntaTeal)
                     .contextMenu { Button("Remove Tag") { model.setTag(paper, t, false) } }
             }
             TextField("Add tag", text: $newTag).textFieldStyle(.plain).frame(width: 110)
@@ -606,7 +606,7 @@ struct LinksRow: View {
             if meta.doi.isEmpty && meta.pmid.isEmpty && meta.pmcid.isEmpty { Text("None").foregroundStyle(.secondary) }
         }
         .font(.callout)
-        .tint(.marginsTeal)
+        .tint(.luntaTeal)
     }
 }
 
@@ -617,7 +617,7 @@ struct MultiSelection: View {
         VStack(spacing: 12) {
             Text("\(ids.count) papers selected").font(.title3)
             if ids.count <= 8 {
-                Button { NotificationCenter.default.post(name: .marginsAskCompare, object: ids) } label: {
+                Button { NotificationCenter.default.post(name: .luntaAskCompare, object: ids) } label: {
                     Label("Compare with Ask", systemImage: "sparkles")
                 }
                 .buttonStyle(.borderedProminent)
@@ -686,7 +686,7 @@ struct AddedCard: View {
     }
 
     private func color(_ k: LibraryModel.AddOutcome.Kind) -> Color {
-        switch k { case .added: return .marginsTeal; case .attached: return .marginsCopper; case .failed: return .orange }
+        switch k { case .added: return .luntaTeal; case .attached: return .luntaCopper; case .failed: return .orange }
     }
 }
 
@@ -775,7 +775,7 @@ struct DiscoverList: View {
                 .scrollContentBackground(.hidden)
             }
         }
-        .background(Color.marginsTeal.opacity(0.04))
+        .background(Color.luntaTeal.opacity(0.04))
         .navigationTitle("Discover")
         .navigationSubtitle(model.discoverQuery.isEmpty ? "Beyond your library" : "\(model.discoverResults.count) results for “\(model.discoverQuery)”")
     }
@@ -785,26 +785,26 @@ struct EditTarget: Identifiable { let id: String }
 struct ShareTarget: Identifiable { let id = UUID(); let ids: [String] }
 
 extension Notification.Name {
-    static let marginsEditPaper = Notification.Name("marginsEditPaper")
-    static let marginsSharePapers = Notification.Name("marginsSharePapers")
-    static let marginsOrganize = Notification.Name("marginsOrganize")
-    static let marginsAskCompare = Notification.Name("marginsAskCompare")
-    static let marginsAskFolder = Notification.Name("marginsAskFolder")
-    static let marginsNewFolder = Notification.Name("marginsNewFolder")
-    static let marginsNewTag = Notification.Name("marginsNewTag")
+    static let luntaEditPaper = Notification.Name("luntaEditPaper")
+    static let luntaSharePapers = Notification.Name("luntaSharePapers")
+    static let luntaOrganize = Notification.Name("luntaOrganize")
+    static let luntaAskCompare = Notification.Name("luntaAskCompare")
+    static let luntaAskFolder = Notification.Name("luntaAskFolder")
+    static let luntaNewFolder = Notification.Name("luntaNewFolder")
+    static let luntaNewTag = Notification.Name("luntaNewTag")
 }
 
 /// Shown while PDFs are dragged over the library window.
 struct DropHint: View {
     var body: some View {
         RoundedRectangle(cornerRadius: 14)
-            .strokeBorder(Color.marginsTeal, style: StrokeStyle(lineWidth: 3, dash: [10, 6]))
-            .background(Color.marginsTeal.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+            .strokeBorder(Color.luntaTeal, style: StrokeStyle(lineWidth: 3, dash: [10, 6]))
+            .background(Color.luntaTeal.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
             .overlay {
                 VStack(spacing: 8) {
-                    Image(systemName: "doc.badge.plus").font(.system(size: 44)).foregroundStyle(Color.marginsTeal)
+                    Image(systemName: "doc.badge.plus").font(.system(size: 44)).foregroundStyle(Color.luntaTeal)
                     Text("Drop to add to your library").font(.title3.weight(.semibold))
-                    Text("Margins reads each PDF, finds its details and makes a reading view.")
+                    Text("Lunta reads each PDF, finds its details and makes a reading view.")
                         .font(.callout).foregroundStyle(.secondary)
                     Text("Hold ⌥ while dropping to add privately (nothing is looked up online).")
                         .font(.caption).foregroundStyle(.secondary)
@@ -833,13 +833,13 @@ struct EditSheet: ViewModifier {
                 }
             }
             .sheet(item: $organizing) { t in OrganizeView(ids: t.ids) }
-            .onReceive(NotificationCenter.default.publisher(for: .marginsOrganize)) { n in
+            .onReceive(NotificationCenter.default.publisher(for: .luntaOrganize)) { n in
                 if let ids = n.object as? [String], !ids.isEmpty { organizing = ShareTarget(ids: ids) }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .marginsSharePapers)) { n in
+            .onReceive(NotificationCenter.default.publisher(for: .luntaSharePapers)) { n in
                 if let ids = n.object as? [String], !ids.isEmpty { sharing = ShareTarget(ids: ids) }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .marginsEditPaper)) { n in
+            .onReceive(NotificationCenter.default.publisher(for: .luntaEditPaper)) { n in
                 if let id = n.object as? String { editing = EditTarget(id: id) }
             }
     }

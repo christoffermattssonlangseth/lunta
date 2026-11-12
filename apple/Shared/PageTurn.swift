@@ -8,7 +8,7 @@ import WebKit
 // On the Mac: arrow keys, space, or a swipe / scroll.
 //
 // Everything that used to scroll (contents, narration, highlights, the saved position) goes
-// through scrollIntoView or marginsScrollToOffset, which turn to the right page in this mode.
+// through scrollIntoView or luntaScrollToOffset, which turn to the right page in this mode.
 
 extension ReaderAssets {
     static let pagedJS = #"""
@@ -18,14 +18,14 @@ extension ReaderAssets {
       var label = document.createElement('div'); label.id = 'm-page-no';
       function post(m){ try { window.webkit.messageHandlers.page.postMessage(m); } catch (x) {} }
 
-      window.marginsPaged = function(){ return on; };
+      window.luntaPaged = function(){ return on; };
       // the exact viewport size: with larger text it isn't a whole number of pixels, and
       // innerWidth's rounding would add up to a visible shift after a few pages
       function vw(){ return window.visualViewport ? window.visualViewport.width * window.visualViewport.scale : window.innerWidth; }
       function vh(){ return window.visualViewport ? window.visualViewport.height * window.visualViewport.scale : window.innerHeight; }
       var pad = 20;
       // where the first line of the page starts (to read the exact position)
-      window.marginsPageOrigin = function(){ return on ? { x: pad + 3, y: top + 6 } : null; };
+      window.luntaPageOrigin = function(){ return on ? { x: pad + 3, y: top + 6 } : null; };
       function cols(){ return vw() >= 860 ? 2 : 1; }
       function page(){ return W ? Math.round(window.scrollX / W) : 0; }
       function pages(){ return W ? Math.max(1, Math.round(document.documentElement.scrollWidth / W)) : 1; }
@@ -56,7 +56,7 @@ extension ReaderAssets {
           ' font: 12px -apple-system, sans-serif; color: rgba(127,127,127,.85); pointer-events: none; z-index: 10; }';
         document.documentElement.classList.add('m-paged');
         if (!label.parentNode) document.documentElement.appendChild(label);
-        if (window.marginsFixOverflow) window.marginsFixOverflow();
+        if (window.luntaFixOverflow) window.luntaFixOverflow();
       }
 
       function show(){
@@ -66,7 +66,7 @@ extension ReaderAssets {
                                        : (p + 1) + ' of ' + t;
       }
 
-      window.marginsGoToPage = function(n, smooth){
+      window.luntaGoToPage = function(n, smooth){
         if (!on) return;
         n = Math.max(0, Math.min(pages() - 1, n));
         target = n;
@@ -75,13 +75,13 @@ extension ReaderAssets {
         else window.scrollTo({ left: n * W, top: 0, behavior: smooth ? 'smooth' : 'instant' });
         setTimeout(show, smooth ? 380 : 30);
       };
-      window.marginsTurn = function(d){ window.marginsGoToPage(page() + d, true); };
+      window.luntaTurn = function(d){ window.luntaGoToPage(page() + d, true); };
 
       // the page holding a rectangle (from getBoundingClientRect or a range)
-      window.marginsShowRect = function(r, smooth){
+      window.luntaShowRect = function(r, smooth){
         if (!on || !r) return false;
         var x = r.left + window.scrollX + 1;
-        window.marginsGoToPage(Math.floor(x / W), smooth);
+        window.luntaGoToPage(Math.floor(x / W), smooth);
         return true;
       };
 
@@ -90,12 +90,12 @@ extension ReaderAssets {
       Element.prototype.scrollIntoView = function(o){
         if (!on) return plain.apply(this, arguments);
         var rs = this.getClientRects();
-        window.marginsShowRect(rs.length ? rs[0] : this.getBoundingClientRect(), !!(o && o.behavior === 'smooth'));
+        window.luntaShowRect(rs.length ? rs[0] : this.getBoundingClientRect(), !!(o && o.behavior === 'smooth'));
       };
 
-      function remember(){ if (window.marginsReadingOffset) anchor = window.marginsReadingOffset(); }
+      function remember(){ if (window.luntaReadingOffset) anchor = window.luntaReadingOffset(); }
       function restore(){
-        if (!(anchor != null && window.marginsScrollToOffset && window.marginsScrollToOffset(anchor))) window.marginsGoToPage(page(), false);
+        if (!(anchor != null && window.luntaScrollToOffset && window.luntaScrollToOffset(anchor))) window.luntaGoToPage(page(), false);
       }
       // while you stay on the page a relayout put you on, keep the place you were at (re-reading it
       // would give that page's first word, and the place would creep back with every change)
@@ -103,7 +103,7 @@ extension ReaderAssets {
 
       // for the app after a text-size change: lay out again if the size changed, and say which page
       // holds the place being read (the app then moves the scroll view there)
-      window.marginsTargetPage = function(){
+      window.luntaTargetPage = function(){
         if (!on) return -1;
         if (Math.abs(vw() - W) > 0.01 || Math.abs(vh() - Hh) > 0.01) relayout();
         else restore();
@@ -120,7 +120,7 @@ extension ReaderAssets {
         });
       }
 
-      window.marginsSetPaged = function(want, t, b, isNative){
+      window.luntaSetPaged = function(want, t, b, isNative){
         var changed = want !== on || t !== top || b !== bottom;
         if (!changed) { watchSize(); return; }
         // the place is remembered as you turn; only take it fresh when switching modes
@@ -133,7 +133,7 @@ extension ReaderAssets {
 
       // iPhone text size: the font is scaled (the page isn't zoomed, which iOS would magnify past
       // the screen's edge); the place being read is kept in both layouts
-      window.marginsSetTextScale = function(x){
+      window.luntaSetTextScale = function(x){
         var root = document.documentElement;
         if (root.style.getPropertyValue('--m-scale') === String(x)) return;
         if (on) {
@@ -141,10 +141,10 @@ extension ReaderAssets {
           relayout(); watchSize();
           setTimeout(function(){ relayout(); }, 400);     // again once images have settled
         } else {
-          var off = window.marginsReadingOffset ? window.marginsReadingOffset() : null;
+          var off = window.luntaReadingOffset ? window.luntaReadingOffset() : null;
           root.style.setProperty('--m-scale', String(x));
-          if (off != null && off > 0 && window.marginsScrollToOffset) window.marginsScrollToOffset(off);
-          if (window.marginsFixOverflow) window.marginsFixOverflow();
+          if (off != null && off > 0 && window.luntaScrollToOffset) window.luntaScrollToOffset(off);
+          if (window.luntaFixOverflow) window.luntaFixOverflow();
         }
       };
 
@@ -169,8 +169,8 @@ extension ReaderAssets {
         if (e.target.closest && e.target.closest('a, img, mark, button, input, .m-scroll, svg')) return;
         var s = window.getSelection(); if (s && !s.isCollapsed) return;
         var x = e.clientX / window.innerWidth;
-        if (x < 0.22) window.marginsTurn(-1);
-        else if (x > 0.78) window.marginsTurn(1);
+        if (x < 0.22) window.luntaTurn(-1);
+        else if (x > 0.78) window.luntaTurn(1);
         else post('chrome');
       });
 
@@ -178,10 +178,10 @@ extension ReaderAssets {
       document.addEventListener('keydown', function(e){
         if (!on || e.metaKey || e.ctrlKey || e.altKey) return;
         var k = e.key;
-        if (k === 'ArrowRight' || k === 'PageDown' || (k === ' ' && !e.shiftKey) || k === 'ArrowDown') { window.marginsTurn(1); e.preventDefault(); }
-        else if (k === 'ArrowLeft' || k === 'PageUp' || (k === ' ' && e.shiftKey) || k === 'ArrowUp') { window.marginsTurn(-1); e.preventDefault(); }
-        else if (k === 'Home') { window.marginsGoToPage(0, true); e.preventDefault(); }
-        else if (k === 'End') { window.marginsGoToPage(pages() - 1, true); e.preventDefault(); }
+        if (k === 'ArrowRight' || k === 'PageDown' || (k === ' ' && !e.shiftKey) || k === 'ArrowDown') { window.luntaTurn(1); e.preventDefault(); }
+        else if (k === 'ArrowLeft' || k === 'PageUp' || (k === ' ' && e.shiftKey) || k === 'ArrowUp') { window.luntaTurn(-1); e.preventDefault(); }
+        else if (k === 'Home') { window.luntaGoToPage(0, true); e.preventDefault(); }
+        else if (k === 'End') { window.luntaGoToPage(pages() - 1, true); e.preventDefault(); }
       });
       var acc = 0, quietAt = 0, lockedUntil = 0, wheelTimer = null;
       window.addEventListener('wheel', function(e){
@@ -195,13 +195,13 @@ extension ReaderAssets {
         if (now < lockedUntil) return;      // the rest of one swipe's momentum
         acc += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
         if (Math.abs(acc) > 40) {
-          window.marginsTurn(acc > 0 ? 1 : -1);
+          window.luntaTurn(acc > 0 ? 1 : -1);
           acc = 0; lockedUntil = now + 450;
         }
       }, { passive: false });
 
       post('hello');
-      if (window.__marginsPagedStart) { var s0 = window.__marginsPagedStart; window.marginsSetPaged(true, s0[0], s0[1], s0[2]); }
+      if (window.__luntaPagedStart) { var s0 = window.__luntaPagedStart; window.luntaSetPaged(true, s0[0], s0[1], s0[2]); }
     })();
     """#
 }
@@ -213,8 +213,8 @@ struct PagedState: Equatable {
     var bottom: Double
     var native: Bool
 
-    var call: String { "marginsSetPaged(\(on), \(Int(top)), \(Int(bottom)), \(native))" }
-    var start: String { on ? "window.__marginsPagedStart = [\(Int(top)), \(Int(bottom)), \(native)];" : "" }
+    var call: String { "luntaSetPaged(\(on), \(Int(top)), \(Int(bottom)), \(native))" }
+    var start: String { on ? "window.__luntaPagedStart = [\(Int(top)), \(Int(bottom)), \(native)];" : "" }
 }
 
 /// Receives "page" messages: the page loaded ("hello") or the middle was tapped ("chrome").

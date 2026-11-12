@@ -1,11 +1,11 @@
 import SwiftUI
 import NaturalLanguage
 import UserNotifications
-import MarginsCore
+import LuntaCore
 
 // New for You: a daily, ranked feed of new papers for your research.
 //
-//  1. You describe your interests in a paragraph (Margins can draft it from your library).
+//  1. You describe your interests in a paragraph (Lunta can draft it from your library).
 //  2. A wide net: OpenAlex searches written from that paragraph, papers citing recent papers in
 //     your library, new work by authors you follow, and the last days of bioRxiv and medRxiv.
 //  3. Ranking on the device: sentence embeddings score each candidate against your paragraph,
@@ -831,6 +831,12 @@ struct WatchInbox: View {
         }
         #endif
         .onAppear { center.load(); center.markOpened() }
+        #if os(macOS)
+        // the detail pane always shows a paper: the first one, or the next after one is turned down
+        .onChange(of: center.finds.map(\.id), initial: true) { _, ids in
+            if selection == nil || !ids.contains(selection!) { selection = ids.first }
+        }
+        #endif
         .onDisappear { center.markOpened() }
         .task(id: center.digestKey) {
             // after a pause, so turning down a few papers in a row doesn't redo it each time
@@ -842,11 +848,11 @@ struct WatchInbox: View {
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Papers picked for your research", systemImage: "sparkles").font(.headline).foregroundStyle(Color.marginsTeal)
-            Text("Describe what you work on in a few sentences. Every day Margins searches OpenAlex, bioRxiv and medRxiv, ranks what's new against your interests and your library, and has the on-device model read the best abstracts and say why each one fits you.")
+            Label("Papers picked for your research", systemImage: "sparkles").font(.headline).foregroundStyle(Color.luntaTeal)
+            Text("Describe what you work on in a few sentences. Every day Lunta searches OpenAlex, bioRxiv and medRxiv, ranks what's new against your interests and your library, and has the on-device model read the best abstracts and say why each one fits you.")
                 .font(.callout).foregroundStyle(.secondary)
             Button { settings = true } label: { Label("Describe Your Research…", systemImage: "pencil") }
-                .buttonStyle(.borderedProminent).tint(.marginsTeal)
+                .buttonStyle(.borderedProminent).tint(.luntaTeal)
         }
         .padding(.vertical, 6)
     }
@@ -854,14 +860,14 @@ struct WatchInbox: View {
     private var digest: some View {
         VStack(alignment: .leading, spacing: 6) {
             Label("In short", systemImage: "text.alignleft").font(.caption.weight(.semibold))
-                .foregroundStyle(Color.marginsTeal).textCase(.uppercase)
+                .foregroundStyle(Color.luntaTeal).textCase(.uppercase)
             if center.state.digest.isEmpty {
                 HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Summarizing the papers…").font(.callout).foregroundStyle(.secondary) }
             } else {
                 Text((try? AttributedString(markdown: center.state.digest,
                                             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
                      ?? AttributedString(center.state.digest))
-                    .font(.callout).tint(.marginsTeal)
+                    .font(.callout).tint(.luntaTeal)
                     .environment(\.openURL, OpenURLAction { url in
                         guard let key = WatchCenter.feedKey(from: url) else { return .systemAction }
                         #if os(iOS)
@@ -904,7 +910,7 @@ struct WatchInbox: View {
         NavigationLink { DiscoverDetail(hit: f.hit) } label: { FeedRow(find: f) }
             .swipeActions {
                 Button("Not for Me", systemImage: "hand.thumbsdown") { center.dismiss(f) }.tint(.gray)
-                Button("More Like This", systemImage: "hand.thumbsup") { center.boost(f) }.tint(.marginsTeal)
+                Button("More Like This", systemImage: "hand.thumbsup") { center.boost(f) }.tint(.luntaTeal)
             }
         #else
         FeedRow(find: f)
@@ -938,10 +944,10 @@ struct FeedRow: View {
                 Text(r.abstract).font(.footnote).foregroundStyle(.secondary).lineLimit(3)
             }
             (Text(Image(systemName: "sparkles")) + Text(" ") + Text(r.reason))
-                .font(.footnote).foregroundStyle(Color.marginsTeal).lineLimit(3)
+                .font(.footnote).foregroundStyle(Color.luntaTeal).lineLimit(3)
             HStack(spacing: 4) {
                 if let id = model.libraryID(of: find.hit) {
-                    OpenAddedPaper(id: id, compact: true).tint(.marginsTeal).fixedSize()
+                    OpenAddedPaper(id: id, compact: true).tint(.luntaTeal).fixedSize()
                 } else {
                     Button {
                         adding = true
@@ -956,7 +962,7 @@ struct FeedRow: View {
                         }
                         .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 14).padding(.vertical, 6)
-                        .background(Capsule().fill(Color.marginsTeal))
+                        .background(Capsule().fill(Color.luntaTeal))
                         .fixedSize()
                     }
                     .buttonStyle(.borderless).disabled(adding)
@@ -964,7 +970,7 @@ struct FeedRow: View {
                 Spacer(minLength: 8)
                 Button { center.boost(find) } label: {
                     Image(systemName: r.boosted == true ? "hand.thumbsup.fill" : "hand.thumbsup")
-                        .foregroundStyle(r.boosted == true ? Color.marginsTeal : Color.secondary)
+                        .foregroundStyle(r.boosted == true ? Color.luntaTeal : Color.secondary)
                         .frame(width: 40, height: 32).contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
@@ -1011,7 +1017,7 @@ struct ForYouSettings: View {
                     } label: { Label(drafting ? "Reading your library…" : "Draft from My Library", systemImage: "wand.and.stars") }
                     .disabled(drafting)
                 } header: { Text("Your research") } footer: {
-                    Text("A few sentences on your topics, methods and systems. Margins turns them into searches and uses them to rank and screen new papers.")
+                    Text("A few sentences on your topics, methods and systems. Lunta turns them into searches and uses them to rank and screen new papers.")
                 }
                 Section {
                     Stepper("Up to \(perDay) papers a day", value: $perDay, in: 3...20)

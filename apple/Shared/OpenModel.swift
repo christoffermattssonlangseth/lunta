@@ -59,7 +59,7 @@ final class OpenModel: ObservableObject {
             UserDefaults.standard.set(true, forKey: "openModelDownloaded")
             state = .ready
         } catch {
-            NSLog("Margins: open model failed: %@", String(describing: error))
+            NSLog("Lunta: open model failed: %@", String(describing: error))
             state = .failed(error.localizedDescription)
         }
     }

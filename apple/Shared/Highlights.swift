@@ -1,6 +1,6 @@
 import SwiftUI
 import WebKit
-import MarginsCore
+import LuntaCore
 
 // Highlights and notes in the reading view. Each one is anchored by its quote plus a little
 // text before and after (and its character offset as a tie-breaker), so it finds its place
@@ -60,7 +60,7 @@ extension ReaderAssets {
         for (var i = 0; i < nodes.length; i++) { if (nodes[i] === node) return pos + off; pos += nodes[i].nodeValue.length; }
         return -1;
       }
-      window.marginsSelection = function(){
+      window.luntaSelection = function(){
         var sel = window.getSelection(); if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return '';
         var r = sel.getRangeAt(0), nodes = textNodes();
         var s = r.startContainer.nodeType === 3 ? offsetOf(nodes, r.startContainer, r.startOffset) : -1;
@@ -120,7 +120,7 @@ extension ReaderAssets {
         }
         return first;
       }
-      window.marginsApplyAnnotations = function(json){
+      window.luntaApplyAnnotations = function(json){
         unwrapAll();
         var list = JSON.parse(json), missing = [];
         list.sort(function(x, y){ return (y.start || 0) - (x.start || 0); });   // last first keeps earlier offsets valid
@@ -130,7 +130,7 @@ extension ReaderAssets {
         }
         return JSON.stringify(missing);
       };
-      window.marginsShowAnnotation = function(id){
+      window.luntaShowAnnotation = function(id){
         var m = document.querySelector('mark[data-ann="' + id + '"]'); if (!m) return false;
         m.scrollIntoView({ behavior: 'smooth', block: 'center' });
         document.querySelectorAll('mark[data-ann="' + id + '"]').forEach(function(x){
@@ -162,7 +162,7 @@ final class AnnotationMessageHandler: NSObject, WKScriptMessageHandler {
 
 extension ReaderController {
     func pageSelection() async -> PageSelection? {
-        guard let json = try? await webView?.evaluateJavaScript("marginsSelection()") as? String,
+        guard let json = try? await webView?.evaluateJavaScript("luntaSelection()") as? String,
               let data = json.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(PageSelection.self, from: data)
     }
@@ -176,12 +176,12 @@ extension ReaderController {
         guard let data = try? JSONSerialization.data(withJSONObject: items), let json = String(data: data, encoding: .utf8) else { return }
         let arg = json.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
             .replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\u{2028}", with: "\\u2028").replacingOccurrences(of: "\u{2029}", with: "\\u2029")
-        webView?.evaluateJavaScript("marginsApplyAnnotations('\(arg)')")
+        webView?.evaluateJavaScript("luntaApplyAnnotations('\(arg)')")
     }
 
     func showAnnotation(_ id: String) {
         let safe = id.filter { $0.isLetter || $0.isNumber || $0 == "-" }
-        webView?.evaluateJavaScript("marginsShowAnnotation('\(safe)')")
+        webView?.evaluateJavaScript("luntaShowAnnotation('\(safe)')")
     }
 
     func clearSelection() {

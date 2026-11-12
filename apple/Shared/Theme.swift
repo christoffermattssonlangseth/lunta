@@ -1,17 +1,17 @@
 import SwiftUI
 
-/// Colours from the Margins logo.
+/// Colours from the Lunta logo.
 extension Color {
-    static let marginsTeal = Color(red: 0.165, green: 0.392, blue: 0.471)     // #2a6478
-    static let marginsCopper = Color(red: 0.761, green: 0.439, blue: 0.239)   // #c2703d
-    static let marginsHighlight = Color(red: 0.949, green: 0.706, blue: 0.353) // #f2b45a
+    static let luntaTeal = Color(red: 0.165, green: 0.392, blue: 0.471)     // #2a6478
+    static let luntaCopper = Color(red: 0.761, green: 0.439, blue: 0.239)   // #c2703d
+    static let luntaHighlight = Color(red: 0.949, green: 0.706, blue: 0.353) // #f2b45a
 }
 
 /// Small rounded badge: "Reading view", "PDF", "3 notes", journal names.
 struct Pill: View {
     let text: String
     var icon: String?
-    var color: Color = .marginsTeal
+    var color: Color = .luntaTeal
 
     var body: some View {
         HStack(spacing: 3) {

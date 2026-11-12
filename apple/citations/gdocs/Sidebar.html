@@ -7,7 +7,7 @@
 <script>{{COMMON}}</script>
 </head>
 <body>
-<header><strong>Margins</strong><select id="style" title="Citation style"></select></header>
+<header><strong>Lunta</strong><select id="style" title="Citation style"></select></header>
 <input id="q" type="search" placeholder="Search your library…" autocomplete="off">
 <div id="results"></div>
 <div id="picked" class="picked"></div>
@@ -22,7 +22,7 @@ function status(m, err) { $('status').textContent = m || ''; $('status').classNa
 function api(path, body) {
   var o = { headers: { 'X-Margins-Token': TOKEN } };
   if (body) { o.method = 'POST'; o.headers['Content-Type'] = 'application/json'; o.body = JSON.stringify(body); }
-  return fetch(BASE + path, o).then(function (r) { if (!r.ok) throw new Error('Margins answered ' + r.status); return r.json(); });
+  return fetch(BASE + path, o).then(function (r) { if (!r.ok) throw new Error('Lunta answered ' + r.status); return r.json(); });
 }
 function server(fn) {
   var args = Array.prototype.slice.call(arguments, 1);
@@ -31,7 +31,7 @@ function server(fn) {
     r[fn].apply(r, args);
   });
 }
-function offline() { status('Can’t reach Margins. Open the Margins app on your Mac (and allow this page to reach localhost if Chrome asks).', true); }
+function offline() { status('Can’t reach Lunta. Open the Lunta app on your Mac (and allow this page to reach localhost if Chrome asks).', true); }
 function renderPicked() {
   $('picked').textContent = picked.length ? 'Citing: ' + picked.map(function (p) { return (p.families[0] || p.title.slice(0, 30)) + ' ' + (p.year || ''); }).join('; ') : '';
   $('insert').disabled = !picked.length;
@@ -58,7 +58,7 @@ function search(q) {
 }
 function compute() {
   return server('listCitations').then(function (lists) {
-    var num = MarginsCite.numbering(lists);
+    var num = LuntaCite.numbering(lists);
     return api('/bibliography', { style: style, ids: num.list }).then(function (res) {
       var papers = {}; res.entries.forEach(function (e) { papers[e.id] = e; });
       return { lists: lists, num: num, papers: papers, entries: res.entries };
@@ -68,12 +68,12 @@ function compute() {
 function updateAll() {
   status('Updating…');
   return compute().then(function (c) {
-    var texts = c.lists.map(function (l) { return MarginsCite.inText(style, l, c.num.order, c.papers); });
-    var bib = MarginsCite.bibliography(style, c.entries, c.num.order).map(function (e) { return MarginsCite.runs(e.text); });
+    var texts = c.lists.map(function (l) { return LuntaCite.inText(style, l, c.num.order, c.papers); });
+    var bib = LuntaCite.bibliography(style, c.entries, c.num.order).map(function (e) { return LuntaCite.runs(e.text); });
     return server('applyAll', texts, style === 'nature', bib).then(function (n) {
-      status(n + ' citation' + (n === 1 ? '' : 's') + ' · ' + MarginsCite.STYLES[style].name);
+      status(n + ' citation' + (n === 1 ? '' : 's') + ' · ' + LuntaCite.STYLES[style].name);
     });
-  }).catch(function (e) { if (e && e.message && e.message.indexOf('Margins') >= 0) status(e.message, true); else offline(); });
+  }).catch(function (e) { if (e && e.message && e.message.indexOf('Lunta') >= 0) status(e.message, true); else offline(); });
 }
 function insert() {
   var ids = picked.map(function (p) { return p.id; });
@@ -85,12 +85,12 @@ function insertBib() {
 }
 (function () {
   var sel = $('style');
-  Object.keys(MarginsCite.STYLES).forEach(function (k) { var o = document.createElement('option'); o.value = k; o.textContent = MarginsCite.STYLES[k].name; sel.appendChild(o); });
+  Object.keys(LuntaCite.STYLES).forEach(function (k) { var o = document.createElement('option'); o.value = k; o.textContent = LuntaCite.STYLES[k].name; sel.appendChild(o); });
   server('getStyle').then(function (s) { style = s; sel.value = s; });
   sel.onchange = function () { style = sel.value; server('setStyle', style); updateAll(); };
   var t; $('q').addEventListener('input', function (e) { clearTimeout(t); t = setTimeout(function () { search(e.target.value); }, 250); });
   $('insert').onclick = insert; $('bib').onclick = insertBib; $('refresh').onclick = updateAll;
-  api('/status').then(function (s) { status('Connected to Margins · ' + s.papers + ' papers'); }).catch(offline);
+  api('/status').then(function (s) { status('Connected to Lunta · ' + s.papers + ' papers'); }).catch(offline);
 })();
 </script>
 </body>

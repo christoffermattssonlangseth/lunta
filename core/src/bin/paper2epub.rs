@@ -2,7 +2,7 @@
 //!
 //! Usage: paper2epub [--offline] <DOI | PMCID | PubMed ID | arXiv id | link | file.xml> [output-dir]
 
-use margins_core::convert::{self, Options};
+use lunta_core::convert::{self, Options};
 use std::path::{Path, PathBuf};
 
 fn main() {

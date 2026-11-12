@@ -1,6 +1,6 @@
 import Foundation
 import WebKit
-import MarginsCore
+import LuntaCore
 
 /// Renders natural-sounding narration with Kokoro (neural TTS) locally on the Mac and saves it
 /// next to the paper (narration.m4a + narration.json), so it syncs to the iPhone through iCloud.
@@ -48,7 +48,7 @@ final class NarrationRenderer: ObservableObject {
 
     // MARK: - Setup (one time)
 
-    /// Installs the speech engine (mlx-audio + Kokoro) into Margins' own folder with uv.
+    /// Installs the speech engine (mlx-audio + Kokoro) into Lunta' own folder with uv.
     func ensureEngine() async throws {
         if FileManager.default.fileExists(atPath: Self.python.path),
            (try? await run(Self.python.path, ["-c", "import mlx_audio, misaki, en_core_web_sm"])) != nil { return }
@@ -80,12 +80,12 @@ final class NarrationRenderer: ObservableObject {
         guard !items.isEmpty else { throw fail("no text found to read") }
         let segments = items.map { ["id": $0.id, "kind": $0.kind, "text": Narrator.spoken($0)] }.filter { !($0["text"] ?? "").isEmpty }
 
-        let work = FileManager.default.temporaryDirectory.appendingPathComponent("margins-tts-\(UUID().uuidString)")
+        let work = FileManager.default.temporaryDirectory.appendingPathComponent("lunta-tts-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: work) }
         let input = work.appendingPathComponent("segments.json")
         try JSONSerialization.data(withJSONObject: segments).write(to: input)
-        guard let script = Bundle.main.url(forResource: "margins_tts", withExtension: "py") else { throw fail("narration script missing from the app") }
+        guard let script = Bundle.main.url(forResource: "lunta_tts", withExtension: "py") else { throw fail("narration script missing from the app") }
 
         let title = paper.meta.title.prefix(50)
         model.status = "Natural voice: starting “\(title)”…"
@@ -197,7 +197,7 @@ final class PageTextExtractor: NSObject, WKNavigationDelegate {
             cont = c
             v.loadFileURL(url, allowingReadAccessTo: readAccess)
         }
-        guard let json = try? await v.evaluateJavaScript("marginsNarration(false)") as? String,
+        guard let json = try? await v.evaluateJavaScript("luntaNarration(false)") as? String,
               let data = json.data(using: .utf8) else { return [] }
         return (try? JSONDecoder().decode([NarrationItem].self, from: data)) ?? []
     }
@@ -222,7 +222,7 @@ final class KokoroLive {
     private var starting: Task<Bool, Never>?
     private var waiters: [String: [CheckedContinuation<URL?, Never>]] = [:]
     private var ready: [String: URL] = [:]
-    private let dir = FileManager.default.temporaryDirectory.appendingPathComponent("margins-live", isDirectory: true)
+    private let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lunta-live", isDirectory: true)
 
     /// True when the speech engine is installed (made by the first natural-voice render or setup).
     var installed: Bool { FileManager.default.fileExists(atPath: NarrationRenderer.python.path) }
@@ -252,10 +252,10 @@ final class KokoroLive {
         if let starting { return await starting.value }
         let t = Task<Bool, Never> {
             do { try await NarrationRenderer.shared.ensureEngine() } catch {
-                NSLog("Margins live voice: engine setup failed: %@", error.localizedDescription)
+                NSLog("Lunta live voice: engine setup failed: %@", error.localizedDescription)
                 return false
             }
-            guard let script = Bundle.main.url(forResource: "margins_tts", withExtension: "py") else { return false }
+            guard let script = Bundle.main.url(forResource: "lunta_tts", withExtension: "py") else { return false }
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let p = Process()
             p.executableURL = NarrationRenderer.python
@@ -309,7 +309,7 @@ final class KokoroLive {
         guard parts.count >= 2 else { return }
         switch parts[0] {
         case "CLIP" where parts.count == 3: finish(parts[1], URL(fileURLWithPath: parts[2]))
-        case "FAIL": NSLog("Margins live voice: %@", line); finish(parts[1], nil)
+        case "FAIL": NSLog("Lunta live voice: %@", line); finish(parts[1], nil)
         default: break
         }
     }

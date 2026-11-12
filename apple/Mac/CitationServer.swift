@@ -1,7 +1,7 @@
 import Foundation
 import Network
 import Security
-import MarginsCore
+import LuntaCore
 
 /// HTTPS server on https://localhost:47481 for the citation add-ins (Word desktop + web, Google Docs).
 ///
@@ -11,7 +11,7 @@ import MarginsCore
 ///   GET  /api/status                    → {ok:true,papers:n}
 ///
 /// Pages served from this origin can call the API directly. The Google Docs sidebar (served by
-/// Google from *.googleusercontent.com) must also send the pairing token shown in Margins.
+/// Google from *.googleusercontent.com) must also send the pairing token shown in Lunta.
 @MainActor
 final class CitationServer {
     static let port: UInt16 = 47481
@@ -38,7 +38,7 @@ final class CitationServer {
 
     func start() {
         guard let identity = Self.loadIdentity() else {
-            NSLog("Margins: no TLS identity; citation add-ins unavailable")
+            NSLog("Lunta: no TLS identity; citation add-ins unavailable")
             return
         }
         let tls = NWProtocolTLS.Options()
@@ -178,7 +178,7 @@ final class CitationServer {
             // same-origin add-in pages send no Origin (or ours); the Google sidebar must present the token
             if let origin, origin != "https://localhost:\(Self.port)" {
                 guard Self.isGoogleSidebar(origin), r.headers["x-margins-token"] == token else {
-                    json(c, 403, ["error": "Not paired. Copy Sidebar.html again from Margins › Citations in Word & Google Docs."], origin: origin)
+                    json(c, 403, ["error": "Not paired. Copy Sidebar.html again from Lunta › Citations in Word & Google Docs."], origin: origin)
                     return
                 }
             }

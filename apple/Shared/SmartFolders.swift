@@ -1,5 +1,5 @@
 import SwiftUI
-import MarginsCore
+import LuntaCore
 
 // Smart folders: saved searches that fill themselves ("unread + #vbt + after 2020",
 // "added this month", "no PDF yet"). Kept in <library>/smart-folders.json, so they sync.

@@ -2,9 +2,9 @@ import Foundation
 import SwiftUI
 import FoundationModels
 import NaturalLanguage
-import MarginsCore
+import LuntaCore
 
-// Margins Assistant: a small agent on Apple's own language models.
+// Lunta Assistant: a small agent on Apple's own language models.
 // It uses Private Cloud Compute (Apple's larger server model) when the OS offers it and the
 // user allows it, otherwise the on-device model. Both are free and need no account.
 // The model only sees what its tools hand it: passages of the open paper, or search results
@@ -756,7 +756,7 @@ final class AskEngine: ObservableObject {
             if usingCloud && !Task.isCancelled {
                 // Private Cloud Compute refused (quota, network, not enabled): continue on the device
                 Self.cloudRefused = true
-                NSLog("Margins Ask: Private Cloud Compute failed, using on-device model: %@", String(describing: error))
+                NSLog("Lunta Ask: Private Cloud Compute failed, using on-device model: %@", String(describing: error))
                 messages.removeAll { $0.role == .assistant && $0.text.isEmpty }
                 session = nil
                 do { try await start(); try await stream(q) } catch { fail(error) }
@@ -767,8 +767,8 @@ final class AskEngine: ObservableObject {
     }
 
     /// Private Cloud Compute needs Apple's managed entitlement (com.apple.developer.private-cloud-compute);
-    /// calling it without one crashes. Set MarginsPrivateCloudCompute = YES in Info.plist once it's granted.
-    static let cloudEntitled = Bundle.main.object(forInfoDictionaryKey: "MarginsPrivateCloudCompute") as? Bool == true
+    /// calling it without one crashes. Set LuntaPrivateCloudCompute = YES in Info.plist once it's granted.
+    static let cloudEntitled = Bundle.main.object(forInfoDictionaryKey: "LuntaPrivateCloudCompute") as? Bool == true
 
     /// Set when Private Cloud Compute failed this run; later sessions go straight to the device model.
     static var cloudRefused = false
@@ -874,7 +874,7 @@ final class AskEngine: ObservableObject {
         messages.append(AskMessage(role: .user, text: shown))
         busy = true
         defer { busy = false; save() }
-        let s = await makeSession(tools: [], instructions: "You are the research assistant in Margins, the user's reference manager. Use only the papers given in the message; cite them by their numbers like [3]. Be concise.")
+        let s = await makeSession(tools: [], instructions: "You are the research assistant in Lunta, the user's reference manager. Use only the papers given in the message; cite them by their numbers like [3]. Be concise.")
         let i = messages.count
         messages.append(AskMessage(role: .assistant, text: ""))
         do {
@@ -895,7 +895,7 @@ final class AskEngine: ObservableObject {
     private func handle(_ e: AskEvent) {
         switch e {
         case .activity(let t):
-            NSLog("Margins Ask: %@", t)
+            NSLog("Lunta Ask: %@", t)
             messages.append(AskMessage(role: .activity, text: t))
         case .source(let s):
             sources[s.id] = s
@@ -912,7 +912,7 @@ final class AskEngine: ObservableObject {
         let headings = items.filter { $0.kind == "heading" }.map(\.text).prefix(25).joined(separator: " · ")
         let abstract = digitize(clip(p?.meta.abstractText ?? "", budget / 2))
         return """
-        You are the reading assistant in Margins, helping a researcher understand one scientific paper:
+        You are the reading assistant in Lunta, helping a researcher understand one scientific paper:
         “\(title)” (\(who)).
         Answer from the paper itself. Use find_in_paper or read_section to look up the passages you need \
         before answering anything specific; do not answer specifics from memory. Each passage has a number; cite \
@@ -942,7 +942,7 @@ final class AskEngine: ObservableObject {
         let tags = m.tags.prefix(40).joined(separator: ", ")
         let cols = m.collections.prefix(30).map(\.name).joined(separator: ", ")
         return """
-        You are the research assistant in Margins, the user's reference manager. The library has \(m.counts.all) papers \
+        You are the research assistant in Lunta, the user's reference manager. The library has \(m.counts.all) papers \
         (\(m.counts.unread) unread, \(m.counts.starred) starred). Tags: \(tags.isEmpty ? "none" : tags). Collections: \(cols.isEmpty ? "none" : cols).
         Always use tools to look things up; never invent papers, findings or citations. Tool results number each paper; \
         cite them like [3], once per paper, right after its title. Papers from find_new_papers are NOT in the library: always call them new papers beyond the \
@@ -1072,7 +1072,7 @@ final class AskEngine: ObservableObject {
             busy = false
             messages.append(AskMessage(role: .assistant, text: sections.isEmpty
                 ? "I found no new papers for these gaps. Try Discover with other words."
-                : "New papers beyond your library (not in Margins yet):\n\n" + sections.joined(separator: "\n\n")))
+                : "New papers beyond your library (not in Lunta yet):\n\n" + sections.joined(separator: "\n\n")))
             save()
         }
     }

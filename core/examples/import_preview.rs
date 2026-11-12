@@ -2,9 +2,9 @@
 fn main() {
     let path = std::env::args().nth(1).expect("path");
     let text = std::fs::read_to_string(&path).unwrap();
-    let e = margins_core::parse_import(text);
+    let e = lunta_core::parse_import(text);
     let n = e.len();
-    let c = |f: &dyn Fn(&margins_core::import::ImportEntry) -> bool| e.iter().filter(|x| f(x)).count();
+    let c = |f: &dyn Fn(&lunta_core::import::ImportEntry) -> bool| e.iter().filter(|x| f(x)).count();
     println!("entries {n}");
     println!("  title {}  authors {}  doi {}  pmid {}  pmcid {}  arxiv {}  abstract {}  date {}",
         c(&|x| !x.meta.title.is_empty()), c(&|x| !x.meta.authors.is_empty()), c(&|x| !x.meta.doi.is_empty()),

@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-const UA: &str = "Margins/0.1 (reference manager)";
+const UA: &str = "Lunta/0.1 (reference manager)";
 
 fn agent() -> &'static ureq::Agent {
     static A: OnceLock<ureq::Agent> = OnceLock::new();

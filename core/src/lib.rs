@@ -1,4 +1,4 @@
-//! Margins core: the shared library engine for the Mac and iPhone apps.
+//! Lunta core: the shared library engine for the Mac and iPhone apps.
 //!
 //! The Swift apps own the UI and the PDF/JATS → EPUB conversion (PDFKit); this crate owns the
 //! library: storage and sync layout, metadata lookup, annotations, full-text search and export.

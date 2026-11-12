@@ -1,10 +1,10 @@
 import XCTest
-import MarginsCore
+import LuntaCore
 
 /// Calls the Rust core through the generated Swift bindings.
 final class CoreTests: XCTestCase {
     func testAddSearchAnnotateExport() throws {
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("margins-swift-\(UUID())")
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("lunta-swift-\(UUID())")
         let lib = try Library.open(root: tmp.appendingPathComponent("lib").path,
                                    cacheDir: tmp.appendingPathComponent("cache").path, deviceId: "test-mac")
         var meta = PaperMeta(title: "Mapping cells through time and space with moscot", authors: ["Dominik Klein", "Fabian J. Theis"],

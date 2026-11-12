@@ -1,7 +1,7 @@
 import SwiftUI
 import WebKit
 import PDFKit
-import MarginsCore
+import LuntaCore
 
 /// Full-screen reader: the continuous reading view (reflowed text) or the original PDF.
 struct ReaderView: View {
@@ -265,7 +265,7 @@ struct ContentsSheet: View {
                 Button { go(a) } label: {
                     Text(t.title)
                         .font(t.level <= 1 ? .body.weight(.semibold) : .subheadline)
-                        .foregroundStyle(a == current ? Color.marginsTeal : (t.level <= 1 ? .primary : .secondary))
+                        .foregroundStyle(a == current ? Color.luntaTeal : (t.level <= 1 ? .primary : .secondary))
                         .padding(.leading, CGFloat(max(0, Int(t.level) - 1)) * 14)
                 }
             }
@@ -335,7 +335,7 @@ struct EpubWebViewIOS: UIViewRepresentable {
         return v
     }
 
-    /// Margins for page mode, in CSS pixels: clear of the notch / Dynamic Island and the home bar,
+    /// Lunta for page mode, in CSS pixels: clear of the notch / Dynamic Island and the home bar,
     /// with room for the page number. Taken from the window so they don't change with the bars.
     private func pagedState() -> PagedState {
         let win = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
@@ -362,7 +362,7 @@ struct EpubWebViewIOS: UIViewRepresentable {
         if v.scrollView.zoomScale != 1 { v.scrollView.setZoomScale(1, animated: false) }
         if context.coordinator.textScale != fontScale {
             context.coordinator.textScale = fontScale
-            v.evaluateJavaScript("marginsSetTextScale(\(fontScale))")
+            v.evaluateJavaScript("luntaSetTextScale(\(fontScale))")
         }
         let state = pagedState()
         if state != context.coordinator.applied {

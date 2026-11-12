@@ -1,15 +1,15 @@
-// Margins citations for Google Docs (Apps Script, bound to your document).
+// Lunta citations for Google Docs (Apps Script, bound to your document).
 // Citations are text linked to https://margins.local/cite?ids=…; bibliography paragraphs are
-// linked to https://margins.local/bib. The sidebar talks to the Margins app on your Mac.
+// linked to https://margins.local/bib. The sidebar talks to the Lunta app on your Mac.
 var CITE = 'https://margins.local/cite?ids=';
 var BIB = 'https://margins.local/bib';
 
 function onOpen() {
-  DocumentApp.getUi().createMenu('Margins').addItem('Cite…', 'showSidebar').addToUi();
+  DocumentApp.getUi().createMenu('Lunta').addItem('Cite…', 'showSidebar').addToUi();
 }
 
 function showSidebar() {
-  DocumentApp.getUi().showSidebar(HtmlService.createHtmlOutputFromFile('Sidebar').setTitle('Margins'));
+  DocumentApp.getUi().showSidebar(HtmlService.createHtmlOutputFromFile('Sidebar').setTitle('Lunta'));
 }
 
 /** Every citation run in document order: [{el, start, end, ids}]. */
@@ -121,9 +121,9 @@ function insertBibliography(entries) {
 }
 
 function getStyle() {
-  return PropertiesService.getDocumentProperties().getProperty('marginsStyle') || 'apa';
+  return PropertiesService.getDocumentProperties().getProperty('luntaStyle') || 'apa';
 }
 
 function setStyle(s) {
-  PropertiesService.getDocumentProperties().setProperty('marginsStyle', s);
+  PropertiesService.getDocumentProperties().setProperty('luntaStyle', s);
 }

@@ -1,6 +1,6 @@
-"""Neural narration for Margins: renders a paper to speech with Kokoro-82M on Apple silicon (MLX).
+"""Neural narration for Lunta: renders a paper to speech with Kokoro-82M on Apple silicon (MLX).
 
-Usage:  margins_tts.py --voice af_heart --out DIR < segments.json
+Usage:  lunta_tts.py --voice af_heart --out DIR < segments.json
 
 segments.json: [{"id": "...", "text": "...", "kind": "heading|text|caption"}, ...]
 

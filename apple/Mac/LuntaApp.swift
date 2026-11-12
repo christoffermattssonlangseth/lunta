@@ -1,20 +1,20 @@
 import SwiftUI
-import MarginsCore
+import LuntaCore
 import UniformTypeIdentifiers
 
-// Both MarginsCore and Paper2EpubKit define a PaperMeta; in the app it means the library's.
-typealias PaperMeta = MarginsCore.PaperMeta
+// Both LuntaCore and Paper2EpubKit define a PaperMeta; in the app it means the library's.
+typealias PaperMeta = LuntaCore.PaperMeta
 
 @main
-struct MarginsApp: App {
+struct LuntaApp: App {
     @StateObject private var holder = ModelHolder()
 
     var body: some Scene {
-        WindowGroup("Margins") {
+        WindowGroup("Lunta") {
             Group {
                 if let model = holder.model {
                     LibraryWindow().environmentObject(model)
-                        .handlesExternalEvents(preferring: ["margins"], allowing: ["*"])
+                        .handlesExternalEvents(preferring: ["lunta", "margins"], allowing: ["*"])
                 } else {
                     Text(holder.error ?? "Opening library…").padding()
                 }
@@ -22,7 +22,7 @@ struct MarginsApp: App {
             .frame(minWidth: 980, minHeight: 600)
         }
         .commands {
-            MarginsCommands(model: holder.model)
+            LuntaCommands(model: holder.model)
             CommandMenu("Listen") {
                 Button("Play / Pause") { Narrator.active?.toggle() }.keyboardShortcut("p", modifiers: [.command, .option])
                 Button("Next Paragraph") { Narrator.active?.next() }.keyboardShortcut(.rightArrow, modifiers: [.command, .option])
@@ -40,10 +40,10 @@ struct MarginsApp: App {
 
         .handlesExternalEvents(matching: ["library"])
 
-        Window("Connect AI Agents", id: "agents") { AgentConnectView().tint(.marginsTeal) }
-        Window("Citations in Word & Google Docs", id: "citations") { CitationsView().tint(.marginsTeal) }
+        Window("Connect AI Agents", id: "agents") { AgentConnectView().tint(.luntaTeal) }
+        Window("Citations in Word & Google Docs", id: "citations") { CitationsView().tint(.luntaTeal) }
         Window("Clean Up Library", id: "cleanup") {
-            if let model = holder.model { NavigationStack { CleanupView() }.environmentObject(model).tint(.marginsTeal) }
+            if let model = holder.model { NavigationStack { CleanupView() }.environmentObject(model).tint(.luntaTeal) }
         }
             .windowResizability(.contentSize)
 
@@ -84,7 +84,7 @@ final class ModelHolder: ObservableObject {
                 WatchCenter.shared.start(model)
             }
         }
-        // scripting hook: `Margins -import <file.bib|.ris> [-pdfs <folder>]`
+        // scripting hook: `Lunta -import <file.bib|.ris> [-pdfs <folder>]`
         let args = ProcessInfo.processInfo.arguments
         if let model, let i = args.firstIndex(of: "-import"), i + 1 < args.count {
             let file = URL(fileURLWithPath: args[i + 1])
@@ -93,7 +93,7 @@ final class ModelHolder: ObservableObject {
         } else if let i = args.firstIndex(of: "-narrate"), i + 1 < args.count {
             NarrationRenderer.shared.enqueue([args[i + 1]])
         } else if let model, let i = args.firstIndex(of: "-ask"), i + 1 < args.count {
-            // test hook: `Margins -ask "<question>" [-paper <id>]` writes the transcript to /tmp/margins-ask.txt
+            // test hook: `Lunta -ask "<question>" [-paper <id>]` writes the transcript to /tmp/lunta-ask.txt
             let q = args[i + 1]
             let paper = args.firstIndex(of: "-paper").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
             Task {
@@ -116,16 +116,16 @@ final class ModelHolder: ObservableObject {
                 } else {
                     t = await engine.transcript(for: q)
                 }
-                try? t.write(toFile: "/tmp/margins-ask.txt", atomically: true, encoding: .utf8)
+                try? t.write(toFile: "/tmp/lunta-ask.txt", atomically: true, encoding: .utf8)
                 exit(0)
             }
         } else if let model, args.contains("-forYouReport") {
-            // test hook: runs New for You with its files in /tmp/margins-foryou (the library's own feed
-            // is untouched) and writes what it found to /tmp/margins-foryou.txt.
+            // test hook: runs New for You with its files in /tmp/lunta-foryou (the library's own feed
+            // is untouched) and writes what it found to /tmp/lunta-foryou.txt.
             // `-interests "<paragraph>"`, or the paragraph is drafted from the library.
             Task {
                 let c = WatchCenter.shared
-                let dir = URL(fileURLWithPath: "/tmp/margins-foryou")
+                let dir = URL(fileURLWithPath: "/tmp/lunta-foryou")
                 try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 c.folderOverride = dir
                 c.model = model
@@ -146,7 +146,7 @@ final class ModelHolder: ObservableObject {
                     let r = f.record
                     out += "- \(r.title.prefix(110))\n    \(r.journal) · \(r.date) · score \(String(format: "%.3f", r.score)) · from \(r.source.prefix(60))\n    why: \(r.reason)\n"
                 }
-                try? out.write(toFile: "/tmp/margins-foryou.txt", atomically: true, encoding: .utf8)
+                try? out.write(toFile: "/tmp/lunta-foryou.txt", atomically: true, encoding: .utf8)
                 exit(0)
             }
         } else if let model, args.contains("-cleanupReport") {
@@ -162,7 +162,7 @@ final class ModelHolder: ObservableObject {
             Task {
                 let spaced = await model.runTogetherPapers()
                 out += "run-together: \(spaced.count)\n"
-                try? out.write(toFile: "/tmp/margins-cleanup.txt", atomically: true, encoding: .utf8)
+                try? out.write(toFile: "/tmp/lunta-cleanup.txt", atomically: true, encoding: .utf8)
                 exit(0)
             }
         } else if let model, let i = args.firstIndex(of: "-importPDFs"), i + 1 < args.count {
@@ -175,7 +175,7 @@ final class ModelHolder: ObservableObject {
     }
 }
 
-struct MarginsCommands: Commands {
+struct LuntaCommands: Commands {
     let model: LibraryModel?
     @Environment(\.openWindow) private var openWindow
 
@@ -186,7 +186,7 @@ struct MarginsCommands: Commands {
             Button("Clean Up Library…") { openWindow(id: "cleanup") }
         }
         CommandGroup(after: .newItem) {
-            Button("Add Paper…") { NotificationCenter.default.post(name: .marginsAddPaper, object: nil) }
+            Button("Add Paper…") { NotificationCenter.default.post(name: .luntaAddPaper, object: nil) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
             Button("Add PDF…") { addPDFs() }
                 .keyboardShortcut("o", modifiers: [.command])
@@ -221,7 +221,7 @@ struct MarginsCommands: Commands {
     private func addPDFs(privately: Bool = false) {
         guard let model else { return }
         let p = NSOpenPanel()
-        p.title = privately ? "Add PDFs privately (no online lookups)" : "Add PDFs to Margins"
+        p.title = privately ? "Add PDFs privately (no online lookups)" : "Add PDFs to Lunta"
         p.allowedContentTypes = [.pdf]
         p.allowsMultipleSelection = true
         guard p.runModal() == .OK, !p.urls.isEmpty else { return }
@@ -240,5 +240,5 @@ struct MarginsCommands: Commands {
 }
 
 extension Notification.Name {
-    static let marginsAddPaper = Notification.Name("marginsAddPaper")
+    static let luntaAddPaper = Notification.Name("luntaAddPaper")
 }

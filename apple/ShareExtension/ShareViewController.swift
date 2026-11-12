@@ -2,7 +2,7 @@ import UIKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// "Margins" in the share sheet: takes PDFs, links (DOI, PubMed, journal pages) or a DOI in text.
+/// "Lunta" in the share sheet: takes PDFs, links (DOI, PubMed, journal pages) or a DOI in text.
 final class ShareViewController: UIViewController {
     private let state = ShareState()
 
@@ -74,7 +74,7 @@ final class ShareViewController: UIViewController {
 
 @MainActor
 final class ShareState: ObservableObject {
-    @Published var message = "Adding to Margins…"
+    @Published var message = "Adding to Lunta…"
     @Published var finished = false
     @Published var ok = true
 
@@ -82,12 +82,12 @@ final class ShareState: ObservableObject {
         finished = true
         if pdfs + links == 0 {
             ok = false
-            message = "Nothing Margins can add here. Share a PDF, a paper's web page or a DOI."
+            message = "Nothing Lunta can add here. Share a PDF, a paper's web page or a DOI."
         } else {
             var parts: [String] = []
             if pdfs > 0 { parts.append(pdfs == 1 ? "PDF" : "\(pdfs) PDFs") }
             if links > 0 { parts.append(links == 1 ? "link" : "\(links) links") }
-            message = "Saved \(parts.joined(separator: " and ")). Margins adds it to your library when you open the app."
+            message = "Saved \(parts.joined(separator: " and ")). Lunta adds it to your library when you open the app."
         }
     }
 }

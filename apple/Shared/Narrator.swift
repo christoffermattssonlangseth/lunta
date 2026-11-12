@@ -387,7 +387,7 @@ final class Narrator: NSObject, ObservableObject {
     private func updateNowPlaying() {
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
-            MPMediaItemPropertyArtist: currentSection.isEmpty ? "Margins" : currentSection,
+            MPMediaItemPropertyArtist: currentSection.isEmpty ? "Lunta" : currentSection,
             MPNowPlayingInfoPropertyPlaybackRate: playing ? (neural ? speed : 1.0) : 0.0,
         ]
         if neural, let p = player {
@@ -436,7 +436,7 @@ struct NarrationBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ProgressView(value: narrator.progress).tint(.marginsTeal)
+            ProgressView(value: narrator.progress).tint(.luntaTeal)
             #if os(iOS)
             VStack(alignment: .leading, spacing: 10) {
                 info
@@ -466,7 +466,7 @@ struct NarrationBar: View {
             }
         }
         .buttonStyle(.borderless)
-        .foregroundStyle(Color.marginsTeal)
+        .foregroundStyle(Color.luntaTeal)
         .padding(.horizontal, 16).padding(.vertical, 10)
         .background(.regularMaterial)
     }
@@ -477,7 +477,7 @@ struct NarrationBar: View {
                 .font(.subheadline.weight(.semibold)).lineLimit(1)
             HStack(spacing: 6) {
                 if narrator.neural || narrator.live {
-                    Pill(text: "Natural voice", icon: "waveform", color: .marginsTeal).fixedSize()
+                    Pill(text: "Natural voice", icon: "waveform", color: .luntaTeal).fixedSize()
                 }
                 if narrator.waiting { ProgressView().controlSize(.mini) }
                 Text(narrator.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)

@@ -1,11 +1,11 @@
 import SwiftUI
-import MarginsCore
+import LuntaCore
 
-// Both MarginsCore and Paper2EpubKit define a PaperMeta; in the app it means the library's.
-typealias PaperMeta = MarginsCore.PaperMeta
+// Both LuntaCore and Paper2EpubKit define a PaperMeta; in the app it means the library's.
+typealias PaperMeta = LuntaCore.PaperMeta
 
 @main
-struct MarginsiOSApp: App {
+struct LuntaiOSApp: App {
     @StateObject private var holder = ModelHolder()
     @Environment(\.scenePhase) private var phase
 
@@ -24,7 +24,7 @@ struct MarginsiOSApp: App {
                     .padding()
                 }
             }
-            .tint(.marginsTeal)
+            .tint(.luntaTeal)
         }
         .onChange(of: phase) { _, p in
             if p == .active, let m = holder.model { m.refresh(); Task { await m.importShared() } }
@@ -41,19 +41,19 @@ final class ModelHolder: ObservableObject {
     init() {
         Task {
             let t0 = Date()
-            NSLog("Margins: resolving iCloud container")
+            NSLog("Lunta: resolving iCloud container")
             let (url, cloud) = await Task.detached { CloudLibrary.resolve() }.value
-            NSLog("Margins: library at %@ (iCloud: %d) after %.1fs", url.path, cloud ? 1 : 0, Date().timeIntervalSince(t0))
+            NSLog("Lunta: library at %@ (iCloud: %d) after %.1fs", url.path, cloud ? 1 : 0, Date().timeIntervalSince(t0))
             if cloud {
                 await CloudLibrary.prepareLogs(url) { text in Task { @MainActor in self.progress = text } }
-                NSLog("Margins: change logs ready after %.1fs", Date().timeIntervalSince(t0))
+                NSLog("Lunta: change logs ready after %.1fs", Date().timeIntervalSince(t0))
             }
             progress = "Opening library…"
             do {
                 let m = try await Task.detached { try LibraryModel.openLibrary(root: url) }.value
-                NSLog("Margins: core opened after %.1fs", Date().timeIntervalSince(t0))
+                NSLog("Lunta: core opened after %.1fs", Date().timeIntervalSince(t0))
                 model = LibraryModel(lib: m, root: url, inCloud: cloud)
-                NSLog("Margins: ready after %.1fs, %d papers", Date().timeIntervalSince(t0), model?.counts.all ?? -1)
+                NSLog("Lunta: ready after %.1fs, %d papers", Date().timeIntervalSince(t0), model?.counts.all ?? -1)
                 if let model { Task { await model.importShared() }; WatchCenter.shared.start(model) }
                 if ProcessInfo.processInfo.arguments.contains("-testDownload"), let model {
                     // diagnostics: fetch a few reading views from iCloud and report how long it took
@@ -77,7 +77,7 @@ final class ModelHolder: ObservableObject {
                     }
                 }
             } catch {
-                NSLog("Margins: open failed: %@", error.localizedDescription)
+                NSLog("Lunta: open failed: %@", error.localizedDescription)
                 self.error = error.localizedDescription
             }
         }
@@ -85,7 +85,7 @@ final class ModelHolder: ObservableObject {
 }
 
 extension LibraryModel {
-    /// Adds what was shared to Margins from other apps (PDFs and links waiting in the share inbox).
+    /// Adds what was shared to Lunta from other apps (PDFs and links waiting in the share inbox).
     func importShared() async {
         let items = ShareInbox.pending()
         guard !items.isEmpty, !importingShared else { return }

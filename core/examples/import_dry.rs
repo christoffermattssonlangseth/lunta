@@ -1,9 +1,9 @@
 //! cargo run --release --example import_dry -- <file.bib> : imports into a throwaway library
-use margins_core::*;
-use margins_core::model::*;
+use lunta_core::*;
+use lunta_core::model::*;
 fn main() {
     let path = std::env::args().nth(1).expect("path");
-    let tmp = std::env::temp_dir().join(format!("margins-dry-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("lunta-dry-{}", std::process::id()));
     let lib = Library::open(tmp.join("lib").to_string_lossy().into(), tmp.join("cache").to_string_lossy().into(), "dry".into()).unwrap();
     let t = std::time::Instant::now();
     let entries = parse_import(std::fs::read_to_string(&path).unwrap());

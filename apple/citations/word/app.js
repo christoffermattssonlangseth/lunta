@@ -1,4 +1,4 @@
-// Margins citations for Word: citations are content controls tagged "margins:<id>,<id>", the
+// Lunta citations for Word: citations are content controls tagged "margins:<id>,<id>", the
 // bibliography is a content control tagged "margins-bib". "Update All" renumbers and reformats
 // every citation and rewrites the bibliography.
 var API = '/api';
@@ -12,7 +12,7 @@ function status(msg, err) { var s = $('status'); s.textContent = msg || ''; s.cl
 function getJSON(url, body) {
   var opts = body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {};
   return fetch(API + url, opts).then(function (r) {
-    if (!r.ok) throw new Error('Margins answered ' + r.status);
+    if (!r.ok) throw new Error('Lunta answered ' + r.status);
     return r.json();
   });
 }
@@ -48,7 +48,7 @@ function search(q) {
       $('results').appendChild(el);
     });
     renderPicked();
-  }).catch(function () { status('Can’t reach Margins. Is the Margins app open on this Mac?', true); });
+  }).catch(function () { status('Can’t reach Lunta. Is the Lunta app open on this Mac?', true); });
 }
 
 function insertCitation() {
@@ -74,7 +74,7 @@ function insertBibliography() {
     return ctx.sync().then(function () {
       if (existing.items.length) { existing.items[0].select(); return ctx.sync(); }
       var cc = ctx.document.getSelection().insertContentControl();
-      cc.tag = 'margins-bib'; cc.title = 'Bibliography (Margins)';
+      cc.tag = 'margins-bib'; cc.title = 'Bibliography (Lunta)';
       cc.insertText('References will appear here.', 'Replace');
       return ctx.sync();
     });
@@ -89,25 +89,25 @@ function updateAll() {
     return ctx.sync().then(function () {
       var cites = all.items.filter(function (c) { return c.tag && c.tag.indexOf('margins:') === 0; });
       var lists = cites.map(function (c) { return c.tag.slice(8).split(',').filter(Boolean); });
-      var num = MarginsCite.numbering(lists);
+      var num = LuntaCite.numbering(lists);
       return getJSON('/bibliography', { style: style, ids: num.list }).then(function (res) {
         var papers = {};
         res.entries.forEach(function (e) { papers[e.id] = e; });
         cites.forEach(function (c, i) {
-          var text = MarginsCite.inText(style, lists[i], num.order, papers);
+          var text = LuntaCite.inText(style, lists[i], num.order, papers);
           var r = c.insertText(text, 'Replace');
           r.font.superscript = style === 'nature';
         });
         var bibs = all.items.filter(function (c) { return c.tag === 'margins-bib'; });
         if (bibs.length) {
-          var entries = MarginsCite.bibliography(style, res.entries, num.order);
+          var entries = LuntaCite.bibliography(style, res.entries, num.order);
           var html = entries.length
-            ? entries.map(function (e) { return '<p style="margin:0 0 6pt 0">' + MarginsCite.toHTML(e.text) + '</p>'; }).join('')
+            ? entries.map(function (e) { return '<p style="margin:0 0 6pt 0">' + LuntaCite.toHTML(e.text) + '</p>'; }).join('')
             : '<p>No citations yet.</p>';
           bibs.forEach(function (b) { b.insertHtml(html, 'Replace'); });
         }
         return ctx.sync().then(function () {
-          status(cites.length + ' citation' + (cites.length === 1 ? '' : 's') + ', ' + num.list.length + ' reference' + (num.list.length === 1 ? '' : 's') + ' · ' + MarginsCite.STYLES[style].name);
+          status(cites.length + ' citation' + (cites.length === 1 ? '' : 's') + ', ' + num.list.length + ' reference' + (num.list.length === 1 ? '' : 's') + ' · ' + LuntaCite.STYLES[style].name);
         });
       });
     });
@@ -116,14 +116,14 @@ function updateAll() {
 
 Office.onReady(function () {
   var sel = $('style');
-  Object.keys(MarginsCite.STYLES).forEach(function (k) {
-    var o = document.createElement('option'); o.value = k; o.textContent = MarginsCite.STYLES[k].name; sel.appendChild(o);
+  Object.keys(LuntaCite.STYLES).forEach(function (k) {
+    var o = document.createElement('option'); o.value = k; o.textContent = LuntaCite.STYLES[k].name; sel.appendChild(o);
   });
-  try { style = Office.context.document.settings.get('marginsStyle') || 'apa'; } catch (e) {}
+  try { style = Office.context.document.settings.get('luntaStyle') || 'apa'; } catch (e) {}
   sel.value = style;
   sel.onchange = function () {
     style = sel.value;
-    try { Office.context.document.settings.set('marginsStyle', style); Office.context.document.settings.saveAsync(); } catch (e) {}
+    try { Office.context.document.settings.set('luntaStyle', style); Office.context.document.settings.saveAsync(); } catch (e) {}
     updateAll();
   };
   var t = null;
@@ -131,7 +131,7 @@ Office.onReady(function () {
   $('insert').onclick = insertCitation;
   $('bib').onclick = insertBibliography;
   $('refresh').onclick = updateAll;
-  getJSON('/status').then(function (s) { status('Connected to Margins · ' + s.papers + ' papers'); })
-    .catch(function () { status('Can’t reach Margins. Open the Margins app on this Mac.', true); });
+  getJSON('/status').then(function (s) { status('Connected to Lunta · ' + s.papers + ' papers'); })
+    .catch(function () { status('Can’t reach Lunta. Open the Lunta app on this Mac.', true); });
   $('q').focus();
 });

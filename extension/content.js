@@ -1,6 +1,6 @@
-// Margins extension: finds a paper's metadata on article pages and shows a small panel to save it.
+// Lunta extension: finds a paper's metadata on article pages and shows a small panel to save it.
 (() => {
-  if (window.top !== window || document.getElementById("margins-ext-root")) return;
+  if (window.top !== window || document.getElementById("lunta-ext-root")) return;
 
   const meta = (...names) => {
     for (const n of names) {
@@ -56,7 +56,7 @@
 
   // ---- panel (shadow DOM keeps the page's CSS out) ----
   const host = document.createElement("div");
-  host.id = "margins-ext-root";
+  host.id = "lunta-ext-root";
   const root = host.attachShadow({ mode: "open" });
   root.innerHTML = `
     <style>
@@ -88,9 +88,9 @@
       }
     </style>
     <div class="wrap">
-      <button class="tab" title="Margins"><img alt=""><span class="dot"></span></button>
+      <button class="tab" title="Lunta"><img alt=""><span class="dot"></span></button>
       <div class="card">
-        <div class="brand"><img alt="">Margins</div>
+        <div class="brand"><img alt="">Lunta</div>
         <div class="t"></div>
         <div class="sub"></div>
         <div class="row"><span>Library</span><span class="lib muted">Checking…</span></div>
@@ -118,14 +118,14 @@
     if (state.inLibrary) {
       const a = document.createElement("a");
       a.className = "open";
-      a.href = "margins://open?id=" + encodeURIComponent(state.id);
+      a.href = "lunta://open?id=" + encodeURIComponent(state.id);
       a.textContent = "✓ In library · Open";
       lib.className = "lib";
       lib.appendChild(a);
     } else {
       const b = document.createElement("button");
       b.className = "btn";
-      b.textContent = "Save to Margins";
+      b.textContent = "Save to Lunta";
       b.onclick = save;
       lib.className = "lib";
       lib.appendChild(b);
