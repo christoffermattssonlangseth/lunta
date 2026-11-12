@@ -1,6 +1,9 @@
 import SwiftUI
 import MarginsCore
 
+/// Navigation value that opens a paper in the reader (a plain id opens its info page).
+struct ReadTarget: Hashable { let id: String }
+
 /// Paper details: metadata, abstract, Find PDF, Make Reading View, citations.
 struct PaperInfoView: View {
     @EnvironmentObject var model: LibraryModel
@@ -8,6 +11,8 @@ struct PaperInfoView: View {
     @Environment(\.openURL) private var openURL
     let paperID: String
     let embedded: Bool
+    /// From the paper list: show a Read button that opens the reader.
+    var canRead = false
     @State private var busy: String?
     @State private var note: String?
     @State private var copied = false
@@ -81,6 +86,12 @@ struct PaperInfoView: View {
     @ViewBuilder
     private func actions(_ p: Paper) -> some View {
         HStack(spacing: 10) {
+            if canRead && (p.hasEpub || p.hasPdf) {
+                NavigationLink(value: ReadTarget(id: p.id)) {
+                    Label("Read", systemImage: "book").frame(minWidth: 90)
+                }
+                .buttonStyle(.borderedProminent).tint(.marginsTeal).controlSize(.large)
+            }
             if !p.hasPdf {
                 Button {
                     run("Searching open-access sources…") {
@@ -88,7 +99,7 @@ struct PaperInfoView: View {
                         else { note = "No open-access PDF found. Open the publisher page and share the PDF to Margins." }
                     }
                 } label: { Label("Find PDF", systemImage: "magnifyingglass") }
-                .buttonStyle(.borderedProminent).tint(.marginsTeal)
+                .buttonStyle(canRead && p.hasEpub ? AnyButtonStyle(.bordered) : AnyButtonStyle(.borderedProminent)).tint(.marginsTeal)
             }
             if !p.hasEpub && (p.hasPdf || !p.meta.pmcid.isEmpty || !p.meta.doi.isEmpty) {
                 Button {

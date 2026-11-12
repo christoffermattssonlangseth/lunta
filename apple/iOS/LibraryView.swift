@@ -9,6 +9,7 @@ struct LibraryView: View {
     @State private var askPath: [String] = []
     @State private var path = NavigationPath()
     @State private var opened = false
+    @State private var reveal: String?
     @State private var sharing: ShareTargetIOS?
     @State private var organizing: ShareTargetIOS?
     @State private var prompt: NameRequest?
@@ -22,7 +23,16 @@ struct LibraryView: View {
                 .navigationDestination(for: SidebarItem.self) { item in
                     papersScreen.onAppear { if model.source != item { model.source = item } }
                 }
-                .navigationDestination(for: String.self) { id in ReaderView(paperID: id) }
+                .navigationDestination(for: String.self) { id in PaperInfoView(paperID: id, embedded: true, canRead: true) }
+                .navigationDestination(for: ReadTarget.self) { t in ReaderView(paperID: t.id) }
+        }
+        .environment(\.showInLibrary) { id in
+            // back to All Papers, scrolled to the paper and briefly highlighted
+            model.query = ""
+            model.source = .all
+            var p = NavigationPath(); p.append(SidebarItem.all)
+            path = p
+            reveal = id
         }
         .onAppear {
             guard !opened else { return }
@@ -32,9 +42,11 @@ struct LibraryView: View {
         #if DEBUG
         .task {
             // testing in the Simulator: -openFirstPaper opens the first paper's reader
-            guard ProcessInfo.processInfo.arguments.contains("-openFirstPaper") else { return }
+            let args = ProcessInfo.processInfo.arguments
+            guard args.contains("-openFirstPaper") || args.contains("-openFirstInfo") else { return }
             for _ in 0..<40 where model.papers.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
-            if let p = model.papers.first { path.append(p.id) }
+            guard let p = model.papers.first else { return }
+            if args.contains("-openFirstInfo") { path.append(p.id) } else { path.append(ReadTarget(id: p.id)) }
         }
         #endif
         .safeAreaInset(edge: .bottom) {
@@ -104,9 +116,12 @@ struct LibraryView: View {
     }
 
     private var libraryList: some View {
+          ScrollViewReader { proxy in
             List {
               ForEach(model.papers) { p in
                 NavigationLink(value: p.id) { PaperRow(paper: p, snippet: model.snippets[p.id]) }
+                    .id(p.id)
+                    .listRowBackground(reveal == p.id ? Color.marginsTeal.opacity(0.18) : nil)
                     // only from the right, so a swipe in from the left can't change a paper by accident
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button { organizing = ShareTargetIOS(id: p.id) } label: { Label("Folders & Tags", systemImage: "folder") }
@@ -143,6 +158,16 @@ struct LibraryView: View {
             }
             .listStyle(.plain)
             .refreshable { model.refresh() }
+            .task(id: reveal) {
+                guard let id = reveal else { return }
+                for _ in 0..<20 where !model.papers.contains(where: { $0.id == id }) {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+                try? await Task.sleep(for: .milliseconds(350))   // let the pop finish
+                withAnimation { proxy.scrollTo(id, anchor: .center) }
+                try? await Task.sleep(for: .seconds(2.5))
+                withAnimation { if reveal == id { reveal = nil } }
+            }
             .overlay {
                 if model.papers.isEmpty {
                     if !model.query.isEmpty {
@@ -153,6 +178,7 @@ struct LibraryView: View {
                     }
                 }
             }
+          }
     }
 }
 

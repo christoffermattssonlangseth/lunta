@@ -75,6 +75,11 @@ struct LibraryWindow: View {
             })
             .inspectorColumnWidth(min: 300, ideal: 380, max: 560)
         }
+        .environment(\.showInLibrary) { id in
+            model.query = ""
+            model.source = .all
+            selection = [id]
+        }
         .safeAreaInset(edge: .bottom) { StatusBar() }
         .sheet(isPresented: $addingPaper) { AddPaperSheet() }
         .modifier(EditSheet(editing: $editing))

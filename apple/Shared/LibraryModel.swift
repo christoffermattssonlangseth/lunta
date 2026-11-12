@@ -272,9 +272,12 @@ final class LibraryModel: ObservableObject {
 
     /// Adds a paper from a DOI / link / PMCID: converts it for reading when an open version exists,
     /// otherwise adds it with metadata only.
-    func add(_ input: String) async {
+    /// Adds a paper by DOI, link or PMCID and returns its id. `known` fills in what the lookup
+    /// missed (e.g. arXiv DOIs, which Crossref doesn't know, from a search result's metadata).
+    @discardableResult
+    func add(_ input: String, known: PaperMeta? = nil) async -> String? {
         let input = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !input.isEmpty else { return }
+        guard !input.isEmpty else { return nil }
         status = "Adding \(input)…"
         defer { status = nil }
         let lib = self.lib
@@ -284,18 +287,34 @@ final class LibraryModel: ObservableObject {
         do {
             var m = meta ?? Self.meta(from: conv)
             if m.title.isEmpty, let c = conv { m = Self.meta(from: c) }
+            if let k = known {
+                if m.title.isEmpty { m.title = k.title }
+                if m.authors.isEmpty { m.authors = k.authors }
+                if m.date.isEmpty { m.date = k.date }
+                if m.journal.isEmpty { m.journal = k.journal }
+                if m.doi.isEmpty { m.doi = k.doi }
+                if m.pmid.isEmpty { m.pmid = k.pmid }
+                if m.pmcid.isEmpty { m.pmcid = k.pmcid }
+                if m.arxiv.isEmpty { m.arxiv = k.arxiv }
+                if m.url.isEmpty { m.url = k.url }
+                if m.abstractText.isEmpty { m.abstractText = k.abstractText }
+            }
             guard !m.title.isEmpty || !m.doi.isEmpty else {
                 errorMessage = "Couldn't find “\(input)”. Try a DOI or a link to the article."
-                return
+                try? FileManager.default.removeItem(at: tmp)
+                return nil
             }
             let epub = conv.flatMap { try? Data(contentsOf: $0.file) }
             let added = try await Task.detached { try lib.addPaper(meta: m, pdf: nil, epub: epub, fulltext: conv?.fulltext) }.value
             reload()
             if conv == nil { status = "Added “\(added.meta.title)” (no open full text found)" }
+            try? FileManager.default.removeItem(at: tmp)
+            return added.id
         } catch {
             errorMessage = error.localizedDescription
         }
         try? FileManager.default.removeItem(at: tmp)
+        return nil
     }
 
     /// Adds PDFs (dragged in or picked): matches them to existing papers by DOI, converts them for reading.
@@ -531,8 +550,8 @@ final class LibraryModel: ObservableObject {
         if let id = hit.inLibrary { return id }
         var id: String?
         if !hit.meta.doi.isEmpty {
-            await add(hit.meta.doi)
             id = lib.findByDoi(doi: hit.meta.doi)?.id
+            if id == nil { id = await add(hit.meta.doi, known: hit.meta) }
         }
         if id == nil {
             let lib = self.lib

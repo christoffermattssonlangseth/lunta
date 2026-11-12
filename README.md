@@ -20,7 +20,9 @@ The library syncs between your Mac and iPhone through iCloud Drive.
   read/unread. **Smart folders** fill themselves from rules (words, tag, folder, year range, recently
   added, unread/starred, PDF or not, highlighted). Folders & Tags is one tap away on iPhone (swipe, long-press, or the reader's ⋯ menu). The iPhone
   library works like Mail: a list of places (all, starred, unread, New for You, folders, smart folders,
-  tags), each opening its papers; swipe back from the left edge to return to the list.
+  tags), each opening its papers; swipe back from the left edge to return to the list. Tapping a paper
+  opens its info page (abstract, folders, cite) with a **Read** button. A paper found through New for You
+  or Discover has **Read Paper** and **Show in Library** once added.
 - **Read:** a reflowable reading view made from the paper (open-access XML from PMC/Europe PMC, arXiv's
   own HTML with real equations for arXiv papers, or the PDF itself) (large type on iPhone, zoomable figures, wide
   tables scroll in place) next to the original PDF. **Scroll or turn pages**: page mode lays the paper

@@ -32,6 +32,15 @@ extension LibraryModel {
     }
 }
 
+/// Shows a library paper in the paper list (All Papers, selected). Set by the library window.
+private struct ShowInLibraryKey: EnvironmentKey { static let defaultValue: ((String) -> Void)? = nil }
+extension EnvironmentValues {
+    var showInLibrary: ((String) -> Void)? {
+        get { self[ShowInLibraryKey.self] }
+        set { self[ShowInLibraryKey.self] = newValue }
+    }
+}
+
 /// Opens a paper from the search results: the reader window on the Mac, the reader on iPhone.
 struct OpenAddedPaper: View {
     let id: String
@@ -46,13 +55,13 @@ struct OpenAddedPaper: View {
             .buttonStyle(compact ? AnyButtonStyle(.borderless) : AnyButtonStyle(.borderedProminent))
             .help("Open this paper")
         #else
-        NavigationLink(value: id) { label }
+        NavigationLink(value: ReadTarget(id: id)) { label }
             .buttonStyle(compact ? AnyButtonStyle(.borderless) : AnyButtonStyle(.borderedProminent))
         #endif
     }
 
     private var label: some View {
-        Label(compact ? "Open" : "Open Paper", systemImage: compact ? "checkmark.circle.fill" : "book")
+        Label(compact ? "Read" : "Read Paper", systemImage: compact ? "checkmark.circle.fill" : "book")
             .font(compact ? .callout.weight(.medium) : .body)
     }
 }
@@ -100,6 +109,7 @@ struct DiscoverRow: View {
 
 struct DiscoverDetail: View {
     @EnvironmentObject var model: LibraryModel
+    @Environment(\.showInLibrary) private var showInLibrary
     @ObservedObject private var watches = WatchCenter.shared   // redraw when a watch's find is added
     let hit: DiscoverHit
     @State private var adding = false
@@ -121,10 +131,15 @@ struct DiscoverDetail: View {
                 Text([hit.meta.journal, hit.meta.year, hit.citedBy > 0 ? "cited \(hit.citedBy)×" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary)
                 if let id = model.libraryID(of: hit) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 10) {
                         OpenAddedPaper(id: id).tint(.marginsTeal)
-                        Label("In your library", systemImage: "checkmark.circle.fill").foregroundStyle(Color.marginsTeal)
+                        if let showInLibrary {
+                            Button { showInLibrary(id) } label: { Label("Show in Library", systemImage: "books.vertical") }
+                                .buttonStyle(.bordered).tint(.marginsTeal)
+                        }
                     }
+                    Label("In your library", systemImage: "checkmark.circle.fill")
+                        .font(.footnote).foregroundStyle(Color.marginsTeal)
                 } else {
                     Button {
                         adding = true
