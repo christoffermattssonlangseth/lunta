@@ -10,6 +10,12 @@ on:
   pull_request:
     paths: ['android/**', 'core/**', 'desktop/src/reader/**', 'scripts/build-core-android.sh', 'scripts/extract-reader-assets.mjs', '.github/workflows/android.yml']
   workflow_dispatch:
+  # release.yml runs this for a version tag and attaches the result to the release
+  workflow_call:
+    inputs:
+      release_tag:
+        type: string
+        default: ''
 
 jobs:
   apk:
@@ -57,3 +63,11 @@ jobs:
         with:
           name: lunta-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
+
+      - name: Attach to the release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk "lunta-android-${{ inputs.release_tag }}.apk"
+          gh release upload "${{ inputs.release_tag }}" --clobber -R "${{ github.repository }}" "lunta-android-${{ inputs.release_tag }}.apk"
