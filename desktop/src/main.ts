@@ -4,7 +4,9 @@ import { open as openDialog, ask } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { api, type Paper, type Row, type Sidebar, type Source, type CiteStyle, type Folder } from './api';
+import { api, smartApi, type Paper, type Row, type Sidebar, type Source, type CiteStyle, type Folder } from './api';
+import { editDetails, editSmart, blankSmart } from './editors';
+import { setupDrag, type Payload } from './drag';
 import { fill, h, $, status, prompt, menu, menuBelow, copy, authorsShort, type MenuItem } from './ui';
 import { openReader, readerPaper, closeReader } from './reader';
 
@@ -12,7 +14,9 @@ let source: Source = { kind: 'all' };
 let query = '';
 let sort = localStorage.getItem('sort') || 'added';
 let rows: Row[] = [];
-let selected: string | null = null;
+let selected: string | null = null;           // the paper shown in the details pane
+let picked = new Set<string>();               // all selected papers (⌘/Ctrl-click, Shift-click)
+let anchor: string | null = null;
 let side: Sidebar | null = null;
 let busy = 0;
 
@@ -60,6 +64,8 @@ async function reloadList() {
   if (serial !== listSerial) return;
   rows = r;
   if (selected && !rows.some((x) => x.paper.id === selected)) selected = null;
+  picked = new Set([...picked].filter((id) => rows.some((x) => x.paper.id === id)));
+  if (selected && !picked.has(selected)) picked = new Set(picked.size ? picked : [selected]);
   renderList();
   renderDetail();
 }
@@ -75,9 +81,11 @@ function same(a: Source, b: Source) { return a.kind === b.kind && (a.id || '') =
 
 function place(label: string, s: Source, count?: number, icon = '', extra: Partial<{ depth: number; onmenu: (e: MouseEvent) => void }> = {}) {
   const item = h('button.place' + (same(s, source) ? '.on' : ''), {
-    onclick: () => { source = s; selected = null; renderSidebar(); reloadList(); },
+    onclick: () => { source = s; selected = null; picked.clear(); renderSidebar(); reloadList(); },
     oncontextmenu: extra.onmenu ? (e: MouseEvent) => { e.preventDefault(); extra.onmenu!(e); } : undefined,
     'data-folder': s.kind === 'folder' ? s.id : undefined,
+    'data-drag': s.kind === 'folder' ? `folder:${s.id}` : undefined,
+    'data-drop': s.kind === 'folder' ? `folder:${s.id}` : s.kind === 'tag' ? `tag:${s.id}` : undefined,
   }, h('span.icon', { text: icon }), h('span.label', { text: label }), count !== undefined ? h('span.count', { text: String(count) }) : null);
   if (extra.depth) item.style.paddingLeft = `${12 + extra.depth * 14}px`;
   return item;
@@ -101,14 +109,35 @@ function renderSidebar() {
     place('All Papers', { kind: 'all' }, s.all, '📚'),
     place('Starred', { kind: 'starred' }, s.starred, '★'),
     place('Unread', { kind: 'unread' }, s.unread, '●'),
-    h('h4', {}, 'Folders', h('button.mini', { title: 'New folder', text: '＋', onclick: () => newFolder(null) })),
+    h('h4', { 'data-drop': 'folders-root' }, 'Folders', h('button.mini', { title: 'New folder', text: '＋', onclick: () => newFolder(null) })),
     ...tree(null, 0),
     s.folders.length ? null : h('p.hint', { text: 'No folders yet' }),
-    s.smart.length ? h('h4', { text: 'Smart Folders' }) : null,
-    ...s.smart.map(([id, name]) => place(name, { kind: 'smart', id }, undefined, '⚙')),
+    h('h4', {}, 'Smart Folders', h('button.mini', { title: 'New smart folder', text: '＋', onclick: () => newSmart() })),
+    ...s.smart.map(([id, name]) => place(name, { kind: 'smart', id }, undefined, '⚙', { onmenu: (e) => smartMenu(e, id, name) })),
     s.tags.length ? h('h4', { text: 'Tags' }) : null,
     ...s.tags.map((t) => place(t, { kind: 'tag', id: t }, undefined, '#')),
   );
+}
+
+async function newSmart() {
+  const id = await editSmart(blankSmart(), side?.tags || [], side?.folders || []);
+  if (!id) return;
+  source = { kind: 'smart', id }; selected = null; picked.clear();
+  await reload();
+}
+
+async function smartMenu(e: MouseEvent, id: string, name: string) {
+  menu(e.clientX, e.clientY, [
+    { label: 'Edit Smart Folder…', action: async () => {
+      const f = (await smartApi.list()).find((x) => x.id === id);
+      if (f && await editSmart(f, side?.tags || [], side?.folders || [])) reload();
+    } },
+    { label: 'Delete Smart Folder', danger: true, action: async () => {
+      if (!(await ask(`Delete the smart folder “${name}”? The papers stay in the library.`, { title: 'Delete Smart Folder', kind: 'warning' }))) return;
+      if (same(source, { kind: 'smart', id })) source = { kind: 'all' };
+      after(smartApi.remove(id));
+    } },
+  ]);
 }
 
 async function newFolder(parent: string | null) {
@@ -154,11 +183,16 @@ function renderList() {
   }
   list.replaceChildren(...rows.map(({ paper: p, snippet: sn }) => {
     const m = p.meta;
-    return h('div.row' + (p.id === selected ? '.on' : '') + (p.read ? '' : '.unread'), {
+    return h('div.row' + (picked.has(p.id) ? '.on' : '') + (p.read ? '' : '.unread'), {
       'data-id': p.id,
-      onclick: () => select(p.id),
+      'data-drag': 'paper',
+      onclick: (e: MouseEvent) => click(e, p.id),
       ondblclick: () => read(p, p.has_epub ? 'reading' : 'pdf'),
-      oncontextmenu: (e: MouseEvent) => { e.preventDefault(); select(p.id); paperMenu(e, p); },
+      oncontextmenu: (e: MouseEvent) => {
+        e.preventDefault();
+        if (!picked.has(p.id)) select(p.id);
+        if (picked.size > 1) pickedMenu(e); else paperMenu(e, p);
+      },
     },
       h('div.marks', {}, h('span.dot', { title: p.read ? '' : 'Unread' }),
         h('span.star' + (p.starred ? '.on' : ''), { text: p.starred ? '★' : '' })),
@@ -173,16 +207,58 @@ function renderList() {
   }));
 }
 
+function click(e: MouseEvent, id: string) {
+  if (e.shiftKey && anchor) {
+    const a = rows.findIndex((r) => r.paper.id === anchor), b = rows.findIndex((r) => r.paper.id === id);
+    if (a >= 0 && b >= 0) {
+      const [lo, hi] = a < b ? [a, b] : [b, a];
+      const range = rows.slice(lo, hi + 1).map((r) => r.paper.id);
+      picked = e.metaKey || e.ctrlKey ? new Set([...picked, ...range]) : new Set(range);
+      selected = id;
+      return paintSelection();
+    }
+  }
+  if (e.metaKey || e.ctrlKey) {
+    if (picked.has(id)) { picked.delete(id); selected = picked.size ? [...picked][picked.size - 1] : null; }
+    else { picked.add(id); selected = id; }
+    anchor = id;
+    return paintSelection();
+  }
+  select(id);
+}
+
 function select(id: string) {
-  selected = id;
-  document.querySelectorAll('#list .row').forEach((r) => r.classList.toggle('on', (r as HTMLElement).dataset.id === id));
-  document.querySelector(`#list .row.on`)?.scrollIntoView({ block: 'nearest' });
+  selected = id; anchor = id; picked = new Set([id]);
+  paintSelection();
+}
+
+function paintSelection() {
+  document.querySelectorAll('#list .row').forEach((r) => r.classList.toggle('on', picked.has((r as HTMLElement).dataset.id!)));
+  document.querySelector(`#list .row[data-id="${selected}"]`)?.scrollIntoView({ block: 'nearest' });
   renderDetail();
+}
+
+/** The papers a drag or menu on this selection acts on, in list order. */
+function pickedPapers(): Paper[] { return rows.filter((r) => picked.has(r.paper.id)).map((r) => r.paper); }
+
+function pickedMenu(e: MouseEvent) {
+  const ps = pickedPapers();
+  const n = ps.length;
+  const all = (f: (p: Paper) => boolean) => ps.every(f);
+  menu(e.clientX, e.clientY, [
+    { label: all((p) => p.starred) ? `Unstar ${n} Papers` : `Star ${n} Papers`, action: () => after(Promise.all(ps.map((p) => api.setStarred(p.id, !all((q) => q.starred))))) },
+    { label: all((p) => p.read) ? `Mark ${n} as Unread` : `Mark ${n} as Read`, action: () => after(Promise.all(ps.map((p) => api.setRead(p.id, !all((q) => q.read))))) },
+    '-',
+    ...citeItems(ps.map((p) => p.id)),
+    '-',
+    { label: `Delete ${n} Papers…`, danger: true, action: () => deletePapers(ps) },
+  ]);
 }
 
 function paperMenu(e: MouseEvent, p: Paper) {
   menu(e.clientX, e.clientY, [
     { label: 'Read', action: () => read(p, 'reading'), disabled: !p.has_epub },
+    { label: 'Edit Details…', action: () => editPaper(p) },
     { label: 'Open PDF', action: () => read(p, 'pdf'), disabled: !p.has_pdf },
     '-',
     { label: p.starred ? 'Unstar' : 'Star', action: () => after(api.setStarred(p.id, !p.starred)) },
@@ -208,6 +284,12 @@ function citeItems(ids: string[]): MenuItem[] {
 function renderDetail() {
   const box = $('#detail');
   const p = rows.find((r) => r.paper.id === selected)?.paper;
+  if (p && picked.size > 1) {
+    box.replaceChildren(h('div.multi', {}, h('h3', { text: `${picked.size} papers selected` }),
+      h('p', { text: 'Drag them onto a folder in the sidebar to add them to it, or onto a tag to tag them.' }),
+      h('button.danger', { text: `Delete ${picked.size} Papers…`, onclick: () => deletePapers(pickedPapers()) })));
+    return;
+  }
   if (!p) {
     box.replaceChildren(h('div.empty', {}, h('p', { text: rows.length ? 'Select a paper' : '' })));
     return;
@@ -234,6 +316,7 @@ function renderDetail() {
       pdfBtn,
       p.has_pdf ? null : h('button', { text: 'Find PDF', onclick: () => findPdf(p) }),
       citeBtn,
+      h('button', { text: 'Edit…', title: 'Edit title, authors, journal, date, DOI, abstract', onclick: () => editPaper(p) }),
       h('div.spacer'),
       h('button.icon' + (p.starred ? '.starred' : ''), { text: p.starred ? '★' : '☆', title: p.starred ? 'Unstar' : 'Star', onclick: () => after(api.setStarred(p.id, !p.starred)) }),
       h('button.icon', { text: p.read ? '◯' : '●', title: p.read ? 'Mark as unread' : 'Mark as read', onclick: () => after(api.setRead(p.id, !p.read)) })),
@@ -315,9 +398,20 @@ async function makeReadingView(p: Paper) {
   reload();
 }
 
+async function editPaper(p: Paper) {
+  if (await editDetails(p)) { status('Saved the details'); await reload(); }
+}
+
+async function deletePapers(ps: Paper[]) {
+  if (!(await ask(`Delete ${ps.length} papers? Their files, highlights and notes go too, on every device.`, { title: 'Delete Papers', kind: 'warning' }))) return;
+  selected = null; picked.clear();
+  after(Promise.all(ps.map((p) => api.deletePaper(p.id))));
+}
+
 async function deletePaper(p: Paper) {
   if (!(await ask(`Delete “${p.meta.title}”? Its files, highlights and notes go too, on every device.`, { title: 'Delete Paper', kind: 'warning' }))) return;
   if (selected === p.id) selected = null;
+  picked.delete(p.id);
   after(api.deletePaper(p.id));
 }
 
@@ -362,11 +456,64 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     const i = rows.findIndex((r) => r.paper.id === selected);
     const j = Math.max(0, Math.min(rows.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)));
-    if (rows[j]) select(rows[j].paper.id);
+    if (!rows[j]) return;
+    if (e.shiftKey && anchor) click({ shiftKey: true, metaKey: false, ctrlKey: false } as MouseEvent, rows[j].paper.id);
+    else select(rows[j].paper.id);
+  } else if (mod && e.key === 'a') {
+    e.preventDefault();
+    picked = new Set(rows.map((r) => r.paper.id));
+    paintSelection();
   } else if (e.key === 'Enter' && selected) {
     const p = rows.find((r) => r.paper.id === selected)?.paper;
     if (p) read(p, p.has_epub ? 'reading' : 'pdf');
   }
+});
+
+// ---- dragging papers and folders onto the sidebar (LibraryWindow.swift's dropDestination) ----
+
+function descendantOf(folder: string, ancestor: string): boolean {
+  for (let cur: string | null | undefined = folder, i = 0; cur && i < 50; i++) {
+    if (cur === ancestor) return true;
+    cur = side?.folders.find((f) => f.id === cur)?.parent;
+  }
+  return false;
+}
+
+setupDrag({
+  begin(el) {
+    if (el.dataset.drag === 'paper') {
+      const id = el.dataset.id!;
+      if (!picked.has(id)) select(id);
+      const ps = pickedPapers();
+      return { payload: { kind: 'papers', ids: ps.map((p) => p.id) },
+        label: ps.length > 1 ? `${ps.length} papers` : ps[0]?.meta.title || '1 paper' };
+    }
+    const id = el.dataset.drag!.replace(/^folder:/, '');
+    return { payload: { kind: 'folder', id }, label: `📁 ${side?.folders.find((f) => f.id === id)?.name || 'Folder'}` };
+  },
+  accepts(p: Payload, t) {
+    const [kind, ...rest] = t.dataset.drop!.split(':');
+    const id = rest.join(':');
+    if (p.kind === 'papers') return kind === 'folder' || kind === 'tag';
+    // a folder goes into another folder (not itself or its own subfolder), or to the top level
+    if (kind === 'folders-root') return !!side?.folders.find((f) => f.id === p.id)?.parent;
+    return kind === 'folder' && !descendantOf(id, p.id) && side?.folders.find((f) => f.id === p.id)?.parent !== id;
+  },
+  drop(p: Payload, t) {
+    const [kind, ...rest] = t.dataset.drop!.split(':');
+    const id = rest.join(':');
+    if (p.kind === 'folder') {
+      after(api.moveFolder(p.id, kind === 'folders-root' ? null : id));
+      return;
+    }
+    const n = p.ids.length, what = n === 1 ? '1 paper' : `${n} papers`;
+    if (kind === 'folder') {
+      const name = side?.folders.find((f) => f.id === id)?.name;
+      after(Promise.all(p.ids.map((pid) => api.setMembership(id, pid, true))).then(() => status(`Added ${what} to “${name}”`)));
+    } else {
+      after(Promise.all(p.ids.map((pid) => api.setTag(pid, id, true))).then(() => status(`Tagged ${what} #${id}`)));
+    }
+  },
 });
 
 // Dropping PDFs: onto a paper in the list or onto the details pane gives that paper its PDF; in

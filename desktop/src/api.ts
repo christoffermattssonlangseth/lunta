@@ -55,3 +55,18 @@ export const api = {
   positionLatest: (id: string) => invoke<{ offset: number; device: string; mine: boolean } | null>('position_latest', { id }),
   positionSave: (id: string, offset: number) => invoke<void>('position_save', { id, offset }),
 };
+
+export interface SmartFolder {
+  id: string; name: string; text: string; tag: string; folder: string; unreadOnly: boolean; starredOnly: boolean;
+  yearFrom: string; yearTo: string; addedDays: number; pdf: 'any' | 'has' | 'missing'; highlightsOnly: boolean;
+}
+export const smartApi = {
+  list: () => invoke<SmartFolder[]>('smart_folders'),
+  save: (folder: SmartFolder) => invoke<string>('save_smart_folder', { folder }),
+  remove: (id: string) => invoke<void>('delete_smart_folder', { id }),
+  count: (folder: SmartFolder) => invoke<number>('smart_count', { folder }),
+};
+export const metaApi = {
+  update: (id: string, meta: PaperMeta) => invoke<void>('update_meta', { id, meta }),
+  lookup: (input: string) => invoke<PaperMeta>('lookup_meta', { input }),
+};

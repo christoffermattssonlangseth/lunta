@@ -259,6 +259,48 @@ async fn list(state: State<'_, AppState>, source: Source, query: String, sort: S
 }
 
 #[tauri::command]
+async fn smart_folders(state: State<'_, AppState>) -> R<Vec<smart::SmartFolder>> {
+    Ok(smart::load(&state.root()?))
+}
+
+#[tauri::command]
+async fn save_smart_folder(state: State<'_, AppState>, folder: smart::SmartFolder) -> R<String> {
+    let root = state.root()?;
+    let mut folder = folder;
+    if folder.id.is_empty() {
+        folder.id = uuid::Uuid::new_v4().to_string().to_uppercase();
+    }
+    smart::save(&root, folder.clone())?;
+    Ok(folder.id)
+}
+
+#[tauri::command]
+async fn delete_smart_folder(state: State<'_, AppState>, id: String) -> R<()> {
+    smart::delete(&state.root()?, &id)
+}
+
+/// How many papers a smart folder's rules match right now (the editor's live count).
+#[tauri::command]
+async fn smart_count(state: State<'_, AppState>, folder: smart::SmartFolder) -> R<usize> {
+    let lib = state.lib()?;
+    tauri::async_runtime::spawn_blocking(move || smart::papers(&folder, &lib, SortKey::Added).len()).await.map_err(err)
+}
+
+#[tauri::command]
+async fn update_meta(state: State<'_, AppState>, id: String, meta: PaperMeta) -> R<()> {
+    if meta.title.trim().is_empty() {
+        return Err("A paper needs a title.".into());
+    }
+    state.lib()?.update_meta(id, meta).map_err(err)
+}
+
+/// Looks a DOI (or any identifier the adder takes) up online, for "Fill in from the DOI".
+#[tauri::command]
+async fn lookup_meta(input: String) -> R<PaperMeta> {
+    tauri::async_runtime::spawn_blocking(move || lunta_core::resolve_metadata(input).map_err(err)).await.map_err(err)?
+}
+
+#[tauri::command]
 async fn paper(state: State<'_, AppState>, id: String) -> R<Option<PaperDto>> {
     Ok(state.lib()?.paper(id).map(Into::into))
 }
@@ -668,6 +710,12 @@ pub fn run() {
             sidebar,
             list,
             paper,
+            smart_folders,
+            save_smart_folder,
+            delete_smart_folder,
+            smart_count,
+            update_meta,
+            lookup_meta,
             set_read,
             set_starred,
             set_tag,
