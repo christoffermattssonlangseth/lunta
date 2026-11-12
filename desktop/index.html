@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lunta</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- first run: where the library lives -->
+    <section id="welcome" hidden>
+      <div class="welcome-card">
+        <img src="/logo.png" alt="" width="96" height="96" />
+        <h1>Welcome to Lunta</h1>
+        <p>Choose the folder for your library. To use the same library as Lunta on your Mac and iPhone,
+          or on other computers, pick a folder that syncs: in Google Drive for desktop, Dropbox or
+          OneDrive. Each computer writes only its own change log in it, so syncing never conflicts.</p>
+        <div class="row">
+          <input id="lib-path" type="text" placeholder="Library folder" spellcheck="false" />
+          <button id="lib-browse">Choose…</button>
+        </div>
+        <p class="error" id="lib-error" hidden></p>
+        <button id="lib-open" class="primary">Use This Folder</button>
+      </div>
+    </section>
+
+    <!-- the library window -->
+    <section id="library" hidden>
+      <header class="toolbar">
+        <button id="add" class="primary" title="Add a paper by DOI, PMCID, arXiv id or link (Ctrl+N)">＋ Add Paper</button>
+        <div class="spacer"></div>
+        <select id="sort" title="Sort">
+          <option value="added">Date Added</option>
+          <option value="year">Year</option>
+          <option value="title">Title</option>
+          <option value="author">First Author</option>
+        </select>
+        <input id="search" type="search" placeholder="Search titles, authors, full text, notes" spellcheck="false" />
+        <button id="settings" title="Library folder and this device">Settings ▾</button>
+      </header>
+      <div class="panes">
+        <nav id="sidebar"></nav>
+        <div id="list" tabindex="0"></div>
+        <aside id="detail"></aside>
+      </div>
+    </section>
+
+    <!-- one paper: reading view or PDF -->
+    <section id="reader" hidden></section>
+
+    <div id="status" class="status" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

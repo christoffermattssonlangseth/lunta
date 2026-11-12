@@ -1,0 +1,36 @@
+[package]
+name = "lunta-desktop"
+version = "0.1.0"
+description = "Lunta for Windows and Linux: the library and reader on top of the Rust core"
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "lunta_desktop_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+lunta-core = { path = "../../core", features = ["convert"] }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+percent-encoding = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+
+# Debug-only window snapshots for the scripted UI checks (src/devsnap.rs); not used by release builds.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSData", "NSDictionary", "NSError", "NSString"] }
+objc2-app-kit = { version = "0.3", features = ["NSImage", "NSImageRep", "NSBitmapImageRep"] }
+objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKSnapshotConfiguration", "block2", "objc2-app-kit"] }
