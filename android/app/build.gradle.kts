@@ -20,6 +20,15 @@ val redirectScheme: String =
         "com.googleusercontent.apps." + googleClientId.removeSuffix(".apps.googleusercontent.com")
     else "app.lunta.noclient"
 
+// Release signing: the key made once with keytool (~/.lunta/lunta-android-release.jks, alias "lunta",
+// password in the macOS Keychain as "Lunta Android release key"). Given by environment variables (CI:
+// decoded from the repository secrets ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD) or by
+// android/local.properties (lunta.keystore=…, lunta.keystorePassword=…). Without it, release builds
+// are unsigned. Every update must be signed with the same key: keep a backup of it.
+fun setting(env: String, prop: String): String? = (System.getenv(env) ?: local.getProperty(prop))?.trim()?.takeIf { it.isNotEmpty() }
+val releaseKeystore = setting("LUNTA_KEYSTORE", "lunta.keystore")
+val releasePassword = setting("LUNTA_KEYSTORE_PASSWORD", "lunta.keystorePassword")
+
 android {
     namespace = "app.lunta"
     compileSdk = 36
@@ -28,17 +37,30 @@ android {
         applicationId = "app.lunta"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // a release from a tag: its version (v0.2.0 -> "0.2.0") and an always larger code (the CI run)
+        versionCode = setting("LUNTA_VERSION_CODE", "lunta.versionCode")?.toInt() ?: 1
+        versionName = setting("LUNTA_VERSION_NAME", "lunta.versionName") ?: "0.1.0"
         buildConfigField("String", "GOOGLE_CLIENT_ID", "\"$googleClientId\"")
         buildConfigField("String", "REDIRECT_SCHEME", "\"$redirectScheme\"")
         manifestPlaceholders["redirectScheme"] = redirectScheme
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
+    signingConfigs {
+        if (releaseKeystore != null && releasePassword != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = releasePassword
+                keyAlias = "lunta"
+                keyPassword = releasePassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false   // JNA and the UniFFI bindings use reflection
+            signingConfig = signingConfigs.findByName("release")
         }
     }
     compileOptions {

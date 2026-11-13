@@ -179,6 +179,19 @@ or unavailable. Pick the model in the panel's ⋯ menu.
 
 Styles: APA 7, Harvard, Chicago (author-date), Cell, MLA 9, Vancouver, IEEE, AMA, Nature, Science, PNAS and ACS, and in Word any of the ~10,000 journal styles of the [Citation Style Language](https://citationstyles.org) catalogue (*Find journal style…*: fetched once from zotero.org/styles, formatted in the core with [hayagriva](https://github.com/typst/hayagriva)). Lunta must be open while you cite.
 
+## Releases
+
+Push a version tag: `git tag v0.2.0 && git push origin v0.2.0`. GitHub makes the release and attaches the
+Windows and Linux installers and the Android APK (`.github/workflows/release.yml`); then, on a Mac,
+`scripts/release-mac.sh v0.2.0` builds the Mac app, signs it with Developer ID, has Apple notarize it
+and attaches it (`--check` does all but the upload).
+
+The Android APK is signed with the release key `~/.lunta/lunta-android-release.jks` (alias `lunta`; its
+password is in the macOS Keychain as "Lunta Android release key"), which the release job gets from
+the repository secrets `ANDROID_KEYSTORE_BASE64` and `ANDROID_KEYSTORE_PASSWORD`. Every update must be
+signed with the same key, so **keep a backup of the key file and its password** somewhere safe. Its
+SHA-256 fingerprint: `E3:B3:4F:21:4A:50:95:CF:F7:6A:4F:AA:19:CE:1B:51:A8:EF:CD:42:8A:45:C2:55:14:D1:AD:21:F6:C9:BB:41`.
+
 ## Build
 
 ```sh

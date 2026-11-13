@@ -1,5 +1,6 @@
 # Builds the Android app (android/): the Rust core for arm64-v8a with UniFFI Kotlin bindings and
-# PDFium, then the debug APK, uploaded as a workflow artifact. Google sign-in needs an OAuth client
+# PDFium, then the debug APK, uploaded as a workflow artifact; for a release (release.yml), the APK
+# signed with the release key from the repository secrets. Google sign-in needs an OAuth client
 # id (repository variable LUNTA_GOOGLE_CLIENT_ID); without it the app builds and explains that.
 name: Android app
 
@@ -64,10 +65,26 @@ jobs:
           name: lunta-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
 
+      # a release: signed with the release key (repository secrets), so later versions install over it
+      - name: Signed release APK
+        if: inputs.release_tag != ''
+        working-directory: android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          LUNTA_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          LUNTA_VERSION_NAME: ${{ inputs.release_tag }}
+          LUNTA_VERSION_CODE: ${{ github.run_number }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then echo "::error::ANDROID_KEYSTORE_BASE64 secret missing"; exit 1; fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          export LUNTA_KEYSTORE="$RUNNER_TEMP/release.jks" LUNTA_VERSION_NAME="${LUNTA_VERSION_NAME#v}"
+          ./gradlew :app:assembleRelease --no-daemon
+          rm -f "$RUNNER_TEMP/release.jks"
+
       - name: Attach to the release
         if: inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk "lunta-android-${{ inputs.release_tag }}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "lunta-android-${{ inputs.release_tag }}.apk"
           gh release upload "${{ inputs.release_tag }}" --clobber -R "${{ github.repository }}" "lunta-android-${{ inputs.release_tag }}.apk"

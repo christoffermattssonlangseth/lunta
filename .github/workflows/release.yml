@@ -32,3 +32,4 @@ jobs:
     uses: ./.github/workflows/android.yml
     with:
       release_tag: ${{ github.ref_name }}
+    secrets: inherit
