@@ -5,7 +5,7 @@
 // Microsoft store listing): either way the library comes from the Lunta app on this computer
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
-var VERSION = '2';   // bump with the ?v= in index.html, so Word loads the new files
+var VERSION = '3';   // bump with the ?v= in index.html, so Word loads the new files
 var UNREACHABLE = 'Can’t reach Lunta. Open the Lunta app on this Mac; the first time, choose Lunta › Citations in Word & Google Docs… and click Trust Certificate.';
 var picked = [];         // [{id, title, ...}]
 var lastHits = [];
@@ -15,9 +15,10 @@ function $(id) { return document.getElementById(id); }
 function status(msg, err) { var s = $('status'); s.textContent = msg || ''; s.className = 'status' + (err ? ' err' : ''); }
 // Word's errors say little ("Check the OfficeExtension.Error.debugInfo"): show where and what
 function fail(e) {
-  var d = e && e.debugInfo, more = d ? [d.code, d.errorLocation].filter(Boolean).join(' at ') : '';
+  var d = e && e.debugInfo, more = '';
+  try { more = d ? JSON.stringify(d) : (e && e.code) || ''; } catch (x) {}
   if (window.console) console.error(e, d);
-  status((e && e.message || String(e)) + (more ? ' (' + more + ')' : ''), true);
+  status((e && e.message || String(e)) + (more ? ' · ' + more : ''), true);
 }
 
 function getJSON(url, body) {
@@ -128,6 +129,7 @@ function updateAll() {
 }
 
 Office.onReady(function () {
+  $('ver').textContent = 'v' + VERSION;
   var sel = $('style');
   Object.keys(LuntaCite.STYLES).forEach(function (k) {
     var o = document.createElement('option'); o.value = k; o.textContent = LuntaCite.STYLES[k].name; sel.appendChild(o);
@@ -144,7 +146,7 @@ Office.onReady(function () {
   $('insert').onclick = insertCitation;
   $('bib').onclick = insertBibliography;
   $('refresh').onclick = updateAll;
-  getJSON('/status').then(function (s) { status('Connected to Lunta · ' + s.papers + ' papers · panel v' + VERSION); })
+  getJSON('/status').then(function (s) { status('Connected to Lunta · ' + s.papers + ' papers'); })
     .catch(function () { status(UNREACHABLE, true); });
   $('q').focus();
 });
