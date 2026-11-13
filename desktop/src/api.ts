@@ -22,7 +22,7 @@ export interface Annotation {
   position: string; quote: string; prefix: string; suffix: string; note: string; created: number; modified: number;
 }
 export interface PageSelection { quote: string; prefix: string; suffix: string; start: number; }
-export type CiteStyle = 'apa' | 'vancouver' | 'nature' | 'bibtex' | 'ris';
+export type CiteStyle = 'apa' | 'harvard' | 'chicago' | 'cell' | 'mla' | 'vancouver' | 'ieee' | 'ama' | 'nature' | 'science' | 'pnas' | 'acs' | 'bibtex' | 'ris';
 
 export const api = {
   info: () => invoke<Info>('app_info'),

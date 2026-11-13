@@ -265,6 +265,10 @@ final class LibraryModel: ObservableObject {
     }
 
     func citation(_ id: String, _ style: CitationStyle) -> String { lib.citation(id: id, style: style) ?? "" }
+    /// Several papers' references in one style, a blank line apart.
+    func citations(_ ids: [String], _ style: CitationStyle) -> String {
+        ids.map { citation($0, style) }.filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
     func bibtex(_ ids: [String]) -> String { lib.exportBibtex(ids: ids) }
     func ris(_ ids: [String]) -> String { lib.exportRis(ids: ids) }
 

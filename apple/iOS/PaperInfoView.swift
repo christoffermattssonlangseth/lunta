@@ -59,6 +59,15 @@ struct PaperInfoView: View {
                                 }
                                 .buttonStyle(.bordered)
                             }
+                            Menu("More") {
+                                ForEach(citationStyles().filter { ![.apa, .vancouver, .nature].contains($0.style) }, id: \.key) { st in
+                                    Button(st.name) {
+                                        UIPasteboard.general.string = model.citation(p.id, st.style)
+                                        copied = true
+                                    }
+                                }
+                            }
+                            .buttonStyle(.bordered)
                         }
                         if copied { Text("Copied to the clipboard.").font(.caption).foregroundStyle(.secondary) }
                     }

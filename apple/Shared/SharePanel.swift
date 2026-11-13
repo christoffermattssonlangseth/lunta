@@ -59,6 +59,12 @@ struct SharePanel: View {
                         copyButton("APA") { model.citation(one.id, .apa) }
                         copyButton("Vancouver") { model.citation(one.id, .vancouver) }
                         copyButton("Nature") { model.citation(one.id, .nature) }
+                        Menu("Other Style") {
+                            ForEach(citationStyles().filter { ![.apa, .vancouver, .nature].contains($0.style) }, id: \.key) { st in
+                                Button(st.name) { copyText(model.citation(one.id, st.style)); copied = st.name }
+                            }
+                        }
+                        .fixedSize()
                     }
                 }
                 HStack(spacing: 6) {

@@ -221,5 +221,194 @@ pub fn citation(p: &Paper, style: CitationStyle) -> String {
             s += &format!(" ({}).", m.year());
             s
         }
+        _ => more_citation(p, style),
+    }
+}
+
+/// "a, b and c" / "a, b, and c" (serial comma).
+fn and_list(items: &[String], and: &str, serial: bool) -> String {
+    match items.len() {
+        0 => String::new(),
+        1 => items[0].clone(),
+        2 => format!("{} {and} {}", items[0], items[1]),
+        n => format!("{}{} {and} {}", items[..n - 1].join(", "), if serial { "," } else { "" }, items[n - 1]),
+    }
+}
+
+/// The styles added after APA, Vancouver and Nature. Markdown *italic* and **bold**, as above.
+fn more_citation(p: &Paper, style: CitationStyle) -> String {
+    let m = &p.meta;
+    let names: Vec<(String, String)> = m.authors.iter().map(|a| split_name(a)).collect();
+    let year = if m.year().is_empty() { "n.d.".to_string() } else { m.year() };
+    let title = m.title.trim().trim_end_matches('.').to_string();
+    let pages = m.pages.replace('-', "–");
+    let doi_url = if m.doi.is_empty() { String::new() } else { format!("https://doi.org/{}", m.doi) };
+    // "Langseth, C.M." / "C. M. Langseth" / "Langseth CM" / "Langseth, Christoffer M."
+    let fam_init = |(f, g): &(String, String), spaced: bool| {
+        let i = initials(g, true, spaced);
+        if i.is_empty() { f.clone() } else { format!("{f}, {i}") }
+    };
+    let init_fam = |(f, g): &(String, String)| {
+        let i = initials(g, true, true);
+        if i.is_empty() { f.clone() } else { format!("{i} {f}") }
+    };
+    let full_inverted = |(f, g): &(String, String)| if g.is_empty() { f.clone() } else { format!("{f}, {g}") };
+    let full = |(f, g): &(String, String)| if g.is_empty() { f.clone() } else { format!("{g} {f}") };
+    let end = |s: &mut String| {
+        if !s.ends_with('.') { s.push('.') }
+    };
+
+    match style {
+        // Harvard (Cite Them Right): up to three authors, then "et al."
+        CitationStyle::Harvard => {
+            let authors = if names.len() > 3 {
+                format!("{} et al.", fam_init(&names[0], false))
+            } else {
+                and_list(&names.iter().map(|n| fam_init(n, false)).collect::<Vec<_>>(), "and", false)
+            };
+            let mut s = format!("{authors} ({year}) ‘{title}’");
+            if !m.journal.is_empty() {
+                s += &format!(", *{}*", m.journal);
+                if !m.volume.is_empty() {
+                    s += &format!(", {}", m.volume);
+                    if !m.issue.is_empty() { s += &format!("({})", m.issue); }
+                }
+                if !pages.is_empty() { s += &format!(", pp. {pages}"); }
+            }
+            s += ".";
+            if !doi_url.is_empty() { s += &format!(" Available at: {doi_url}."); }
+            s
+        }
+        // Chicago author-date (17th): up to ten authors, else the first seven and "et al."
+        CitationStyle::Chicago => {
+            let shown: Vec<&(String, String)> = if names.len() > 10 { names.iter().take(7).collect() } else { names.iter().collect() };
+            let list: Vec<String> = shown.iter().enumerate().map(|(i, n)| if i == 0 { full_inverted(n) } else { full(n) }).collect();
+            let mut authors = if names.len() > 10 { format!("{}, et al", list.join(", ")) } else { and_list(&list, "and", true) };
+            end(&mut authors);
+            let mut s = format!("{authors} {year}. “{title}.”");
+            if !m.journal.is_empty() {
+                s += &format!(" *{}*", m.journal);
+                if !m.volume.is_empty() {
+                    s += &format!(" {}", m.volume);
+                    if !m.issue.is_empty() { s += &format!(" ({})", m.issue); }
+                }
+                if !pages.is_empty() { s += &format!(": {pages}"); }
+                s += ".";
+            }
+            if !doi_url.is_empty() { s += &format!(" {doi_url}."); }
+            s
+        }
+        // MLA 9: one author, two ("and"), or the first and "et al."
+        CitationStyle::Mla => {
+            let mut authors = match names.len() {
+                0 => String::new(),
+                1 => full_inverted(&names[0]),
+                2 => format!("{}, and {}", full_inverted(&names[0]), full(&names[1])),
+                _ => format!("{}, et al", full_inverted(&names[0])),
+            };
+            if !authors.is_empty() { end(&mut authors); authors.push(' '); }
+            let mut s = format!("{authors}“{title}.”");
+            if !m.journal.is_empty() {
+                s += &format!(" *{}*", m.journal);
+                if !m.volume.is_empty() { s += &format!(", vol. {}", m.volume); }
+                if !m.issue.is_empty() { s += &format!(", no. {}", m.issue); }
+                s += &format!(", {year}");
+                if !pages.is_empty() { s += &format!(", pp. {pages}"); }
+            } else {
+                s += &format!(" {year}");
+            }
+            if !doi_url.is_empty() { s += &format!(", {doi_url}"); }
+            s += ".";
+            s
+        }
+        // Cell Press: up to ten authors, else the first ten and "et al."; volume in italics
+        CitationStyle::Cell => {
+            let list: Vec<String> = names.iter().take(10).map(|n| fam_init(n, false)).collect();
+            let authors = if names.len() > 10 { format!("{}, et al.", list.join(", ")) } else { and_list(&list, "and", true) };
+            let mut s = format!("{authors} ({year}). {title}.");
+            if !m.journal.is_empty() {
+                s += &format!(" {}", m.journal);
+                if !m.volume.is_empty() { s += &format!(" *{}*", m.volume); }
+                if !pages.is_empty() { s += &format!(", {pages}"); }
+                s += ".";
+            }
+            if !doi_url.is_empty() { s += &format!(" {doi_url}."); }
+            s
+        }
+        // IEEE: up to six authors, else the first and "*et al.*"
+        CitationStyle::Ieee => {
+            let authors = if names.len() > 6 {
+                format!("{} *et al.*", init_fam(&names[0]))
+            } else {
+                and_list(&names.iter().map(init_fam).collect::<Vec<_>>(), "and", true)
+            };
+            let mut s = format!("{authors}, “{title},”");
+            if !m.journal.is_empty() {
+                s += &format!(" *{}*", m.journal);
+                if !m.volume.is_empty() { s += &format!(", vol. {}", m.volume); }
+                if !m.issue.is_empty() { s += &format!(", no. {}", m.issue); }
+                if !pages.is_empty() { s += &format!(", pp. {pages}"); }
+                s += ",";
+            }
+            s += &format!(" {year}");
+            if !m.doi.is_empty() { s += &format!(", doi: {}", m.doi); }
+            s += ".";
+            s
+        }
+        // AMA (11th): up to six authors, else the first three and "et al"
+        CitationStyle::Ama => {
+            let fmt = |(f, g): &(String, String)| format!("{f} {}", initials(g, false, false)).trim().to_string();
+            let authors = if names.len() > 6 {
+                format!("{}, et al", names.iter().take(3).map(fmt).collect::<Vec<_>>().join(", "))
+            } else {
+                names.iter().map(fmt).collect::<Vec<_>>().join(", ")
+            };
+            let mut s = if authors.is_empty() { format!("{title}.") } else { format!("{authors}. {title}.") };
+            if !m.journal.is_empty() {
+                s += &format!(" *{}*. {year}", m.journal);
+                if !m.volume.is_empty() {
+                    s += &format!(";{}", m.volume);
+                    if !m.issue.is_empty() { s += &format!("({})", m.issue); }
+                }
+                if !m.pages.is_empty() { s += &format!(":{}", m.pages); }
+                s += ".";
+            }
+            if !m.doi.is_empty() { s += &format!(" doi:{}", m.doi); }
+            s
+        }
+        // Science and PNAS: up to five authors, else the first and "et al."; volume in bold
+        CitationStyle::Science | CitationStyle::Pnas => {
+            let authors = if names.len() > 5 {
+                format!("{} et al.", init_fam(&names[0]))
+            } else {
+                names.iter().map(init_fam).collect::<Vec<_>>().join(", ")
+            };
+            let mut s = format!("{authors}, {title}.");
+            if !m.journal.is_empty() {
+                s += &format!(" *{}*", m.journal);
+                if !m.volume.is_empty() { s += &format!(" **{}**", m.volume); }
+                if !pages.is_empty() { s += &format!(", {pages}"); }
+            }
+            s += &format!(" ({year}).");
+            s
+        }
+        // ACS: up to ten authors (then "et al."), separated by semicolons; year in bold
+        CitationStyle::Acs => {
+            let list: Vec<String> = names.iter().take(10).map(|n| fam_init(n, true)).collect();
+            let authors = if names.len() > 10 { format!("{}; et al.", list.join("; ")) } else { list.join("; ") };
+            let mut s = if authors.is_empty() { format!("{title}.") } else { format!("{authors} {title}.") };
+            if !m.journal.is_empty() {
+                s += &format!(" *{}* **{year}**", m.journal);
+                if !m.volume.is_empty() {
+                    s += &format!(", *{}*", m.volume);
+                    if !m.issue.is_empty() { s += &format!(" ({})", m.issue); }
+                }
+                if !pages.is_empty() { s += &format!(", {pages}"); }
+                s += ".";
+            }
+            if !m.doi.is_empty() { s += &format!(" DOI: {}.", m.doi); }
+            s
+        }
+        CitationStyle::Apa | CitationStyle::Vancouver | CitationStyle::Nature => citation(p, style),
     }
 }

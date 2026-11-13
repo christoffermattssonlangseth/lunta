@@ -276,7 +276,9 @@ function paperMenu(e: MouseEvent, p: Paper) {
 
 function citeItems(ids: string[]): MenuItem[] {
   const c = (style: CiteStyle, label: string) => ({ label: `Copy ${label}`, action: async () => copy(await api.cite(ids, style), `${label} citation`) });
-  return [c('apa', 'APA'), c('vancouver', 'Vancouver'), c('nature', 'Nature'), c('bibtex', 'BibTeX'), c('ris', 'RIS')];
+  return [c('apa', 'APA'), c('harvard', 'Harvard'), c('chicago', 'Chicago'), c('cell', 'Cell'), c('mla', 'MLA'),
+    c('vancouver', 'Vancouver'), c('ieee', 'IEEE'), c('ama', 'AMA'), c('nature', 'Nature'), c('science', 'Science'),
+    c('pnas', 'PNAS'), c('acs', 'ACS'), c('bibtex', 'BibTeX'), c('ris', 'RIS')];
 }
 
 // ---- details ----

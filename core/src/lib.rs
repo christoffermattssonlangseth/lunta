@@ -589,6 +589,21 @@ fn merge_meta(m: &mut PaperMeta, o: &PaperMeta) {
 // ---- free functions exported to Swift ----
 
 /// Looks up metadata for a DOI, PMID, PMCID, arXiv ID or a link containing one (blocking; call off the main thread).
+/// The citation styles, in menu order.
+#[uniffi::export]
+pub fn citation_styles() -> Vec<model::CitationStyleInfo> {
+    model::CitationStyle::ALL
+        .into_iter()
+        .map(|s| model::CitationStyleInfo { style: s, key: s.key().into(), name: s.name().into(), numeric: s.numeric() })
+        .collect()
+}
+
+/// The style for a key ("apa", "vancouver", …); APA for an unknown key.
+#[uniffi::export]
+pub fn citation_style(key: String) -> model::CitationStyle {
+    model::CitationStyle::from_key(&key).unwrap_or(model::CitationStyle::Apa)
+}
+
 #[uniffi::export]
 pub fn resolve_metadata(input: String) -> Result<PaperMeta> {
     metadata::resolve(&input)

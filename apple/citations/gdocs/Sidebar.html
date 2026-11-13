@@ -70,14 +70,14 @@ function updateAll() {
   return compute().then(function (c) {
     var texts = c.lists.map(function (l) { return LuntaCite.inText(style, l, c.num.order, c.papers); });
     var bib = LuntaCite.bibliography(style, c.entries, c.num.order).map(function (e) { return LuntaCite.runs(e.text); });
-    return server('applyAll', texts, style === 'nature', bib).then(function (n) {
+    return server('applyAll', texts, !!(LuntaCite.STYLES[style] || {}).superscript, bib).then(function (n) {
       status(n + ' citation' + (n === 1 ? '' : 's') + ' · ' + LuntaCite.STYLES[style].name);
     });
   }).catch(function (e) { if (e && e.message && e.message.indexOf('Lunta') >= 0) status(e.message, true); else offline(); });
 }
 function insert() {
   var ids = picked.map(function (p) { return p.id; });
-  server('insertCitation', ids, '(…)', style === 'nature').then(function () { picked = []; renderPicked(); return updateAll(); })
+  server('insertCitation', ids, '(…)', !!(LuntaCite.STYLES[style] || {}).superscript).then(function () { picked = []; renderPicked(); return updateAll(); })
     .catch(function (e) { status(e.message || String(e), true); });
 }
 function insertBib() {

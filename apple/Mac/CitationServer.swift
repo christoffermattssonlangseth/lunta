@@ -205,7 +205,7 @@ final class CitationServer {
             guard let j = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any], let ids = j["ids"] as? [String] else {
                 json(c, 400, ["error": "expected {style, ids}"], origin: origin); return
             }
-            let style: CitationStyle = ["vancouver": .vancouver, "nature": .nature][(j["style"] as? String) ?? ""] ?? .apa
+            let style = citationStyle(key: (j["style"] as? String) ?? "apa")
             let items = ids.map { id -> [String: Any] in
                 var d = model.paper(id).map(Self.item) ?? ["id": id, "missing": true]
                 d["entry"] = model.citation(id, style)

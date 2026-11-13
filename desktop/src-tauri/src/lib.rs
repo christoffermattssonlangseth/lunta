@@ -355,18 +355,15 @@ async fn delete_paper(state: State<'_, AppState>, id: String) -> R<()> {
     state.lib()?.delete_paper(id).map_err(err)
 }
 
-/// APA / Vancouver / Nature reference text, or a BibTeX / RIS entry.
+/// Reference text in a citation style (CitationStyle keys: apa, harvard, …), or BibTeX / RIS.
 #[tauri::command]
 async fn cite(state: State<'_, AppState>, ids: Vec<String>, style: String) -> R<String> {
     let lib = state.lib()?;
     let one = |s: CitationStyle| ids.iter().filter_map(|i| lib.citation(i.clone(), s)).collect::<Vec<_>>().join("\n\n");
     Ok(match style.as_str() {
-        "apa" => one(CitationStyle::Apa),
-        "vancouver" => one(CitationStyle::Vancouver),
-        "nature" => one(CitationStyle::Nature),
         "bibtex" => lib.export_bibtex(ids),
         "ris" => lib.export_ris(ids),
-        other => return Err(format!("unknown style {other}")),
+        other => one(CitationStyle::from_key(other).ok_or(format!("unknown style {other}"))?),
     })
 }
 
