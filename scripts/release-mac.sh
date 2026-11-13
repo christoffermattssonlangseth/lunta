@@ -1,20 +1,58 @@
 #!/bin/zsh
-# Builds the Mac app (Release) and attaches it, zipped, to the GitHub release for a tag.
-#   scripts/release-mac.sh v0.1.0
+# Builds the Mac app for distribution, signed with Developer ID and notarized by Apple, and
+# attaches it (zipped) to the GitHub release for a tag:
+#   scripts/release-mac.sh v0.1.0             build, notarize, attach to the release
+#   scripts/release-mac.sh --check            build and notarize only (nothing is published)
 # The release is made by .github/workflows/release.yml when the tag is pushed; this waits for it.
-# The app is signed for development only (not Developer ID / notarized), so on other Macs it opens
-# with right-click > Open the first time.
+#
+# Signing and notarizing go through the Apple account Xcode is signed in to (Xcode > Settings >
+# Accounts): the first run lets Xcode create the Developer ID certificate if there is none.
 set -euo pipefail
-tag=${1:?usage: scripts/release-mac.sh <tag, e.g. v0.1.0>}
+tag=${1:?usage: scripts/release-mac.sh <tag, e.g. v0.1.0> | --check}
 root=${0:A:h:h}
+team=7R6QL53THM
+build="$root/apple/build/release-mac"
 cd "$root/apple"
 
-until gh release view "$tag" >/dev/null 2>&1; do echo "waiting for release $tag…"; sleep 10; done
+if [[ $tag != --check ]]; then
+  until gh release view "$tag" >/dev/null 2>&1; do echo "waiting for release $tag…"; sleep 10; done
+fi
 
+rm -rf "$build"; mkdir -p "$build"
+cat > "$build/ExportOptions.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>method</key><string>developer-id</string>
+  <key>signingStyle</key><string>automatic</string>
+  <key>teamID</key><string>$team</string>
+  <key>destination</key><string>upload</string>
+</dict></plist>
+PLIST
+
+echo "› archive"
 xcodegen generate -q
-xcodebuild -project Lunta.xcodeproj -scheme LuntaMac -configuration Release -derivedDataPath build/dd build -quiet
-out="$root/apple/build/lunta-mac-$tag.zip"
-rm -f "$out"
-ditto -c -k --sequesterRsrc --keepParent build/dd/Build/Products/Release/Lunta.app "$out"
+xcodebuild -project Lunta.xcodeproj -scheme LuntaMac -configuration Release \
+  -archivePath "$build/Lunta.xcarchive" -allowProvisioningUpdates -quiet archive
+
+echo "› sign with Developer ID and send to Apple for notarization"
+xcodebuild -exportArchive -archivePath "$build/Lunta.xcarchive" -exportPath "$build/submitted" \
+  -exportOptionsPlist "$build/ExportOptions.plist" -allowProvisioningUpdates -quiet
+
+echo "› waiting for Apple to notarize it (usually a few minutes)"
+for i in {1..90}; do
+  if xcodebuild -exportNotarizedApp -archivePath "$build/Lunta.xcarchive" -exportPath "$build/export" \
+       -quiet >/dev/null 2>"$build/notary.log"; then break; fi
+  (( i == 90 )) && { echo "not notarized after 30 min:"; cat "$build/notary.log"; exit 1; }
+  sleep 20
+done
+app="$build/export/Lunta.app"
+xcrun stapler validate "$app"
+spctl --assess --type execute --verbose "$app"
+echo "notarized: $app"
+
+[[ $tag == --check ]] && exit 0
+out="$build/lunta-mac-$tag.zip"
+ditto -c -k --sequesterRsrc --keepParent "$app" "$out"
 gh release upload "$tag" "$out" --clobber
 echo "attached $(basename "$out") to $tag"

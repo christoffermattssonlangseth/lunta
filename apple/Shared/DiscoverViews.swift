@@ -128,8 +128,12 @@ struct DiscoverDetail: View {
                     Text(hit.meta.authors.prefix(12).joined(separator: ", ") + (hit.meta.authors.count > 12 ? " et al." : ""))
                         .font(.callout).foregroundStyle(.secondary)
                 }
-                Text([hit.meta.journal, hit.meta.year, hit.citedBy > 0 ? "cited \(hit.citedBy)×" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                Text([hit.meta.journal, WatchCenter.publishedDate(hit.meta.date) == nil ? hit.meta.year : "",
+                      hit.citedBy > 0 ? "cited \(hit.citedBy)×" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary)
+                if let pub = WatchCenter.publishedLabel(hit.meta.date), WatchCenter.publishedDate(hit.meta.date) != nil {
+                    Label(pub, systemImage: "calendar").font(.caption).foregroundStyle(.secondary)
+                }
                 if let id = model.libraryID(of: hit) {
                     HStack(spacing: 10) {
                         OpenAddedPaper(id: id).tint(.luntaTeal)
@@ -147,6 +151,10 @@ struct DiscoverDetail: View {
                     } label: { Label(adding ? "Adding…" : "Add to Library", systemImage: "plus") }
                     .buttonStyle(.borderedProminent).tint(.luntaTeal).disabled(adding)
                 }
+                ShareLink(item: hit.shareText, subject: Text(hit.meta.title)) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.bordered).tint(.luntaTeal)
                 if !hit.meta.abstractText.isEmpty {
                     Card(title: "Abstract") { Text(hit.meta.abstractText).lineSpacing(3).textSelection(.enabled) }
                 }
@@ -157,5 +165,19 @@ struct DiscoverDetail: View {
             .padding(22)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+extension DiscoverHit {
+    /// Where the paper lives online: its DOI, else the link it was found at.
+    var shareLink: String {
+        !meta.doi.isEmpty ? "https://doi.org/\(meta.doi)" : meta.url
+    }
+
+    /// The paper as text to send someone: title, authors and journal, and its link.
+    var shareText: String {
+        let who = meta.authors.first.map { meta.authors.count > 1 ? "\($0) et al." : $0 } ?? ""
+        let line = [who, meta.journal, meta.year].filter { !$0.isEmpty }.joined(separator: " · ")
+        return [meta.title, line, shareLink].filter { !$0.isEmpty }.joined(separator: "\n")
     }
 }
