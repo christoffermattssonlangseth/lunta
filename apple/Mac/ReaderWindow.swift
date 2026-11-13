@@ -25,6 +25,8 @@ struct ReaderWindow: View {
     @State private var showHighlights = false
     @StateObject private var ask: AskEngine
     @Environment(\.openWindow) private var openWindow
+    /// Undo for highlights and notes in this window (⌘Z / ⇧⌘Z, see ReaderUndoKeys).
+    @State private var undo = UndoManager()
 
     init(paperID: String) {
         self.paperID = paperID
@@ -58,6 +60,9 @@ struct ReaderWindow: View {
                     }
                 }
                 .navigationSplitViewColumnWidth(min: 180, ideal: 250)
+            } else if mode == .pdf {
+                PDFSidebar(paperID: paperID, highlighter: pdfHighlights) { a in editingAnnotation = a }
+                    .navigationSplitViewColumnWidth(min: 180, ideal: 250)
             } else {
                 Text(paper?.meta.title ?? "").padding().navigationSplitViewColumnWidth(min: 180, ideal: 250)
             }
@@ -135,11 +140,12 @@ struct ReaderWindow: View {
                     }
                 }
             }
-        }
-        .inspector(isPresented: $asking) {
-            AssistantPanel(engine: ask, onPassage: { id in mode = .reading; controller.flash(id) },
-                           onPaper: { id in openWindow(value: id) })
-                .inspectorColumnWidth(min: 300, ideal: 380, max: 560)
+            // on the detail, not the split view: there it kept the toolbar re-laying itself out
+            .inspector(isPresented: $asking) {
+                AssistantPanel(engine: ask, onPassage: { id in mode = .reading; controller.flash(id) },
+                               onPaper: { id in openWindow(value: id) })
+                    .inspectorColumnWidth(min: 300, ideal: 380, max: 560)
+            }
         }
         .sheet(item: $figure) { f in FigureViewer(figure: f) }
         .sheet(item: $editingAnnotation) { a in AnnotationEditor(annotation: a) { refreshHighlights() } }
@@ -148,6 +154,11 @@ struct ReaderWindow: View {
         .onReceive(NotificationCenter.default.publisher(for: .luntaReaderMode)) { n in
             if n.object as? String == paperID, let m = Self.requestedMode.removeValue(forKey: paperID) { mode = m }
         }
+        .environment(\.highlightUndo, undo)
+        .background(ReaderUndoKeys(undo: undo))
+        // an undone or redone highlight: redraw (the reading view; the PDF follows the model)
+        .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidUndoChange, object: undo)) { _ in refreshHighlights() }
+        .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidRedoChange, object: undo)) { _ in refreshHighlights() }
         .navigationTitle(paper?.meta.title ?? "Reader")
         .task {
             controller.onFigure = { figure = $0 }
@@ -186,14 +197,14 @@ struct ReaderWindow: View {
     private func highlightSelection(_ c: HighlightColor) {
         if mode == .pdf {
             guard let sel = pdfHighlights.selection() else { return }
-            model.addHighlight(paperID, sel, color: c, location: "pdf")
+            model.addHighlight(paperID, sel, color: c, location: "pdf", undo: undo)
             pdfHighlights.clearSelection()
             pdfHighlights.apply(model.annotations(paperID))
             return
         }
         Task {
             guard let sel = await controller.pageSelection() else { return }
-            model.addHighlight(paperID, sel, color: c)
+            model.addHighlight(paperID, sel, color: c, undo: undo)
             controller.clearSelection()
             refreshHighlights()
         }
@@ -201,7 +212,7 @@ struct ReaderWindow: View {
 
     private func noteOnSelection() {
         Task {
-            guard let sel = await controller.pageSelection(), let a = model.addHighlight(paperID, sel) else { return }
+            guard let sel = await controller.pageSelection(), let a = model.addHighlight(paperID, sel, undo: undo) else { return }
             controller.clearSelection()
             refreshHighlights()
             editingAnnotation = a
@@ -336,4 +347,139 @@ struct EpubWebView: NSViewRepresentable {
 
 extension Notification.Name {
     static let luntaReaderMode = Notification.Name("luntaReaderMode")
+}
+
+/// The sidebar in PDF mode: the paper, then its pages, its own outline (when it has one) and
+/// your highlights.
+struct PDFSidebar: View {
+    @EnvironmentObject var model: LibraryModel
+    let paperID: String
+    @ObservedObject var highlighter: PDFHighlighter
+    var onEdit: (Annotation) -> Void
+    @State private var tab: Tab = .pages
+
+    enum Tab: String, CaseIterable { case pages = "Pages", contents = "Contents", highlights = "Highlights" }
+
+    private struct OutlineItem: Identifiable {
+        let id: Int
+        let label: String
+        let level: Int
+        let outline: PDFOutline
+    }
+
+    private var outline: [OutlineItem] {
+        guard let root = highlighter.document?.outlineRoot else { return [] }
+        var out: [OutlineItem] = []
+        func walk(_ o: PDFOutline, _ level: Int) {
+            for i in 0..<o.numberOfChildren {
+                guard let c = o.child(at: i) else { continue }
+                let label = c.label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !label.isEmpty { out.append(OutlineItem(id: out.count, label: label, level: level, outline: c)) }
+                walk(c, level + 1)
+            }
+        }
+        walk(root, 0)
+        return out
+    }
+
+    var body: some View {
+        let items = outline
+        let tabs = Tab.allCases.filter { $0 != .contents || !items.isEmpty }
+        VStack(alignment: .leading, spacing: 0) {
+            if let p = model.paper(paperID) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(p.meta.title.isEmpty ? "Untitled" : p.meta.title).font(.headline).lineLimit(4)
+                    if !p.meta.authorLine.isEmpty {
+                        Text(p.meta.authorLine).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                    let venue = [p.meta.journal, p.meta.year].filter { !$0.isEmpty }.joined(separator: " · ")
+                    if !venue.isEmpty { Text(venue).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                }
+                .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 10)
+            }
+            Picker("", selection: $tab) { ForEach(tabs, id: \.self) { Text($0.rawValue).tag($0) } }
+                .pickerStyle(.segmented).labelsHidden()
+                .padding(.horizontal, 12).padding(.bottom, 8)
+            Divider()
+            switch tabs.contains(tab) ? tab : .pages {
+            case .pages:
+                if let view = highlighter.view, highlighter.document != nil {
+                    PDFThumbnails(pdfView: view)
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            case .contents:
+                List(items) { item in
+                    Button { go(item.outline) } label: {
+                        Text(item.label).lineLimit(2)
+                            .font(item.level == 0 ? .body.weight(.medium) : .callout)
+                            .foregroundStyle(item.level == 0 ? .primary : .secondary)
+                            .padding(.leading, CGFloat(item.level) * 12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .listStyle(.sidebar)
+            case .highlights:
+                AnnotationsList(paperID: paperID, onShow: { highlighter.show($0) }, onEdit: onEdit)
+            }
+        }
+    }
+
+    private func go(_ o: PDFOutline) {
+        guard let v = highlighter.view else { return }
+        if let d = o.destination { v.go(to: d) }
+        else if let a = o.action as? PDFActionGoTo { v.go(to: a.destination) }
+    }
+}
+
+/// Page thumbnails that follow (and move) a PDF view.
+struct PDFThumbnails: NSViewRepresentable {
+    let pdfView: PDFView
+    func makeNSView(context: Context) -> PDFThumbnailView {
+        let t = PDFThumbnailView()
+        t.pdfView = pdfView
+        t.maximumNumberOfColumns = 1
+        t.thumbnailSize = CGSize(width: 150, height: 194)
+        t.backgroundColor = .clear
+        return t
+    }
+    func updateNSView(_ t: PDFThumbnailView, context: Context) {
+        if t.pdfView !== pdfView { t.pdfView = pdfView }
+    }
+}
+
+/// ⌘Z and ⇧⌘Z in a reader window undo and redo highlights and notes. Caught before the window
+/// handles them, since the reading view (a web view) would take them for its own, empty, undo;
+/// left alone while text is being typed (a note, the Ask field), where they undo the typing.
+struct ReaderUndoKeys: NSViewRepresentable {
+    let undo: UndoManager
+
+    func makeNSView(context: Context) -> KeyView { let v = KeyView(); v.undo = undo; return v }
+    func updateNSView(_ v: KeyView, context: Context) { v.undo = undo }
+
+    final class KeyView: NSView {
+        var undo: UndoManager?
+        private var monitor: Any?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
+                guard let self, let win = self.window, e.window === win, let undo = self.undo,
+                      e.charactersIgnoringModifiers?.lowercased() == "z" else { return e }
+                let mods = e.modifierFlags.intersection([.command, .shift, .option, .control])
+                guard mods == .command || mods == [.command, .shift] else { return e }
+                if let t = win.firstResponder as? NSTextView, t.isEditable { return e }   // typing
+                if mods == .command { if undo.canUndo { undo.undo() } } else if undo.canRedo { undo.redo() }
+                return nil
+            }
+        }
+
+        deinit { if let monitor { NSEvent.removeMonitor(monitor) } }
+    }
 }
