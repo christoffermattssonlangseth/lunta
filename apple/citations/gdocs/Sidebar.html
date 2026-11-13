@@ -8,6 +8,10 @@
 </head>
 <body>
 <header><strong>Lunta</strong><select id="style" title="Citation style"></select></header>
+<div id="journal" class="journal" hidden>
+  <div class="jrow"><input id="jq" type="search" placeholder="Journal name, e.g. Neuron, eLife" autocomplete="off"><button id="jclose" title="Close">✕</button></div>
+  <div id="jresults"></div>
+</div>
 <input id="q" type="search" placeholder="Search your library…" autocomplete="off">
 <div id="results"></div>
 <div id="picked" class="picked"></div>
@@ -67,11 +71,24 @@ function compute() {
 }
 function updateAll() {
   status('Updating…');
+  if (LuntaCite.isJournal(style)) {
+    // a journal style: Lunta formats the citations and the reference list
+    return server('listCitations').then(function (lists) {
+      return api('/render', { style: style.slice(4), citations: lists }).then(function (res) {
+        var texts = res.citations.map(function (c) { return c.text; });
+        var sup = res.citations.some(function (c) { return c.superscript; });
+        var bib = res.bibliography.map(function (e) { return LuntaCite.runs(e.text); });
+        return server('applyAll', texts, sup, bib).then(function (n) {
+          status(n + ' citation' + (n === 1 ? '' : 's') + ' · ' + res.title);
+        });
+      });
+    }).catch(function (e) { if (e && e.message && e.message.indexOf('Lunta') >= 0) status(e.message, true); else offline(); });
+  }
   return compute().then(function (c) {
     var texts = c.lists.map(function (l) { return LuntaCite.inText(style, l, c.num.order, c.papers); });
     var bib = LuntaCite.bibliography(style, c.entries, c.num.order).map(function (e) { return LuntaCite.runs(e.text); });
     return server('applyAll', texts, !!(LuntaCite.STYLES[style] || {}).superscript, bib).then(function (n) {
-      status(n + ' citation' + (n === 1 ? '' : 's') + ' · ' + LuntaCite.STYLES[style].name);
+      status(n + ' citation' + (n === 1 ? '' : 's') + ' · ' + LuntaCite.styleName(style));
     });
   }).catch(function (e) { if (e && e.message && e.message.indexOf('Lunta') >= 0) status(e.message, true); else offline(); });
 }
@@ -85,9 +102,28 @@ function insertBib() {
 }
 (function () {
   var sel = $('style');
-  Object.keys(LuntaCite.STYLES).forEach(function (k) { var o = document.createElement('option'); o.value = k; o.textContent = LuntaCite.STYLES[k].name; sel.appendChild(o); });
-  server('getStyle').then(function (s) { style = s; sel.value = s; });
-  sel.onchange = function () { style = sel.value; server('setStyle', style); updateAll(); };
+  LuntaCite.fillStyles(sel, style);
+  server('getStyle').then(function (s) { style = s || 'apa'; LuntaCite.fillStyles(sel, style); });
+  function setStyle(s) { style = s; server('setStyle', style); LuntaCite.fillStyles(sel, style); updateAll(); }
+  sel.onchange = function () {
+    if (sel.value === '__find') { sel.value = style; $('journal').hidden = false; $('jq').focus(); return; }
+    setStyle(sel.value);
+  };
+  var jt; $('jq').addEventListener('input', function (e) {
+    clearTimeout(jt);
+    var q = e.target.value;
+    jt = setTimeout(function () {
+      if (!q.trim()) { $('jresults').innerHTML = ''; return; }
+      $('jresults').innerHTML = '<p class="status">Searching…</p>';
+      api('/styles?q=' + encodeURIComponent(q)).then(function (hits) {
+        LuntaCite.showJournals($('jresults'), hits, function (s) {
+          $('journal').hidden = true; $('jq').value = ''; $('jresults').innerHTML = '';
+          setStyle(s);
+        });
+      }).catch(offline);
+    }, 300);
+  });
+  $('jclose').onclick = function () { $('journal').hidden = true; $('jq').value = ''; $('jresults').innerHTML = ''; };
   var t; $('q').addEventListener('input', function (e) { clearTimeout(t); t = setTimeout(function () { search(e.target.value); }, 250); });
   $('insert').onclick = insert; $('bib').onclick = insertBib; $('refresh').onclick = updateAll;
   api('/status').then(function (s) { status('Connected to Lunta · ' + s.papers + ' papers'); }).catch(offline);

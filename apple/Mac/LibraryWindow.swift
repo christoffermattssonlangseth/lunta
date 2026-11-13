@@ -459,12 +459,18 @@ struct CiteMenu: View {
             // every style (author–year, then numbered); several papers are copied one after another
             let styles = citationStyles()
             ForEach(styles.filter { !$0.numeric }, id: \.key) { st in
-                Button(st.name) { copyToPasteboard(model.citations(ids, st.style)) }
+                Button(st.name) { copyCitation(model.citations(ids, st.style)) }
             }
             Divider()
             ForEach(styles.filter(\.numeric), id: \.key) { st in
-                Button(st.name) { copyToPasteboard(model.citations(ids, st.style)) }
+                Button(st.name) { copyCitation(model.citations(ids, st.style)) }
             }
+            Divider()
+            // journal styles (CSL): the ones used before, and a search for any journal
+            ForEach(JournalStyles.recent, id: \.id) { j in
+                Button(j.title) { JournalStyles.copy(model, ids: ids, style: j) }
+            }
+            Button("Journal Style…") { NotificationCenter.default.post(name: .luntaJournalCite, object: ids) }
             Divider()
             Button("BibTeX") { copyToPasteboard(model.bibtex(ids)) }
             Button("RIS") { copyToPasteboard(model.ris(ids)) }
@@ -827,6 +833,7 @@ struct ShareTarget: Identifiable { let id = UUID(); let ids: [String] }
 extension Notification.Name {
     static let luntaEditPaper = Notification.Name("luntaEditPaper")
     static let luntaSharePapers = Notification.Name("luntaSharePapers")
+    static let luntaJournalCite = Notification.Name("luntaJournalCite")
     static let luntaOrganize = Notification.Name("luntaOrganize")
     static let luntaAskCompare = Notification.Name("luntaAskCompare")
     static let luntaAskFolder = Notification.Name("luntaAskFolder")
@@ -863,6 +870,7 @@ struct EditSheet: ViewModifier {
     @Binding var editing: EditTarget?
     @State private var sharing: ShareTarget?
     @State private var organizing: ShareTarget?
+    @State private var journalCite: ShareTarget?
     func body(content: Content) -> some View {
         content
             .sheet(item: $editing) { t in MetadataEditor(paperID: t.id) }
@@ -873,6 +881,10 @@ struct EditSheet: ViewModifier {
                 }
             }
             .sheet(item: $organizing) { t in OrganizeView(ids: t.ids) }
+            .sheet(item: $journalCite) { t in JournalStylePicker(ids: t.ids) }
+            .onReceive(NotificationCenter.default.publisher(for: .luntaJournalCite)) { n in
+                if let ids = n.object as? [String], !ids.isEmpty { journalCite = ShareTarget(ids: ids) }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .luntaOrganize)) { n in
                 if let ids = n.object as? [String], !ids.isEmpty { organizing = ShareTarget(ids: ids) }
             }
