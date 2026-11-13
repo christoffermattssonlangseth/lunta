@@ -9,6 +9,8 @@ import LuntaCore
 ///   GET  /api/search?q=…               → [{id,title,authors,year,journal,doi}]
 ///   POST /api/bibliography {style,ids}  → {entries:[…]}   (Markdown-style *italic* / **bold**)
 ///   GET  /api/status                    → {ok:true,papers:n}
+///   GET  /api/styles?q=…               → journal styles in the CSL catalogue [{id,title,format}]
+///   POST /api/render {style,citations}  → a journal style: {title, citations:[{text,superscript}], bibliography:[{id,text}]}
 ///
 /// Pages served from this origin can call the API directly, and so can the hosted copy of the Word
 /// panel (GitHub Pages, used by the Microsoft store listing). The Google Docs sidebar (served by
@@ -212,10 +214,50 @@ final class CitationServer {
                 return d
             }
             json(c, 200, ["entries": items], origin: origin)
+        case ("GET", "/api/styles"):
+            // journal styles (CSL catalogue); the catalogue is downloaded the first time
+            let q = r.query["q"] ?? ""
+            let dir = Self.cslCache
+            Task.detached {
+                let result = Result { try cslSearch(cacheDir: dir, query: q, limit: 40) }
+                await MainActor.run {
+                    switch result {
+                    case .success(let hits):
+                        self.json(c, 200, hits.map { ["id": $0.id, "title": $0.title, "format": $0.format] }, origin: origin)
+                    case .failure(let e):
+                        self.json(c, 502, ["error": "Couldn't load the journal styles: \(e.localizedDescription)"], origin: origin)
+                    }
+                }
+            }
+        case ("POST", "/api/render"):
+            // citations and reference list in a journal style: {style: "nature-neuroscience", citations: [[ids]]}
+            guard let j = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any],
+                  let style = j["style"] as? String, let cites = j["citations"] as? [[String]] else {
+                json(c, 400, ["error": "expected {style, citations}"], origin: origin); return
+            }
+            let lib = model.lib, dir = Self.cslCache
+            Task.detached {
+                let result = Result { try lib.citeCsl(cacheDir: dir, styleId: style, citations: cites) }
+                await MainActor.run {
+                    switch result {
+                    case .success(let out):
+                        self.json(c, 200, [
+                            "title": out.styleTitle,
+                            "citations": out.citations.map { ["text": $0.text, "superscript": $0.superscript] },
+                            "bibliography": out.bibliography.map { ["id": $0.id, "text": $0.text] },
+                        ], origin: origin)
+                    case .failure(let e):
+                        self.json(c, 502, ["error": "Couldn't format in this style: \(e.localizedDescription)"], origin: origin)
+                    }
+                }
+            }
         default:
             json(c, 404, ["error": "not found"], origin: origin)
         }
     }
+
+    /// Where journal styles are kept (next to the TLS files, on this Mac only).
+    nonisolated static var cslCache: String { tlsDir.deletingLastPathComponent().path }
 
     static func item(_ p: Paper) -> [String: Any] {
         let fams = p.meta.authors.map { a -> String in

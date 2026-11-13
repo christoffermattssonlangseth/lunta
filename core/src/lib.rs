@@ -10,6 +10,7 @@ uniffi::setup_scaffolding!();
 
 #[cfg(feature = "convert")]
 pub mod adder;
+pub mod csl;
 #[cfg(feature = "convert")]
 pub mod convert;
 #[cfg(feature = "drive")]
@@ -424,6 +425,20 @@ impl Library {
         self.paper(id).map(|p| export::citation(&p, style))
     }
 
+    /// Citations (each a list of paper ids, in document order) and the reference list in a journal
+    /// style from the CSL catalogue (`style_id` as `csl_search` gives it). Styles are fetched once
+    /// into `cache_dir` (blocking: call off the main thread the first time a style is used).
+    pub fn cite_csl(&self, cache_dir: String, style_id: String, citations: Vec<Vec<String>>) -> Result<csl::CslRendered> {
+        let mut ids: Vec<String> = Vec::new();
+        for id in citations.iter().flatten() {
+            if !ids.contains(id) {
+                ids.push(id.clone());
+            }
+        }
+        let papers: Vec<Paper> = ids.into_iter().filter_map(|id| self.paper(id)).collect();
+        csl::render(&cache_dir, &style_id, &papers, &citations)
+    }
+
     // ---- discovering new papers ----
 
     /// Searches beyond the library (OpenAlex) and marks hits that are already in it (blocking).
@@ -589,6 +604,13 @@ fn merge_meta(m: &mut PaperMeta, o: &PaperMeta) {
 // ---- free functions exported to Swift ----
 
 /// Looks up metadata for a DOI, PMID, PMCID, arXiv ID or a link containing one (blocking; call off the main thread).
+/// Journal styles in the CSL catalogue whose name has every word of `query` (blocking: the
+/// catalogue is downloaded into `cache_dir` the first time and then monthly).
+#[uniffi::export]
+pub fn csl_search(cache_dir: String, query: String, limit: u32) -> Result<Vec<csl::CslStyleHit>> {
+    csl::search(&cache_dir, &query, limit as usize)
+}
+
 /// The citation styles, in menu order.
 #[uniffi::export]
 pub fn citation_styles() -> Vec<model::CitationStyleInfo> {

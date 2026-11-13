@@ -18,7 +18,7 @@ fn agent() -> &'static ureq::Agent {
     })
 }
 
-fn get_text(url: &str) -> Result<String> {
+pub(crate) fn get_text(url: &str) -> Result<String> {
     let mut r = agent()
         .get(url)
         .header("User-Agent", UA)
