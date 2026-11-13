@@ -80,8 +80,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           shopt -s nullglob
-          gh release upload "${{ inputs.release_tag }}" --clobber -R "${{ github.repository }}" \
-            desktop/src-tauri/target/release/bundle/msi/*.msi \
-            desktop/src-tauri/target/release/bundle/nsis/*.exe \
-            desktop/src-tauri/target/release/bundle/appimage/*.AppImage \
-            desktop/src-tauri/target/release/bundle/deb/*.deb
+          # names that say what they are (see .github/release-notes.md)
+          v="${{ inputs.release_tag }}"; v="${v#v}"; b=desktop/src-tauri/target/release/bundle; out=()
+          for f in $b/msi/*.msi; do cp "$f" "Lunta-$v-Windows.msi"; out+=("Lunta-$v-Windows.msi"); done
+          for f in $b/nsis/*.exe; do cp "$f" "Lunta-$v-Windows-Setup.exe"; out+=("Lunta-$v-Windows-Setup.exe"); done
+          for f in $b/appimage/*.AppImage; do cp "$f" "Lunta-$v-Linux.AppImage"; out+=("Lunta-$v-Linux.AppImage"); done
+          for f in $b/deb/*.deb; do cp "$f" "Lunta-$v-Linux-Ubuntu-Debian.deb"; out+=("Lunta-$v-Linux-Ubuntu-Debian.deb"); done
+          gh release upload "${{ inputs.release_tag }}" --clobber -R "${{ github.repository }}" "${out[@]}"

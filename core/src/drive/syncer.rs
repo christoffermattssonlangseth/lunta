@@ -142,6 +142,8 @@ pub struct Syncer {
     remote: Box<dyn RemoteStore>,
     opts: SyncOptions,
     state: Mutex<SyncState>,
+    /// (done, total) of the current sync's transfers, put in front of progress lines.
+    step: Mutex<(usize, usize)>,
 }
 
 fn heavy(path: &str) -> bool {
@@ -177,7 +179,7 @@ impl Syncer {
         };
         let root = root.into();
         fs::create_dir_all(&root)?;
-        Ok(Syncer { root, device, remote, opts, state: Mutex::new(state) })
+        Ok(Syncer { root, device, remote, opts, state: Mutex::new(state), step: Mutex::new((0, 0)) })
     }
 
     fn classify(&self, path: &str) -> Option<Kind> {
@@ -199,9 +201,11 @@ impl Syncer {
         rel.split('/').fold(self.root.clone(), |p, c| p.join(c))
     }
 
+    /// A progress line, "312 of 2676 · upload papers/…" while a sync works through its plan.
     fn say(&self, s: &str) {
         if let Some(f) = &self.opts.progress {
-            f(s);
+            let (done, total) = *self.step.lock().unwrap();
+            if total > 1 { f(&format!("{} of {total} · {s}", (done + 1).min(total))) } else { f(s) }
         }
     }
 
@@ -308,7 +312,16 @@ impl Syncer {
         let mut paths: BTreeSet<String> = local.keys().cloned().collect();
         paths.extend(st.remote.keys().cloned());
         paths.extend(st.synced.keys().filter(|p| self.classify(p).is_some()).cloned());
-        let mut order: Vec<(u8, String)> = paths.into_iter().map(|p| (self.classify(&p).unwrap().order(), p)).collect();
+        // a bridge sends the big paper files (PDF, EPUB, narration) last, after the op logs: the other
+        // side then sees the whole library within minutes and fetches those files when they are opened
+        // (a lazy reader, like the Android app, shows a not-yet-uploaded file as not available)
+        let mut order: Vec<(u8, String)> = paths
+            .into_iter()
+            .map(|p| {
+                let k = self.classify(&p).unwrap();
+                (if self.opts.bridge && k == Kind::Paper && heavy(&p) { 4 } else { k.order() }, p)
+            })
+            .collect();
         order.sort();
 
         let mut plan: Vec<(String, Decision)> = Vec::new();
@@ -330,7 +343,9 @@ impl Syncer {
 
         // 3. act
         let mut since_save = 0;
-        for (p, d) in plan {
+        let total = plan.len();
+        for (i, (p, d)) in plan.into_iter().enumerate() {
+            *self.step.lock().unwrap() = (i, total);
             if let Err(e) = self.act(&mut st, &p, d, &mut rep) {
                 rep.errors.push(format!("{p}: {e}"));
             }
@@ -345,6 +360,7 @@ impl Syncer {
         }
         rep.finished_ms = now_ms();
         self.save_state(&st)?;
+        *self.step.lock().unwrap() = (0, 0);
         Ok(rep)
     }
 

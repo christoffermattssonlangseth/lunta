@@ -176,9 +176,19 @@ struct DriveBridgeView: View {
                             Button("Sync Now") { bridge.syncNow() }.disabled(bridge.syncing)
                         }
                         if bridge.syncing {
-                            HStack(spacing: 8) {
-                                ProgressView().controlSize(.small)
-                                Text(bridge.progress ?? "Syncing…").lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+                            // "312 of 2676 · upload papers/…": a bar with the count, the file below
+                            if let p = bridge.progress, let m = p.firstMatch(of: /^(\d+) of (\d+) · (.*)$/),
+                               let done = Double(m.1), let total = Double(m.2), total > 0 {
+                                ProgressView(value: done, total: total) {
+                                    Text("\(Int(done).formatted()) of \(Int(total).formatted()) files · \(Int(total - done).formatted()) left")
+                                } currentValueLabel: {
+                                    Text(String(m.3)).lineLimit(1).truncationMode(.middle)
+                                }
+                            } else {
+                                HStack(spacing: 8) {
+                                    ProgressView().controlSize(.small)
+                                    Text(bridge.progress ?? "Syncing…").lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+                                }
                             }
                             Text("The first sync copies the whole library to Drive, which can take a while.").font(.caption).foregroundStyle(.secondary)
                         } else if let last = bridge.lastSync {

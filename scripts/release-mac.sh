@@ -61,7 +61,7 @@ spctl --assess --type execute --verbose "$app"
 echo "notarized: $app"
 
 [[ $tag == --check ]] && exit 0
-out="$build/lunta-mac-$tag.zip"
+out="$build/Lunta-${tag#v}-Mac-AppleSilicon.zip"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$out"
 gh release upload "$tag" "$out" --clobber
 echo "attached $(basename "$out") to $tag"
