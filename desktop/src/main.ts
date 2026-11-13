@@ -85,7 +85,8 @@ function place(label: string, s: Source, count?: number, icon = '', extra: Parti
     oncontextmenu: extra.onmenu ? (e: MouseEvent) => { e.preventDefault(); extra.onmenu!(e); } : undefined,
     'data-folder': s.kind === 'folder' ? s.id : undefined,
     'data-drag': s.kind === 'folder' ? `folder:${s.id}` : undefined,
-    'data-drop': s.kind === 'folder' ? `folder:${s.id}` : s.kind === 'tag' ? `tag:${s.id}` : undefined,
+    'data-drop': s.kind === 'folder' ? `folder:${s.id}` : s.kind === 'tag' ? `tag:${s.id}`
+      : s.kind === 'starred' || s.kind === 'must_read' ? s.kind : undefined,
   }, h('span.icon', { text: icon }), h('span.label', { text: label }), count !== undefined ? h('span.count', { text: String(count) }) : null);
   if (extra.depth) item.style.paddingLeft = `${12 + extra.depth * 14}px`;
   return item;
@@ -501,7 +502,7 @@ setupDrag({
   accepts(p: Payload, t) {
     const [kind, ...rest] = t.dataset.drop!.split(':');
     const id = rest.join(':');
-    if (p.kind === 'papers') return kind === 'folder' || kind === 'tag';
+    if (p.kind === 'papers') return kind === 'folder' || kind === 'tag' || kind === 'starred' || kind === 'must_read';
     // a folder goes into another folder (not itself or its own subfolder), or to the top level
     if (kind === 'folders-root') return !!side?.folders.find((f) => f.id === p.id)?.parent;
     return kind === 'folder' && !descendantOf(id, p.id) && side?.folders.find((f) => f.id === p.id)?.parent !== id;
@@ -514,7 +515,11 @@ setupDrag({
       return;
     }
     const n = p.ids.length, what = n === 1 ? '1 paper' : `${n} papers`;
-    if (kind === 'folder') {
+    if (kind === 'starred') {
+      after(Promise.all(p.ids.map((pid) => api.setStarred(pid, true))).then(() => status(`Starred ${what}`)));
+    } else if (kind === 'must_read') {
+      after(Promise.all(p.ids.map((pid) => api.setMustRead(pid, true))).then(() => status(`Added ${what} to Must Read`)));
+    } else if (kind === 'folder') {
       const name = side?.folders.find((f) => f.id === id)?.name;
       after(Promise.all(p.ids.map((pid) => api.setMembership(id, pid, true))).then(() => status(`Added ${what} to “${name}”`)));
     } else {

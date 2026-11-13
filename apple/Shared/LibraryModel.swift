@@ -251,9 +251,18 @@ final class LibraryModel: ObservableObject {
     }
 
     func toggleStar(_ p: Paper) { try? lib.setStarred(id: p.id, starred: !p.starred); reload() }
+    func setStarred(_ ids: [String], _ on: Bool) {
+        guard !ids.isEmpty else { return }
+        for id in ids { try? lib.setStarred(id: id, starred: on) }
+        reload()
+    }
     func setRead(_ p: Paper, _ read: Bool) { try? lib.setRead(id: p.id, read: read); reload() }
     /// On (marking them unread) or off the Must Read list.
-    func setMustRead(_ ids: [String], _ on: Bool) { for id in ids { try? lib.setMustRead(id: id, mustRead: on) }; reload() }
+    func setMustRead(_ ids: [String], _ on: Bool) {
+        guard !ids.isEmpty else { return }
+        for id in ids { try? lib.setMustRead(id: id, mustRead: on) }
+        reload()
+    }
     func toggleMustRead(_ p: Paper) { setMustRead([p.id], !p.mustRead) }
     /// Opening a paper marks it read, but keeps it on the Must Read list.
     func markOpened(_ p: Paper) { if !p.read { try? lib.markOpened(id: p.id); reload() } }

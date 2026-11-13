@@ -184,8 +184,11 @@ struct Sidebar: View {
         List(selection: Binding(get: { model.source }, set: { model.source = $0 ?? .all })) {
             Section("Library") {
                 Label("All Papers", systemImage: "books.vertical").badge(model.counts.all).tag(SidebarItem.all)
+                // drop papers here to star them / put them on the Must Read list
                 Label("Starred", systemImage: "star").badge(model.counts.starred).tag(SidebarItem.starred)
+                    .modifier(SidebarDrop.Target { items in model.setStarred(SidebarDrop.paperIDs(items), true) })
                 Label("Must Read", systemImage: "bookmark").badge(model.counts.mustRead).tag(SidebarItem.mustRead)
+                    .modifier(SidebarDrop.Target { items in model.setMustRead(SidebarDrop.paperIDs(items), true) })
                 Label("Unread", systemImage: "circle.badge").badge(model.counts.unread).tag(SidebarItem.unread)
             }
             Section("Beyond your library") {
