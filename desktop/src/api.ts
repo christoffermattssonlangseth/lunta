@@ -8,13 +8,13 @@ export interface PaperMeta {
 }
 export interface Paper {
   id: string; meta: PaperMeta; year: string; added: number; has_pdf: boolean; has_epub: boolean;
-  read: boolean; starred: boolean; collections: string[]; tags: string[]; annotation_count: number;
+  read: boolean; starred: boolean; must_read: boolean; collections: string[]; tags: string[]; annotation_count: number;
 }
 export interface Row { paper: Paper; snippet: string; }
 export interface Folder { id: string; name: string; parent: string | null; paper_count: number; }
-export interface Sidebar { all: number; starred: number; unread: number; folders: Folder[]; tags: string[]; smart: [string, string][]; }
+export interface Sidebar { all: number; starred: number; must_read: number; unread: number; folders: Folder[]; tags: string[]; smart: [string, string][]; }
 export interface Info { library: string | null; opened: boolean; error: string | null; device_id: string; device_label: string; }
-export interface Source { kind: 'all' | 'starred' | 'unread' | 'folder' | 'tag' | 'smart'; id?: string; }
+export interface Source { kind: 'all' | 'starred' | 'must_read' | 'unread' | 'folder' | 'tag' | 'smart'; id?: string; }
 export interface TocItem { title: string; level: number; anchor: string; }
 export interface Book { path: string; toc: TocItem[]; }
 export interface Annotation {
@@ -33,6 +33,8 @@ export const api = {
   paper: (id: string) => invoke<Paper | null>('paper', { id }),
   setRead: (id: string, read: boolean) => invoke<void>('set_read', { id, read }),
   setStarred: (id: string, starred: boolean) => invoke<void>('set_starred', { id, starred }),
+  setMustRead: (id: string, mustRead: boolean) => invoke<void>('set_must_read', { id, mustRead }),
+  markOpened: (id: string) => invoke<void>('mark_opened', { id }),
   setTag: (id: string, tag: string, present: boolean) => invoke<void>('set_tag', { id, tag, present }),
   setMembership: (folder: string, id: string, present: boolean) => invoke<void>('set_membership', { folder, id, present }),
   createFolder: (name: string, parent: string | null) => invoke<string>('create_folder', { name, parent }),

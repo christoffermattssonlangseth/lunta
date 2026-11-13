@@ -183,6 +183,7 @@ impl Library {
                 filter.collection.as_ref().map_or(true, |c| p.collections.contains(c))
                     && filter.tag.as_ref().map_or(true, |t| p.tags.contains(t))
                     && (!filter.starred_only || p.starred)
+                    && (!filter.must_read_only || p.must_read)
                     && (!filter.unread_only || !p.read)
             })
             .collect();
@@ -284,8 +285,28 @@ impl Library {
         Ok(())
     }
 
+    /// Marks a paper read or unread. Marking it read takes it off the Must Read list.
     pub fn set_read(&self, id: String, read: bool) -> Result<()> {
+        if read && self.paper(id.clone()).is_some_and(|p| p.must_read) {
+            self.op(OpKind::SetMustRead { paper: id.clone(), must_read: false })?;
+        }
         self.op(OpKind::SetRead { paper: id, read })
+    }
+
+    /// Puts a paper on the Must Read list (marking it unread) or takes it off.
+    pub fn set_must_read(&self, id: String, must_read: bool) -> Result<()> {
+        if must_read && self.paper(id.clone()).is_some_and(|p| p.read) {
+            self.op(OpKind::SetRead { paper: id.clone(), read: false })?;
+        }
+        self.op(OpKind::SetMustRead { paper: id, must_read })
+    }
+
+    /// Marks a paper read on opening it: unlike `set_read`, it stays on the Must Read list.
+    pub fn mark_opened(&self, id: String) -> Result<()> {
+        match self.paper(id.clone()) {
+            Some(p) if !p.read => self.op(OpKind::SetRead { paper: id, read: true }),
+            _ => Ok(()),
+        }
     }
 
     pub fn set_starred(&self, id: String, starred: bool) -> Result<()> {
@@ -590,6 +611,7 @@ fn paper_of(g: &Inner, id: &str) -> Paper {
         has_audio: g.files.get(id).map(|f| f.2).unwrap_or(false),
         read: p.read,
         starred: p.starred,
+        must_read: p.must_read,
         collections: p.collections.iter().cloned().collect(),
         tags: p.tags.iter().cloned().collect(),
         annotation_count: g.state.annotations.get(id).map(|m| m.len() as u32).unwrap_or(0),

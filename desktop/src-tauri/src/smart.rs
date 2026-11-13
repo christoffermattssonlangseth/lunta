@@ -80,6 +80,7 @@ pub fn papers(f: &SmartFolder, lib: &Library, sort: SortKey) -> Vec<Paper> {
         tag: (!f.tag.is_empty()).then(|| f.tag.clone()),
         starred_only: f.starred_only,
         unread_only: f.unread_only,
+        must_read_only: false,
     };
     let mut list = lib.papers(filter, sort);
     let words = f.text.trim();

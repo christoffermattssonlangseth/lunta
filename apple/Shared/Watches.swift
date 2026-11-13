@@ -1041,13 +1041,7 @@ struct FeedRow: View {
                 if let id = model.libraryID(of: find.hit) {
                     OpenAddedPaper(id: id, compact: true).tint(.luntaTeal).fixedSize()
                 } else {
-                    Button {
-                        adding = true
-                        Task {
-                            if let id = await model.addDiscovered(find.hit) { center.added(key: find.id, id: id) }
-                            adding = false
-                        }
-                    } label: {
+                    Button { add(mustRead: false) } label: {
                         HStack(spacing: 4) {
                             if adding { ProgressView().controlSize(.mini).tint(.white) } else { Image(systemName: "plus") }
                             Text(adding ? "Adding…" : "Add")
@@ -1058,6 +1052,9 @@ struct FeedRow: View {
                         .fixedSize()
                     }
                     .buttonStyle(.borderless).disabled(adding)
+                    .contextMenu {
+                        Button("Add as Must Read", systemImage: "bookmark") { add(mustRead: true) }
+                    }
                 }
                 Spacer(minLength: 8)
                 ShareLink(item: find.hit.shareText, subject: Text(r.title)) {
@@ -1086,6 +1083,17 @@ struct FeedRow: View {
             .font(.body)
         }
         .padding(.vertical, 6)
+    }
+
+    private func add(mustRead: Bool) {
+        adding = true
+        Task {
+            if let id = await model.addDiscovered(find.hit) {
+                center.added(key: find.id, id: id)
+                if mustRead { model.setMustRead([id], true) }
+            }
+            adding = false
+        }
     }
 
     private func byline(_ r: FeedRecord) -> String {

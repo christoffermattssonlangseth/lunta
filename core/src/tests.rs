@@ -139,6 +139,7 @@ fn citations_and_exports() {
         has_audio: false,
         read: false,
         starred: false,
+        must_read: false,
         collections: vec![],
         tags: vec![],
         annotation_count: 0,
@@ -385,6 +386,7 @@ fn journal_styles_online() {
         has_audio: false,
         read: false,
         starred: false,
+        must_read: false,
         collections: vec![],
         tags: vec![],
         annotation_count: 0,
@@ -402,4 +404,34 @@ fn journal_styles_online() {
         assert_eq!(r.citations.len(), 2);
         assert_eq!(r.bibliography.len(), 2);
     }
+}
+
+#[test]
+fn must_read_list() {
+    let root = tmp();
+    let lib = open(&root, "mac");
+    let mut m = sample();
+    m.doi = "10.1/mr".into();
+    let p = lib.add_paper(m, None, None, None).unwrap();
+    let only = |lib: &Library| lib.papers(PaperFilter { must_read_only: true, ..Default::default() }, SortKey::Added).len();
+    assert_eq!(only(&lib), 0);
+    // on the list: also unread
+    lib.set_read(p.id.clone(), true).unwrap();
+    lib.set_must_read(p.id.clone(), true).unwrap();
+    let q = lib.paper(p.id.clone()).unwrap();
+    assert!(q.must_read && !q.read);
+    assert_eq!(only(&lib), 1);
+    // opening it keeps it on the list
+    lib.mark_opened(p.id.clone()).unwrap();
+    let q = lib.paper(p.id.clone()).unwrap();
+    assert!(q.must_read && q.read);
+    // marking it read takes it off
+    lib.set_read(p.id.clone(), false).unwrap();
+    lib.set_read(p.id.clone(), true).unwrap();
+    assert!(!lib.paper(p.id.clone()).unwrap().must_read);
+    assert_eq!(only(&lib), 0);
+    // syncs to another device
+    lib.set_must_read(p.id.clone(), true).unwrap();
+    let phone = open(&root, "phone");
+    assert!(phone.paper(p.id.clone()).unwrap().must_read);
 }

@@ -93,7 +93,7 @@ export async function openReader(p: Paper, m: 'reading' | 'pdf', closed: () => v
   if (mode === 'pdf' && !p.has_pdf && p.has_epub) mode = 'reading';
   $('#reader').hidden = false;
   render();
-  if (!p.read) api.setRead(p.id, true).catch(() => {});
+  if (!p.read) api.markOpened(p.id).catch(() => {});
   await show();
 }
 

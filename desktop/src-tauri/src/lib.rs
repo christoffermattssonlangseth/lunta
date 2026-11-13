@@ -87,6 +87,7 @@ struct PaperDto {
     has_epub: bool,
     read: bool,
     starred: bool,
+    must_read: bool,
     collections: Vec<String>,
     tags: Vec<String>,
     annotation_count: u32,
@@ -103,6 +104,7 @@ impl From<Paper> for PaperDto {
             has_epub: p.has_epub,
             read: p.read,
             starred: p.starred,
+            must_read: p.must_read,
             collections: p.collections,
             tags: p.tags,
             annotation_count: p.annotation_count,
@@ -137,6 +139,7 @@ struct Folder {
 struct Sidebar {
     all: usize,
     starred: usize,
+    must_read: usize,
     unread: usize,
     folders: Vec<Folder>,
     tags: Vec<String>,
@@ -210,6 +213,7 @@ async fn sidebar(state: State<'_, AppState>) -> R<Sidebar> {
     Ok(Sidebar {
         all: every.len(),
         starred: every.iter().filter(|p| p.starred).count(),
+        must_read: every.iter().filter(|p| p.must_read).count(),
         unread: every.iter().filter(|p| !p.read).count(),
         folders,
         tags: lib.tags(),
@@ -234,6 +238,7 @@ async fn list(state: State<'_, AppState>, source: Source, query: String, sort: S
             kind => {
                 match kind {
                     "starred" => filter.starred_only = true,
+                    "must_read" => filter.must_read_only = true,
                     "unread" => filter.unread_only = true,
                     "folder" => filter.collection = Some(id),
                     "tag" => filter.tag = Some(id),
@@ -313,6 +318,18 @@ async fn set_read(state: State<'_, AppState>, id: String, read: bool) -> R<()> {
 #[tauri::command]
 async fn set_starred(state: State<'_, AppState>, id: String, starred: bool) -> R<()> {
     state.lib()?.set_starred(id, starred).map_err(err)
+}
+
+/// On (marking it unread) or off the Must Read list.
+#[tauri::command]
+async fn set_must_read(state: State<'_, AppState>, id: String, must_read: bool) -> R<()> {
+    state.lib()?.set_must_read(id, must_read).map_err(err)
+}
+
+/// Opening a paper marks it read but keeps it on the Must Read list.
+#[tauri::command]
+async fn mark_opened(state: State<'_, AppState>, id: String) -> R<()> {
+    state.lib()?.mark_opened(id).map_err(err)
 }
 
 #[tauri::command]
@@ -715,6 +732,8 @@ pub fn run() {
             lookup_meta,
             set_read,
             set_starred,
+            set_must_read,
+            mark_opened,
             set_tag,
             set_membership,
             create_folder,

@@ -119,6 +119,9 @@ fun PapersScreen(model: AppModel, place: Place) {
                                     SwipeAction(if (r.paper.starred) Icons.Filled.Star else Icons.Outlined.StarOutline, if (r.paper.starred) "Unstar" else "Star", MaterialTheme.colorScheme.tertiary) {
                                         openRow = null; model.toggleStar(r.paper)
                                     }
+                                    SwipeAction(if (r.paper.mustRead) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, if (r.paper.mustRead) "Not Must Read" else "Must Read", MaterialTheme.colorScheme.primary) {
+                                        openRow = null; model.toggleMustRead(r.paper)
+                                    }
                                     SwipeAction(if (r.paper.read) Icons.Outlined.MarkEmailUnread else Icons.Outlined.MarkEmailRead, if (r.paper.read) "Unread" else "Read", MaterialTheme.colorScheme.primary) {
                                         openRow = null; model.toggleRead(r.paper)
                                     }
@@ -174,6 +177,7 @@ private fun PaperRow(r: Row, onClick: () -> Unit) {
             r.snippet?.let { Text(highlighted(it), Modifier.padding(top = 3.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }
         }
         Row(Modifier.padding(start = 8.dp, top = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (p.mustRead) Icon(Icons.Filled.Bookmark, "Must Read", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
             if (p.starred) Icon(Icons.Filled.Star, "Starred", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.tertiary)
             if (p.annotationCount > 0u) Icon(Icons.Filled.Highlight, "Highlights", Modifier.size(16.dp), tint = HighlightColors.getValue("yellow"))
             if (p.hasPdf) Icon(Icons.Outlined.PictureAsPdf, "PDF", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)

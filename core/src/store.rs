@@ -26,6 +26,8 @@ pub enum OpKind {
     DeletePaper { paper: String },
     SetRead { paper: String, read: bool },
     SetStarred { paper: String, starred: bool },
+    /// On the Must Read list (older versions skip this op).
+    SetMustRead { paper: String, must_read: bool },
     Tag { paper: String, tag: String, present: bool },
     CollectionUpsert { id: String, name: String, parent: Option<String> },
     CollectionDelete { id: String },
@@ -49,6 +51,7 @@ pub struct PaperState {
     pub modified: i64,
     pub read: bool,
     pub starred: bool,
+    pub must_read: bool,
     pub tags: BTreeSet<String>,
     pub collections: BTreeSet<String>,
 }
@@ -94,6 +97,11 @@ impl State {
             OpKind::SetStarred { paper, starred } => {
                 if let Some(p) = self.papers.get_mut(paper) {
                     p.starred = *starred;
+                }
+            }
+            OpKind::SetMustRead { paper, must_read } => {
+                if let Some(p) = self.papers.get_mut(paper) {
+                    p.must_read = *must_read;
                 }
             }
             OpKind::Tag { paper, tag, present } => {

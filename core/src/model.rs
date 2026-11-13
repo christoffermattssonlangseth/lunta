@@ -42,6 +42,9 @@ pub struct Paper {
     pub has_audio: bool,
     pub read: bool,
     pub starred: bool,
+    /// On the Must Read list: to read soon. Leaves it when marked read (not when just opened).
+    #[uniffi(default = false)]
+    pub must_read: bool,
     pub collections: Vec<String>,
     pub tags: Vec<String>,
     pub annotation_count: u32,
@@ -95,6 +98,8 @@ pub struct PaperFilter {
     pub tag: Option<String>,
     pub starred_only: bool,
     pub unread_only: bool,
+    #[uniffi(default = false)]
+    pub must_read_only: bool,
 }
 
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]

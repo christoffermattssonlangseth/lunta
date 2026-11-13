@@ -74,6 +74,7 @@ fn summary(p: &Paper) -> Value {
         "doi": p.meta.doi,
         "read": p.read,
         "starred": p.starred,
+        "must_read": p.must_read,
         "tags": p.tags,
         "has_pdf": p.has_pdf,
         "has_full_text": p.has_epub,
@@ -108,7 +109,7 @@ fn details(lib: &Library, p: &Paper) -> Value {
         "keywords": p.meta.keywords,
         "tags": p.tags,
         "collections": p.collections.iter().filter_map(|c| cols.get(c).cloned()).collect::<Vec<_>>(),
-        "read": p.read, "starred": p.starred,
+        "read": p.read, "starred": p.starred, "must_read": p.must_read,
         "annotations": notes,
         "files": {
             "pdf": file(FileKind::Pdf),
@@ -237,8 +238,8 @@ fn tools() -> Value {
     json!([
         t("search_papers", "Search the user's Lunta library (titles, authors, abstracts, full text, notes). Returns paper summaries with ids.",
           json!({"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}}), &["query"], true),
-        t("list_papers", "List papers in the library, optionally filtered (unread, starred, tag, collection) and sorted.",
-          json!({"unread": {"type": "boolean"}, "starred": {"type": "boolean"}, "tag": {"type": "string"},
+        t("list_papers", "List papers in the library, optionally filtered (unread, starred, must_read: the user's reading queue, tag, collection) and sorted.",
+          json!({"unread": {"type": "boolean"}, "starred": {"type": "boolean"}, "must_read": {"type": "boolean"}, "tag": {"type": "string"},
                  "collection": {"type": "string", "description": "Collection name"},
                  "sort": {"type": "string", "enum": ["added", "year", "title", "author"], "default": "added"},
                  "limit": {"type": "integer", "default": 25}, "offset": {"type": "integer", "default": 0}}), &[], true),
@@ -259,8 +260,8 @@ fn tools() -> Value {
           json!({"ids": ids, "tag": {"type": "string"}, "remove": {"type": "boolean", "default": false}}), &["ids", "tag"], false),
         t("add_to_collection", "Put papers into a collection (created if missing), or take them out.",
           json!({"ids": ids, "collection": {"type": "string"}, "remove": {"type": "boolean", "default": false}}), &["ids", "collection"], false),
-        t("set_status", "Mark papers read/unread and/or starred/unstarred.",
-          json!({"ids": ids, "read": {"type": "boolean"}, "starred": {"type": "boolean"}}), &["ids"], false),
+        t("set_status", "Mark papers read/unread, starred/unstarred, and/or on/off the Must Read list (the user's reading queue; marking a paper read takes it off).",
+          json!({"ids": ids, "read": {"type": "boolean"}, "starred": {"type": "boolean"}, "must_read": {"type": "boolean"}}), &["ids"], false),
         t("add_note", "Attach a note to a paper (shown in Lunta on Mac and iPhone). Optionally quote the passage it refers to.",
           json!({"id": {"type": "string"}, "note": {"type": "string"}, "quote": {"type": "string"}}), &["id", "note"], false),
         t("update_paper", "Correct a paper's details. Only the fields given are changed.",
@@ -295,6 +296,7 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
                 tag: arg_str(a, "tag"),
                 starred_only: a.get("starred").and_then(|v| v.as_bool()).unwrap_or(false),
                 unread_only: a.get("unread").and_then(|v| v.as_bool()).unwrap_or(false),
+                must_read_only: a.get("must_read").and_then(|v| v.as_bool()).unwrap_or(false),
             };
             let sort = match arg_str(a, "sort").as_deref() {
                 Some("year") => SortKey::Year,
@@ -339,6 +341,7 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
                 "papers": all.len(),
                 "unread": all.iter().filter(|p| !p.read).count(),
                 "starred": all.iter().filter(|p| p.starred).count(),
+                "must_read": all.iter().filter(|p| p.must_read).count(),
                 "with_full_text": all.iter().filter(|p| p.has_epub).count(),
                 "tags": lib.tags(),
                 "collections": lib.collections().iter().map(|c| json!({"name": c.name, "papers": c.paper_count})).collect::<Vec<_>>(),
@@ -399,6 +402,7 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
                 need(id)?;
                 if let Some(r) = a.get("read").and_then(|v| v.as_bool()) { lib.set_read(id.clone(), r).map_err(|e| e.to_string())?; }
                 if let Some(s) = a.get("starred").and_then(|v| v.as_bool()) { lib.set_starred(id.clone(), s).map_err(|e| e.to_string())?; }
+                if let Some(m) = a.get("must_read").and_then(|v| v.as_bool()) { lib.set_must_read(id.clone(), m).map_err(|e| e.to_string())?; }
             }
             Ok(json!({"updated": ids.len()}))
         }

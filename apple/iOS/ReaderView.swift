@@ -247,7 +247,7 @@ struct ReaderView: View {
             mode = .pdf
             await loadPDF()
         }
-        if !p.read, book != nil || pdfURL != nil { model.setRead(p, true) }
+        if book != nil || pdfURL != nil { model.markOpened(p) }
         loading = false
     }
 

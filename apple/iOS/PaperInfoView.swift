@@ -92,6 +92,11 @@ struct PaperInfoView: View {
                         .tint(.luntaCopper)
                 }
                 ToolbarItem(placement: .topBarLeading) {
+                    Button { model.toggleMustRead(p) } label: { Image(systemName: p.mustRead ? "bookmark.fill" : "bookmark") }
+                        .tint(.luntaTeal)
+                        .accessibilityLabel(p.mustRead ? "Remove from Must Read" : "Must Read")
+                }
+                ToolbarItem(placement: .topBarLeading) {
                     Button { editing = true } label: { Image(systemName: "pencil") }
                 }
                 ToolbarItem(placement: .topBarLeading) {
