@@ -35,10 +35,11 @@ var LuntaCite = (function () {
       var s = compress(nums);
       return style === 'vancouver' ? '[' + s + ']' : s;
     }
+    // APA: several works in one citation are in alphabetical order (as in the reference list)
     var parts = ids.map(function (id) {
       var p = papers[id] || {};
       return apaName(p) + ', ' + (p.year || 'n.d.');
-    });
+    }).sort(function (a, b) { return a.localeCompare(b); });
     return '(' + parts.join('; ') + ')';
   }
 

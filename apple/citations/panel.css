@@ -17,3 +17,5 @@ button.primary { background: var(--teal); color: white; border-color: var(--teal
 button:disabled { opacity: .5; cursor: default; }
 .status { color: #888; font-size: 12px; min-height: 1.2em; }
 .status.err { color: #c0392b; }
+
+.hint { font-size: 12px; opacity: .6; margin: 4px 0 8px; }

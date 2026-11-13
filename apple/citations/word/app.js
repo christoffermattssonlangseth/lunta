@@ -5,7 +5,7 @@
 // Microsoft store listing): either way the library comes from the Lunta app on this computer
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
-var VERSION = '3';   // bump with the ?v= in index.html, so Word loads the new files
+var VERSION = '4';   // bump with the ?v= in index.html, so Word loads the new files
 var UNREACHABLE = 'Can’t reach Lunta. Open the Lunta app on this Mac; the first time, choose Lunta › Citations in Word & Google Docs… and click Trust Certificate.';
 var picked = [];         // [{id, title, ...}]
 var lastHits = [];
@@ -66,14 +66,24 @@ function search(q) {
 function insertCitation() {
   var ids = picked.map(function (p) { return p.id; });
   return Word.run(function (ctx) {
-    // text first, then the content control around it: Word on the web won't wrap an empty
-    // range; at the end of the selection, so selected text isn't replaced
-    var at = ctx.document.getSelection().getRange('End');
-    var cc = at.insertText('(…)', 'Replace').insertContentControl();
-    cc.tag = 'margins:' + ids.join(',');
-    cc.title = 'Citation';
-    cc.appearance = 'Hidden';
-    return ctx.sync();
+    var sel = ctx.document.getSelection();
+    var parent = sel.parentContentControlOrNullObject;
+    parent.load('isNullObject,tag');
+    return ctx.sync().then(function () {
+      // the cursor is in a citation: add the papers to it, "(A, 2021; B, 2023)"
+      if (!parent.isNullObject && parent.tag && parent.tag.indexOf('margins:') === 0) {
+        var had = parent.tag.slice(8).split(',').filter(Boolean);
+        parent.tag = 'margins:' + had.concat(ids.filter(function (id) { return had.indexOf(id) < 0; })).join(',');
+        return ctx.sync();
+      }
+      // text first, then the content control around it: Word on the web won't wrap an empty
+      // range; at the end of the selection, so selected text isn't replaced
+      var cc = sel.getRange('End').insertText('(…)', 'Replace').insertContentControl();
+      cc.tag = 'margins:' + ids.join(',');
+      cc.title = 'Citation';
+      cc.appearance = 'Hidden';
+      return ctx.sync();
+    });
   }).then(function () {
     picked = []; renderPicked();
     return updateAll();
