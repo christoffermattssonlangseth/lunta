@@ -19,3 +19,9 @@ button:disabled { opacity: .5; cursor: default; }
 .status.err { color: #c0392b; }
 
 .hint { font-size: 12px; opacity: .6; margin: 4px 0 8px; }
+.journal { border: 1px solid rgba(0,0,0,.12); border-radius: 8px; padding: 8px; margin-bottom: 10px; }
+.journal[hidden] { display: none; }
+.jrow { display: flex; gap: 6px; }
+.jrow input { flex: 1; }
+.jrow button { width: auto; padding: 0 10px; }
+#jresults { max-height: 220px; overflow-y: auto; margin-top: 6px; }

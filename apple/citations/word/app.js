@@ -5,7 +5,7 @@
 // Microsoft store listing): either way the library comes from the Lunta app on this computer
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
-var VERSION = '5';   // bump with the ?v= in index.html, so Word loads the new files
+var VERSION = '6';   // bump with the ?v= in index.html, so Word loads the new files
 var UNREACHABLE = 'Can’t reach Lunta. Open the Lunta app on this Mac; the first time, choose Lunta › Citations in Word & Google Docs… and click Trust Certificate.';
 var picked = [];         // [{id, title, ...}]
 var lastHits = [];
@@ -113,6 +113,8 @@ function updateAll() {
     return ctx.sync().then(function () {
       var cites = all.items.filter(function (c) { return c.tag && c.tag.indexOf('margins:') === 0; });
       var lists = cites.map(function (c) { return c.tag.slice(8).split(',').filter(Boolean); });
+      var bibs = all.items.filter(function (c) { return c.tag === 'margins-bib'; });
+      if (isJournal(style)) return renderJournal(ctx, cites, lists, bibs);
       var num = LuntaCite.numbering(lists);
       return getJSON('/bibliography', { style: style, ids: num.list }).then(function (res) {
         var papers = {};
@@ -122,7 +124,6 @@ function updateAll() {
           var r = c.insertText(text, 'Replace');
           r.font.superscript = !!(LuntaCite.STYLES[style] || {}).superscript;
         });
-        var bibs = all.items.filter(function (c) { return c.tag === 'margins-bib'; });
         if (bibs.length) {
           var entries = LuntaCite.bibliography(style, res.entries, num.order);
           var html = entries.length
@@ -131,9 +132,100 @@ function updateAll() {
           bibs.forEach(function (b) { b.insertHtml(html, 'Replace'); });
         }
         return ctx.sync().then(function () {
-          status(cites.length + ' citation' + (cites.length === 1 ? '' : 's') + ', ' + num.list.length + ' reference' + (num.list.length === 1 ? '' : 's') + ' · ' + LuntaCite.STYLES[style].name);
+          status(cites.length + ' citation' + (cites.length === 1 ? '' : 's') + ', ' + num.list.length + ' reference' + (num.list.length === 1 ? '' : 's') + ' · ' + styleName(style));
         });
       });
+    });
+  }).catch(fail);
+}
+
+// ---- journal styles (the CSL catalogue, formatted by Lunta): style = "csl:<id>" ----
+
+function isJournal(s) { return s.indexOf('csl:') === 0; }
+
+/** Journal styles used before, most recent first: [{id, title}] (this computer). */
+function recentJournals() {
+  try { return JSON.parse(localStorage.getItem('luntaJournals') || '[]'); } catch (e) { return []; }
+}
+function rememberJournal(id, title) {
+  var list = recentJournals().filter(function (j) { return j.id !== id; });
+  list.unshift({ id: id, title: title });
+  try { localStorage.setItem('luntaJournals', JSON.stringify(list.slice(0, 8))); } catch (e) {}
+}
+
+function styleName(s) {
+  if (!isJournal(s)) return (LuntaCite.STYLES[s] || LuntaCite.STYLES.apa).name;
+  var id = s.slice(4), j = recentJournals().filter(function (x) { return x.id === id; })[0];
+  return j ? j.title : id;
+}
+
+function renderJournal(ctx, cites, lists, bibs) {
+  return getJSON('/render', { style: style.slice(4), citations: lists }).then(function (res) {
+    cites.forEach(function (c, i) {
+      var cit = res.citations[i] || { text: '', superscript: false };
+      var r = c.insertText(cit.text, 'Replace');
+      r.font.superscript = !!cit.superscript;
+    });
+    if (bibs.length) {
+      var html = res.bibliography.length
+        ? res.bibliography.map(function (e) { return '<p style="margin:0 0 6pt 0">' + LuntaCite.toHTML(e.text) + '</p>'; }).join('')
+        : '<p>No citations yet.</p>';
+      bibs.forEach(function (b) { b.insertHtml(html, 'Replace'); });
+    }
+    return ctx.sync().then(function () {
+      status(cites.length + ' citation' + (cites.length === 1 ? '' : 's') + ', ' + res.bibliography.length +
+             ' reference' + (res.bibliography.length === 1 ? '' : 's') + ' · ' + res.title);
+    });
+  });
+}
+
+/** Fills the style menu: the built-in styles, journal styles used before, and "Find…". */
+function fillStyles() {
+  var sel = $('style');
+  sel.innerHTML = '';
+  var common = document.createElement('optgroup'); common.label = 'Styles';
+  Object.keys(LuntaCite.STYLES).forEach(function (k) {
+    var o = document.createElement('option'); o.value = k; o.textContent = LuntaCite.STYLES[k].name; common.appendChild(o);
+  });
+  sel.appendChild(common);
+  var recent = recentJournals();
+  if (isJournal(style) && !recent.some(function (j) { return 'csl:' + j.id === style; })) recent.unshift({ id: style.slice(4), title: style.slice(4) });
+  var journals = document.createElement('optgroup'); journals.label = 'Journal styles';
+  recent.forEach(function (j) {
+    var o = document.createElement('option'); o.value = 'csl:' + j.id; o.textContent = j.title; journals.appendChild(o);
+  });
+  var find = document.createElement('option'); find.value = '__find'; find.textContent = 'Find journal style…';
+  journals.appendChild(find);
+  sel.appendChild(journals);
+  sel.value = style;
+}
+
+function setStyle(s) {
+  style = s;
+  try { Office.context.document.settings.set('luntaStyle', style); Office.context.document.settings.saveAsync(); } catch (e) {}
+  fillStyles();
+  updateAll();
+}
+
+function findJournal(q) {
+  var box = $('jresults');
+  if (!q.trim()) { box.innerHTML = ''; return; }
+  box.innerHTML = '<p class="status">Searching…</p>';
+  getJSON('/styles?q=' + encodeURIComponent(q)).then(function (hits) {
+    box.innerHTML = '';
+    if (!hits.length) { box.innerHTML = '<p class="status">No journal styles match.</p>'; return; }
+    hits.forEach(function (h) {
+      var el = document.createElement('div');
+      el.className = 'hit';
+      el.innerHTML = '<div class="t"></div><div class="m"></div>';
+      el.querySelector('.t').textContent = h.title;
+      el.querySelector('.m').textContent = h.format === 'numeric' ? 'numbered' : h.format;
+      el.onclick = function () {
+        rememberJournal(h.id, h.title);
+        $('journal').hidden = true; $('jq').value = ''; box.innerHTML = '';
+        setStyle('csl:' + h.id);
+      };
+      box.appendChild(el);
     });
   }).catch(fail);
 }
@@ -141,16 +233,19 @@ function updateAll() {
 Office.onReady(function () {
   $('ver').textContent = 'v' + VERSION;
   var sel = $('style');
-  Object.keys(LuntaCite.STYLES).forEach(function (k) {
-    var o = document.createElement('option'); o.value = k; o.textContent = LuntaCite.STYLES[k].name; sel.appendChild(o);
-  });
   try { style = Office.context.document.settings.get('luntaStyle') || 'apa'; } catch (e) {}
-  sel.value = style;
+  fillStyles();
   sel.onchange = function () {
-    style = sel.value;
-    try { Office.context.document.settings.set('luntaStyle', style); Office.context.document.settings.saveAsync(); } catch (e) {}
-    updateAll();
+    if (sel.value === '__find') {
+      sel.value = style;
+      $('journal').hidden = false; $('jq').focus();
+      return;
+    }
+    setStyle(sel.value);
   };
+  var jt = null;
+  $('jq').addEventListener('input', function (e) { clearTimeout(jt); jt = setTimeout(function () { findJournal(e.target.value); }, 300); });
+  $('jclose').onclick = function () { $('journal').hidden = true; $('jq').value = ''; $('jresults').innerHTML = ''; };
   var t = null;
   $('q').addEventListener('input', function (e) { clearTimeout(t); t = setTimeout(function () { search(e.target.value); }, 220); });
   $('insert').onclick = insertCitation;

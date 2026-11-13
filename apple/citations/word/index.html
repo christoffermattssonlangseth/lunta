@@ -5,14 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lunta Citations</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="../common.js?v=5"></script>
-<link rel="stylesheet" href="../panel.css?v=5">
+<script src="../common.js?v=6"></script>
+<link rel="stylesheet" href="../panel.css?v=6">
 </head>
 <body>
 <header>
   <img src="../icons/icon-32.png" alt="" width="20" height="20"><strong>Lunta</strong> <small id="ver" style="opacity:.55"></small>
   <select id="style" title="Citation style"></select>
 </header>
+<div id="journal" class="journal" hidden>
+  <div class="jrow"><input id="jq" type="search" placeholder="Journal name, e.g. Neuron, eLife, PLOS ONE" autocomplete="off"><button id="jclose" title="Close">✕</button></div>
+  <div id="jresults"></div>
+</div>
 <input id="q" type="search" placeholder="Search your library: title, author, words…" autocomplete="off">
 <div id="results"></div>
 <div id="picked" class="picked"></div>
@@ -25,6 +29,6 @@
   <button id="refresh">Update All</button>
 </div>
 <p id="status" class="status"></p>
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

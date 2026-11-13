@@ -369,3 +369,37 @@ fn watches_find_recent_papers() {
     println!("topic {} author {} citing {}", t.len(), a.len(), c.len());
     for h in t.iter().chain(&a).chain(&c) { println!("{} | {}", h.meta.date, h.meta.title); }
 }
+
+#[test]
+#[ignore] // network: cargo test -- --ignored
+fn journal_styles_online() {
+    let dir = tmp();
+    let cache = dir.to_str().unwrap();
+    let p = Paper {
+        id: "p1".into(),
+        meta: sample(),
+        added: 0,
+        modified: 0,
+        has_pdf: false,
+        has_epub: false,
+        has_audio: false,
+        read: false,
+        starred: false,
+        collections: vec![],
+        tags: vec![],
+        annotation_count: 0,
+    };
+    let hits = csl::search(cache, "nature neuroscience", 5).unwrap();
+    assert_eq!(hits[0].id, "nature-neuroscience", "{hits:?}");
+    let mut q = p.clone();
+    q.id = "p2".into();
+    q.meta.authors = vec!["Ada Lee".into()];
+    q.meta.date = "2021".into();
+    for style in ["nature-neuroscience", "elife", "cell-reports"] {
+        let r = csl::render(cache, style, &[p.clone(), q.clone()], &[vec!["p1".into(), "p2".into()], vec!["p2".into()]]).unwrap();
+        println!("{style} [{}]: {:?}", r.style_title, r.citations);
+        for e in &r.bibliography { println!("   {}", e.text); }
+        assert_eq!(r.citations.len(), 2);
+        assert_eq!(r.bibliography.len(), 2);
+    }
+}

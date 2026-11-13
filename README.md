@@ -177,7 +177,7 @@ or unavailable. Pick the model in the panel's ⋯ menu.
 - **Google Docs:** Extensions › Apps Script; paste `Code.gs` and an HTML file `Sidebar` (both copied from
   the Lunta window; the sidebar carries a pairing key), reload, then **Lunta › Cite…**.
 
-Styles: APA 7, Harvard, Chicago (author-date), Cell, MLA 9, Vancouver, IEEE, AMA, Nature, Science, PNAS and ACS. Lunta must be open while you cite.
+Styles: APA 7, Harvard, Chicago (author-date), Cell, MLA 9, Vancouver, IEEE, AMA, Nature, Science, PNAS and ACS, and in Word any of the ~10,000 journal styles of the [Citation Style Language](https://citationstyles.org) catalogue (*Find journal style…*: fetched once from zotero.org/styles, formatted in the core with [hayagriva](https://github.com/typst/hayagriva)). Lunta must be open while you cite.
 
 ## Build
 

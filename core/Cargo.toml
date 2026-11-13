@@ -48,6 +48,7 @@ sha2 = { version = "0.10", optional = true }
 md-5 = { version = "0.10", optional = true }
 base64 = { version = "0.22", optional = true }
 getrandom = { version = "0.3", optional = true }
+hayagriva = { version = "0.10.1", default-features = false, features = ["csl-json", "archive"] }
 
 [dev-dependencies]
 tempfile = "3"
