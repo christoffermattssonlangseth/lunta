@@ -141,6 +141,57 @@ pub enum CitationStyle {
     Apa,
     Vancouver,
     Nature,
+    Harvard,
+    Chicago,
+    Mla,
+    Cell,
+    Ieee,
+    Ama,
+    Science,
+    Pnas,
+    Acs,
+}
+
+/// A citation style as the apps list it: `key` is what add-ins and agents pass ("apa").
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct CitationStyleInfo {
+    pub style: CitationStyle,
+    pub key: String,
+    pub name: String,
+    /// Numbered references ([1], ¹) rather than author and year.
+    pub numeric: bool,
+}
+
+impl CitationStyle {
+    /// Every style, in the order menus show them: author–year first, then numbered.
+    pub const ALL: [CitationStyle; 12] = [
+        Self::Apa, Self::Harvard, Self::Chicago, Self::Cell, Self::Mla,
+        Self::Vancouver, Self::Ieee, Self::Ama, Self::Nature, Self::Science, Self::Pnas, Self::Acs,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Apa => "apa", Self::Vancouver => "vancouver", Self::Nature => "nature", Self::Harvard => "harvard",
+            Self::Chicago => "chicago", Self::Mla => "mla", Self::Cell => "cell", Self::Ieee => "ieee",
+            Self::Ama => "ama", Self::Science => "science", Self::Pnas => "pnas", Self::Acs => "acs",
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Apa => "APA 7", Self::Vancouver => "Vancouver", Self::Nature => "Nature", Self::Harvard => "Harvard",
+            Self::Chicago => "Chicago (author-date)", Self::Mla => "MLA 9", Self::Cell => "Cell", Self::Ieee => "IEEE",
+            Self::Ama => "AMA", Self::Science => "Science", Self::Pnas => "PNAS", Self::Acs => "ACS",
+        }
+    }
+
+    pub fn numeric(self) -> bool {
+        !matches!(self, Self::Apa | Self::Harvard | Self::Chicago | Self::Mla | Self::Cell)
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.key() == key.trim().to_lowercase())
+    }
 }
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]

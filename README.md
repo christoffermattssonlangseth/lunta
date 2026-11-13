@@ -53,7 +53,7 @@ local one; see [Desktop app](#desktop-app-windows-and-linux). Devices that canno
   examples), keep only clear matches and say why each one fits.
   Authors you follow and papers citing ones you watch always show up. Each paper gets a one-sentence
   summary, and the top of the feed has a short **In short** digest of all of it (written on the Mac), with the papers it mentions linked. One notification a day.
-- **Cite:** APA, Vancouver, Nature, BibTeX, RIS, Markdown; share PDFs, EPUBs and citations. **Word and
+- **Cite:** 12 styles (APA 7, Harvard, Chicago, Cell, MLA 9, Vancouver, IEEE, AMA, Nature, Science, PNAS, ACS), BibTeX, RIS, Markdown; share PDFs, EPUBs and citations. **Word and
   Google Docs add-ins** insert citations from the library and build the reference list.
 - **Ask (✨):** an assistant that runs on the device: Apple Intelligence, or the open Qwen3 4B model where
   Apple Intelligence isn't available (e.g. iPhones in the EU). Ask about one paper (answers cite the
@@ -177,7 +177,7 @@ or unavailable. Pick the model in the panel's ⋯ menu.
 - **Google Docs:** Extensions › Apps Script; paste `Code.gs` and an HTML file `Sidebar` (both copied from
   the Lunta window; the sidebar carries a pairing key), reload, then **Lunta › Cite…**.
 
-Styles: APA 7, Vancouver, Nature. Lunta must be open while you cite.
+Styles: APA 7, Harvard, Chicago (author-date), Cell, MLA 9, Vancouver, IEEE, AMA, Nature, Science, PNAS and ACS. Lunta must be open while you cite.
 
 ## Build
 

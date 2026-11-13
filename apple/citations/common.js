@@ -1,10 +1,23 @@
 // Citation formatting shared by the Word add-in and the Google Docs sidebar.
 // A citation is a list of paper ids; papers are numbered by first appearance for numeric styles.
 var LuntaCite = (function () {
+  // The styles of Lunta's core (CitationStyle), with their in-text form. Author–year styles:
+  // `and` joins two authors, `sep` goes between name and year, `noYear` leaves the year out (MLA),
+  // `etAl` is the number of authors from which only the first is named. Numbered styles: `open`
+  // and `close` wrap the numbers, `superscript` raises them, `prefix` numbers the reference list.
   var STYLES = {
-    apa: { name: 'APA 7', numeric: false },
-    vancouver: { name: 'Vancouver', numeric: true },
-    nature: { name: 'Nature', numeric: true, superscript: true }
+    apa: { name: 'APA 7', and: '&', sep: ', ', etAl: 3 },
+    harvard: { name: 'Harvard', and: 'and', sep: ', ', etAl: 4 },
+    chicago: { name: 'Chicago (author-date)', and: 'and', sep: ' ', etAl: 4, serial: true },
+    cell: { name: 'Cell', and: 'and', sep: ', ', etAl: 3 },
+    mla: { name: 'MLA 9', and: 'and', noYear: true, etAl: 3 },
+    vancouver: { name: 'Vancouver', numeric: true, open: '[', close: ']' },
+    ieee: { name: 'IEEE', numeric: true, open: '[', close: ']', prefix: function (n) { return '[' + n + '] '; } },
+    ama: { name: 'AMA', numeric: true, superscript: true },
+    nature: { name: 'Nature', numeric: true, superscript: true },
+    science: { name: 'Science', numeric: true, open: '(', close: ')' },
+    pnas: { name: 'PNAS', numeric: true, open: '(', close: ')' },
+    acs: { name: 'ACS', numeric: true, superscript: true }
   };
 
   function compress(nums) {
@@ -20,25 +33,27 @@ var LuntaCite = (function () {
     return out.join(',');
   }
 
-  function apaName(p) {
+  /** The names part of an author–year citation: "Smith", "Smith & Lee", "Smith et al." */
+  function names(p, st) {
     var f = (p && p.families) || [];
     if (!f.length) return (p && p.title ? p.title.split(' ').slice(0, 3).join(' ') : 'Unknown');
     if (f.length === 1) return f[0];
-    if (f.length === 2) return f[0] + ' & ' + f[1];
-    return f[0] + ' et al.';
+    if (f.length >= (st.etAl || 3)) return f[0] + ' et al.';
+    if (f.length === 2) return f[0] + ' ' + (st.and || '&') + ' ' + f[1];
+    return f.slice(0, -1).join(', ') + (st.serial ? ', ' : ' ') + (st.and || '&') + ' ' + f[f.length - 1];   // three (Harvard, Chicago)
   }
 
   /** In-text text for one citation. `order` maps id -> number (numeric styles), `papers` id -> info. */
   function inText(style, ids, order, papers) {
-    if (STYLES[style] && STYLES[style].numeric) {
+    var st = STYLES[style] || STYLES.apa;
+    if (st.numeric) {
       var nums = ids.map(function (id) { return order[id]; }).filter(function (n) { return n; });
-      var s = compress(nums);
-      return style === 'vancouver' ? '[' + s + ']' : s;
+      return (st.open || '') + compress(nums) + (st.close || '');
     }
-    // APA: several works in one citation are in alphabetical order (as in the reference list)
+    // several works in one citation: alphabetical, as in the reference list
     var parts = ids.map(function (id) {
       var p = papers[id] || {};
-      return apaName(p) + ', ' + (p.year || 'n.d.');
+      return names(p, st) + (st.noYear ? '' : st.sep + (p.year || 'n.d.'));
     }).sort(function (a, b) { return a.localeCompare(b); });
     return '(' + parts.join('; ') + ')';
   }
@@ -57,7 +72,8 @@ var LuntaCite = (function () {
     var e = entries.filter(function (x) { return !x.missing; }).slice();
     if (STYLES[style] && STYLES[style].numeric) {
       e.sort(function (a, b) { return order[a.id] - order[b.id]; });
-      return e.map(function (x) { return { id: x.id, text: order[x.id] + '. ' + x.entry }; });
+      var prefix = STYLES[style].prefix || function (n) { return n + '. '; };
+      return e.map(function (x) { return { id: x.id, text: prefix(order[x.id]) + x.entry }; });
     }
     e.sort(function (a, b) { return a.entry.localeCompare(b.entry); });
     return e.map(function (x) { return { id: x.id, text: x.entry }; });

@@ -5,7 +5,7 @@
 //!   lunta-mcp search <query>      search the library
 //!   lunta-mcp show <id>           details of a paper
 //!   lunta-mcp read <id> [query]   full text (or the passages matching a query)
-//!   lunta-mcp cite <id>… [--style apa|vancouver|nature|bibtex|ris]
+//!   lunta-mcp cite <id>… [--style apa|harvard|chicago|cell|mla|vancouver|ieee|ama|nature|science|pnas|acs|bibtex|ris]
 //!   lunta-mcp path <id> [pdf|epub|text]
 //!
 //! The agent writes through its own change log (ops/agent-….jsonl), exactly like another device,
@@ -189,12 +189,12 @@ fn passages(text: &str, query: &str, top: usize) -> Vec<(usize, String)> {
 }
 
 fn style(s: &str) -> Option<CitationStyle> {
-    match s.to_lowercase().as_str() {
-        "apa" => Some(CitationStyle::Apa),
-        "vancouver" => Some(CitationStyle::Vancouver),
-        "nature" => Some(CitationStyle::Nature),
-        _ => None,
-    }
+    CitationStyle::from_key(s)
+}
+
+/// "apa, harvard, …, bibtex or ris", for help and errors.
+fn style_keys() -> String {
+    CitationStyle::ALL.iter().map(|s| s.key()).collect::<Vec<_>>().join(", ") + ", bibtex or ris"
 }
 
 fn cite(lib: &Library, ids: &[String], st: &str) -> Result<String, String> {
@@ -206,7 +206,7 @@ fn cite(lib: &Library, ids: &[String], st: &str) -> Result<String, String> {
         "bibtex" | "bib" => export::bibtex(&papers),
         "ris" => export::ris(&papers),
         s => {
-            let st = style(s).ok_or(format!("unknown style {s}: use apa, vancouver, nature, bibtex or ris"))?;
+            let st = style(s).ok_or(format!("unknown style {s}: use {}", style_keys()))?;
             papers.iter().map(|p| export::citation(p, st)).collect::<Vec<_>>().join("\n")
         }
     })
@@ -248,7 +248,7 @@ fn tools() -> Value {
           json!({"id": {"type": "string"}, "query": {"type": "string"}, "offset": {"type": "integer", "default": 0},
                  "max_chars": {"type": "integer", "default": 12000}}), &["id"], true),
         t("cite", "Formatted citations or a bibliography for papers.",
-          json!({"ids": ids, "style": {"type": "string", "enum": ["apa", "vancouver", "nature", "bibtex", "ris"], "default": "apa"}}), &["ids"], true),
+          json!({"ids": ids, "style": {"type": "string", "enum": CitationStyle::ALL.iter().map(|s| s.key()).chain(["bibtex", "ris"]).collect::<Vec<_>>(), "default": "apa"}}), &["ids"], true),
         t("library_overview", "Size of the library, its tags and collections.", json!({}), &[], true),
         t("find_new_papers", "Search published literature beyond the library (OpenAlex). Marks results already in the library.",
           json!({"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}}), &["query"], true),

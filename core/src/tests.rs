@@ -159,6 +159,22 @@ fn citations_and_exports() {
     let nat = export::citation(&p, CitationStyle::Nature);
     assert!(nat.starts_with("Kukanja, P., Langseth, C. M. & Castelo-Branco, G. Cellular"), "{nat}");
     assert_eq!(export::split_name("Ludwig van Beethoven"), ("van Beethoven".into(), "Ludwig".into()));
+    for (style, want) in [
+        (CitationStyle::Harvard, "Kukanja, P., Langseth, C.M. and Castelo-Branco, G. (2024) ‘Cellular architecture of evolving neuroinflammatory lesions and multiple sclerosis pathology’, *Cell*, 187(8), pp. 1990–2009. Available at: https://doi.org/10.1016/j.cell.2024.02.030."),
+        (CitationStyle::Chicago, "Kukanja, Petra, Christoffer M. Langseth, and Gonçalo Castelo-Branco. 2024. “Cellular architecture of evolving neuroinflammatory lesions and multiple sclerosis pathology.” *Cell* 187 (8): 1990–2009. https://doi.org/10.1016/j.cell.2024.02.030."),
+        (CitationStyle::Mla, "Kukanja, Petra, et al. “Cellular architecture of evolving neuroinflammatory lesions and multiple sclerosis pathology.” *Cell*, vol. 187, no. 8, 2024, pp. 1990–2009, https://doi.org/10.1016/j.cell.2024.02.030."),
+        (CitationStyle::Cell, "Kukanja, P., Langseth, C.M., and Castelo-Branco, G. (2024). Cellular architecture of evolving neuroinflammatory lesions and multiple sclerosis pathology. Cell *187*, 1990–2009. https://doi.org/10.1016/j.cell.2024.02.030."),
+        (CitationStyle::Ieee, "P. Kukanja, C. M. Langseth, and G. Castelo-Branco, “Cellular architecture of evolving neuroinflammatory lesions and multiple sclerosis pathology,” *Cell*, vol. 187, no. 8, pp. 1990–2009, 2024, doi: 10.1016/j.cell.2024.02.030."),
+        (CitationStyle::Ama, "Kukanja P, Langseth CM, Castelo-Branco G. Cellular architecture of evolving neuroinflammatory lesions and multiple sclerosis pathology. *Cell*. 2024;187(8):1990-2009. doi:10.1016/j.cell.2024.02.030"),
+        (CitationStyle::Science, "P. Kukanja, C. M. Langseth, G. Castelo-Branco, Cellular architecture of evolving neuroinflammatory lesions and multiple sclerosis pathology. *Cell* **187**, 1990–2009 (2024)."),
+        (CitationStyle::Acs, "Kukanja, P.; Langseth, C. M.; Castelo-Branco, G. Cellular architecture of evolving neuroinflammatory lesions and multiple sclerosis pathology. *Cell* **2024**, *187* (8), 1990–2009. DOI: 10.1016/j.cell.2024.02.030."),
+    ] {
+        assert_eq!(export::citation(&p, style), want, "{}", style.name());
+    }
+    // every style has a key that maps back to it
+    for s in CitationStyle::ALL {
+        assert_eq!(CitationStyle::from_key(s.key()), Some(s));
+    }
 }
 
 #[test]

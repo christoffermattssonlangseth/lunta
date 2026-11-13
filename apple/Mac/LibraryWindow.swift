@@ -456,12 +456,16 @@ struct CiteMenu: View {
     let ids: [String]
     var body: some View {
         Menu {
-            if let id = ids.first, ids.count == 1 {
-                Button("APA") { copyToPasteboard(model.citation(id, .apa)) }
-                Button("Vancouver") { copyToPasteboard(model.citation(id, .vancouver)) }
-                Button("Nature") { copyToPasteboard(model.citation(id, .nature)) }
-                Divider()
+            // every style (author–year, then numbered); several papers are copied one after another
+            let styles = citationStyles()
+            ForEach(styles.filter { !$0.numeric }, id: \.key) { st in
+                Button(st.name) { copyToPasteboard(model.citations(ids, st.style)) }
             }
+            Divider()
+            ForEach(styles.filter(\.numeric), id: \.key) { st in
+                Button(st.name) { copyToPasteboard(model.citations(ids, st.style)) }
+            }
+            Divider()
             Button("BibTeX") { copyToPasteboard(model.bibtex(ids)) }
             Button("RIS") { copyToPasteboard(model.ris(ids)) }
         } label: {
