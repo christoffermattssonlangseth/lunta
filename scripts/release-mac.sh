@@ -38,7 +38,8 @@ PLIST
 echo "› archive"
 xcodegen generate -q
 # the compiler's warnings (mostly MLX's Metal shaders) go to a log; errors are shown
-xcodebuild -project Lunta.xcodeproj -scheme LuntaMac -configuration Release -destination 'generic/platform=macOS' \
+# Apple silicon only (ARCHS also for the Swift packages): the Rust core is arm64
+xcodebuild -project Lunta.xcodeproj -scheme LuntaMac -configuration Release -destination 'generic/platform=macOS' ARCHS=arm64 \
   -archivePath "$build/Lunta.xcarchive" -allowProvisioningUpdates archive >"$build/xcodebuild.log" 2>&1 ||
   { grep -E " error: |\*\* ARCHIVE" "$build/xcodebuild.log" | tail -20; log; exit 1; }
 

@@ -96,6 +96,9 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         OTHER_LDFLAGS: ["-lc++"]
+        # Apple silicon only: the Rust core is built for arm64 (scripts/build-core.sh), and Apple
+        # Intelligence and the MLX models need Apple silicon anyway
+        ARCHS: arm64
 
   LuntaiOS:
     type: application
