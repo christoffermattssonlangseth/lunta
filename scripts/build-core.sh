@@ -16,13 +16,14 @@ for t in $TARGETS; do
   if [[ $t == *ios* ]]; then export IPHONEOS_DEPLOYMENT_TARGET=17.0; else export MACOSX_DEPLOYMENT_TARGET=14.0; fi
   # --no-default-features: the converter (feature "convert") stays out of the Apple static
   # library; the apps keep using the Swift Paper2EpubKit.
-  cargo build --$PROFILE --target $t --lib --no-default-features --quiet
+  # feature "drive": the Mac bridges its iCloud library to Google Drive (for Android)
+  cargo build --$PROFILE --target $t --lib --no-default-features --features drive --quiet
 done
 
 echo "› generating Swift bindings"
 GEN=$CORE/target/uniffi-swift
 rm -rf $GEN && mkdir -p $GEN
-cargo run --quiet --no-default-features --bin uniffi-bindgen -- generate \
+cargo run --quiet --no-default-features --features drive --bin uniffi-bindgen -- generate \
   --library $CORE/target/aarch64-apple-darwin/$PROFILE/liblunta_core.dylib \
   --language swift --out-dir $GEN
 

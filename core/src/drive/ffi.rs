@@ -119,6 +119,17 @@ impl LibrarySync {
         Ok(Arc::new(LibrarySync { syncer: Syncer::new(root, device, Box::new(remote), options(state_path, lazy, progress))? }))
     }
 
+    /// A bridge between a folder shared with other devices (a Mac's iCloud library) and the folder
+    /// `folder_name` in My Drive: every device's changes are passed on both ways (`SyncOptions::bridge`),
+    /// and paper files are all fetched (not lazy), so devices on either side see everything.
+    #[uniffi::constructor]
+    pub fn google_drive_bridge(root: String, device: String, state_path: String, auth: Arc<DriveAuth>, folder_name: String, progress: Option<Arc<dyn ProgressListener>>) -> Result<Arc<Self>> {
+        let remote = GoogleDrive::new(auth.auth.clone(), DriveRoot::Named { name: folder_name, create: true });
+        let mut o = options(state_path, false, progress);
+        o.bridge = true;
+        Ok(Arc::new(LibrarySync { syncer: Syncer::new(root, device, Box::new(remote), o)? }))
+    }
+
     /// Syncs with a plain folder acting as the remote (testing; also what a Mac with Google Drive
     /// for desktop looks like).
     #[uniffi::constructor]

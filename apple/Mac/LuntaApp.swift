@@ -42,6 +42,8 @@ struct LuntaApp: App {
 
         Window("Connect AI Agents", id: "agents") { AgentConnectView().tint(.luntaTeal) }
         Window("Citations in Word & Google Docs", id: "citations") { CitationsView().tint(.luntaTeal) }
+        Window("Google Drive for Android", id: "drive") { DriveBridgeView().tint(.luntaTeal) }
+            .windowResizability(.contentSize)
         Window("Clean Up Library", id: "cleanup") {
             if let model = holder.model { NavigationStack { CleanupView() }.environmentObject(model).tint(.luntaTeal) }
         }
@@ -80,6 +82,7 @@ final class ModelHolder: ObservableObject {
             citations?.start()
             model.watchForOutsideChanges()
             NarrationRenderer.shared.model = model
+            DriveBridge.shared.start(model)   // resumes the Google Drive copy (for Android) if connected
             if !ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("-ask") || $0 == "-cleanupReport" || $0 == "-forYouReport" }) {
                 WatchCenter.shared.start(model)
             }
@@ -183,6 +186,7 @@ struct LuntaCommands: Commands {
         CommandGroup(after: .appSettings) {
             Button("Connect AI Agents…") { openWindow(id: "agents") }
             Button("Citations in Word & Google Docs…") { openWindow(id: "citations") }
+            Button("Google Drive for Android…") { openWindow(id: "drive") }
             Button("Clean Up Library…") { openWindow(id: "cleanup") }
         }
         CommandGroup(after: .newItem) {

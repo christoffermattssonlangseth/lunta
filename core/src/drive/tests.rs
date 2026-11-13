@@ -722,3 +722,53 @@ mod real_drive {
         assert!(b.titles().is_empty());
     }
 }
+
+/// A Mac whose library is in iCloud (shared with an iPhone) bridges it to Drive (an Android phone).
+#[test]
+fn mac_bridges_icloud_and_drive() {
+    let w = World::new();
+    // the iCloud folder, written by the Mac and the iPhone
+    let icloud = w.tmp.path().join("icloud");
+    let open_at = |root: &Path, dev: &str| {
+        let cache = w.tmp.path().join(format!("cache-{dev}"));
+        Library::open(root.to_string_lossy().into(), cache.to_string_lossy().into(), dev.into()).unwrap()
+    };
+    let mac = open_at(&icloud, "mac");
+    let iphone = open_at(&icloud, "iphone");
+    let mut opts = SyncOptions::new(w.tmp.path().join("state-mac.json"));
+    opts.bridge = true;
+    let bridge = Syncer::new(&icloud, "mac", Box::new(LocalDirRemote::new(&w.remote)), opts).unwrap();
+    let android = w.api("android");
+
+    let a = mac.add_paper(meta("From Mac", "10.1/m"), Some(b"%PDF mac".to_vec()), None, None).unwrap();
+    let b = iphone.add_paper(meta("From iPhone", "10.1/i"), None, None, None).unwrap();
+    iphone.set_starred(a.id.clone(), true).unwrap();
+    let r = bridge.sync_now().unwrap();
+    assert!(r.errors.is_empty() && r.conflicts.is_empty(), "{r:?}");
+    assert!(w.remote.join("ops/iphone.jsonl").exists(), "the iPhone's log is passed on to Drive");
+
+    android.sync();
+    assert_eq!(android.titles(), vec!["From Mac", "From iPhone"]);
+    assert!(android.lib.paper(a.id.clone()).unwrap().starred, "the iPhone's star reaches Android");
+
+    // Android's changes come back to the iCloud folder, for the iPhone too
+    let c = android.lib.add_paper(meta("From Android", "10.1/a"), Some(b"%PDF android".to_vec()), None, None).unwrap();
+    android.lib.set_must_read(b.id.clone(), true).unwrap();
+    android.sync();
+    let r = bridge.sync_now().unwrap();
+    assert!(r.errors.is_empty() && r.changed, "{r:?}");
+    assert!(icloud.join("ops/android.jsonl").exists());
+    assert_eq!(read(&icloud.join(format!("papers/{}/paper.pdf", c.id))), b"%PDF android");
+    iphone.refresh().unwrap();
+    assert!(iphone.paper(c.id.clone()).is_some(), "Android's paper reaches the iPhone");
+    assert!(iphone.paper(b.id.clone()).unwrap().must_read);
+
+    // more iPhone changes later, and a second round both ways
+    iphone.set_read(c.id.clone(), true).unwrap();
+    bridge.sync_now().unwrap();
+    android.sync();
+    assert!(android.lib.paper(c.id.clone()).unwrap().read);
+    // nothing left to do
+    let r = bridge.sync_now().unwrap();
+    assert_eq!((r.uploaded, r.downloaded), (0, 0), "{r:?}");
+}

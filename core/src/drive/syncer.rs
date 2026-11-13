@@ -53,11 +53,16 @@ pub struct SyncOptions {
     pub lazy: bool,
     /// Called with a short line per transfer ("upload ops/x.jsonl"), e.g. for a progress display.
     pub progress: Option<ProgressFn>,
+    /// The working folder is itself shared with other devices (a Mac's iCloud library, which the
+    /// iPhone writes to): every device's op log and positions are passed on both ways (logs merged
+    /// line by line, positions per paper), not only this device's. Makes the Mac a bridge between
+    /// iCloud and Drive.
+    pub bridge: bool,
 }
 
 impl SyncOptions {
     pub fn new(state_path: impl Into<PathBuf>) -> SyncOptions {
-        SyncOptions { state_path: state_path.into(), lazy: false, progress: None }
+        SyncOptions { state_path: state_path.into(), lazy: false, progress: None, bridge: false }
     }
 }
 
@@ -181,8 +186,9 @@ impl Syncer {
             return None;
         }
         match parts.as_slice() {
-            ["ops", n] => n.strip_suffix(".jsonl").map(|d| if d == self.device { Kind::OwnLog } else { Kind::ForeignLog }),
-            ["positions", n] => n.strip_suffix(".json").map(|d| if d == self.device { Kind::OwnPositions } else { Kind::ForeignPositions }),
+            // a bridge treats every device's log and positions as its own: merged and passed on both ways
+            ["ops", n] => n.strip_suffix(".jsonl").map(|d| if d == self.device || self.opts.bridge { Kind::OwnLog } else { Kind::ForeignLog }),
+            ["positions", n] => n.strip_suffix(".json").map(|d| if d == self.device || self.opts.bridge { Kind::OwnPositions } else { Kind::ForeignPositions }),
             ["papers", _, _] => Some(Kind::Paper),
             [n] if n.ends_with(".json") => Some(Kind::Shared),
             _ => None,
@@ -607,7 +613,9 @@ impl Syncer {
             }
             write_atomic(&abs, local_text.as_bytes())?;
             rep.changed = true;
-            rep.conflicts.push(format!("{p} (merged)"));
+            if !self.opts.bridge {
+                rep.conflicts.push(format!("{p} (merged)")); // for a bridge, new remote lines are the normal case
+            }
         }
         if md5_file(&abs)?.as_str() == r.md5.as_deref().unwrap_or("") {
             self.record(st, p, r, true);
