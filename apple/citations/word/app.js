@@ -5,6 +5,7 @@
 // Microsoft store listing): either way the library comes from the Lunta app on this computer
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
+var VERSION = '2';   // bump with the ?v= in index.html, so Word loads the new files
 var UNREACHABLE = 'Can’t reach Lunta. Open the Lunta app on this Mac; the first time, choose Lunta › Citations in Word & Google Docs… and click Trust Certificate.';
 var picked = [];         // [{id, title, ...}]
 var lastHits = [];
@@ -143,7 +144,7 @@ Office.onReady(function () {
   $('insert').onclick = insertCitation;
   $('bib').onclick = insertBibliography;
   $('refresh').onclick = updateAll;
-  getJSON('/status').then(function (s) { status('Connected to Lunta · ' + s.papers + ' papers'); })
+  getJSON('/status').then(function (s) { status('Connected to Lunta · ' + s.papers + ' papers · panel v' + VERSION); })
     .catch(function () { status(UNREACHABLE, true); });
   $('q').focus();
 });
