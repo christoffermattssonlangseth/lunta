@@ -8,6 +8,7 @@
 # Signing and notarizing go through the Apple account Xcode is signed in to (Xcode > Settings >
 # Accounts): the first run lets Xcode create the Developer ID certificate if there is none.
 set -euo pipefail
+log() { echo "  (full output: $build/xcodebuild.log)"; }
 tag=${1:?usage: scripts/release-mac.sh <tag, e.g. v0.1.0> | --check}
 root=${0:A:h:h}
 team=7R6QL53THM
@@ -32,12 +33,15 @@ PLIST
 
 echo "› archive"
 xcodegen generate -q
-xcodebuild -project Lunta.xcodeproj -scheme LuntaMac -configuration Release \
-  -archivePath "$build/Lunta.xcarchive" -allowProvisioningUpdates -quiet archive
+# the compiler's warnings (mostly MLX's Metal shaders) go to a log; errors are shown
+xcodebuild -project Lunta.xcodeproj -scheme LuntaMac -configuration Release -destination 'generic/platform=macOS' \
+  -archivePath "$build/Lunta.xcarchive" -allowProvisioningUpdates archive >"$build/xcodebuild.log" 2>&1 ||
+  { grep -E " error: |\*\* ARCHIVE" "$build/xcodebuild.log" | tail -20; log; exit 1; }
 
 echo "› sign with Developer ID and send to Apple for notarization"
 xcodebuild -exportArchive -archivePath "$build/Lunta.xcarchive" -exportPath "$build/submitted" \
-  -exportOptionsPlist "$build/ExportOptions.plist" -allowProvisioningUpdates -quiet
+  -exportOptionsPlist "$build/ExportOptions.plist" -allowProvisioningUpdates >>"$build/xcodebuild.log" 2>&1 ||
+  { grep -iE "error" "$build/xcodebuild.log" | tail -20; log; exit 1; }
 
 echo "› waiting for Apple to notarize it (usually a few minutes)"
 for i in {1..90}; do

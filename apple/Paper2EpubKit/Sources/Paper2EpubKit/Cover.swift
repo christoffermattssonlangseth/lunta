@@ -51,9 +51,11 @@ enum Cover {
     private static func attributed(_ s: String, font: String, size: CGFloat, color: CGColor? = nil) -> CFAttributedString {
         let f = CTFontCreateWithName(font as CFString, size, nil)
         var spacing: CGFloat = size * 0.22
-        let settings = [CTParagraphStyleSetting(spec: .lineSpacingAdjustment, valueSize: MemoryLayout<CGFloat>.size,
-                                                value: &spacing)]
-        let para = CTParagraphStyleCreate(settings, settings.count)
+        // the setting points at `spacing`, so it is made and used inside withUnsafeBytes
+        let para = withUnsafeBytes(of: &spacing) { buf in
+            let settings = [CTParagraphStyleSetting(spec: .lineSpacingAdjustment, valueSize: buf.count, value: buf.baseAddress!)]
+            return CTParagraphStyleCreate(settings, settings.count)
+        }
         var attrs: [CFString: Any] = [kCTFontAttributeName: f, kCTParagraphStyleAttributeName: para]
         if let color { attrs[kCTForegroundColorAttributeName] = color }
         return CFAttributedStringCreate(nil, s as CFString, attrs as CFDictionary)

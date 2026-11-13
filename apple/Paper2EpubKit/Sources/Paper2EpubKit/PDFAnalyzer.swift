@@ -195,7 +195,6 @@ final class PDFAnalyzer {
             var spans: [Span] = []
             var nBold = 0, nMath = 0, n = 0
             var last: TextRun?
-            var prevWasSpace = true
             var text = ""
             // Some PDFs place words by position and never encode a space: put one back wherever the
             // content stream jumped right between two characters (see PageGraphics.gaps).
@@ -221,7 +220,6 @@ final class PDFAnalyzer {
                     run = style(c.box, size: c.size) ?? last
                     last = run
                 }
-                prevWasSpace = isSpace
                 text += c.ch
                 let small = c.size > 0 && c.size < 0.8 * dom
                 let center = (c.box.y0 + c.box.y1) / 2
