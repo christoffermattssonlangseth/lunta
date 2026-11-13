@@ -37,7 +37,7 @@ final class NarrationRenderer: ObservableObject {
                 do {
                     try await render(id)
                 } catch {
-                    model?.errorMessage = "Natural narration failed: \(error.localizedDescription)"
+                    model?.errorMessage = "Natural narration failed: \(error.readable)"
                 }
                 rendering.remove(id)
             }
@@ -252,7 +252,7 @@ final class KokoroLive {
         if let starting { return await starting.value }
         let t = Task<Bool, Never> {
             do { try await NarrationRenderer.shared.ensureEngine() } catch {
-                NSLog("Lunta live voice: engine setup failed: %@", error.localizedDescription)
+                NSLog("Lunta live voice: engine setup failed: %@", error.readable)
                 return false
             }
             guard let script = Bundle.main.url(forResource: "lunta_tts", withExtension: "py") else { return false }

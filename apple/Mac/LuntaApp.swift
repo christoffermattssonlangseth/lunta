@@ -74,7 +74,7 @@ final class ModelHolder: ObservableObject {
         do {
             let lib = try await Task.detached { try LibraryModel.openLibrary(root: url) }.value
             model = LibraryModel(lib: lib, root: url, inCloud: cloud)
-        } catch { self.error = "Could not open the library: \(error.localizedDescription)" }
+        } catch { self.error = "Could not open the library: \(error.readable)" }
         if let model {
             server = ExtensionServer(model: model)
             server?.start()

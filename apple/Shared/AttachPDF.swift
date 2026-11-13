@@ -25,7 +25,7 @@ extension LibraryModel {
         do {
             try await Task.detached { try lib.attachFile(id: id, kind: .pdf, data: data) }.value
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.readable
             return false
         }
         reload()

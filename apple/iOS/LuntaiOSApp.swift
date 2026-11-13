@@ -77,8 +77,8 @@ final class ModelHolder: ObservableObject {
                     }
                 }
             } catch {
-                NSLog("Lunta: open failed: %@", error.localizedDescription)
-                self.error = error.localizedDescription
+                NSLog("Lunta: open failed: %@", error.readable)
+                self.error = error.readable
             }
         }
     }

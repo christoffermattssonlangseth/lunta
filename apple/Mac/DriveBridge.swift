@@ -58,7 +58,7 @@ final class DriveBridge: ObservableObject {
                                                      statePath: Self.dir.appendingPathComponent("drive-bridge-state.json").path,
                                                      auth: auth, folderName: Self.folderName, progress: listener)
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.readable
             return
         }
         timer?.invalidate()
@@ -92,7 +92,7 @@ final class DriveBridge: ObservableObject {
                         model.reload()
                     }
                 case .failure(let e):
-                    self.error = e.localizedDescription
+                    self.error = e.readable
                 }
             }
         }
@@ -103,7 +103,7 @@ final class DriveBridge: ObservableObject {
         guard let auth else { return }
         error = nil
         let req: SignInRequest
-        do { req = try auth.beginSignIn(redirectUri: Self.redirectURI) } catch { self.error = error.localizedDescription; return }
+        do { req = try auth.beginSignIn(redirectUri: Self.redirectURI) } catch { self.error = error.readable; return }
         guard let url = URL(string: req.url) else { return }
         let session = ASWebAuthenticationSession(url: url, callback: .customScheme(Self.redirectScheme)) { [weak self] callback, err in
             Task { @MainActor in
@@ -123,7 +123,7 @@ final class DriveBridge: ObservableObject {
                     self.connected = true
                     self.begin()
                 } catch {
-                    self.error = error.localizedDescription
+                    self.error = error.readable
                 }
             }
         }

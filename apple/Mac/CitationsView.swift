@@ -83,7 +83,7 @@ struct CitationsView: View {
             wordInstalled = true
             message = "Installed. Quit and reopen Word."
         } catch {
-            message = "Couldn't install into Word: \(error.localizedDescription). If macOS asked whether Lunta may access other apps' data, allow it and try again."
+            message = "Couldn't install into Word: \(error.readable). If macOS asked whether Lunta may access other apps' data, allow it and try again."
         }
     }
 }

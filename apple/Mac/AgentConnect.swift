@@ -168,7 +168,7 @@ struct AgentConnectView: View {
                 if on { message = "Restart \(c.rawValue) to load Lunta." }
             }
         } catch {
-            message = error.localizedDescription
+            message = error.readable
         }
         await refresh()
     }
@@ -187,7 +187,7 @@ struct AgentConnectView: View {
             cliInstalled = true
             message = "Installed as ~/.local/bin/lunta. Try: lunta search lactate"
         } catch {
-            message = error.localizedDescription
+            message = error.readable
         }
     }
 

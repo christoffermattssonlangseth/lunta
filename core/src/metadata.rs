@@ -19,12 +19,28 @@ fn agent() -> &'static ureq::Agent {
 }
 
 pub(crate) fn get_text(url: &str) -> Result<String> {
-    let mut r = agent()
-        .get(url)
-        .header("User-Agent", UA)
-        .call()
-        .map_err(|e| CoreError::Network(e.to_string()))?;
-    r.body_mut().read_to_string().map_err(|e| CoreError::Network(e.to_string()))
+    // "too many requests" (OpenAlex's rate limit) or "unavailable": wait a little and try again
+    let waits = [Duration::from_millis(1500), Duration::from_secs(4)];
+    let mut attempt = 0;
+    loop {
+        match agent().get(url).header("User-Agent", UA).call() {
+            Ok(mut r) => return r.body_mut().read_to_string().map_err(|e| CoreError::Network(e.to_string())),
+            Err(ureq::Error::StatusCode(code @ (429 | 503))) => {
+                if let Some(w) = waits.get(attempt) {
+                    std::thread::sleep(*w);
+                    attempt += 1;
+                    continue;
+                }
+                let host = url.split('/').nth(2).unwrap_or("the server");
+                return Err(CoreError::Network(if code == 429 {
+                    format!("{host} is busy (too many requests right now); try again in a minute")
+                } else {
+                    format!("{host} is unavailable right now; try again in a minute")
+                }));
+            }
+            Err(e) => return Err(CoreError::Network(e.to_string())),
+        }
+    }
 }
 
 fn get_json(url: &str) -> Result<Value> {

@@ -40,7 +40,7 @@ final class PhoneVoice: ObservableObject {
                 return true
             } catch {
                 NSLog("Lunta: natural voice failed to load: %@", String(describing: error))
-                state = .failed(error.localizedDescription)
+                state = .failed(error.readable)
                 return false
             }
         }

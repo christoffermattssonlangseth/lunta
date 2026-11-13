@@ -224,13 +224,13 @@ extension LibraryModel {
             undo?.setActionName(note.isEmpty ? "Highlight" : "Note")
             return saved
         }
-        catch { errorMessage = error.localizedDescription; return nil }
+        catch { errorMessage = error.readable; return nil }
     }
 
     func saveAnnotation(_ a: Annotation) {
         var a = a
         a.kind = a.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .highlight : .note
-        do { _ = try lib.saveAnnotation(a: a) } catch { errorMessage = error.localizedDescription }
+        do { _ = try lib.saveAnnotation(a: a) } catch { errorMessage = error.readable }
         reload()
     }
 
@@ -244,7 +244,7 @@ extension LibraryModel {
 
     /// Puts back a deleted highlight (undo of a delete, or redo of a highlight).
     func restoreAnnotation(_ a: Annotation, undo: UndoManager? = nil) {
-        do { _ = try lib.saveAnnotation(a: a) } catch { errorMessage = error.localizedDescription; return }
+        do { _ = try lib.saveAnnotation(a: a) } catch { errorMessage = error.readable; return }
         reload()
         undo?.registerUndo(withTarget: self) { m in MainActor.assumeIsolated { m.deleteAnnotation(a, undo: undo) } }
         undo?.setActionName(a.note.isEmpty ? "Highlight" : "Note")

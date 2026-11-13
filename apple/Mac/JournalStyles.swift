@@ -39,7 +39,7 @@ enum JournalStyles {
                     copyCitation(text)
                     remember(style.id, style.title)
                 case .failure(let e):
-                    model.errorMessage = "Couldn't format in \(style.title): \(e.localizedDescription)"
+                    model.errorMessage = "Couldn't format in \(style.title): \(e.readable)"
                 }
             }
         }
@@ -122,7 +122,7 @@ struct JournalStylePicker: View {
             searching = false
             switch result {
             case .success(let h): hits = h; error = nil
-            case .failure(let e): hits = []; error = "Couldn't load the journal styles: \(e.localizedDescription)"
+            case .failure(let e): hits = []; error = "Couldn't load the journal styles: \(e.readable)"
             }
         }
     }
@@ -140,7 +140,7 @@ struct JournalStylePicker: View {
                     JournalStyles.remember(h.id, h.title)
                     dismiss()
                 case .failure(let e):
-                    error = "Couldn't format in \(h.title): \(e.localizedDescription)"
+                    error = "Couldn't format in \(h.title): \(e.readable)"
                     hits = []
                 }
             }

@@ -797,7 +797,7 @@ final class AskEngine: ObservableObject {
             return
         }
         if Task.isCancelled { return }
-        var text = error.localizedDescription
+        var text = error.readable
         if let e = error as? LanguageModelSession.GenerationError, case .guardrailViolation = e {
             text = "Apple's model declined to answer that (its safety filter). Try rephrasing."
         }
@@ -1133,7 +1133,7 @@ final class AskEngine: ObservableObject {
             save()
         } catch {
             proposals[i].state = .failed
-            messages.append(AskMessage(role: .notice, text: "Couldn't apply: \(error.localizedDescription)"))
+            messages.append(AskMessage(role: .notice, text: "Couldn't apply: \(error.readable)"))
         }
     }
 

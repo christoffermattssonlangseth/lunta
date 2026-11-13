@@ -225,7 +225,7 @@ final class CitationServer {
                     case .success(let hits):
                         self.json(c, 200, hits.map { ["id": $0.id, "title": $0.title, "format": $0.format] }, origin: origin)
                     case .failure(let e):
-                        self.json(c, 502, ["error": "Couldn't load the journal styles: \(e.localizedDescription)"], origin: origin)
+                        self.json(c, 502, ["error": "Couldn't load the journal styles: \(e.readable)"], origin: origin)
                     }
                 }
             }
@@ -247,7 +247,7 @@ final class CitationServer {
                             "bibliography": out.bibliography.map { ["id": $0.id, "text": $0.text] },
                         ], origin: origin)
                     case .failure(let e):
-                        self.json(c, 502, ["error": "Couldn't format in this style: \(e.localizedDescription)"], origin: origin)
+                        self.json(c, 502, ["error": "Couldn't format in this style: \(e.readable)"], origin: origin)
                     }
                 }
             }

@@ -246,7 +246,7 @@ final class LibraryModel: ObservableObject {
 
     /// Saves edited details.
     func updateMeta(_ id: String, _ meta: PaperMeta) {
-        do { try lib.updateMeta(id: id, meta: meta) } catch { errorMessage = error.localizedDescription }
+        do { try lib.updateMeta(id: id, meta: meta) } catch { errorMessage = error.readable }
         reload()
     }
 
@@ -331,7 +331,7 @@ final class LibraryModel: ObservableObject {
             try? FileManager.default.removeItem(at: tmp)
             return added.id
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.readable
         }
         try? FileManager.default.removeItem(at: tmp)
         return nil
@@ -486,7 +486,7 @@ final class LibraryModel: ObservableObject {
             if let pdfFolder { await importPDFFolder(pdfFolder) }
             await makeReadingViews()
         } catch {
-            errorMessage = "Import failed: \(error.localizedDescription)"
+            errorMessage = "Import failed: \(error.readable)"
             status = nil
         }
     }
@@ -552,7 +552,7 @@ final class LibraryModel: ObservableObject {
         do {
             discoverResults = try await Task.detached { try lib.discover(query: q, limit: 40) }.value
         } catch {
-            discoverError = "Search failed: \(error.localizedDescription)"
+            discoverError = "Search failed: \(error.readable)"
         }
         discovering = false
     }
@@ -713,4 +713,16 @@ extension PaperMeta {
     }
 
     var year: String { String(date.prefix(4)) }
+}
+
+extension Error {
+    /// The error as a person should read it: the core's message itself, not its Swift type.
+    var readable: String {
+        if let c = self as? CoreError {
+            switch c {
+            case .Io(let m), .Db(let m), .Network(let m), .NotFound(let m), .Invalid(let m): return m
+            }
+        }
+        return localizedDescription
+    }
 }

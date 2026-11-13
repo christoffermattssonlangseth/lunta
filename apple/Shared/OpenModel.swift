@@ -60,7 +60,7 @@ final class OpenModel: ObservableObject {
             state = .ready
         } catch {
             NSLog("Lunta: open model failed: %@", String(describing: error))
-            state = .failed(error.localizedDescription)
+            state = .failed(error.readable)
         }
     }
 }

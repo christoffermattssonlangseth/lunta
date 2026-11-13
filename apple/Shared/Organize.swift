@@ -63,18 +63,18 @@ extension LibraryModel {
             for id in ids { try lib.setMembership(collection: c.id, paper: id, present: true) }
             reload()
             return c.id
-        } catch { errorMessage = error.localizedDescription; return nil }
+        } catch { errorMessage = error.readable; return nil }
     }
 
     func renameFolder(_ id: String, _ name: String) {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !n.isEmpty else { return }
-        do { try lib.renameCollection(id: id, name: n) } catch { errorMessage = error.localizedDescription }
+        do { try lib.renameCollection(id: id, name: n) } catch { errorMessage = error.readable }
         reload()
     }
 
     func moveFolder(_ id: String, into parent: String?) {
-        do { try lib.moveCollection(id: id, parent: parent) } catch { errorMessage = error.localizedDescription }
+        do { try lib.moveCollection(id: id, parent: parent) } catch { errorMessage = error.readable }
         reload()
     }
 

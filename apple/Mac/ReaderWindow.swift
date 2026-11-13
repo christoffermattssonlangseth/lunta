@@ -188,7 +188,7 @@ struct ReaderWindow: View {
             book = try model.lib.openEpub(id: paperID)
             model.markOpened(p)
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.readable
         }
     }
 
