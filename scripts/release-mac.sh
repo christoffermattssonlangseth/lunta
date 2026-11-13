@@ -16,7 +16,11 @@ build="$root/apple/build/release-mac"
 cd "$root/apple"
 
 if [[ $tag != --check ]]; then
-  until gh release view "$tag" >/dev/null 2>&1; do echo "waiting for release $tag…"; sleep 10; done
+  # the release is made by GitHub (release.yml) a minute after the tag is pushed
+  until err=$(gh release view "$tag" 2>&1 >/dev/null); do
+    echo "waiting for release $tag… (gh: ${err%%$'\n'*})"
+    sleep 10
+  done
 fi
 
 rm -rf "$build"; mkdir -p "$build"
