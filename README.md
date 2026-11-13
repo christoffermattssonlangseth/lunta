@@ -254,7 +254,7 @@ must be running; the extension talks to it on `127.0.0.1:47480` (extension reque
 
 ## Google Drive sync
 
-`core/src/drive/` (cargo feature `drive`, on by default for desktop and the CLI, off in the Apple build)
+`core/src/drive/` (cargo feature `drive`, on by default for desktop and the CLI, and in the Apple build for the Mac's bridge: **Lunta › Google Drive for Android…** keeps the iCloud library and the Drive folder in sync)
 syncs a library through Google Drive's API, for devices that have no synced folder: the Android app,
 Linux, or anyone who prefers it. It uses **the same layout** as everything else (see
 [Library layout](#library-layout-sync-safe)), in a Drive folder called `Lunta`, so a Mac whose library

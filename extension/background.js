@@ -73,5 +73,32 @@ chrome.action.onClicked.addListener(async (tab) => {
     }
     return;
   }
-  chrome.tabs.sendMessage(tab.id, { type: "togglePanel" }).catch(() => {});
+  // the panel lives in the page (content.js); on a tab opened before the extension was loaded it
+  // isn't there yet: load it now. On a page with no paper it never appears: say so on the button.
+  if (await toggle(tab.id)) return;
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+  } catch (e) {
+    return flag(tab.id, "Lunta can't run on this page (Chrome's own pages and the Web Store are off limits).");
+  }
+  if (!(await toggle(tab.id))) flag(tab.id, "No paper found on this page: Lunta looks for a DOI or the citation details journals put in the page. Open the article's own page (not a search result) and try again.");
 });
+
+async function toggle(tabId) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "togglePanel" });
+    return true;
+  } catch (_) {
+    return false; // no panel in this tab
+  }
+}
+
+function flag(tabId, why) {
+  chrome.action.setBadgeBackgroundColor({ color: "#8a8a8e", tabId });
+  chrome.action.setBadgeText({ text: "?", tabId });
+  chrome.action.setTitle({ title: "Lunta: " + why, tabId });
+  setTimeout(() => {
+    chrome.action.setBadgeText({ text: "", tabId }).catch(() => {});
+    chrome.action.setTitle({ title: "Save to Lunta", tabId }).catch(() => {});
+  }, 6000);
+}
