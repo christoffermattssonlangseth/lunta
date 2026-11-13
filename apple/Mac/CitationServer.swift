@@ -10,7 +10,8 @@ import LuntaCore
 ///   POST /api/bibliography {style,ids}  → {entries:[…]}   (Markdown-style *italic* / **bold**)
 ///   GET  /api/status                    → {ok:true,papers:n}
 ///
-/// Pages served from this origin can call the API directly. The Google Docs sidebar (served by
+/// Pages served from this origin can call the API directly, and so can the hosted copy of the Word
+/// panel (GitHub Pages, used by the Microsoft store listing). The Google Docs sidebar (served by
 /// Google from *.googleusercontent.com) must also send the pairing token shown in Lunta.
 @MainActor
 final class CitationServer {
@@ -152,7 +153,7 @@ final class CitationServer {
     private func send(_ c: NWConnection, _ status: Int, _ body: Data, type: String, origin: String?) {
         var h = "HTTP/1.1 \(status) \(status == 200 ? "OK" : "Error")\r\nContent-Type: \(type)\r\n"
         h += "Content-Length: \(body.count)\r\nConnection: close\r\nCache-Control: no-store\r\n"
-        if let origin, Self.isGoogleSidebar(origin) {
+        if let origin, Self.isGoogleSidebar(origin) || origin == Self.hostedPanelOrigin {
             h += "Access-Control-Allow-Origin: \(origin)\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
             h += "Access-Control-Allow-Headers: Content-Type, X-Margins-Token\r\nAccess-Control-Allow-Private-Network: true\r\n"
         }
@@ -166,6 +167,9 @@ final class CitationServer {
         send(c, status, (try? JSONSerialization.data(withJSONObject: obj)) ?? Data(), type: "application/json", origin: origin)
     }
 
+    /// Where the hosted Word panel lives (see .github/workflows/pages.yml).
+    static let hostedPanelOrigin = "https://christoffermattssonlangseth.github.io"
+
     static func isGoogleSidebar(_ origin: String) -> Bool {
         guard let host = URL(string: origin)?.host else { return false }
         return origin.hasPrefix("https://") && host.hasSuffix(".googleusercontent.com")
@@ -176,7 +180,7 @@ final class CitationServer {
         if r.method == "OPTIONS" { send(c, 200, Data(), type: "text/plain", origin: origin); return }
         if r.path.hasPrefix("/api/") {
             // same-origin add-in pages send no Origin (or ours); the Google sidebar must present the token
-            if let origin, origin != "https://localhost:\(Self.port)" {
+            if let origin, origin != "https://localhost:\(Self.port)", origin != Self.hostedPanelOrigin {
                 guard Self.isGoogleSidebar(origin), r.headers["x-margins-token"] == token else {
                     json(c, 403, ["error": "Not paired. Copy Sidebar.html again from Lunta › Citations in Word & Google Docs."], origin: origin)
                     return

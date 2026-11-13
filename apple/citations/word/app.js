@@ -1,7 +1,11 @@
 // Lunta citations for Word: citations are content controls tagged "margins:<id>,<id>", the
 // bibliography is a content control tagged "margins-bib". "Update All" renumbers and reformats
 // every citation and rewrites the bibliography.
-var API = '/api';
+// served by Lunta itself (https://localhost:47481) or from the hosted copy (GitHub Pages, the
+// Microsoft store listing): either way the library comes from the Lunta app on this computer
+var LUNTA = 'https://localhost:47481';
+var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
+var UNREACHABLE = 'Can’t reach Lunta. Open the Lunta app on this Mac; the first time, choose Lunta › Citations in Word & Google Docs… and click Trust Certificate.';
 var picked = [];         // [{id, title, ...}]
 var lastHits = [];
 var style = 'apa';
@@ -48,7 +52,7 @@ function search(q) {
       $('results').appendChild(el);
     });
     renderPicked();
-  }).catch(function () { status('Can’t reach Lunta. Is the Lunta app open on this Mac?', true); });
+  }).catch(function () { status(UNREACHABLE, true); });
 }
 
 function insertCitation() {
@@ -132,6 +136,6 @@ Office.onReady(function () {
   $('bib').onclick = insertBibliography;
   $('refresh').onclick = updateAll;
   getJSON('/status').then(function (s) { status('Connected to Lunta · ' + s.papers + ' papers'); })
-    .catch(function () { status('Can’t reach Lunta. Open the Lunta app on this Mac.', true); });
+    .catch(function () { status(UNREACHABLE, true); });
   $('q').focus();
 });

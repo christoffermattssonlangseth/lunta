@@ -1,0 +1,39 @@
+# Publishes the hosted Word add-in panel (apple/citations: the Microsoft store listing's
+# manifest-store.xml points here) and the site's support and privacy pages to GitHub Pages:
+# https://christoffermattssonlangseth.github.io/lunta/
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ['apple/citations/**', 'site/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp -R apple/citations/. _site/
+          cp -R site/. _site/
+          rm -rf _site/gdocs        # the Google Docs script is pasted from Lunta, not hosted
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
