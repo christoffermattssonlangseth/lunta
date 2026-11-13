@@ -101,6 +101,63 @@ var LuntaCite = (function () {
     return out;
   }
 
-  return { STYLES: STYLES, inText: inText, numbering: numbering, bibliography: bibliography, toHTML: toHTML, runs: runs, compress: compress };
+  // ---- journal styles (the CSL catalogue, formatted by Lunta): a style "csl:<id>" ----
+
+  function isJournal(s) { return String(s).indexOf('csl:') === 0; }
+
+  /** Journal styles used before on this computer, most recent first: [{id, title}]. */
+  function recentJournals() {
+    try { return JSON.parse(localStorage.getItem('luntaJournals') || '[]'); } catch (e) { return []; }
+  }
+  function rememberJournal(id, title) {
+    var list = recentJournals().filter(function (j) { return j.id !== id; });
+    list.unshift({ id: id, title: title });
+    try { localStorage.setItem('luntaJournals', JSON.stringify(list.slice(0, 8))); } catch (e) {}
+  }
+
+  /** A style's display name: built-in, or the journal's title. */
+  function styleName(s) {
+    if (!isJournal(s)) return (STYLES[s] || STYLES.apa).name;
+    var id = s.slice(4), j = recentJournals().filter(function (x) { return x.id === id; })[0];
+    return j ? j.title : id;
+  }
+
+  /** Fills a <select>: the built-in styles, journal styles used before, and "Find journal style…" (value "__find"). */
+  function fillStyles(sel, current) {
+    sel.innerHTML = '';
+    var common = document.createElement('optgroup'); common.label = 'Styles';
+    Object.keys(STYLES).forEach(function (k) {
+      var o = document.createElement('option'); o.value = k; o.textContent = STYLES[k].name; common.appendChild(o);
+    });
+    sel.appendChild(common);
+    var recent = recentJournals();
+    if (isJournal(current) && !recent.some(function (j) { return 'csl:' + j.id === current; })) recent.unshift({ id: current.slice(4), title: current.slice(4) });
+    var journals = document.createElement('optgroup'); journals.label = 'Journal styles';
+    recent.forEach(function (j) {
+      var o = document.createElement('option'); o.value = 'csl:' + j.id; o.textContent = j.title; journals.appendChild(o);
+    });
+    var find = document.createElement('option'); find.value = '__find'; find.textContent = 'Find journal style…';
+    journals.appendChild(find);
+    sel.appendChild(journals);
+    sel.value = current;
+  }
+
+  /** Lists journal-style search hits in `box`; `pick(style)` gets "csl:<id>" (remembered). */
+  function showJournals(box, hits, pick) {
+    box.innerHTML = '';
+    if (!hits.length) { box.innerHTML = '<p class="status">No journal styles match.</p>'; return; }
+    hits.forEach(function (h) {
+      var el = document.createElement('div');
+      el.className = 'hit';
+      el.innerHTML = '<div class="t"></div><div class="m"></div>';
+      el.querySelector('.t').textContent = h.title;
+      el.querySelector('.m').textContent = h.format === 'numeric' ? 'numbered' : h.format;
+      el.onclick = function () { rememberJournal(h.id, h.title); pick('csl:' + h.id); };
+      box.appendChild(el);
+    });
+  }
+
+  return { STYLES: STYLES, inText: inText, numbering: numbering, bibliography: bibliography, toHTML: toHTML, runs: runs, compress: compress,
+           isJournal: isJournal, styleName: styleName, fillStyles: fillStyles, showJournals: showJournals };
 })();
 if (typeof module !== 'undefined') module.exports = LuntaCite;
