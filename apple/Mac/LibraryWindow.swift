@@ -53,6 +53,10 @@ struct LibraryWindow: View {
                                            description: Text("Add papers with ⇧⌘N, or import your ReadCube library with ⇧⌘I."))
                 }
             }
+            // never narrower than the toolbar's search field above it, and a solid edge under the
+            // toolbar: on macOS 26 the content otherwise slides under the floating search field
+            .navigationSplitViewColumnWidth(min: 340, ideal: 460)
+            .scrollEdgeEffectStyle(.hard, for: .top)
             .inspector(isPresented: $asking) {
                 AssistantPanel(engine: ask, onPaper: { id in
                     if model.source == .discover { model.source = .all }
