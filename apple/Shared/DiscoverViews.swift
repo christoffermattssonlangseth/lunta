@@ -145,11 +145,13 @@ struct DiscoverDetail: View {
                     Label("In your library", systemImage: "checkmark.circle.fill")
                         .font(.footnote).foregroundStyle(Color.luntaTeal)
                 } else {
-                    Button {
-                        adding = true
-                        Task { await model.addDiscovered(hit); adding = false }
-                    } label: { Label(adding ? "Adding…" : "Add to Library", systemImage: "plus") }
-                    .buttonStyle(.borderedProminent).tint(.luntaTeal).disabled(adding)
+                    HStack(spacing: 10) {
+                        Button { add(mustRead: false) } label: { Label(adding ? "Adding…" : "Add to Library", systemImage: "plus") }
+                            .buttonStyle(.borderedProminent).tint(.luntaTeal).disabled(adding)
+                        Button { add(mustRead: true) } label: { Label("Add as Must Read", systemImage: "bookmark") }
+                            .buttonStyle(.bordered).tint(.luntaTeal).disabled(adding)
+                            .help("Add it and put it on your Must Read list")
+                    }
                 }
                 ShareLink(item: hit.shareText, subject: Text(hit.meta.title)) {
                     Label("Share", systemImage: "square.and.arrow.up")
@@ -164,6 +166,14 @@ struct DiscoverDetail: View {
             }
             .padding(22)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func add(mustRead: Bool) {
+        adding = true
+        Task {
+            if let id = await model.addDiscovered(hit), mustRead { model.setMustRead([id], true) }
+            adding = false
         }
     }
 }

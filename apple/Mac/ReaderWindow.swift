@@ -186,7 +186,7 @@ struct ReaderWindow: View {
         guard await model.ensureLocal(paperID, .epub) != nil else { error = "Couldn't download the reading view from iCloud."; return }
         do {
             book = try model.lib.openEpub(id: paperID)
-            if !p.read { model.setRead(p, true) }
+            model.markOpened(p)
         } catch {
             self.error = error.localizedDescription
         }

@@ -28,6 +28,7 @@ import java.io.InputStream
 sealed interface Place {
     data object All : Place
     data object Starred : Place
+    data object MustRead : Place
     data object Unread : Place
     data object ForYou : Place
     data class Folder(val id: String) : Place
@@ -264,6 +265,7 @@ class AppModel(val app: Application) {
     fun placeTitle(p: Place): String = when (p) {
         Place.All -> "All Papers"
         Place.Starred -> "Starred"
+        Place.MustRead -> "Must Read"
         Place.Unread -> "Unread"
         Place.ForYou -> "New for You"
         is Place.Folder -> collections.firstOrNull { it.id == p.id }?.name ?: "Folder"
@@ -279,6 +281,7 @@ class AppModel(val app: Application) {
             val base: List<Paper> = when (place) {
                 Place.All -> papers
                 Place.Starred -> papers.filter { it.starred }
+                Place.MustRead -> papers.filter { it.mustRead }
                 Place.Unread -> papers.filter { !it.read }
                 Place.ForYou -> emptyList()
                 is Place.Folder -> {
@@ -318,6 +321,7 @@ class AppModel(val app: Application) {
     fun count(place: Place): Int = when (place) {
         Place.All -> papers.size
         Place.Starred -> papers.count { it.starred }
+        Place.MustRead -> papers.count { it.mustRead }
         Place.Unread -> papers.count { !it.read }
         is Place.Tag -> papers.count { place.name in it.tags }
         is Place.Folder -> { val ids = descendants(place.id); papers.count { p -> p.collections.any { it in ids } } }
@@ -335,7 +339,9 @@ class AppModel(val app: Application) {
 
     fun toggleStar(p: Paper) = launchLib { withContext(Dispatchers.IO) { it.setStarred(p.id, !p.starred) } }
     fun toggleRead(p: Paper) = launchLib { withContext(Dispatchers.IO) { it.setRead(p.id, !p.read) } }
-    fun markRead(id: String) { if (paper(id)?.read == false) launchLib { withContext(Dispatchers.IO) { it.setRead(id, true) } } }
+    fun toggleMustRead(p: Paper) = launchLib { withContext(Dispatchers.IO) { it.setMustRead(p.id, !p.mustRead) } }
+    /** On opening a paper: read, but it stays on the Must Read list. */
+    fun markRead(id: String) { if (paper(id)?.read == false) launchLib { withContext(Dispatchers.IO) { it.markOpened(id) } } }
     fun setTag(p: Paper, tag: String, on: Boolean) = launchLib { withContext(Dispatchers.IO) { it.setTag(p.id, tag, on) } }
     fun setMember(p: Paper, collection: String, on: Boolean) = launchLib { withContext(Dispatchers.IO) { it.setMembership(collection, p.id, on) } }
     fun newFolder(name: String, parent: String? = null, then: ((PaperCollection) -> Unit)? = null) = launchLib {

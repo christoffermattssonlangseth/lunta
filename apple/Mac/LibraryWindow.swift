@@ -185,6 +185,7 @@ struct Sidebar: View {
             Section("Library") {
                 Label("All Papers", systemImage: "books.vertical").badge(model.counts.all).tag(SidebarItem.all)
                 Label("Starred", systemImage: "star").badge(model.counts.starred).tag(SidebarItem.starred)
+                Label("Must Read", systemImage: "bookmark").badge(model.counts.mustRead).tag(SidebarItem.mustRead)
                 Label("Unread", systemImage: "circle.badge").badge(model.counts.unread).tag(SidebarItem.unread)
             }
             Section("Beyond your library") {
@@ -327,10 +328,13 @@ struct PaperTable: View {
     private var table: some View {
         Table(of: Paper.self, selection: $selection) {
             TableColumn("") { p in
-                Group {
+                VStack(spacing: 3) {
+                    if p.mustRead {
+                        Image(systemName: "bookmark.fill").font(.caption).foregroundStyle(Color.luntaTeal).help("Must Read")
+                    }
                     if p.starred {
                         Image(systemName: "star.fill").font(.caption).foregroundStyle(Color.luntaCopper)
-                    } else if !p.read {
+                    } else if !p.read && !p.mustRead {
                         Circle().fill(Color.luntaTeal).frame(width: 7, height: 7)
                     }
                 }
@@ -433,6 +437,8 @@ struct PaperMenu: View {
             Button("Copy BibTeX") { copyToPasteboard(model.bibtex(ids)) }
         }
         Divider()
+        let allMustRead = ids.allSatisfy { model.paper($0)?.mustRead == true }
+        Button(allMustRead ? "Remove from Must Read" : "Add to Must Read") { model.setMustRead(ids, !allMustRead) }
         FolderMenu(ids: ids) { NotificationCenter.default.post(name: .luntaNewFolder, object: ids) }
         if case .collection(let cid) = model.source {
             Button("Remove from “\(model.collections.first { $0.id == cid }?.name ?? "Folder")”") { model.setMembership(ids, collection: cid, false) }
@@ -560,6 +566,11 @@ struct PaperDetail: View {
                         .foregroundStyle(paper.starred ? Color.luntaCopper : .secondary)
                 }
                 .buttonStyle(.borderless).help(paper.starred ? "Unstar" : "Star")
+                Button { model.toggleMustRead(paper) } label: {
+                    Image(systemName: paper.mustRead ? "bookmark.fill" : "bookmark")
+                        .foregroundStyle(paper.mustRead ? Color.luntaTeal : .secondary)
+                }
+                .buttonStyle(.borderless).help(paper.mustRead ? "Remove from Must Read" : "Must Read: to read soon (leaves the list when you mark it read)")
             }
             Text(paper.meta.title)
                 .font(.system(.title2, design: .default).weight(.bold))

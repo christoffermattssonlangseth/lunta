@@ -137,11 +137,14 @@ struct LibraryView: View {
                             .tint(.luntaTeal)
                         Button { model.toggleStar(p) } label: { Label(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") }
                             .tint(.luntaCopper)
+                        Button { model.toggleMustRead(p) } label: { Label(p.mustRead ? "Not Must Read" : "Must Read", systemImage: p.mustRead ? "bookmark.slash" : "bookmark") }
+                            .tint(.luntaTeal)
                         Button { model.setRead(p, !p.read) } label: { Label(p.read ? "Unread" : "Read", systemImage: p.read ? "circle" : "checkmark.circle") }
                             .tint(.gray)
                     }
                     .contextMenu {
                         Button(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") { model.toggleStar(p) }
+                        Button(p.mustRead ? "Remove from Must Read" : "Must Read", systemImage: p.mustRead ? "bookmark.slash" : "bookmark") { model.toggleMustRead(p) }
                         Button(p.read ? "Mark as Unread" : "Mark as Read", systemImage: p.read ? "circle" : "checkmark.circle") { model.setRead(p, !p.read) }
                         Divider()
                         Button("Folders & Tags…", systemImage: "folder") { organizing = ShareTargetIOS(id: p.id) }
@@ -210,6 +213,7 @@ struct LibraryHome: View {
             Section {
                 place(.all, "All Papers", "books.vertical", count: model.counts.all)
                 place(.starred, "Starred", "star", count: model.counts.starred)
+                place(.mustRead, "Must Read", "bookmark", count: model.counts.mustRead)
                 place(.unread, "Unread", "smallcircle.filled.circle", count: model.counts.unread)
             }
             Section {
@@ -299,7 +303,9 @@ struct PaperRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Group {
-                if paper.starred {
+                if paper.mustRead {
+                    Image(systemName: "bookmark.fill").font(.caption2).foregroundStyle(Color.luntaTeal)
+                } else if paper.starred {
                     Image(systemName: "star.fill").font(.caption2).foregroundStyle(Color.luntaCopper)
                 } else if !paper.read {
                     Circle().fill(Color.luntaTeal).frame(width: 8, height: 8)

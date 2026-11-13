@@ -7,7 +7,7 @@ extension Paper: Identifiable {}
 extension PaperCollection: Identifiable {}
 
 enum SidebarItem: Hashable {
-    case all, starred, unread
+    case all, starred, mustRead, unread
     case discover
     case alerts
     case collection(String)
@@ -33,7 +33,7 @@ final class LibraryModel: ObservableObject {
     @Published var status: String?
     @Published var progress: Double?
     @Published var errorMessage: String?
-    @Published var counts = (all: 0, starred: 0, unread: 0)
+    @Published var counts = (all: 0, starred: 0, mustRead: 0, unread: 0)
     // Discover: searching beyond the library (OpenAlex)
     @Published var discoverQuery = ""
     @Published var discoverResults: [DiscoverHit] = []
@@ -93,7 +93,7 @@ final class LibraryModel: ObservableObject {
         tags = lib.tags()
         loadSmartFolders()
         let every = lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
-        counts = (every.count, every.filter(\.starred).count, every.filter { !$0.read }.count)
+        counts = (every.count, every.filter(\.starred).count, every.filter(\.mustRead).count, every.filter { !$0.read }.count)
     }
 
     /// Typing in the search field: wait for a short pause, then search off the main thread.
@@ -128,7 +128,7 @@ final class LibraryModel: ObservableObject {
             snippets = [:]
             return
         }
-        let filtered = !(filter.collection == nil && filter.tag == nil && !filter.starredOnly && !filter.unreadOnly)
+        let filtered = !(filter.collection == nil && filter.tag == nil && !filter.starredOnly && !filter.unreadOnly && !filter.mustReadOnly)
         searchTask = Task { [weak self] in
             let result = await Task.detached { () -> ([Paper], [String: String]) in
                 let hits = (try? lib.search(query: q, limit: 300)) ?? []
@@ -147,6 +147,7 @@ final class LibraryModel: ObservableObject {
         switch source {
         case .all: break
         case .starred: filter.starredOnly = true
+        case .mustRead: filter.mustReadOnly = true
         case .unread: filter.unreadOnly = true
         case .discover, .alerts: break
         case .collection(let id): filter.collection = id
@@ -160,6 +161,7 @@ final class LibraryModel: ObservableObject {
         switch source {
         case .all: return "All Papers"
         case .starred: return "Starred"
+        case .mustRead: return "Must Read"
         case .unread: return "Unread"
         case .discover: return "Discover"
         case .alerts: return "New for You"
@@ -250,6 +252,11 @@ final class LibraryModel: ObservableObject {
 
     func toggleStar(_ p: Paper) { try? lib.setStarred(id: p.id, starred: !p.starred); reload() }
     func setRead(_ p: Paper, _ read: Bool) { try? lib.setRead(id: p.id, read: read); reload() }
+    /// On (marking them unread) or off the Must Read list.
+    func setMustRead(_ ids: [String], _ on: Bool) { for id in ids { try? lib.setMustRead(id: id, mustRead: on) }; reload() }
+    func toggleMustRead(_ p: Paper) { setMustRead([p.id], !p.mustRead) }
+    /// Opening a paper marks it read, but keeps it on the Must Read list.
+    func markOpened(_ p: Paper) { if !p.read { try? lib.markOpened(id: p.id); reload() } }
     func delete(_ ids: [String]) { for id in ids { try? lib.deletePaper(id: id) }; reload() }
     func setTag(_ p: Paper, _ tag: String, _ on: Bool) { try? lib.setTag(id: p.id, tag: tag, present: on); reload() }
 

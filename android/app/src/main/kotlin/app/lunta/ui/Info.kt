@@ -57,6 +57,9 @@ fun InfoScreen(model: AppModel, id: String) {
                     IconButton({ model.toggleStar(p) }) {
                         Icon(if (p.starred) Icons.Filled.Star else Icons.Outlined.StarOutline, "Star", tint = if (p.starred) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    IconButton({ model.toggleMustRead(p) }) {
+                        Icon(if (p.mustRead) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, "Must Read", tint = if (p.mustRead) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     Box {
                         IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
                         DropdownMenu(menu, { menu = false }) {

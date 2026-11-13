@@ -68,6 +68,7 @@ fun HomeScreen(model: AppModel) {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 32.dp)) {
                 item { PlaceRow(Icons.Outlined.Inbox, "All Papers", model.count(Place.All)) { model.push(Screen.Papers(Place.All)) } }
                 item { PlaceRow(Icons.Outlined.StarOutline, "Starred", model.count(Place.Starred)) { model.push(Screen.Papers(Place.Starred)) } }
+                item { PlaceRow(Icons.Outlined.BookmarkBorder, "Must Read", model.count(Place.MustRead)) { model.push(Screen.Papers(Place.MustRead)) } }
                 item { PlaceRow(Icons.Outlined.MarkEmailUnread, "Unread", model.count(Place.Unread)) { model.push(Screen.Papers(Place.Unread)) } }
                 item { PlaceRow(Icons.Outlined.AutoAwesome, "New for You", null, hint = "Soon") { model.push(Screen.Papers(Place.ForYou)) } }
 
