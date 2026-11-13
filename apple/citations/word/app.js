@@ -12,6 +12,12 @@ var style = 'apa';
 
 function $(id) { return document.getElementById(id); }
 function status(msg, err) { var s = $('status'); s.textContent = msg || ''; s.className = 'status' + (err ? ' err' : ''); }
+// Word's errors say little ("Check the OfficeExtension.Error.debugInfo"): show where and what
+function fail(e) {
+  var d = e && e.debugInfo, more = d ? [d.code, d.errorLocation].filter(Boolean).join(' at ') : '';
+  if (window.console) console.error(e, d);
+  status((e && e.message || String(e)) + (more ? ' (' + more + ')' : ''), true);
+}
 
 function getJSON(url, body) {
   var opts = body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {};
@@ -58,17 +64,18 @@ function search(q) {
 function insertCitation() {
   var ids = picked.map(function (p) { return p.id; });
   return Word.run(function (ctx) {
-    var range = ctx.document.getSelection();
-    var cc = range.insertContentControl();
+    // text first, then the content control around it: Word on the web won't wrap an empty
+    // range; at the end of the selection, so selected text isn't replaced
+    var at = ctx.document.getSelection().getRange('End');
+    var cc = at.insertText('(…)', 'Replace').insertContentControl();
     cc.tag = 'margins:' + ids.join(',');
     cc.title = 'Citation';
     cc.appearance = 'Hidden';
-    cc.insertText('(…)', 'Replace');
     return ctx.sync();
   }).then(function () {
     picked = []; renderPicked();
     return updateAll();
-  }).catch(function (e) { status(e.message, true); });
+  }).catch(fail);
 }
 
 function insertBibliography() {
@@ -77,12 +84,13 @@ function insertBibliography() {
     existing.load('items');
     return ctx.sync().then(function () {
       if (existing.items.length) { existing.items[0].select(); return ctx.sync(); }
-      var cc = ctx.document.getSelection().insertContentControl();
+      // its own paragraph after the cursor's, with text in it before it is wrapped (see above)
+      var p = ctx.document.getSelection().paragraphs.getLast().insertParagraph('References will appear here.', 'After');
+      var cc = p.insertContentControl();
       cc.tag = 'margins-bib'; cc.title = 'Bibliography (Lunta)';
-      cc.insertText('References will appear here.', 'Replace');
       return ctx.sync();
     });
-  }).then(updateAll).catch(function (e) { status(e.message, true); });
+  }).then(updateAll).catch(fail);
 }
 
 function updateAll() {
@@ -115,7 +123,7 @@ function updateAll() {
         });
       });
     });
-  }).catch(function (e) { status(e.message || String(e), true); });
+  }).catch(fail);
 }
 
 Office.onReady(function () {
