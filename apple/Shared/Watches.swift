@@ -296,6 +296,24 @@ final class WatchCenter: ObservableObject {
         state.items.filter { $0.inLibrary == nil && $0.found > lastOpened }.count
     }
 
+    /// A paper's publication date ("2026-11-06"); nil when only the month or year is known.
+    nonisolated static func publishedDate(_ s: String) -> Date? {
+        guard s.count >= 10 else { return nil }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f.date(from: String(s.prefix(10)))
+    }
+
+    /// "Published 6 Nov (7 days ago)", or the date as given when it isn't a full one.
+    nonisolated static func publishedLabel(_ s: String) -> String? {
+        guard let d = publishedDate(s) else { return s.isEmpty ? nil : "Published \(s)" }
+        let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: d),
+                                                   to: Calendar.current.startOfDay(for: Date())).day ?? 0
+        let ago = days <= 0 ? "today" : days == 1 ? "yesterday" : "\(days) days ago"
+        return "Published \(d.formatted(.dateTime.day().month(.abbreviated))) (\(ago))"
+    }
+
     nonisolated static func snip(_ title: String, _ abstract: String) -> String {
         title + ". " + String(abstract.prefix(400))
     }
@@ -406,7 +424,15 @@ final class WatchCenter: ObservableObject {
         lastStats = "pool \(pool.count), new candidates \(candidates.count) (" +
             Dictionary(grouping: candidates, by: { $0.source.hasPrefix("search") ? "searches" : $0.source.hasPrefix("Cites") ? "citing library" : $0.source })
                 .map { "\($0.key): \($0.value.count)" }.sorted().joined(separator: ", ") + ")"
-        let ranked = zip(candidates, scores).map { (c: $0.0, s: $0.1 + ($0.0.explicit ? 0.15 : 0)) }.sorted { $0.s > $1.s }
+        // newer first among papers about as close: up to +0.04 for one published today, none at 9 days
+        // (closeness scores of the day's candidates differ by a few hundredths)
+        let now = Date()
+        func recency(_ h: DiscoverHit) -> Double {
+            guard let d = Self.publishedDate(h.meta.date) else { return 0 }
+            return 0.04 * max(0, 1 - now.timeIntervalSince(d) / (9 * 86400))
+        }
+        let ranked = zip(candidates, scores).map { (c: $0.0, s: $0.1 + ($0.0.explicit ? 0.15 : 0) + recency($0.0.hit)) }
+            .sorted { $0.s > $1.s }
 
         // 5. the language model reads the best abstracts
         var picked: [FeedRecord] = []
@@ -456,8 +482,15 @@ final class WatchCenter: ObservableObject {
 
     @Published var summarizing = false
 
-    /// The papers the digest covers: what's in the feed now (best first, at most 15).
-    var digestBatch: [FeedRecord] { Array(state.items.prefix(15)) }
+    /// The start of the day of the latest run. Papers found that day are the feed; papers from
+    /// earlier days go under "Earlier", so a paper is never presented as new two days running
+    /// (also on a day whose run found nothing).
+    var feedDay: Date? { state.lastRun.map { Calendar.current.startOfDay(for: $0) } }
+    var latestFinds: [WatchFind] { guard let d = feedDay else { return finds }; return finds.filter { $0.record.found >= d } }
+    var earlierFinds: [WatchFind] { guard let d = feedDay else { return [] }; return finds.filter { $0.record.found < d } }
+
+    /// The papers the digest covers: the day's papers (best first, at most 15).
+    var digestBatch: [FeedRecord] { Array(latestFinds.prefix(15).map(\.record)) }
     var digestKey: String { "v2|" + digestBatch.map(\.key).joined(separator: "|") }
 
     /// The link a digest uses for a paper in the feed.
@@ -473,13 +506,18 @@ final class WatchCenter: ObservableObject {
     /// names of papers it mentioned without a link (e.g. "HistoTx" for "HistoTx: Early fusion…").
     nonisolated static func linkDigest(_ text: String, batch: [FeedRecord]) -> String {
         var out = text
+        // numbered citations, "cell-type inference [1](1)": a small ↗ link after the phrase (as a link
+        // named "1" the number was later taken for a stray reference and removed, leaving the bare URL)
+        out = out.replacingOccurrences(of: #"\s?\[(?:paper\s)?(\d{1,2})\]\((\d{1,2})\)"#, with: " [↗]($2)",
+                                       options: [.regularExpression, .caseInsensitive])
         // [name](n) → [name](foryou://…)
         if let re = try? NSRegularExpression(pattern: #"\[([^\]]+)\]\((\d+)\)"#) {
             for m in re.matches(in: out, range: NSRange(out.startIndex..., in: out)).reversed() {
                 guard let whole = Range(m.range, in: out), let nameR = Range(m.range(at: 1), in: out),
                       let numR = Range(m.range(at: 2), in: out), let n = Int(out[numR]) else { continue }
                 let name = String(out[nameR])
-                out.replaceSubrange(whole, with: (1...batch.count).contains(n) ? "[\(name)](\(feedLink(batch[n - 1].key)))" : name)
+                out.replaceSubrange(whole, with: n >= 1 && n <= batch.count ? "[\(name)](\(feedLink(batch[n - 1].key)))"
+                                                : name == "↗" ? "" : name)
             }
         }
         // stray "(3)" or "[3]" references
@@ -491,7 +529,26 @@ final class WatchCenter: ObservableObject {
                   let range = out.range(of: short), !isInsideLink(out, range) else { continue }
             out.replaceSubrange(range, with: "[\(short)](\(feedLink(r.key)))")
         }
-        return out
+        return repairDigest(out)
+    }
+
+    /// The digest as plain text to send someone, followed by its papers with their links.
+    nonisolated static func shareText(digest: String, papers: [FeedRecord]) -> String {
+        var text = repairDigest(digest)
+            .replacingOccurrences(of: #"\s?\[↗\]\([^)]*\)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\[([^\]]+)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
+        let list = papers.enumerated().map { i, r in
+            let link = !r.doi.isEmpty ? "https://doi.org/\(r.doi)" : r.url
+            return "\(i + 1). \(r.title)" + (link.isEmpty ? "" : "\n   \(link)")
+        }
+        if !list.isEmpty { text += "\n\nPapers:\n" + list.joined(separator: "\n") }
+        return "New for You (Lunta)\n\n" + text
+    }
+
+    /// Bare "(foryou://…)" left in a digest without its link text (digests made before linkDigest
+    /// handled numbered citations): shown as a ↗ link instead of the URL.
+    nonisolated static func repairDigest(_ text: String) -> String {
+        text.replacingOccurrences(of: #"(?<!\])\s?\((foryou://[^)\s]+)\)"#, with: " [↗]($1)", options: .regularExpression)
     }
 
     nonisolated private static func isInsideLink(_ s: String, _ r: Range<String.Index>) -> Bool {
@@ -802,6 +859,7 @@ struct WatchInbox: View {
     @Binding var selection: String?
     @State private var settings = false
     @State private var pushed: FeedKey?
+    @State private var showEarlier = false
     struct FeedKey: Hashable, Identifiable { let id: String }
 
     var body: some View {
@@ -811,18 +869,38 @@ struct WatchInbox: View {
             } else {
                 Section { status }
             }
-            if !center.interests.isEmpty, !center.finds.isEmpty, center.summarizing || !center.state.digest.isEmpty {
+            if !center.interests.isEmpty, !center.latestFinds.isEmpty, center.summarizing || !center.state.digest.isEmpty {
                 Section { digest }
             }
-            if !center.finds.isEmpty {
+            if !center.latestFinds.isEmpty {
                 Section {
-                    ForEach(center.finds) { f in
+                    ForEach(center.latestFinds) { f in
                         row(f).tag(f.id)
                     }
                 }
             } else if !center.interests.isEmpty && !center.checking {
-                Text("Nothing yet. New papers are picked once a day; refresh to look now.")
+                Text(center.finds.isEmpty ? "Nothing yet. New papers are picked once a day; refresh to look now."
+                                          : "Nothing new today. New papers are picked once a day; refresh to look now.")
                     .font(.callout).foregroundStyle(.secondary)
+            }
+            if !center.earlierFinds.isEmpty {
+                Section {
+                    if showEarlier {
+                        ForEach(center.earlierFinds) { f in
+                            row(f).tag(f.id)
+                        }
+                    }
+                } header: {
+                    Button { withAnimation { showEarlier.toggle() } } label: {
+                        HStack {
+                            Text("Earlier (\(center.earlierFinds.count))")
+                            Spacer()
+                            Image(systemName: showEarlier ? "chevron.down" : "chevron.right")
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
         #if os(iOS)
@@ -834,7 +912,7 @@ struct WatchInbox: View {
         #if os(macOS)
         // the detail pane always shows a paper: the first one, or the next after one is turned down
         .onChange(of: center.finds.map(\.id), initial: true) { _, ids in
-            if selection == nil || !ids.contains(selection!) { selection = ids.first }
+            if selection == nil || !ids.contains(selection!) { selection = center.latestFinds.first?.id }
         }
         #endif
         .onDisappear { center.markOpened() }
@@ -859,12 +937,23 @@ struct WatchInbox: View {
 
     private var digest: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("In short", systemImage: "text.alignleft").font(.caption.weight(.semibold))
-                .foregroundStyle(Color.luntaTeal).textCase(.uppercase)
+            HStack {
+                Label("In short", systemImage: "text.alignleft").font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.luntaTeal).textCase(.uppercase)
+                Spacer()
+                if !center.state.digest.isEmpty {
+                    ShareLink(item: WatchCenter.shareText(digest: center.state.digest, papers: center.digestBatch),
+                              subject: Text("New for You")) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.borderless).tint(.luntaTeal)
+                    .help("Share the summary and its papers")
+                }
+            }
             if center.state.digest.isEmpty {
                 HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Summarizing the papers…").font(.callout).foregroundStyle(.secondary) }
             } else {
-                Text((try? AttributedString(markdown: center.state.digest,
+                Text((try? AttributedString(markdown: WatchCenter.repairDigest(center.state.digest),
                                             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
                      ?? AttributedString(center.state.digest))
                     .font(.callout).tint(.luntaTeal)
@@ -938,6 +1027,9 @@ struct FeedRow: View {
                 Text(byline(r)).lineLimit(1)
             }
             .font(.caption).foregroundStyle(.secondary)
+            if let pub = WatchCenter.publishedLabel(r.date) {
+                Label(pub, systemImage: "calendar").font(.caption).foregroundStyle(.secondary)
+            }
             if let sum = r.summary {
                 Text(sum).font(.subheadline)
             } else if !r.abstract.isEmpty {
@@ -968,6 +1060,13 @@ struct FeedRow: View {
                     .buttonStyle(.borderless).disabled(adding)
                 }
                 Spacer(minLength: 8)
+                ShareLink(item: find.hit.shareText, subject: Text(r.title)) {
+                    Image(systemName: "square.and.arrow.up").foregroundStyle(.secondary)
+                        .frame(width: 40, height: 32).contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Share")
+                .help("Share this paper")
                 Button { center.boost(find) } label: {
                     Image(systemName: r.boosted == true ? "hand.thumbsup.fill" : "hand.thumbsup")
                         .foregroundStyle(r.boosted == true ? Color.luntaTeal : Color.secondary)
@@ -991,7 +1090,7 @@ struct FeedRow: View {
 
     private func byline(_ r: FeedRecord) -> String {
         let who = r.authors.first.map { r.authors.count > 1 ? "\($0) et al." : $0 } ?? ""
-        return [who, r.journal, r.date].filter { !$0.isEmpty }.joined(separator: " · ")
+        return [who, r.journal].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
 
