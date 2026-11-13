@@ -6,6 +6,7 @@ import LuntaCore
 /// Full-screen reader: the continuous reading view (reflowed text) or the original PDF.
 struct ReaderView: View {
     @EnvironmentObject var model: LibraryModel
+    @Environment(\.undoManager) private var undoManager
     let paperID: String
     @State private var mode: Mode = .reading
     @State private var book: EpubBook?
@@ -115,6 +116,9 @@ struct ReaderView: View {
                 } label: { Image(systemName: "ellipsis.circle") }
             }
         }
+        .environment(\.highlightUndo, undoManager)
+        .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidUndoChange)) { _ in refreshHighlights() }
+        .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidRedoChange)) { _ in refreshHighlights() }
         .sheet(item: $editingAnnotation) { a in AnnotationEditor(annotation: a) { refreshHighlights() }.environmentObject(model) }
         .sheet(isPresented: $showHighlights) {
             NavigationStack {
@@ -163,8 +167,8 @@ struct ReaderView: View {
                 Task {
                     guard let sel = await controller.pageSelection() else { return }
                     switch action {
-                    case .highlight(let c): model.addHighlight(paperID, sel, color: c)
-                    case .note: editingAnnotation = model.addHighlight(paperID, sel)
+                    case .highlight(let c): model.addHighlight(paperID, sel, color: c, undo: undoManager)
+                    case .note: editingAnnotation = model.addHighlight(paperID, sel, undo: undoManager)
                     }
                     controller.clearSelection()
                     refreshHighlights()

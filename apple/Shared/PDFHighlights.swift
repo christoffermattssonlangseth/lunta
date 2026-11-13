@@ -15,6 +15,8 @@ private typealias PlatformColor = UIColor
 @MainActor
 final class PDFHighlighter: ObservableObject {
     @Published var hasSelection = false
+    /// The document shown, for views that follow the PDF view (page thumbnails, its outline).
+    @Published private(set) var document: PDFDocument?
     weak var view: PDFView?
     var onTap: (String) -> Void = { _ in }
     private var observers: [NSObjectProtocol] = []
@@ -23,6 +25,8 @@ final class PDFHighlighter: ObservableObject {
     func attach(_ v: PDFView) {
         view = v
         pageText = [:]
+        // attach runs while SwiftUI makes the view: publish afterwards
+        DispatchQueue.main.async { [weak self, weak v] in self?.document = v?.document }
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = [
             NotificationCenter.default.addObserver(forName: .PDFViewSelectionChanged, object: v, queue: .main) { [weak self] _ in
@@ -32,7 +36,7 @@ final class PDFHighlighter: ObservableObject {
                 }
             },
             NotificationCenter.default.addObserver(forName: .PDFViewDocumentChanged, object: v, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.pageText = [:] }
+                MainActor.assumeIsolated { self?.pageText = [:]; self?.document = self?.view?.document }
             },
         ]
     }
@@ -254,6 +258,7 @@ struct HighlightablePDFView: UIViewRepresentable {
 /// to edit it.
 struct PDFReader: View {
     @EnvironmentObject var model: LibraryModel
+    @Environment(\.highlightUndo) private var undo
     let url: URL
     let paperID: String
     @ObservedObject var highlighter: PDFHighlighter
@@ -281,7 +286,7 @@ struct PDFReader: View {
 
     private func highlight(_ color: HighlightColor, note: Bool) {
         guard let sel = highlighter.selection() else { return }
-        let a = model.addHighlight(paperID, sel, color: color, location: "pdf")
+        let a = model.addHighlight(paperID, sel, color: color, location: "pdf", undo: undo)
         highlighter.clearSelection()
         highlighter.apply(model.annotations(paperID))
         if note, let a { onEdit(a) }

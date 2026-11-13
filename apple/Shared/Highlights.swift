@@ -184,11 +184,13 @@ extension ReaderController {
         return try? JSONDecoder().decode(PageSelection.self, from: data)
     }
 
-    /// Draws the paper's highlights into the page (replacing what's there).
+    /// Draws the paper's highlights into the page (replacing what's there): those made here and
+    /// those made in the PDF, found by their text (a PDF highlight's position is a PDF offset,
+    /// so it gives no hint here).
     func showAnnotations(_ list: [Annotation]) {
-        let items: [[String: Any]] = list.filter { $0.location == "epub" }.map { a in
+        let items: [[String: Any]] = list.map { a in
             ["id": a.id, "quote": a.quote, "prefix": a.prefix, "suffix": a.suffix, "color": a.color, "note": a.note,
-             "start": Int(a.position) ?? 0]
+             "start": a.location == "epub" ? Int(a.position) ?? 0 : 0]
         }
         guard let data = try? JSONSerialization.data(withJSONObject: items), let json = String(data: data, encoding: .utf8) else { return }
         let arg = json.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
@@ -211,11 +213,17 @@ extension LibraryModel {
 
     @discardableResult
     func addHighlight(_ paper: String, _ s: PageSelection, color: HighlightColor = .yellow, note: String = "",
-                      location: String = "epub") -> Annotation? {
+                      location: String = "epub", undo: UndoManager? = nil) -> Annotation? {
         let a = Annotation(id: "", paperId: paper, kind: note.isEmpty ? .highlight : .note, color: color.rawValue,
                            location: location, position: String(s.start), quote: s.quote, prefix: s.prefix, suffix: s.suffix,
                            note: note, created: 0, modified: 0)
-        do { let saved = try lib.saveAnnotation(a: a); reload(); return saved }
+        do {
+            let saved = try lib.saveAnnotation(a: a)
+            reload()
+            undo?.registerUndo(withTarget: self) { m in MainActor.assumeIsolated { m.deleteAnnotation(saved, undo: undo) } }
+            undo?.setActionName(note.isEmpty ? "Highlight" : "Note")
+            return saved
+        }
         catch { errorMessage = error.localizedDescription; return nil }
     }
 
@@ -226,9 +234,29 @@ extension LibraryModel {
         reload()
     }
 
-    func deleteAnnotation(_ a: Annotation) {
+    /// Deletes a highlight; with an undo manager, undo puts it back as it was (same id, colour, note).
+    func deleteAnnotation(_ a: Annotation, undo: UndoManager? = nil) {
         try? lib.deleteAnnotation(paper: a.paperId, id: a.id)
         reload()
+        undo?.registerUndo(withTarget: self) { m in MainActor.assumeIsolated { m.restoreAnnotation(a, undo: undo) } }
+        undo?.setActionName(a.note.isEmpty ? "Highlight" : "Note")
+    }
+
+    /// Puts back a deleted highlight (undo of a delete, or redo of a highlight).
+    func restoreAnnotation(_ a: Annotation, undo: UndoManager? = nil) {
+        do { _ = try lib.saveAnnotation(a: a) } catch { errorMessage = error.localizedDescription; return }
+        reload()
+        undo?.registerUndo(withTarget: self) { m in MainActor.assumeIsolated { m.deleteAnnotation(a, undo: undo) } }
+        undo?.setActionName(a.note.isEmpty ? "Highlight" : "Note")
+    }
+}
+
+/// The undo manager for highlights and notes in a reader (its own on the Mac: see ReaderUndoKeys).
+private struct HighlightUndoKey: EnvironmentKey { static let defaultValue: UndoManager? = nil }
+extension EnvironmentValues {
+    var highlightUndo: UndoManager? {
+        get { self[HighlightUndoKey.self] }
+        set { self[HighlightUndoKey.self] = newValue }
     }
 }
 
@@ -237,6 +265,7 @@ extension LibraryModel {
 struct AnnotationEditor: View {
     @EnvironmentObject var model: LibraryModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.highlightUndo) private var undo
     @State var annotation: Annotation
     var onDone: () -> Void = {}
 
@@ -266,7 +295,7 @@ struct AnnotationEditor: View {
                 Section {
                     Button("Copy Quote") { copyText(annotation.quote) }
                     Button("Delete Highlight", role: .destructive) {
-                        model.deleteAnnotation(annotation); onDone(); dismiss()
+                        model.deleteAnnotation(annotation, undo: undo); onDone(); dismiss()
                     }
                 }
             }
@@ -294,6 +323,7 @@ extension Annotation: @retroactive Identifiable {}
 
 struct AnnotationsList: View {
     @EnvironmentObject var model: LibraryModel
+    @Environment(\.highlightUndo) private var undo
     let paperID: String
     var onShow: (Annotation) -> Void
     var onEdit: (Annotation) -> Void
@@ -322,10 +352,10 @@ struct AnnotationsList: View {
                 .contextMenu {
                     Button("Edit…") { onEdit(a) }
                     Button("Copy Quote") { copyText(a.quote) }
-                    Button("Delete", role: .destructive) { model.deleteAnnotation(a) }
+                    Button("Delete", role: .destructive) { model.deleteAnnotation(a, undo: undo) }
                 }
                 .swipeActions {
-                    Button("Delete", role: .destructive) { model.deleteAnnotation(a) }
+                    Button("Delete", role: .destructive) { model.deleteAnnotation(a, undo: undo) }
                     Button("Edit") { onEdit(a) }
                 }
             }
