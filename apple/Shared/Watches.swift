@@ -529,12 +529,30 @@ final class WatchCenter: ObservableObject {
                   let range = out.range(of: short), !isInsideLink(out, range) else { continue }
             out.replaceSubrange(range, with: "[\(short)](\(feedLink(r.key)))")
         }
-        return repairDigest(out)
+        return linkBracketed(repairDigest(out), batch: batch)
+    }
+
+    /// "[Title]" with no link after it (the model sometimes writes titles that way): a link to the
+    /// paper when it names one in the batch, otherwise just the text without brackets.
+    nonisolated static func linkBracketed(_ text: String, batch: [FeedRecord]) -> String {
+        guard let re = try? NSRegularExpression(pattern: #"\[([^\[\]]+)\](?!\()"#) else { return text }
+        var out = text
+        func norm(_ s: String) -> String { s.lowercased().filter { $0.isLetter || $0.isNumber } }
+        for m in re.matches(in: out, range: NSRange(out.startIndex..., in: out)).reversed() {
+            guard let whole = Range(m.range, in: out), let nameR = Range(m.range(at: 1), in: out) else { continue }
+            let name = String(out[nameR]), n = norm(name)
+            let hit = n.count >= 3 ? batch.first { r in
+                let t = norm(r.title)
+                return t == n || t.hasPrefix(n) || norm(r.title.components(separatedBy: ":").first ?? "") == n
+            } : nil
+            out.replaceSubrange(whole, with: hit.map { "[\(name)](\(feedLink($0.key)))" } ?? name)
+        }
+        return out
     }
 
     /// The digest as plain text to send someone, followed by its papers with their links.
     nonisolated static func shareText(digest: String, papers: [FeedRecord]) -> String {
-        var text = repairDigest(digest)
+        var text = linkBracketed(repairDigest(digest), batch: papers)
             .replacingOccurrences(of: #"\s?\[↗\]\([^)]*\)"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"\[([^\]]+)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
         let list = papers.enumerated().map { i, r in
@@ -953,7 +971,7 @@ struct WatchInbox: View {
             if center.state.digest.isEmpty {
                 HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Summarizing the papers…").font(.callout).foregroundStyle(.secondary) }
             } else {
-                Text((try? AttributedString(markdown: WatchCenter.repairDigest(center.state.digest),
+                Text((try? AttributedString(markdown: WatchCenter.linkBracketed(WatchCenter.repairDigest(center.state.digest), batch: center.digestBatch),
                                             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
                      ?? AttributedString(center.state.digest))
                     .font(.callout).tint(.luntaTeal)

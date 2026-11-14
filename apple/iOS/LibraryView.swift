@@ -22,7 +22,7 @@ struct LibraryView: View {
         NavigationStack(path: $path) {
             LibraryHome()
                 .navigationDestination(for: SidebarItem.self) { item in
-                    papersScreen.onAppear { if model.source != item { model.source = item } }
+                    papersScreen(item).onAppear { if model.source != item { model.source = item } }
                 }
                 .navigationDestination(for: String.self) { id in PaperInfoView(paperID: id, embedded: true, canRead: true) }
                 .navigationDestination(for: ReadTarget.self) { t in ReaderView(paperID: t.id) }
@@ -69,14 +69,16 @@ struct LibraryView: View {
         }
     }
 
-    private var papersScreen: some View {
+    private func papersScreen(_ item: SidebarItem) -> some View {
             Group {
                 if model.source == .discover { DiscoverListIOS() }
                 else if model.source == .alerts { WatchInbox(selection: .constant(nil)).listStyle(.insetGrouped) }
                 else { libraryList }
             }
             .navigationTitle(model.sourceTitle)
-            .modifier(LibrarySearch(enabled: model.source != .alerts))
+            // from the destination, not model.source: toggling .searchable after the push left an empty
+            // search capsule at the bottom of New for You
+            .modifier(LibrarySearch(enabled: item != .alerts))
             .onSubmit(of: .search) { if model.source == .discover { Task { await model.discover(model.query) } } }
             .toolbar {
                 if model.source != .alerts && model.source != .discover {
