@@ -359,13 +359,16 @@ fn folders_nest_and_refuse_cycles() {
 #[test]
 #[ignore] // online
 fn watches_find_recent_papers() {
-    use crate::metadata::{watch_new, WatchKind};
+    use crate::metadata::{journal_name, watch_new, WatchKind};
     let since = "2024-01-01";
     let t = watch_new(WatchKind::Topic, "velocity-based training", since, 5).unwrap();
     assert!(!t.is_empty() && t.iter().all(|h| h.meta.date.as_str() >= since), "{:?}", t.iter().map(|h| &h.meta.date).collect::<Vec<_>>());
     let a = watch_new(WatchKind::Author, "Jonathon Weakley", since, 5).unwrap();
     assert!(!a.is_empty());
     let c = watch_new(WatchKind::Citing, "10.1519/SSC.0000000000000560", "2021-01-01", 5).unwrap();
+    assert_eq!(journal_name("nature neuroscience").unwrap().as_deref(), Some("Nature Neuroscience"));
+    let n = watch_new(WatchKind::Journal, "Nature Neuroscience", "2025-06-01", 5).unwrap();
+    assert!(!n.is_empty() && n.iter().all(|h| h.meta.journal == "Nature Neuroscience"), "{:?}", n.iter().map(|h| &h.meta.journal).collect::<Vec<_>>());
     assert!(!c.is_empty());
     println!("topic {} author {} citing {}", t.len(), a.len(), c.len());
     for h in t.iter().chain(&a).chain(&c) { println!("{} | {}", h.meta.date, h.meta.title); }

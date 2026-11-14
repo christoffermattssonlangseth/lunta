@@ -397,6 +397,8 @@ pub enum WatchKind {
     Author,
     /// Papers citing the work with this DOI.
     Citing,
+    /// New papers in a journal, by its name ("Nature Neuroscience") or ISSN.
+    Journal,
 }
 
 /// Papers published on or after `since` (YYYY-MM-DD) for a watch, newest first.
@@ -436,8 +438,50 @@ pub fn watch_new(kind: WatchKind, value: &str, since: &str, limit: u32) -> Resul
                 id, date, per, WORK_FIELDS
             )
         }
+        WatchKind::Journal => {
+            let id = journal_id(v)?;
+            if id.is_empty() {
+                return Ok(vec![]);
+            }
+            format!(
+                "https://api.openalex.org/works?filter=primary_location.source.id:{},type:article|review,{}&sort=publication_date:desc&per_page={}&select={}",
+                id, date, per, WORK_FIELDS
+            )
+        }
     };
     works(&url)
+}
+
+/// The OpenAlex id of a journal ("S…"), from an ISSN or its name; the exact name wins over a
+/// closer search match ("Nature" is Nature, not Nature Communications). Empty if none.
+fn journal_id(v: &str) -> Result<String> {
+    let issn = v.len() == 9 && v.as_bytes()[4] == b'-';
+    let url = if issn {
+        format!("https://api.openalex.org/sources/issn:{}?select=id", enc(v))
+    } else {
+        format!("https://api.openalex.org/sources?search={}&filter=type:journal&per_page=10&select=id,display_name,works_count", enc(v))
+    };
+    let j = get_json(&url)?;
+    let id = if issn {
+        s(&j["id"])
+    } else {
+        let list = j["results"].as_array().cloned().unwrap_or_default();
+        let exact = list.iter().find(|x| s(&x["display_name"]).eq_ignore_ascii_case(v.trim()));
+        exact.or(list.first()).map(|x| s(&x["id"])).unwrap_or_default()
+    };
+    Ok(id.rsplit('/').next().unwrap_or("").to_string())
+}
+
+/// The journal's name as OpenAlex has it ("nature neuro" → "Nature Neuroscience"), to show and
+/// store when following it. None if no journal matches.
+pub fn journal_name(query: &str) -> Result<Option<String>> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(None);
+    }
+    let j = get_json(&format!("https://api.openalex.org/sources?search={}&filter=type:journal&per_page=10&select=display_name", enc(q)))?;
+    let list: Vec<String> = j["results"].as_array().cloned().unwrap_or_default().iter().map(|x| s(&x["display_name"])).collect();
+    Ok(list.iter().find(|n| n.eq_ignore_ascii_case(q)).or(list.first()).cloned())
 }
 
 /// Parses an OpenAlex /works list.

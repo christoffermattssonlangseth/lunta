@@ -648,6 +648,12 @@ pub fn citation_style(key: String) -> model::CitationStyle {
     model::CitationStyle::from_key(&key).unwrap_or(model::CitationStyle::Apa)
 }
 
+/// A journal's name as OpenAlex has it, for following it in New for You (network).
+#[uniffi::export]
+pub fn journal_name(query: String) -> Result<Option<String>> {
+    metadata::journal_name(&query)
+}
+
 #[uniffi::export]
 pub fn resolve_metadata(input: String) -> Result<PaperMeta> {
     metadata::resolve(&input)

@@ -17,10 +17,10 @@ import LuntaCore
 // first each day makes the feed; usually the Mac.
 
 struct Watch: Codable, Identifiable, Hashable {
-    enum Kind: String, Codable, CaseIterable { case topic, author, citing }
+    enum Kind: String, Codable, CaseIterable { case topic, author, citing, journal }
     var id = UUID().uuidString
     var kind: Kind
-    var value: String          // words, an author's name, or a DOI
+    var value: String          // words, an author's name, a DOI, or a journal's name
     var label: String          // shown in the app
     var created = Date()
     var lastChecked: Date?
@@ -31,6 +31,7 @@ struct Watch: Codable, Identifiable, Hashable {
         case .topic: return "text.magnifyingglass"
         case .author: return "person"
         case .citing: return "quote.bubble"
+        case .journal: return "newspaper"
         }
     }
 
@@ -39,6 +40,7 @@ struct Watch: Codable, Identifiable, Hashable {
         case .topic: return .topic
         case .author: return .author
         case .citing: return .citing
+        case .journal: return .journal
         }
     }
 
@@ -47,6 +49,7 @@ struct Watch: Codable, Identifiable, Hashable {
         case .topic: return "Papers on “\(label)”"
         case .author: return "Papers by \(label)"
         case .citing: return "Papers citing “\(label)”"
+        case .journal: return "New in \(label)"
         }
     }
 }
@@ -108,6 +111,27 @@ struct ForYouState: Codable {
     var lastRun: Date?
     var digest = ""                // a few sentences on the latest papers
     var digestFor: String?         // the feed (its paper keys) the digest describes
+    var morning = 7 * 60           // minutes after midnight: when the day's papers are picked
+    var preprints = Preprints.any
+
+    /// How many of the day's papers may be preprints (bioRxiv, medRxiv, arXiv, …).
+    enum Preprints: String, Codable, CaseIterable {
+        case any, few, none
+        var label: String {
+            switch self {
+            case .any: return "Journals and preprints"
+            case .few: return "Mostly journals"
+            case .none: return "Journals only"
+            }
+        }
+        func cap(_ perDay: Int) -> Int {
+            switch self {
+            case .any: return perDay
+            case .few: return max(1, perDay / 4)
+            case .none: return 0
+            }
+        }
+    }
 
     init() {}
     init(from d: Decoder) throws {
@@ -125,6 +149,19 @@ struct ForYouState: Codable {
         lastRun = try c.decodeIfPresent(Date.self, forKey: .lastRun)
         digest = try c.decodeIfPresent(String.self, forKey: .digest) ?? ""
         digestFor = try? c.decodeIfPresent(String.self, forKey: .digestFor)
+        morning = (try? c.decodeIfPresent(Int.self, forKey: .morning)) ?? 7 * 60
+        preprints = (try? c.decodeIfPresent(Preprints.self, forKey: .preprints)) ?? .any
+    }
+
+    /// The latest time the day's papers were due (this morning, or yesterday's before then).
+    func lastMorning(before now: Date = Date()) -> Date {
+        let cal = Calendar.current
+        let today = cal.date(bySettingHour: morning / 60, minute: morning % 60, second: 0, of: now) ?? now
+        return today <= now ? today : cal.date(byAdding: .day, value: -1, to: today) ?? today
+    }
+
+    func nextMorning(after now: Date = Date()) -> Date {
+        Calendar.current.date(byAdding: .day, value: 1, to: lastMorning(before: now)) ?? now
     }
 }
 
@@ -164,9 +201,12 @@ final class WatchCenter: ObservableObject {
     func start(_ model: LibraryModel) {
         self.model = model
         load()
+        // the morning notification (asked once; a no-op after the first answer)
+        if !state.interests.isEmpty || !watches.isEmpty { requestNotifications() }
         Task { await runIfDue() }
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 3 * 3600, repeats: true) { _ in
+        // checked often (it only reads two small files) so the papers are there soon after the morning time
+        timer = Timer.scheduledTimer(withTimeInterval: 10 * 60, repeats: true) { _ in
             Task { @MainActor in await WatchCenter.shared.runIfDue() }
         }
         #if os(macOS)
@@ -226,10 +266,10 @@ final class WatchCenter: ObservableObject {
     var interests: String { state.interests }
     var perDay: Int { state.perDay }
 
-    func setInterests(_ text: String, perDay: Int) {
+    func setInterests(_ text: String, perDay: Int, morning: Int, preprints: ForYouState.Preprints) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let changed = t != state.interests
-        change { $0.interests = t; $0.perDay = perDay }
+        change { $0.interests = t; $0.perDay = perDay; $0.morning = morning; $0.preprints = preprints }
         requestNotifications()
         if changed, !t.isEmpty { Task { await run() } }
     }
@@ -323,13 +363,13 @@ final class WatchCenter: ObservableObject {
     func runIfDue() async {
         load()
         guard !state.interests.isEmpty || !watches.isEmpty else { return }
-        // the Mac usually makes the day's feed; the iPhone steps in when it hasn't for a while
+        // every morning at the chosen time (or as soon as Lunta runs after it). The Mac usually makes
+        // the day's feed; the iPhone steps in when no Mac has two hours after the morning time.
+        let morning = state.lastMorning()
+        guard (state.lastRun ?? .distantPast) < morning else { return }
         #if os(iOS)
-        let due: TimeInterval = 30 * 3600
-        #else
-        let due: TimeInterval = 20 * 3600
+        if state.lastRun != nil, Date() < morning.addingTimeInterval(2 * 3600) { return }
         #endif
-        if let last = state.lastRun, Date().timeIntervalSince(last) < due { return }
         await run()
     }
 
@@ -365,6 +405,7 @@ final class WatchCenter: ObservableObject {
             case .topic: jobs.append(Job(kind: .topic, value: w.value, source: "your topic “\(w.label)”", explicit: false, limit: 25))
             case .author: jobs.append(Job(kind: .author, value: w.value, source: "New paper by \(w.label), whom you follow.", explicit: true, limit: 15))
             case .citing: jobs.append(Job(kind: .citing, value: w.value, source: "Cites “\(w.label)”, which you watch.", explicit: true, limit: 15))
+            case .journal: jobs.append(Job(kind: .journal, value: w.value, source: Self.journalSource(w.label), explicit: false, limit: 30))
             }
         }
         let every = lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
@@ -380,7 +421,7 @@ final class WatchCenter: ObservableObject {
                     return hits.map { ($0, j.source, j.explicit) }
                 }
             }
-            if !keywords.isEmpty {
+            if !keywords.isEmpty, state.preprints != .none {
                 let from = fmt.string(from: Date().addingTimeInterval((first ? -4 : -2) * 86400))
                 let to = fmt.string(from: Date())
                 for server in ["biorxiv", "medrxiv"] {
@@ -431,7 +472,8 @@ final class WatchCenter: ObservableObject {
             guard let d = Self.publishedDate(h.meta.date) else { return 0 }
             return 0.04 * max(0, 1 - now.timeIntervalSince(d) / (9 * 86400))
         }
-        let ranked = zip(candidates, scores).map { (c: $0.0, s: $0.1 + ($0.0.explicit ? 0.15 : 0) + recency($0.0.hit)) }
+        let ranked = zip(candidates, scores)
+            .map { (c: $0.0, s: $0.1 + ($0.0.explicit ? 0.15 : 0) + (Self.fromJournal($0.0.source) ? 0.06 : 0) + recency($0.0.hit)) }
             .sorted { $0.s > $1.s }
 
         // 5. the language model reads the best abstracts
@@ -440,17 +482,24 @@ final class WatchCenter: ObservableObject {
         for e in ranked.filter(\.c.explicit).prefix(10) {
             picked.append(FeedRecord(e.c.hit, reason: e.c.source, score: e.s, source: e.c.source))
         }
-        let open = Array(ranked.filter { !$0.c.explicit }.prefix(40))
+        // the best papers from journals you follow come first (and pass at a lower bar), then the rest
+        let journalOpen = ranked.filter { !$0.c.explicit && Self.fromJournal($0.c.source) }.prefix(12)
+        let open = Array(journalOpen) + ranked.filter { !$0.c.explicit && !Self.fromJournal($0.c.source) }.prefix(40 - journalOpen.count)
+        let preprintCap = state.preprints.cap(state.perDay)
+        var preprintsKept = 0
         var nearMisses: [(FeedRecord, Double)] = []      // scored 6: used on a quiet day
         let judge = interests.isEmpty ? nil : AskEngine(scope: .paper("__for-you__"))
         let examples = state.items.filter { $0.boosted == true }.map(\.title).suffix(8)
         var kept = 0
         for (i, r) in open.enumerated() where kept < state.perDay {
+            let preprint = Self.isPreprint(r.c.hit, source: r.c.source)
+            if preprint, preprintsKept >= preprintCap { continue }
             stage = "Reading abstracts (\(i + 1) of \(open.count))…"
             if let judge, judge.unavailableReason == nil {
                 guard let verdict = await Self.screen(r.c.hit, interests: interests, liked: Array(examples), with: judge) else { continue }
-                if verdict.score >= 7 {
+                if verdict.score >= (Self.fromJournal(r.c.source) ? 5 : 7) {
                     picked.append(FeedRecord(r.c.hit, reason: verdict.why, score: r.s, source: r.c.source)); kept += 1
+                    if preprint { preprintsKept += 1 }
                 } else {
                     if verdict.score >= 6 { nearMisses.append((FeedRecord(r.c.hit, reason: verdict.why, score: r.s, source: r.c.source), r.s)) }
                     turnedDown.append(LibraryModel.hitKey(r.c.hit))
@@ -460,11 +509,13 @@ final class WatchCenter: ObservableObject {
                 let why = r.c.source.hasPrefix("search") || r.c.source.hasPrefix("your topic") || r.c.source.hasSuffix("Rxiv")
                     ? "Close to your interests (from \(r.c.source))." : r.c.source
                 picked.append(FeedRecord(r.c.hit, reason: why, score: r.s, source: r.c.source)); kept += 1
+                if preprint { preprintsKept += 1 }
             }
         }
 
         // a quiet day: the best near misses, up to three papers in all
-        for (rec, _) in nearMisses.sorted(by: { $0.1 > $1.1 }).prefix(max(0, 3 - kept)) {
+        for (rec, _) in nearMisses.sorted(by: { $0.1 > $1.1 })
+            .filter({ !Self.isPreprint($0.0.hit, source: $0.0.source) || preprintsKept < preprintCap }).prefix(max(0, 3 - kept)) {
             picked.append(rec); turnedDown.removeAll { $0 == rec.key }
         }
         lastStats += "\nscreened \(open.count): kept \(kept), near misses \(nearMisses.count), turned down \(turnedDown.count)"
@@ -476,8 +527,19 @@ final class WatchCenter: ObservableObject {
             s.shown = Array((s.shown + fresh.map(\.key) + turnedDown).suffix(3000))
             s.lastRun = Date()
         }
-        if !fresh.isEmpty { notify(fresh.count) }
         await summarize()
+        if !fresh.isEmpty { notifyFeed() }
+    }
+
+    nonisolated static func journalSource(_ name: String) -> String { "New in \(name), a journal you follow." }
+    nonisolated static func fromJournal(_ source: String) -> Bool { source.hasPrefix("New in ") && source.hasSuffix("a journal you follow.") }
+
+    /// bioRxiv, medRxiv, arXiv and other preprint servers.
+    nonisolated static func isPreprint(_ h: DiscoverHit, source: String) -> Bool {
+        let venue = h.meta.journal.lowercased()
+        return source.hasSuffix("Rxiv") || venue.contains("rxiv") || venue.contains("preprint")
+            || venue.contains("research square") || venue.contains("ssrn") || venue.contains("qeios")
+            || h.meta.doi.hasPrefix("10.1101/") || h.meta.doi.hasPrefix("10.48550/") || h.meta.doi.hasPrefix("10.21203/")
     }
 
     @Published var summarizing = false
@@ -847,11 +909,39 @@ final class WatchCenter: ObservableObject {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
     }
 
-    private func notify(_ n: Int) {
+    /// The morning notification for the latest feed (once per feed, on this device).
+    func notifyFeed() {
+        guard let n = Self.morningNotice(state) else { return }
+        Self.post(n, feed: state.lastRun)
+    }
+
+    /// "New for You · 6 papers" and the summary's first sentence (or the top titles), for a feed
+    /// made since the last morning and not yet seen or announced on this device.
+    nonisolated static func morningNotice(_ s: ForYouState, now: Date = Date()) -> (title: String, body: String)? {
+        guard let run = s.lastRun, run >= s.lastMorning(before: now).addingTimeInterval(-3 * 3600) else { return nil }
+        let opened = UserDefaults.standard.object(forKey: "forYouOpened") as? Date ?? .distantPast
+        let told = UserDefaults.standard.object(forKey: "forYouNotified") as? Date ?? .distantPast
+        guard run > opened, run > told else { return nil }
+        let day = Calendar.current.startOfDay(for: run)
+        let today = s.items.filter { $0.found >= day && $0.inLibrary == nil }
+        guard !today.isEmpty else { return nil }
+        var body = ""
+        if !s.digest.isEmpty {
+            let plain = shareText(digest: s.digest, papers: []).replacingOccurrences(of: "New for You (Lunta)\n\n", with: "")
+            body = plain.components(separatedBy: ". ").first.map { $0.hasSuffix(".") ? $0 : $0 + "." } ?? plain
+        }
+        if body.count < 20 { body = today.prefix(2).map(\.title).joined(separator: " · ") }
+        return ("New for You · \(today.count) paper\(today.count == 1 ? "" : "s")", body)
+    }
+
+    nonisolated static func post(_ n: (title: String, body: String), feed: Date?) {
         let c = UNMutableNotificationContent()
-        c.title = "New for You"
-        c.body = "\(n) new paper\(n == 1 ? "" : "s") picked for your research."
+        c.title = n.title
+        c.body = n.body
+        c.sound = .default
+        c.userInfo = ["open": "foryou"]
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "foryou", content: c, trigger: nil))
+        UserDefaults.standard.set(feed ?? Date(), forKey: "forYouNotified")
     }
 }
 
@@ -995,7 +1085,7 @@ struct WatchInbox: View {
                 if let s = center.stage {
                     Text(s).font(.subheadline)
                 } else if let last = center.state.lastRun {
-                    Text("Picked \(last.formatted(.relative(presentation: .named)))").font(.subheadline)
+                    Text("Picked \(last.formatted(.relative(presentation: .named))) · next \(center.state.nextMorning().formatted(date: .omitted, time: .shortened))").font(.subheadline)
                 } else {
                     Text("Getting your first papers…").font(.subheadline)
                 }
@@ -1127,6 +1217,8 @@ struct ForYouSettings: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var perDay = 8
+    @State private var morning = Date()
+    @State private var preprints = ForYouState.Preprints.any
     @State private var drafting = false
     @State private var addingWatch = false
 
@@ -1145,7 +1237,13 @@ struct ForYouSettings: View {
                     Text("A few sentences on your topics, methods and systems. Lunta turns them into searches and uses them to rank and screen new papers.")
                 }
                 Section {
+                    DatePicker("Every morning at", selection: $morning, displayedComponents: .hourAndMinute)
                     Stepper("Up to \(perDay) papers a day", value: $perDay, in: 3...20)
+                    Picker("Papers from", selection: $preprints) {
+                        ForEach(ForYouState.Preprints.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                } footer: {
+                    Text("The day’s papers are picked at this time on your Mac (or as soon as Lunta opens after it), and your iPhone gets a notification with the summary. “Mostly journals” allows about one preprint in four.")
                 }
                 Section {
                     ForEach(center.watches) { w in
@@ -1153,9 +1251,9 @@ struct ForYouSettings: View {
                             .swipeActions { Button("Remove", role: .destructive) { center.remove(w.id) } }
                             .contextMenu { Button("Remove", role: .destructive) { center.remove(w.id) } }
                     }
-                    Button { addingWatch = true } label: { Label("Follow an Author, Paper or Topic…", systemImage: "plus") }
+                    Button { addingWatch = true } label: { Label("Follow a Journal, Author, Paper or Topic…", systemImage: "plus") }
                 } header: { Text("Also follow") } footer: {
-                    Text("New papers by authors you follow, and papers citing ones you watch, always show up.")
+                    Text("New papers by authors you follow, and papers citing ones you watch, always show up. Papers in journals you follow come first and pass at a lower bar, so the ones near your research make it in.")
                 }
             }
             .formStyle(.grouped)
@@ -1163,11 +1261,19 @@ struct ForYouSettings: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { center.setInterests(text, perDay: perDay); dismiss() }
+                    Button("Save") {
+                        let c = Calendar.current.dateComponents([.hour, .minute], from: morning)
+                        center.setInterests(text, perDay: perDay, morning: (c.hour ?? 7) * 60 + (c.minute ?? 0), preprints: preprints)
+                        dismiss()
+                    }
                 }
             }
             .sheet(isPresented: $addingWatch) { NewWatchView().environmentObject(model) }
-            .onAppear { text = center.interests; perDay = center.perDay }
+            .onAppear {
+                text = center.interests; perDay = center.perDay; preprints = center.state.preprints
+                let m = center.state.morning
+                morning = Calendar.current.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: Date()) ?? Date()
+            }
         }
         #if os(macOS)
         .frame(minWidth: 520, minHeight: 560)
@@ -1180,18 +1286,22 @@ struct NewWatchView: View {
     @Environment(\.dismiss) private var dismiss
     @State var kind: Watch.Kind = .author
     @State var value = ""
+    @State private var looking = false
+    @State private var problem: String?
 
     var body: some View {
         NavigationStack {
             Form {
                 Picker("Follow", selection: $kind) {
-                    Text("An author").tag(Watch.Kind.author)
-                    Text("Papers citing…").tag(Watch.Kind.citing)
-                    Text("A topic").tag(Watch.Kind.topic)
+                    Text("Journal").tag(Watch.Kind.journal)
+                    Text("Author").tag(Watch.Kind.author)
+                    Text("Citing…").tag(Watch.Kind.citing)
+                    Text("Topic").tag(Watch.Kind.topic)
                 }
                 .pickerStyle(.segmented)
-                TextField(kind == .topic ? "Words, e.g. velocity-based training" : kind == .author ? "Author's name" : "DOI of the paper", text: $value)
+                TextField(placeholder, text: $value)
                     .autocorrectionDisabled()
+                if let problem { Text(problem).font(.caption).foregroundStyle(.red) }
                 if kind == .citing {
                     Text("Tip: long-press or right-click a paper in your library › Watch for Papers Citing This.").font(.caption).foregroundStyle(.secondary)
                 }
@@ -1201,18 +1311,40 @@ struct NewWatchView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Follow") {
+                    Button(looking ? "Looking…" : "Follow") {
                         let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                        WatchCenter.shared.add(Watch(kind: kind, value: v, label: v))
-                        dismiss()
+                        guard kind == .journal else {
+                            WatchCenter.shared.add(Watch(kind: kind, value: v, label: v))
+                            dismiss()
+                            return
+                        }
+                        // the journal's own name ("nature neuro" → "Nature Neuroscience")
+                        looking = true
+                        problem = nil
+                        Task {
+                            let name = await Task.detached { try? journalName(query: v) }.value
+                            looking = false
+                            guard let name = name ?? nil else { problem = "No journal called “\(v)” found."; return }
+                            WatchCenter.shared.add(Watch(kind: .journal, value: name, label: name))
+                            dismiss()
+                        }
                     }
-                    .disabled(value.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(value.trimmingCharacters(in: .whitespaces).isEmpty || looking)
                 }
             }
         }
         #if os(macOS)
         .frame(minWidth: 420, minHeight: 240)
         #endif
+    }
+
+    private var placeholder: String {
+        switch kind {
+        case .journal: return "Journal, e.g. Nature Neuroscience"
+        case .topic: return "Words, e.g. velocity-based training"
+        case .author: return "Author's name"
+        case .citing: return "DOI of the paper"
+        }
     }
 }
 

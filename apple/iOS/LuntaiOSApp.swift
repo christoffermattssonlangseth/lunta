@@ -28,7 +28,13 @@ struct LuntaiOSApp: App {
         }
         .onChange(of: phase) { _, p in
             if p == .active, let m = holder.model { m.refresh(); Task { await m.importShared() } }
+            if p == .background { MorningNotice.schedule() }
         }
+        .backgroundTask(.appRefresh(MorningNotice.taskID)) { await MorningNotice.refresh() }
+    }
+
+    init() {
+        MorningNotice.shared.install()
     }
 }
 

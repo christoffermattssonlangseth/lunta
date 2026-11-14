@@ -27,6 +27,13 @@ struct LibraryView: View {
                 .navigationDestination(for: String.self) { id in PaperInfoView(paperID: id, embedded: true, canRead: true) }
                 .navigationDestination(for: ReadTarget.self) { t in ReaderView(paperID: t.id) }
         }
+        .onReceive(MorningNotice.shared.$openForYou) { open in
+            // the morning notification was tapped
+            guard open else { return }
+            MorningNotice.shared.openForYou = false
+            model.source = .alerts
+            var p = NavigationPath(); p.append(SidebarItem.alerts); path = p
+        }
         .environment(\.showInLibrary) { id in
             // back to All Papers, scrolled to the paper and briefly highlighted
             model.query = ""
