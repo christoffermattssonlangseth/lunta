@@ -30,6 +30,7 @@ struct ReaderView: View {
     @StateObject private var narrator = Narrator()
     @StateObject private var controller = ReaderController()
     @StateObject private var position = PositionKeeper()
+    @Environment(\.scenePhase) private var phase
     @State private var listening = false
     @State private var asking = false
     @StateObject private var ask: AskEngine
@@ -180,7 +181,14 @@ struct ReaderView: View {
             ask.selection = { [weak controller] in await controller?.selectedText() }
             await load()
         }
-        .onDisappear { if listening { stopListening() }; position.stop(paperID, model: model, controller: controller) }
+        .onAppear { OpenReader.set(paperID) }
+        .onDisappear {
+            if listening { stopListening() }
+            position.stop(paperID, model: model, controller: controller)
+            OpenReader.clear(paperID)
+        }
+        // leaving the app: save the place now (iOS may close Lunta in the background to free memory)
+        .onChange(of: phase) { _, p in if p != .active { position.saveNow(paperID, model: model, controller: controller) } }
     }
 
     private func refreshHighlights() { controller.showAnnotations(model.annotations(paperID)) }
@@ -455,3 +463,19 @@ struct EpubWebViewIOS: UIViewRepresentable {
 }
 
 
+
+/// The paper open in the reader, so Lunta reopens it after iOS closed the app in the background
+/// (going back to the list forgets it).
+enum OpenReader {
+    private static let key = "openReader"
+    static func set(_ id: String) { UserDefaults.standard.set(["id": id, "at": Date().timeIntervalSince1970], forKey: key) }
+    static func clear(_ id: String) {
+        if (UserDefaults.standard.dictionary(forKey: key)?["id"] as? String) == id { UserDefaults.standard.removeObject(forKey: key) }
+    }
+    /// The paper to reopen: open within the last day.
+    static var pending: String? {
+        guard let d = UserDefaults.standard.dictionary(forKey: key), let id = d["id"] as? String,
+              let at = d["at"] as? Double, Date().timeIntervalSince1970 - at < 24 * 3600 else { return nil }
+        return id
+    }
+}

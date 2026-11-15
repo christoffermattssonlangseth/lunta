@@ -48,10 +48,10 @@ final class ReadingPositions {
             for f in files {
                 var url = f
                 if f.lastPathComponent.hasPrefix(".") && f.pathExtension == "icloud" {
-                    // not downloaded yet: ask for it and use it next time
+                    // not downloaded yet (the other device read further): fetch it, briefly
                     url = CloudLibrary.realURL(forPlaceholder: f.path)
-                    CloudLibrary.startDownload(url)
-                    continue
+                    _ = await CloudLibrary.download(url, timeout: 2.5)
+                    guard FileManager.default.fileExists(atPath: url.path) else { continue }
                 }
                 guard url.pathExtension == "json" else { continue }
                 CloudLibrary.startDownload(url)    // refresh for next time
@@ -82,12 +82,18 @@ extension ReaderAssets {
         var ns = nodes(), pos = 0;
         // pages: the exact character at the start of the page, so the place survives new page sizes
         // scroll: the character in the first line under the top edge (the middle of the line, clear of margins)
-        var o = (window.luntaPageOrigin && window.luntaPageOrigin()) || { x: window.innerWidth / 2, y: 64 };
-        var c = o && document.caretRangeFromPoint ? document.caretRangeFromPoint(o.x, o.y) : null;
-        if (c && c.startContainer.nodeType === 3) {
-          for (var j = 0; j < ns.length; j++) { if (ns[j] === c.startContainer) return pos + c.startOffset; pos += ns[j].nodeValue.length; }
+        // (a figure or the gap between paragraphs at that point: a little lower, then off-centre,
+        // before falling back to the start of the first visible paragraph, which can be far above)
+        var origin = window.luntaPageOrigin && window.luntaPageOrigin();
+        var w = window.innerWidth, points = origin ? [origin] : [];
+        if (!origin) [64, 84, 110, 140, 180, 230].forEach(function(y){ [0.5, 0.3, 0.7].forEach(function(x){ points.push({ x: w * x, y: y }); }); });
+        for (var p = 0; p < points.length && document.caretRangeFromPoint; p++) {
+          var c = document.caretRangeFromPoint(points[p].x, points[p].y);
+          if (!c || c.startContainer.nodeType !== 3 || !c.startContainer.nodeValue.trim()) continue;
           pos = 0;
+          for (var j = 0; j < ns.length; j++) { if (ns[j] === c.startContainer) return pos + c.startOffset; pos += ns[j].nodeValue.length; }
         }
+        pos = 0;
         for (var i = 0; i < ns.length; i++) {
           var n = ns[i], len = n.nodeValue.length;
           if (n.nodeValue.trim()) {
@@ -123,6 +129,28 @@ extension ReaderAssets {
         }
         return false;
       };
+      // goes to the offset and keeps it there while figures and tables load and push the text down,
+      // until you touch or scroll (or after 6 s)
+      window.luntaHoldOffset = function(off){
+        var ok = window.luntaScrollToOffset(off);
+        if (window.luntaHold) window.luntaHold();
+        var stopped = false, again = function(){ if (!stopped) window.luntaScrollToOffset(off); };
+        var ro = window.ResizeObserver ? new ResizeObserver(again) : null;
+        if (ro) ro.observe(document.body);
+        var imgs = Array.prototype.slice.call(document.images);
+        imgs.forEach(function(i){ if (!i.complete) i.addEventListener('load', again); });
+        var events = ['touchstart', 'wheel', 'keydown', 'mousedown'];
+        var stop = function(){
+          if (stopped) return; stopped = true;
+          if (ro) ro.disconnect();
+          imgs.forEach(function(i){ i.removeEventListener('load', again); });
+          events.forEach(function(e){ window.removeEventListener(e, stop, true); });
+        };
+        events.forEach(function(e){ window.addEventListener(e, stop, true); });
+        setTimeout(stop, 6000);
+        window.luntaHold = stop;
+        return ok;
+      };
     })();
     """#
 }
@@ -132,7 +160,7 @@ extension ReaderController {
         (try? await webView?.evaluateJavaScript("luntaReadingOffset()")) as? Int
     }
     func scroll(toOffset o: Int) {
-        webView?.evaluateJavaScript("luntaScrollToOffset(\(o))")
+        webView?.evaluateJavaScript("luntaHoldOffset(\(o))")
     }
 }
 
@@ -148,7 +176,7 @@ final class PositionKeeper: ObservableObject {
     func pageReady(_ paper: String, model: LibraryModel, controller: ReaderController) {
         guard !restored else { return }
         restored = true
-        Task {
+        let restore = Task {
             if let spot = await ReadingPositions.shared.latest(paper, root: model.libraryURL), spot.offset > 300 {
                 try? await Task.sleep(for: .milliseconds(350))   // let figures and tables settle first
                 controller.scroll(toOffset: spot.offset)
@@ -161,12 +189,19 @@ final class PositionKeeper: ObservableObject {
         }
         saver?.cancel()
         saver = Task { [weak controller] in
+            await restore.value   // (not the top of the page before it has scrolled to your place)
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(6))
+                try? await Task.sleep(for: .seconds(3))
                 guard let controller, let o = await controller.readingOffset() else { continue }
                 ReadingPositions.shared.save(paper, offset: o, root: model.libraryURL)
             }
         }
+    }
+
+    /// Now (leaving the app: iOS may close it in the background).
+    func saveNow(_ paper: String, model: LibraryModel, controller: ReaderController) {
+        guard restored else { return }
+        Task { if let o = await controller.readingOffset() { ReadingPositions.shared.save(paper, offset: o, root: model.libraryURL) } }
     }
 
     func stop(_ paper: String, model: LibraryModel, controller: ReaderController) {

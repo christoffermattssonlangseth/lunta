@@ -46,6 +46,8 @@ struct LibraryView: View {
             guard !opened else { return }
             opened = true
             path.append(model.source)
+            // the paper you were reading when iOS closed Lunta in the background
+            if let id = OpenReader.pending, model.paper(id) != nil { path.append(ReadTarget(id: id)) }
         }
         #if DEBUG
         .task {
