@@ -94,6 +94,10 @@ extension ReaderAssets {
       };
 
       function remember(){ if (window.luntaReadingOffset) anchor = window.luntaReadingOffset(); }
+      // the saved place being restored: lay out at it (not at the page that was showing) and keep
+      // it while you stay on its page
+      window.luntaKeepPlace = function(off){ anchor = off; heldPage = target; };
+      window.luntaPageAnchor = function(){ return on && Math.abs(vw() - W) < 0.01 ? anchor : null; };
       function restore(){
         if (!(anchor != null && window.luntaScrollToOffset && window.luntaScrollToOffset(anchor))) window.luntaGoToPage(page(), false);
       }
@@ -237,14 +241,29 @@ final class PageMessageHandler: NSObject, WKScriptMessageHandler {
 #if os(iOS)
 extension PageMessageHandler {
     /// Moves the scroll view to a page (a page is exactly the view's width).
-    @MainActor static func show(page n: Int, in v: WKWebView, animated: Bool) {
+    /// Right after the pages are laid out again (the page opening, a new text size) the scroll
+    /// view's content size can lag behind for a moment: a page past its end waits for it
+    /// (up to `wait` more tries) rather than landing on the last page of the old layout.
+    @MainActor static func show(page n: Int, in v: WKWebView, animated: Bool, wait: Int = 20) {
         let sv = v.scrollView
         let w = sv.bounds.width
         guard w > 0 else { return }
         let maxX = max(0, sv.contentSize.width - w)
-        let x = min(CGFloat(n) * w, (maxX / w).rounded(.up) * w)
+        let lastPage = (maxX / w).rounded(.up)
+        if CGFloat(n) > lastPage, wait > 0 {
+            latest[ObjectIdentifier(v)] = n
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                // (unless another page was asked for meanwhile)
+                guard latest[ObjectIdentifier(v)] == n else { return }
+                show(page: n, in: v, animated: animated, wait: wait - 1)
+            }
+            return
+        }
+        latest[ObjectIdentifier(v)] = n
+        let x = min(CGFloat(n) * w, lastPage * w)
         sv.setContentOffset(CGPoint(x: max(0, x), y: 0), animated: animated)
     }
+    @MainActor private static var latest: [ObjectIdentifier: Int] = [:]
 
 }
 #endif

@@ -772,3 +772,38 @@ fn mac_bridges_icloud_and_drive() {
     let r = bridge.sync_now().unwrap();
     assert_eq!((r.uploaded, r.downloaded), (0, 0), "{r:?}");
 }
+/// On a bridge, the Mac's and iPhone's positions files are published to Drive but never rewritten
+/// in iCloud (a stale Drive copy must not clobber the iPhone's newer place); Android's are mirrored in.
+#[test]
+fn bridge_publishes_icloud_positions_without_rewriting_them() {
+    let w = World::new();
+    let icloud = w.tmp.path().join("icloud");
+    fs::create_dir_all(icloud.join("positions")).unwrap();
+    let mut opts = SyncOptions::new(w.tmp.path().join("state-mac.json"));
+    opts.bridge = true;
+    let bridge = Syncer::new(&icloud, "mac-0001", Box::new(LocalDirRemote::new(&w.remote)), opts).unwrap();
+    let phone = icloud.join("positions/ios-0002.json");
+    fs::write(&phone, br#"{"p1":{"offset":100,"at":1.0,"device":"iPhone"}}"#).unwrap();
+    bridge.sync_now().unwrap();
+    assert!(w.remote.join("positions/ios-0002.json").exists(), "published to Drive");
+
+    // Drive's copy is older/different (another round-trip), the iPhone meanwhile read further
+    fs::write(w.remote.join("positions/ios-0002.json"), br#"{"p1":{"offset":50,"at":0.5,"device":"iPhone"}}"#).unwrap();
+    fs::write(&phone, br#"{"p1":{"offset":900,"at":3.0,"device":"iPhone"}}"#).unwrap();
+    let r = bridge.sync_now().unwrap();
+    assert!(r.errors.is_empty() && r.conflicts.is_empty(), "{r:?}");
+    assert!(String::from_utf8(read(&phone)).unwrap().contains("900"), "the iPhone's file is not rewritten");
+    assert!(String::from_utf8(read(&w.remote.join("positions/ios-0002.json"))).unwrap().contains("900"), "Drive gets the newer place");
+
+    // evicted to a placeholder in iCloud: neither downloaded back nor deleted on Drive
+    fs::remove_file(&phone).unwrap();
+    bridge.sync_now().unwrap();
+    assert!(!phone.exists() && w.remote.join("positions/ios-0002.json").exists());
+
+    // Android's file comes into iCloud; conflict copies are ignored
+    fs::write(w.remote.join("positions/android-0003.json"), br#"{"p1":{"offset":7,"at":4.0,"device":"Android"}}"#).unwrap();
+    fs::write(icloud.join("positions/ios-0002 2.json"), b"{}").unwrap();
+    bridge.sync_now().unwrap();
+    assert!(icloud.join("positions/android-0003.json").exists());
+    assert!(!w.remote.join("positions/ios-0002 2.json").exists());
+}

@@ -180,8 +180,11 @@ struct ReaderView: View {
             ask.passages = { [weak controller] in await controller?.narrationItems(includeCaptions: true) ?? [] }
             ask.selection = { [weak controller] in await controller?.selectedText() }
             await load()
+            #if DEBUG
+            await positionTest()
+            #endif
         }
-        .onAppear { OpenReader.set(paperID) }
+        .onAppear { OpenReader.set(paperID); position.resume() }
         .onDisappear {
             if listening { stopListening() }
             position.stop(paperID, model: model, controller: controller)
@@ -192,6 +195,36 @@ struct ReaderView: View {
     }
 
     private func refreshHighlights() { controller.showAnnotations(model.annotations(paperID)) }
+
+    #if DEBUG
+    /// Simulator test of the saved place: -posTrace logs the place every second for a while after
+    /// opening; -posScrollY <points> (scroll) or -posPage <n> (pages) then moves there 12 s in, as a
+    /// finger would, and logs what was saved. Quit and relaunch with -posTrace to see the place restored.
+    private func positionTest() async {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("-posTrace") else { return }
+        func arg(_ k: String) -> Int? { args.firstIndex(of: k).flatMap { args.indices.contains($0 + 1) ? Int(args[$0 + 1]) : nil } }
+        let t0 = Date()
+        func log(_ s: String) { print(String(format: "POS %5.1fs ", Date().timeIntervalSince(t0)) + s); fflush(stdout) }
+        func trace(_ label: String) async {
+            let o = await controller.readingOffset() ?? -1
+            let sv = controller.webView?.scrollView
+            log("\(label) offset=\(o) x=\(Int(sv?.contentOffset.x ?? -1)) y=\(Int(sv?.contentOffset.y ?? -1)) h=\(Int(sv?.contentSize.height ?? -1)) w=\(Int(sv?.contentSize.width ?? -1))")
+        }
+        log("open paged=\(paged)")
+        for i in 0..<12 { try? await Task.sleep(for: .seconds(1)); await trace("t\(i + 1)") }
+        if let y = arg("-posScrollY"), let sv = controller.webView?.scrollView {
+            sv.setContentOffset(CGPoint(x: 0, y: CGFloat(y)), animated: false)
+            log("moved to y=\(y)")
+        } else if let n = arg("-posPage"), let v = controller.webView {
+            PageMessageHandler.show(page: n, in: v, animated: false)
+            log("moved to page \(n)")
+        } else { return }
+        for i in 0..<8 { try? await Task.sleep(for: .seconds(1)); await trace("after\(i + 1)") }
+        let file = model.libraryURL.appendingPathComponent("positions/\(LibraryModel.deviceID).json")
+        log("saved \(ReadingPositions.read(file)[paperID].map { "\($0.offset)" } ?? "none")")
+    }
+    #endif
 
     private func startListening() {
         Task {

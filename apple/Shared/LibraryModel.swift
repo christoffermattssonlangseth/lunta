@@ -1,5 +1,10 @@
 import Foundation
 import SwiftUI
+#if os(macOS)
+import IOKit
+#else
+import UIKit
+#endif
 import LuntaCore
 import Paper2EpubKit
 
@@ -50,16 +55,39 @@ final class LibraryModel: ObservableObject {
             .appendingPathComponent("Margins", isDirectory: true)
     }
 
+    /// This device's id ("mac-1a2b3c4d"), which names its change log and reading-position file.
+    /// Settings travel in backups (a new iPhone restored from the old one, Migration Assistant), so
+    /// the id is tied to this machine: on another one a new id is made, or two devices in use would
+    /// write the same files.
     nonisolated static var deviceID: String {
-        if let id = UserDefaults.standard.string(forKey: "deviceID") { return id }
+        deviceIDLock.lock(); defer { deviceIDLock.unlock() }
+        let d = UserDefaults.standard, host = hardwareID
+        if let id = d.string(forKey: "deviceID") {
+            let owner = d.string(forKey: "deviceIDHost")
+            if owner == nil, let host { d.set(host, forKey: "deviceIDHost") }   // made before this check
+            if owner == nil || owner == host || host == nil { return id }
+        }
         #if os(macOS)
         let prefix = "mac"
         #else
         let prefix = "ios"
         #endif
         let id = "\(prefix)-\(UUID().uuidString.prefix(8).lowercased())"
-        UserDefaults.standard.set(id, forKey: "deviceID")
+        d.set(id, forKey: "deviceID")
+        if let host { d.set(host, forKey: "deviceIDHost") }
         return id
+    }
+    nonisolated private static let deviceIDLock = NSLock()
+
+    /// Identifies this machine (not carried over by backups or migration).
+    nonisolated private static var hardwareID: String? {
+        #if os(macOS)
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
+        defer { IOObjectRelease(service) }
+        return IORegistryEntryCreateCFProperty(service, "IOPlatformUUID" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String
+        #else
+        return UIDevice.current.identifierForVendor?.uuidString
+        #endif
     }
 
     /// Opens the Rust library (reads all change logs, updates the search index). Slow on first

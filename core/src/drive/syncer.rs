@@ -118,6 +118,9 @@ enum Kind {
     OwnPositions,
     ForeignLog,
     ForeignPositions,
+    /// On a bridge: the positions file of a device on the bridge's own side (a Mac or iPhone on
+    /// iCloud), written only by that device. Published to the remote, never written here.
+    PublishPositions,
     Paper,
     Shared,
 }
@@ -126,7 +129,7 @@ impl Kind {
     fn order(self) -> u8 {
         match self {
             Kind::Paper => 0,
-            Kind::OwnPositions | Kind::ForeignPositions => 1,
+            Kind::OwnPositions | Kind::ForeignPositions | Kind::PublishPositions => 1,
             Kind::Shared => 2,
             Kind::OwnLog | Kind::ForeignLog => 3,
         }
@@ -190,7 +193,20 @@ impl Syncer {
         match parts.as_slice() {
             // a bridge treats every device's log and positions as its own: merged and passed on both ways
             ["ops", n] => n.strip_suffix(".jsonl").map(|d| if d == self.device || self.opts.bridge { Kind::OwnLog } else { Kind::ForeignLog }),
-            ["positions", n] => n.strip_suffix(".json").map(|d| if d == self.device || self.opts.bridge { Kind::OwnPositions } else { Kind::ForeignPositions }),
+            // (not iCloud's conflict copies, "ios-1234 2.json")
+            ["positions", n] if n.contains(' ') => None,
+            ["positions", n] => n.strip_suffix(".json").map(|d| {
+                if self.opts.bridge {
+                    // the Mac's and iPhone's files are theirs alone: passed on to the remote, never
+                    // rewritten in iCloud (where a stale copy would clobber the device's newer one);
+                    // the remote devices' files (Android, desktop) are mirrored into iCloud
+                    if d == self.device || d.starts_with("mac-") || d.starts_with("ios-") { Kind::PublishPositions } else { Kind::ForeignPositions }
+                } else if d == self.device {
+                    Kind::OwnPositions
+                } else {
+                    Kind::ForeignPositions
+                }
+            }),
             ["papers", _, _] => Some(Kind::Paper),
             [n] if n.ends_with(".json") => Some(Kind::Shared),
             _ => None,
@@ -392,6 +408,20 @@ impl Syncer {
 
     fn decide_inner(&self, kind: Kind, p: &str, l: Option<(u64, i64)>, r: Option<&RemoteFile>, s: Option<&mut Synced>, rep: &mut SyncReport) -> Result<Decision> {
         let lazy_skip = self.opts.lazy && kind == Kind::Paper && heavy(p);
+        if kind == Kind::PublishPositions {
+            return Ok(match (l, r, s) {
+                // not here (or only an iCloud placeholder): leave it, and the remote copy, alone
+                (None, _, _) => Decision::Nothing,
+                (Some(_), None, _) => Decision::Upload,
+                (Some(l), Some(r), None) => {
+                    let same = r.md5.is_some() && l.0 == r.size && md5_file(&self.abs(p)).ok() == r.md5;
+                    if same { Decision::Adopt } else { Decision::Upload }
+                }
+                (Some(l), Some(r), Some(s)) => {
+                    if self.local_changed(p, s, l) || r.differs_from(&s.remote) { Decision::Upload } else { Decision::Nothing }
+                }
+            });
+        }
         Ok(match (l, r, s) {
             (None, None, None) => Decision::Nothing,
             (None, None, Some(_)) => Decision::Forget,
