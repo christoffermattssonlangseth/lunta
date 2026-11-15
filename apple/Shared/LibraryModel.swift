@@ -705,6 +705,15 @@ final class LibraryModel: ObservableObject {
     /// Reading views made from an XML version whose figure images couldn't be downloaded (PMC
     /// author manuscripts have none) show "[Figure image not available]": remade once from the
     /// paper's PDF, which supplies the figures. Kept only if the PDF did supply some.
+    /// One line per paper in ~/Library/Logs/Lunta/figures.log (what the remake did and why).
+    nonisolated static func figLog(_ line: String) {
+        let dir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0].appendingPathComponent("Logs/Lunta", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("figures.log")
+        let data = Data("\(Date().formatted(.iso8601)) \(line)\n".utf8)
+        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(data); try? h.close() } else { try? data.write(to: url) }
+    }
+
     func remakeMissingFigures() async {
         let marker = "[Figure image not available]"
         let all = lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
@@ -722,13 +731,20 @@ final class LibraryModel: ObservableObject {
         var fixed = 0
         for (i, p) in todo.enumerated() {
             status = "Adding missing figures from PDFs: \(i + 1) of \(todo.count)"
-            defer { UserDefaults.standard.set(true, forKey: "figuresFromPDF.\(p.id)") }
-            guard let pdf = await ensureLocal(p.id, .pdf) else { continue }
+            // marked done only when the PDF was read (figures or none); a failure is tried again next launch
+            let done = { UserDefaults.standard.set(true, forKey: "figuresFromPDF.\(p.id)") }
+            guard let pdf = await ensureLocal(p.id, .pdf) else { Self.figLog("\(p.id): PDF not available"); continue }
             let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("lunta-figs-\(UUID())")
             defer { try? FileManager.default.removeItem(at: tmp) }
-            guard let r = try? await Paper2Epub.convert(file: pdf, into: tmp),
-                  r.notes.contains(where: { $0.contains("taken from the PDF") }),
-                  let epub = try? Data(contentsOf: r.file) else { continue }
+            let r: ConversionResult
+            do { r = try await Paper2Epub.convert(file: pdf, into: tmp) } catch {
+                Self.figLog("\(p.id): conversion failed: \(error.localizedDescription)"); continue
+            }
+            guard r.notes.contains(where: { $0.contains("taken from the PDF") }),
+                  let epub = try? Data(contentsOf: r.file) else {
+                Self.figLog("\(p.id): no figures from the PDF (\(r.source); \(r.notes.joined(separator: " | ")))"); done(); continue
+            }
+            Self.figLog("\(p.id): \(r.notes.joined(separator: " | "))")
             let text = Data(r.fulltext.utf8)
             let id = p.id
             let saved: Bool = await Task.detached {
@@ -738,7 +754,7 @@ final class LibraryModel: ObservableObject {
                     return true
                 } catch { return false }
             }.value
-            if saved { fixed += 1 }
+            if saved { fixed += 1; done() } else { Self.figLog("\(p.id): couldn't save the new reading view") }
         }
         reload()
         status = fixed > 0 ? "Added missing figures to \(fixed) reading view\(fixed == 1 ? "" : "s")." : nil
