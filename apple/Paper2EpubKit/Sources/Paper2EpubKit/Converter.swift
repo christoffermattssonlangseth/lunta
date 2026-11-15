@@ -37,7 +37,8 @@ public enum Paper2Epub {
         throw fail("No usable source found.\n" + errors.joined(separator: "\n"))
     }
 
-    static func build(_ src: Source, log: @escaping Log) async throws -> Book {
+    /// `pdf`: the paper's PDF, when converting from it: figures an XML version lacks are cut from it.
+    static func build(_ src: Source, pdf: Data? = nil, log: @escaping Log) async throws -> Book {
         switch src {
         case .pdf(let data, let meta, _):
             // An open-access XML version beats any PDF analysis: check for one via the PDF's DOI first.
@@ -46,7 +47,7 @@ public enum Paper2Epub {
                 for c in Resolver.doiCandidates(doi, log: log) {
                     guard let src = try? await c.load() else { continue }
                     switch src {
-                    case .jats, .html: return try await build(src, log: log)
+                    case .jats, .html: return try await build(src, pdf: data, log: log)
                     case .pdf: continue      // the arXiv PDF candidate: we already have this PDF
                     }
                 }
@@ -80,10 +81,19 @@ public enum Paper2Epub {
             let root = try XML.parse(data)
             let hrefs = JATSConverter.graphicHrefs(root)
             let images = await AssetFetcher.fetch(hrefs: hrefs, from: assets, log: log)
-            let conv = JATSConverter(root: root, images: images)
+            var conv = JATSConverter(root: root, images: images)
+            var chapters = conv.chapters()
+            if conv.missingFigures > 0, let pdf {
+                // figure images not available (e.g. a PMC author manuscript): cut them from the PDF
+                log("\(conv.missingFigures) figure image(s) missing; taking them from the PDF")
+                let figs = await Task.detached(priority: .userInitiated) { PDFBook.figuresByLabel(pdf, log: { _ in }) }.value
+                if !figs.isEmpty {
+                    conv = JATSConverter(root: root, images: images, fromPDF: figs)
+                    chapters = conv.chapters()
+                }
+            }
             var meta = conv.meta()
             meta.merge(extraMeta)
-            var chapters = conv.chapters()
             let hasBody = chapters.contains { !$0.headings.contains { h in h.id.hasPrefix("abstract") } }
             if !hasBody {
                 throw fail("The XML only contains the abstract, not the full text.")
@@ -94,6 +104,9 @@ public enum Paper2Epub {
                                         headings: [Heading(level: 1, id: "abstract", title: "Abstract")]), at: 0)
             }
             var notes: [String] = []
+            if !conv.usedFromPDF.isEmpty {
+                notes.append("\(conv.usedFromPDF.count) figure image(s) taken from the PDF.")
+            }
             if conv.missingFigures > 0 {
                 notes.append("\(conv.missingFigures) figure image(s) could not be downloaded; captions are kept.")
             }
@@ -102,7 +115,7 @@ public enum Paper2Epub {
             }
             // keep only images actually referenced
             let allHTML = chapters.map(\.html).joined()
-            let imgs = images.values.filter { allHTML.contains("../images/\($0.fileName)\"") }
+            let imgs = (Array(images.values) + conv.usedFromPDF).filter { allHTML.contains("../images/\($0.fileName)\"") }
                 .sorted { $0.fileName < $1.fileName }
             return Book(meta: meta, chapters: chapters, images: imgs, sourceLabel: label, notes: notes)
         }

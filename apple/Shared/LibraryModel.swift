@@ -226,12 +226,20 @@ final class LibraryModel: ObservableObject {
     }
 
     /// iCloud: fetch change logs and full texts eagerly (small); PDFs and reading views on demand.
+    /// Off the main thread: it lists every paper's folder, and listing an iCloud folder can hang
+    /// while iCloud is busy (which froze the whole app, quitting included).
     private func downloadSmallFiles() {
-        guard inCloud else { return }
-        for p in lib.pendingDownloads() where p.contains("/ops/") || p.hasSuffix(".fulltext.txt.icloud") {
-            CloudLibrary.startDownload(CloudLibrary.realURL(forPlaceholder: p))
+        guard inCloud, !scanningPlaceholders else { return }
+        scanningPlaceholders = true
+        let lib = self.lib
+        Task.detached(priority: .utility) { [weak self] in
+            for p in lib.pendingDownloads() where p.contains("/ops/") || p.hasSuffix(".fulltext.txt.icloud") {
+                CloudLibrary.startDownload(CloudLibrary.realURL(forPlaceholder: p))
+            }
+            await MainActor.run { self?.scanningPlaceholders = false }
         }
     }
+    private var scanningPlaceholders = false
 
     /// Makes sure a paper's file is on this device (downloading it from iCloud if needed).
     func ensureLocal(_ id: String, _ kind: FileKind) async -> URL? {
@@ -692,6 +700,48 @@ final class LibraryModel: ObservableObject {
             try lib.attachFile(id: id, kind: .fulltext, data: text)
         }.value
         return true
+    }
+
+    /// Reading views made from an XML version whose figure images couldn't be downloaded (PMC
+    /// author manuscripts have none) show "[Figure image not available]": remade once from the
+    /// paper's PDF, which supplies the figures. Kept only if the PDF did supply some.
+    func remakeMissingFigures() async {
+        let marker = "[Figure image not available]"
+        let all = lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
+        let lib = self.lib
+        let todo: [Paper] = await Task.detached(priority: .utility) {
+            all.filter { p in
+                guard p.hasEpub, p.hasPdf, !UserDefaults.standard.bool(forKey: "figuresFromPDF.\(p.id)"),
+                      let path = lib.filePath(id: p.id, kind: .fulltext),
+                      let text = try? String(contentsOfFile: path, encoding: .utf8) else { return false }
+                return text.contains(marker)
+            }
+        }.value
+        NSLog("Lunta: reading views missing figures: %d", todo.count)
+        guard !todo.isEmpty else { return }
+        var fixed = 0
+        for (i, p) in todo.enumerated() {
+            status = "Adding missing figures from PDFs: \(i + 1) of \(todo.count)"
+            defer { UserDefaults.standard.set(true, forKey: "figuresFromPDF.\(p.id)") }
+            guard let pdf = await ensureLocal(p.id, .pdf) else { continue }
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("lunta-figs-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: tmp) }
+            guard let r = try? await Paper2Epub.convert(file: pdf, into: tmp),
+                  r.notes.contains(where: { $0.contains("taken from the PDF") }),
+                  let epub = try? Data(contentsOf: r.file) else { continue }
+            let text = Data(r.fulltext.utf8)
+            let id = p.id
+            let saved: Bool = await Task.detached {
+                do {
+                    try lib.attachFile(id: id, kind: .epub, data: epub)
+                    try lib.attachFile(id: id, kind: .fulltext, data: text)
+                    return true
+                } catch { return false }
+            }.value
+            if saved { fixed += 1 }
+        }
+        reload()
+        status = fixed > 0 ? "Added missing figures to \(fixed) reading view\(fixed == 1 ? "" : "s")." : nil
     }
 
     /// Builds reading views for every paper that lacks one (PMC papers first), a few at a time.

@@ -12,6 +12,10 @@ final class JATSConverter {
 
     let root: XNode
     let images: [String: BookImage]
+    /// Figures cut from the paper's PDF, by `PDFBook.figureKey` of their label: used for figures
+    /// whose own images couldn't be downloaded (PMC author manuscripts have none).
+    let fromPDF: [String: BookImage]
+    private(set) var usedFromPDF: [BookImage] = []
     private(set) var missingFigures = 0
     private(set) var texFormulas = 0
     private var headings: [Heading] = []
@@ -21,9 +25,10 @@ final class JATSConverter {
     private var floatOrder: [String] = []
     private var placed = Set<String>()
 
-    init(root: XNode, images: [String: BookImage]) {
+    init(root: XNode, images: [String: BookImage], fromPDF: [String: BookImage] = [:]) {
         self.root = root
         self.images = images
+        self.fromPDF = fromPDF
         for fg in root.children("floats-group") {
             for f in fg.elements where ["fig", "table-wrap", "fig-group", "table-wrap-group", "boxed-text"].contains(f.name) {
                 if let id = f.attr("id") { floats[id] = f; floatOrder.append(id) }
@@ -521,6 +526,15 @@ final class JATSConverter {
     func fig(_ el: XNode) -> String {
         let label = (el.childText("label") ?? "Figure").trimmingCharacters(in: .whitespacesAndNewlines)
         var imgs = graphicImgs(el, alt: label)
+        if imgs.isEmpty, let key = PDFBook.figureKey(label), var img = fromPDF[key] {
+            if let done = usedFromPDF.first(where: { $0.fileName.hasPrefix("pdf-" + slug(key) + ".") }) {
+                img = done
+            } else {
+                img.fileName = "pdf-\(slug(key)).\((img.fileName as NSString).pathExtension)"
+                usedFromPDF.append(img)
+            }
+            imgs = ["<img src=\"../images/\(esc(img.fileName))\" alt=\"\(esc(label))\"/>"]
+        }
         if imgs.isEmpty {
             missingFigures += 1
             imgs = ["<span class=\"missing\">[Figure image not available]</span>"]

@@ -938,6 +938,62 @@ enum PDFBook {
                     notes: ["Converted from the PDF without AI: equations and tables are kept as images."])
     }
 
+    /// The figures in the PDF by their label ("fig 3", "extended data fig 2", "supplementary fig 1"):
+    /// to fill in figures another source (an XML version without its images) doesn't have.
+    ///
+    /// Matched by page, not through caption detection: a figure is the page with a line that starts
+    /// its caption ("Fig. 3 | …", "Extended Data Fig. 2 | See next page for caption"), and the
+    /// image is all figure areas on that page together (figures are often found in pieces). With
+    /// several captions on a page, each area goes to the nearest one.
+    static func figuresByLabel(_ data: Data, log: @escaping (String) -> Void) -> [String: BookImage] {
+        guard let doc = PDFDocument(data: data), !doc.isLocked || doc.unlock(withPassword: ""), doc.pageCount > 0 else { return [:] }
+        let an = PDFAnalyzer(doc: doc, log: log)
+        let paras = an.analyze()
+        var areas: [Int: [R]] = [:]
+        for p in paras where p.kind == .figure { areas[p.page, default: []].append(p.bbox) }
+        // caption starts: the label, then a separator (not "Fig. 5a)" in the text)
+        let head = try! NSRegularExpression(pattern: #"^(?:Extended\s+Data\s+|Supplementary\s+|Supporting\s+)?(?:Figure|Fig\.?)\s*S?\d+\s*(?:[|.:—–]|\s-\s)"#,
+                                            options: [.caseInsensitive])
+        var heads: [Int: [(key: String, y: CGFloat)]] = [:]
+        var pageOf: [String: Int] = [:]
+        for (pno, lines) in an.pagesLines.enumerated() where areas[pno] != nil {
+            for l in lines {
+                let t = l.text.trimmingCharacters(in: .whitespaces)
+                guard head.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) != nil, let key = figureKey(t),
+                      pageOf[key] == nil else { continue }
+                pageOf[key] = pno
+                heads[pno, default: []].append((key, (l.bbox.y0 + l.bbox.y1) / 2))
+            }
+        }
+        var out: [String: BookImage] = [:]
+        for (pno, hs) in heads {
+            var rects: [String: R] = [:]
+            for a in areas[pno] ?? [] {
+                let cy = (a.y0 + a.y1) / 2
+                guard let near = hs.min(by: { abs($0.y - cy) < abs($1.y - cy) }) else { continue }
+                rects[near.key] = rects[near.key].map { $0.union(a) } ?? a
+            }
+            for (key, r) in rects {
+                let photo = an.graphics[pno].images.contains { r.contains($0, tol: 5) && $0.area > 0.3 * r.area }
+                out[key] = an.render(pno, r, photo: photo, name: "p\(pno + 1)-\(slug(key))")
+            }
+        }
+        return out
+    }
+
+    /// "Fig. 3 | Title", "Figure 3.", "Extended Data Fig. 3", "Supplementary Figure S1" → a key that
+    /// is the same for the XML's label and the PDF's caption. Nil for anything that isn't a figure.
+    static func figureKey(_ text: String) -> String? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let re = try! NSRegularExpression(pattern: #"^(Extended\s+Data\s+|Supplementary\s+|Supporting\s+|Appendix\s+)?(?:Figure|Fig\.?)\s*(S?)(\d+)(?!\d)"#,
+                                          options: [.caseInsensitive])
+        guard let m = re.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) else { return nil }
+        func g(_ i: Int) -> String { Range(m.range(at: i), in: t).map { String(t[$0]) } ?? "" }
+        var kind = g(1).lowercased().replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        if kind == "supporting" || kind == "appendix" || (!g(2).isEmpty && kind.isEmpty) { kind = "supplementary" }
+        return (kind.isEmpty ? "" : kind + " ") + "fig " + g(3)
+    }
+
     static func knownSections(_ t: String) -> String? {
         t.lowercased().hasPrefix("abstract") ? "abstract" : nil
     }

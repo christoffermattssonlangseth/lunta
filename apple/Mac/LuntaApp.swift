@@ -173,7 +173,11 @@ final class ModelHolder: ObservableObject {
             Task { await model.importPDFFolder(folder); await model.makeReadingViews() }
         } else if let model {
             // keep making reading views in the background whenever the app is open
-            Task { try? await Task.sleep(nanoseconds: 3_000_000_000); await model.makeReadingViews() }
+            Task {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                await model.makeReadingViews()
+                await model.remakeMissingFigures()
+            }
         }
     }
 }
