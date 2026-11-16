@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import LuntaCore
+import Paper2EpubKit
 
 /// Local endpoint for the Lunta browser extension, on 127.0.0.1:47480 only.
 ///
@@ -8,13 +9,29 @@ import LuntaCore
 ///   POST /save   {doi,title,authors,journal,date,url,abstract}  → status JSON of the saved paper
 ///   POST /pdf?id=…   (body: PDF bytes)                          → status JSON
 ///   POST /pdf?name=… (no id: add / match a standalone PDF)        → status JSON
+///   POST /fulltext[?dryRun=1]  {url, html, liveHtml?, doi?, title?, images:[{urls:[…], base64}],
+///                               imagesSkipped?, dryRun?}
+///        "Use this page's full text": the article page (as the server sent it; `liveHtml` as the
+///        browser shows it, tried if `html` can't be converted) becomes the paper's reading view;
+///        figures come from `images` (fetched by the browser with the reader's access).
+///        → status JSON + {outcome: added|attached|replaced|kept|unchanged, message, words, images,
+///          highlights, unmatched:[quotes], backup?, notes, reader, dryRun}; 422 + {error} if the
+///          page can't be made into a reading view.
 ///
 /// Only requests from a browser extension (Origin chrome-extension://…) are accepted, so ordinary
 /// web pages cannot use it.
 @MainActor
 final class ExtensionServer {
-    static let port: UInt16 = 47480
+    /// 47480; a Debug build may be given another with `-extensionPort <n>` (to test beside the real app).
+    static let port: UInt16 = {
+        #if DEBUG
+        let a = ProcessInfo.processInfo.arguments
+        if let i = a.firstIndex(of: "-extensionPort"), i + 1 < a.count, let p = UInt16(a[i + 1]) { return p }
+        #endif
+        return 47480
+    }()
     private var listener: NWListener?
+    private var pagesInProgress = Set<String>()
     private weak var model: LibraryModel?
 
     init(model: LibraryModel) {
@@ -141,8 +158,57 @@ final class ExtensionServer {
             model.reload()
             Task { if model.paper(id)?.hasEpub == false { await model.makeReadingView(id); model.reload() } }
             return (200, status(of: model.paper(id)))
+        case ("POST", "/fulltext"):
+            return await fullText(model, r)
+        #if DEBUG
+        // test hooks, scratch library only (`-testLibrary`): highlight a quote, inspect a paper
+        case ("POST", "/debug/highlight") where LibraryModel.testLibrary != nil:
+            guard let j = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any],
+                  let id = j["id"] as? String, let quote = j["quote"] as? String else { return (400, ["error": "bad JSON"]) }
+            do {
+                let a = try model.lib.addHighlight(paper: id, quote: quote, before: nil, color: "yellow", note: "")
+                return (200, ["id": a.id, "position": a.position, "location": a.location])
+            } catch { return (422, ["error": error.readable]) }
+        case ("GET", "/debug/paper") where LibraryModel.testLibrary != nil:
+            guard let id = r.query["id"], let p = model.paper(id) else { return (404, ["error": "unknown paper"]) }
+            let epubSize = model.fileURL(id, .epub).flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int } ?? 0
+            return (200, ["title": p.meta.title, "doi": p.meta.doi, "hasEpub": p.hasEpub, "epubBytes": epubSize,
+                          "annotations": model.lib.annotations(paper: id).count])
+        #endif
         default:
             return (404, ["error": "not found"])
+        }
+    }
+
+    private func fullText(_ model: LibraryModel, _ r: Request) async -> (Int, Any) {
+        let body = r.body
+        // large (the page and its figures): decoded off the main thread
+        let parsed: (PageSubmission, Bool)? = await Task.detached { () -> (PageSubmission, Bool)? in
+            guard let j = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+                  let html = j["html"] as? String ?? j["liveHtml"] as? String, !html.isEmpty else { return nil }
+            var images: [PageImage] = []
+            for i in (j["images"] as? [[String: Any]]) ?? [] {
+                guard let b = i["base64"] as? String, let d = Data(base64Encoded: b), !d.isEmpty else { continue }
+                let urls = ((i["urls"] as? [String]) ?? []) + [(i["url"] as? String)].compactMap { $0 }
+                images.append(PageImage(urls: urls, data: d))
+            }
+            let sub = PageSubmission(html: html, liveHTML: j["liveHtml"] as? String, url: (j["url"] as? String).flatMap(URL.init(string:)),
+                                     doi: (j["doi"] as? String) ?? "", title: (j["title"] as? String) ?? "", images: images,
+                                     imagesSkipped: (j["imagesSkipped"] as? Int) ?? 0)
+            return (sub, (j["dryRun"] as? Bool) ?? false)
+        }.value
+        guard let (sub, dryInBody) = parsed else { return (400, ["error": "Expected JSON with the page's html."]) }
+        let dry = dryInBody || r.query["dryRun"] == "1"
+        let key = sub.url?.absoluteString ?? sub.doi
+        guard pagesInProgress.insert(key).inserted else { return (409, ["error": "Lunta is already working on this page."]) }
+        defer { pagesInProgress.remove(key) }
+        do {
+            let o = try await model.usePageFullText(sub, dryRun: dry)
+            var j = status(of: o.paperID.flatMap { model.paper($0) })
+            for (k, v) in o.json { j[k] = v }
+            return (200, j)
+        } catch {
+            return (422, ["error": error.readable])
         }
     }
 

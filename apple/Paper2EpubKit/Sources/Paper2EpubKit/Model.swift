@@ -66,6 +66,9 @@ public struct ConversionResult: Sendable {
     public var meta: PaperMeta = PaperMeta()
     /// Plain text of the whole paper, for full-text search.
     public var fulltext: String = ""
+    /// Text of the reading view as Lunta's reader shows it (for checking that highlights still
+    /// anchor before replacing a reading view: see `HighlightLocator`).
+    public var readerText: String = ""
 }
 
 public enum ConversionError: Error, LocalizedError {

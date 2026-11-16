@@ -151,7 +151,8 @@ public enum Paper2Epub {
                 .replacingOccurrences(of: "[ \t]+", with: " ", options: .regularExpression)
         }.joined(separator: "\n")
         return ConversionResult(file: url, title: book.meta.title, source: book.sourceLabel, words: words,
-                                images: book.images.count, notes: book.notes, meta: book.meta, fulltext: text)
+                                images: book.images.count, notes: book.notes, meta: book.meta, fulltext: text,
+                                readerText: ReaderText.combined(EPUBWriter.sections(book).map(\.html)))
     }
 }
 

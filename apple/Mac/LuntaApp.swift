@@ -71,12 +71,20 @@ final class ModelHolder: ObservableObject {
     }
 
     private func open() async {
-        let (url, cloud) = await Task.detached { CloudLibrary.resolve() }.value
+        let test = LibraryModel.testLibrary
+        let (url, cloud) = test != nil ? (test!.appendingPathComponent("Library", isDirectory: true), false)
+            : await Task.detached { CloudLibrary.resolve() }.value
         if cloud { await CloudLibrary.prepareLogs(url) { _ in } }
         do {
             let lib = try await Task.detached { try LibraryModel.openLibrary(root: url) }.value
             model = LibraryModel(lib: lib, root: url, inCloud: cloud)
         } catch { self.error = "Could not open the library: \(error.readable)" }
+        if let model, test != nil {
+            // scratch library (test hook): only the extension endpoint
+            server = ExtensionServer(model: model)
+            server?.start()
+            return
+        }
         if let model {
             server = ExtensionServer(model: model)
             server?.start()

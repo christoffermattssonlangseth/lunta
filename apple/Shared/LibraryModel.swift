@@ -51,15 +51,30 @@ final class LibraryModel: ObservableObject {
     let inCloud: Bool
 
     nonisolated static var cacheURL: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        if let t = testLibrary { return t.appendingPathComponent("Cache", isDirectory: true) }
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Margins", isDirectory: true)
     }
+
+    /// Test hook (Debug builds only): `-testLibrary <folder>` opens a scratch library in
+    /// <folder>/Library with its own cache, device id and backups, and leaves the real library,
+    /// iCloud and the background services (Drive copy, feeds, citation add-ins) alone.
+    #if DEBUG
+    nonisolated static let testLibrary: URL? = {
+        let a = ProcessInfo.processInfo.arguments
+        guard let i = a.firstIndex(of: "-testLibrary"), i + 1 < a.count else { return nil }
+        return URL(fileURLWithPath: a[i + 1], isDirectory: true)
+    }()
+    #else
+    nonisolated static let testLibrary: URL? = nil
+    #endif
 
     /// This device's id ("mac-1a2b3c4d"), which names its change log and reading-position file.
     /// Settings travel in backups (a new iPhone restored from the old one, Migration Assistant), so
     /// the id is tied to this machine: on another one a new id is made, or two devices in use would
     /// write the same files.
     nonisolated static var deviceID: String {
+        if testLibrary != nil { return "mac-testlib" }
         deviceIDLock.lock(); defer { deviceIDLock.unlock() }
         let d = UserDefaults.standard, host = hardwareID
         if let id = d.string(forKey: "deviceID") {

@@ -39,9 +39,14 @@
     return a ? a.href : "";
   }
 
+  // publishers whose article pages Lunta can read (also when a page lacks citation_* tags)
+  const KNOWN_HOSTS = /(^|\.)(sciencedirect\.com|cell\.com|thelancet\.com|nejm\.org|science\.org|nature\.com|pnas\.org|wiley\.com|oup\.com|plos\.org|elifesciences\.org|frontiersin\.org|springer\.com|biomedcentral\.com|tandfonline\.com|jamanetwork\.com|bmj\.com|acs\.org|sagepub\.com|embopress\.org|biorxiv\.org|medrxiv\.org|ncbi\.nlm\.nih\.gov|mdpi\.com|annualreviews\.org|aacrjournals\.org|rupress\.org|ahajournals\.org)$/i;
+  const ARTICLE_PATH = /\/(science\/article|article|articles|doi|content|fulltext|full)\b/i;
+  const knownArticle = KNOWN_HOSTS.test(location.hostname) && ARTICLE_PATH.test(location.pathname);
+
   const doi = findDoi();
   const title = meta("citation_title", "dc.title", "og:title") || "";
-  if (!doi && !meta("citation_title")) return; // not an article page
+  if (!doi && !meta("citation_title") && !knownArticle) return; // not an article page
 
   const info = {
     doi,
@@ -81,10 +86,15 @@
       button.btn.alt { background: #f2ece4; color: #8a4b22; }
       button.btn[disabled] { opacity: .5; cursor: default; }
       .err { color: #b3261e; font-size: 12px; margin-top: 6px; }
+      .ftmsg { color: #3a3a3c; font-size: 12px; line-height: 1.35; margin-top: 2px; }
+      .ftmsg:empty { display: none; }
+      .ft { flex: 1; } button.btn.wide { display: block; width: 100%; box-sizing: border-box; text-align: center; }
+      .ftmsg.ok { color: #2f7d58; } .ftmsg.warn { color: #8a4b22; }
       a.open { color: #2a6478; font-weight: 600; text-decoration: none; }
       @media (prefers-color-scheme: dark) {
         .card, .tab { background: #2a2a2c; color: #eee; } .dot { border-color: #2a2a2c; } .row { border-color: #3a3a3c; }
         .brand { color: #9ec9d8; } button.btn.alt { background: #3d3127; color: #f2b45a; } a.open { color: #9ec9d8; }
+        .ftmsg { color: #c7c7cc; } .ftmsg.ok { color: #7fd3a8; } .ftmsg.warn { color: #f2b45a; }
       }
     </style>
     <div class="wrap">
@@ -95,6 +105,8 @@
         <div class="sub"></div>
         <div class="row"><span>Library</span><span class="lib muted">Checking…</span></div>
         <div class="row"><span>PDF</span><span class="pdf muted">–</span></div>
+        <div class="row"><span class="ft"></span></div>
+        <div class="ftmsg"></div>
         <div class="err"></div>
       </div>
     </div>`;
@@ -107,6 +119,7 @@
   document.documentElement.appendChild(host);
 
   let state = { inLibrary: false };
+  let ftBusy = false;
 
   const send = (msg) =>
     new Promise((resolve) => chrome.runtime.sendMessage(msg, (r) => resolve(r || { error: chrome.runtime.lastError?.message })));
@@ -146,6 +159,15 @@
       pdf.className = "pdf muted";
       pdf.textContent = "No PDF link on this page";
     }
+    const ft = $(".ft");
+    ft.innerHTML = "";
+    const b = document.createElement("button");
+    b.className = "btn alt wide";
+    b.textContent = ftBusy ? "Working…" : "Use this page's full text";
+    b.title = "Make the paper's reading view from this page as you see it (with your access), figures included";
+    b.disabled = ftBusy;
+    b.onclick = useFullText;
+    ft.appendChild(b);
   }
 
   function showError(e) {
@@ -200,8 +222,127 @@
     render();
   }
 
-  chrome.runtime.onMessage.addListener((m) => {
+  // ---- "Use this page's full text" ----
+
+  function ftMessage(text, kind) {
+    const el = $(".ftmsg");
+    el.textContent = text || "";
+    el.className = "ftmsg" + (kind ? " " + kind : "");
+  }
+
+  // words of paragraph text in a document (to tell a full-text page from an abstract page)
+  function paragraphWords(doc) {
+    let n = 0;
+    doc.querySelectorAll("p").forEach((p) => {
+      if (p.closest("#lunta-ext-root, nav, header, footer, aside")) return;
+      n += (p.textContent || "").split(/\s+/).filter(Boolean).length;
+    });
+    return n;
+  }
+
+  // The page as the server delivered it (before MathJax and other scripts rewrote it): fetched
+  // again with the browser's cookies, so the same access applies. Used when it carries the full
+  // text the reader is looking at; otherwise the page as shown.
+  async function pageHTML() {
+    const live = "<!DOCTYPE html>\n" + document.documentElement.outerHTML.replace(/<div id="lunta-ext-root"><\/div>/, "");
+    try {
+      const r = await fetch(location.href, { credentials: "include" });
+      const type = r.headers.get("content-type") || "";
+      if (r.ok && /html/i.test(type)) {
+        const text = await r.text();
+        const fetched = new DOMParser().parseFromString(text, "text/html");
+        const fw = paragraphWords(fetched), lw = paragraphWords(document);
+        if (fw >= 300 && fw >= lw * 0.6) return { html: text, liveHtml: live, source: "as delivered" };
+      }
+    } catch (_) { /* fall back to the page as shown */ }
+    return { html: live, liveHtml: null, source: "as shown" };
+  }
+
+  const IMG_EXT = /\.(jpe?g|png|gif|webp|tiff?|svg)(\?|#|$)/i;
+  const abs = (u) => { try { return u ? new URL(u, location.href).href : ""; } catch (_) { return ""; } };
+
+  function largestFromSrcset(srcset) {
+    if (!srcset) return "";
+    let best = "", bestW = -1;
+    for (const part of srcset.split(",")) {
+      const [u, d] = part.trim().split(/\s+/);
+      const w = d ? parseFloat(d) * (d.endsWith("x") ? 1000 : 1) : 0;
+      if (u && w > bestW) { best = u; bestW = w; }
+    }
+    return abs(best);
+  }
+
+  // Figure (and equation) images on the page: every address the page uses for each, and the
+  // one to download (the high-resolution link when there is one, e.g. ScienceDirect's "_lrg").
+  function figureImages() {
+    const holders = new Set();
+    document.querySelectorAll('figure, [class*="figure"], [class*="Figure"], [id^="fig"], [id^="Fig"], [class*="formula"], [class*="equation"], .fig, .table-wrap')
+      .forEach((el) => { if (!el.closest("#lunta-ext-root, nav, header, footer") && el.querySelector("img")) holders.add(el); });
+    const out = [], seen = new Set();
+    for (const h of holders) {
+      // innermost holders only (a figure inside a figure-ish wrapper counts once)
+      if ([...holders].some((o) => o !== h && h.contains(o))) continue;
+      const hiLinks = [...h.querySelectorAll("a[href]")].map((a) => a.href)
+        .filter((u) => /_lrg\.|[-_]large\.|hi-?res|full-?size|\/original\//i.test(u) || IMG_EXT.test(u));
+      const imgs = [...h.querySelectorAll("img")].filter((i) => !(i.naturalWidth && i.naturalWidth < 24));
+      imgs.forEach((img, k) => {
+        const urls = [img.currentSrc, img.src, abs(img.getAttribute("src")), abs(img.getAttribute("data-src")),
+                      abs(img.getAttribute("data-lazy-src")), largestFromSrcset(img.getAttribute("srcset") || img.getAttribute("data-srcset"))];
+        const pic = img.closest("picture");
+        if (pic) pic.querySelectorAll("source").forEach((s) => urls.push(largestFromSrcset(s.getAttribute("srcset"))));
+        const hi = k === 0 ? hiLinks.find((u) => /_lrg\.|large|hi-?res|full|original/i.test(u)) || hiLinks[0] : "";
+        if (hi) urls.unshift(hi);
+        const list = [...new Set(urls.filter((u) => u && !u.startsWith("data:")))];
+        const fetchUrl = hi || largestFromSrcset(img.getAttribute("srcset")) || img.currentSrc || img.src || list[0];
+        if (!fetchUrl || seen.has(fetchUrl)) return;
+        seen.add(fetchUrl);
+        out.push({ urls: list, fetch: fetchUrl });
+      });
+    }
+    return out;
+  }
+
+  async function useFullText() {
+    if (ftBusy) return;
+    ftBusy = true;
+    showError("");
+    render();
+    try {
+      ftMessage("Reading the page…");
+      const page = await pageHTML();
+      const images = figureImages();
+      ftMessage(images.length ? `Fetching ${images.length} figure image${images.length === 1 ? "" : "s"}…` : "Sending the page to Lunta…");
+      const r = await send({ type: "fullText", url: location.href, doi, title, html: page.html, liveHtml: page.liveHtml, images });
+      if (r.error) {
+        ftMessage("");
+        showError(r.error);
+      } else {
+        const kind = r.outcome === "kept" ? "warn" : "ok";
+        const head = { added: "Added to Lunta.", attached: "Reading view made.", replaced: "Reading view updated.",
+                       kept: "Reading view not changed.", unchanged: "Reading view already up to date." }[r.outcome] || "";
+        ftMessage(`${head} ${r.message || ""}`.trim(), kind);
+        if (r.inLibrary) { state = r; }
+      }
+    } catch (e) {
+      ftMessage("");
+      showError(String(e && e.message || e));
+    }
+    ftBusy = false;
+    render();
+  }
+
+  chrome.runtime.onMessage.addListener((m, _sender, sendResponse) => {
     if (m.type === "togglePanel") $(".card").classList.toggle("open");
+    if (m.type === "fullTextProgress") ftMessage(m.text);
+    if (m.type === "fetchImage") {
+      // a figure the extension couldn't fetch itself: from the page (same-origin cookies)
+      fetch(m.url, { credentials: "include" }).then(async (r) => {
+        if (!r.ok) return sendResponse({ error: `HTTP ${r.status}` });
+        const buf = await r.arrayBuffer();
+        sendResponse({ base64: toBase64(buf), type: r.headers.get("content-type") || "" });
+      }).catch((e) => sendResponse({ error: String(e) }));
+      return true;
+    }
   });
 
   refresh();

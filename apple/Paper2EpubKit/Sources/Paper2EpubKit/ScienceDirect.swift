@@ -16,7 +16,8 @@ enum ScienceDirect {
     }
 
     /// `dir`: the folder the page was saved in (its `…_files` folder has the images), or nil.
-    static func book(html: String, dir: URL?, log: @escaping (String) -> Void) async throws -> Book {
+    /// `images`: figure images the browser extension fetched with the reader's access (used first).
+    static func book(html: String, dir: URL?, images posted: PageImages? = nil, log: @escaping (String) -> Void) async throws -> Book {
         guard let body = element(html, id: "body") else { throw fail("This ScienceDirect page has no full text (are you signed in?).") }
         var meta = metadata(html)
         log("Converting the ScienceDirect page")
@@ -77,7 +78,8 @@ enum ScienceDirect {
         if !conv.figures.isEmpty { log("Fetching \(conv.figures.count) figure image(s)") }
         for f in conv.figures {
             var data: Data?
-            if let hi = f.hiRes, let r = try? await Net.fetch(hi, timeout: 40), (200..<300).contains(r.status) { data = r.data }
+            if let posted { data = posted.data(for: [f.hiRes?.absoluteString, f.remote?.absoluteString, f.local].compactMap { $0 }) }
+            if data == nil, let hi = f.hiRes, let r = try? await Net.fetch(hi, timeout: 40), (200..<300).contains(r.status) { data = r.data }
             if data == nil, let local = f.local, let dir { data = localFile(local, in: dir) }
             if data == nil, let src = f.remote, let r = try? await Net.fetch(src, timeout: 30), (200..<300).contains(r.status) { data = r.data }
             guard let d = data, let n = Images.normalise(d) else { missing += 1; continue }
@@ -161,6 +163,8 @@ enum ScienceDirect {
         var s = fragment
         let fixes: [(String, String)] = [
             (#"<!--[\s\S]*?-->"#, ""),
+            // MathML kept in a script for MathJax (a page as the server sent it): the MathML itself
+            (#"<script\b[^>]*type="math/mml"[^>]*>([\s\S]*?)</script>"#, "$1"),
             (#"<script\b[\s\S]*?</script>"#, ""),
             (#"<style\b[\s\S]*?</style>"#, ""),
             (#"<svg\b[\s\S]*?</svg>"#, ""),
@@ -171,7 +175,10 @@ enum ScienceDirect {
             (#"&(?!#?[A-Za-z0-9]+;)"#, "&amp;"),
         ]
         for (p, r) in fixes { s = s.replacingOccurrences(of: p, with: r, options: .regularExpression) }
-        return try XML.parse(Data("<div>\(s)</div>".utf8))
+        if let x = try? XML.parse(Data("<div>\(s)</div>".utf8)) { return x }
+        // not well-formed (a page as the server sent it can be loose HTML): the forgiving parser
+        guard let div = HTMLDOM.parse("<div>\(s)</div>").elements.first else { throw fail("Could not read the page.") }
+        return div
     }
 
     static func localFile(_ src: String, in dir: URL) -> Data? {
@@ -258,6 +265,11 @@ enum ScienceDirect {
                 return "<table>" + n.children.map(tablePart).joined() + "</table>"
             case "mjx-container":
                 return math(n)
+            case "math" where n.isMath:
+                mathCount += 1
+                return MathML.serialize(n, display: n.attr("display") == "block" || n.parent?.hasClass("display") == true)
+            case "mjx-assistive-mml":
+                return ""
             case "img", "svg", "button", "input", "noscript", "dl", "mjx-speech":
                 return ""
             case "br":
@@ -317,7 +329,7 @@ enum ScienceDirect {
 
         private func figure(_ n: XNode) -> String {
             let id = n.attr("id") ?? "fig\(figures.count + 1)"
-            guard let img = n.descendants("img").first, let src = img.attr("src") else { return "" }
+            guard let img = n.descendants("img").first, let src = img.attr("src").flatMap({ $0.isEmpty || $0.hasPrefix("data:") ? nil : $0 }) ?? img.attr("data-src") else { return "" }
             let hi = n.descendants("a").compactMap { $0.attr("href") }.first { $0.contains("_lrg.") }.flatMap(URL.init(string:))
             let name = "fig-" + id.replacingOccurrences(of: #"[^A-Za-z0-9_-]"#, with: "-", options: .regularExpression)
             figures.append(Figure(name: name, hiRes: hi, local: src.hasPrefix("http") ? nil : src, remote: src.hasPrefix("http") ? URL(string: src) : nil))

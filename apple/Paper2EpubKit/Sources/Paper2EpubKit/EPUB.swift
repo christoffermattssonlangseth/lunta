@@ -2,13 +2,19 @@ import Foundation
 
 /// Packages a `Book` as EPUB 3 (with an EPUB 2 NCX for older readers).
 enum EPUBWriter {
-    static func write(_ book: Book, cover: Data?, to url: URL) throws {
+    /// The book's XHTML sections in reading order (title page, then chapters), links fixed: the
+    /// `<body>` content of each file written.
+    static func sections(_ book: Book) -> [(name: String, title: String, html: String)] {
         var files: [(name: String, title: String, html: String)] = []
         files.append(("title.xhtml", "Title page", titlePage(book.meta)))
         for (i, ch) in book.chapters.enumerated() {
             files.append((String(format: "ch%02d.xhtml", i + 1), ch.title, ch.html))
         }
-        files = fixLinks(files)
+        return fixLinks(files)
+    }
+
+    static func write(_ book: Book, cover: Data?, to url: URL) throws {
+        let files = sections(book)
 
         var zip = ZipWriter()
         zip.add("mimetype", Data("application/epub+zip".utf8), compress: false)
