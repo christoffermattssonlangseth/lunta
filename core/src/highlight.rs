@@ -187,6 +187,121 @@ fn find_all(hay: &[char], needle: &[char]) -> Vec<usize> {
     (0..=hay.len() - needle.len()).filter(|&i| hay[i] == first && hay[i..i + needle.len()] == *needle).collect()
 }
 
+/// Whether the reader would find a highlight's `quote` in `text` (the text of a reading view, as
+/// [`dom_text`] gives it): exactly, ignoring runs of whitespace, or "dense" (case, dashes and µ
+/// folded; whitespace and quote marks left out), finally by its start and end close together —
+/// the reader's `locate` (apple/Shared/Highlights.swift), as Paper2EpubKit's `HighlightLocator`
+/// ports it. Used before a reading view is replaced: every highlight must still be found.
+pub fn would_find(text: &str, quote: &str) -> bool {
+    if quote.trim().is_empty() {
+        return false;
+    }
+    if text.contains(quote) {
+        return true;
+    }
+    // whitespace may differ between devices: match ignoring it
+    fn flat(s: &str) -> Vec<u16> {
+        let mut out: Vec<u16> = Vec::with_capacity(s.len());
+        for c in s.encode_utf16() {
+            if js_space(c) {
+                if out.last() == Some(&0x20) {
+                    continue;
+                }
+                out.push(0x20);
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+    let mut q = flat(quote);
+    while q.first() == Some(&0x20) {
+        q.remove(0);
+    }
+    while q.last() == Some(&0x20) {
+        q.pop();
+    }
+    if q.len() < 4 {
+        return false;
+    }
+    if index_of(&flat(text), &q, 0).is_some() {
+        return true;
+    }
+    // dense: spacing, dashes, quote marks and case left out / folded
+    let dense = |s: &str| -> Vec<u16> { s.encode_utf16().filter(|&c| !dense_skip(c)).map(dense_fold).collect() };
+    let dq = dense(quote);
+    if dq.len() < 4 {
+        return false;
+    }
+    let dn = dense(text);
+    if index_of(&dn, &dq, 0).is_some() {
+        return true;
+    }
+    if dq.len() > 140 && index_of(&dn, &dq[..100], 0).is_some() {
+        return true;
+    }
+    // the longest surviving start and end of the passage, close together
+    let mut pre = None;
+    let mut l = (dq.len() - 1).min(120);
+    while l >= 30 {
+        if let Some(x) = index_of(&dn, &dq[..l], 0) {
+            pre = Some((x, l));
+            break;
+        }
+        l -= 5;
+    }
+    let Some((pre, pre_len)) = pre else { return false };
+    let mut l2 = (dq.len() - 1).min(120);
+    while l2 >= 30 {
+        if let Some(y) = index_of(&dn, &dq[dq.len() - l2..], pre + pre_len) {
+            return y + l2 - pre <= dq.len() * 2;
+        }
+        l2 -= 5;
+    }
+    false
+}
+
+/// JavaScript `/\s/` (ECMAScript white space and line terminators), on UTF-16 units.
+fn js_space(c: u16) -> bool {
+    matches!(c, 0x09..=0x0D | 0x20 | 0xA0 | 0x1680 | 0x2000..=0x200A | 0x2028 | 0x2029 | 0x202F | 0x205F | 0x3000 | 0xFEFF)
+}
+
+/// The reader's `skip`: whitespace and quote marks.
+fn dense_skip(c: u16) -> bool {
+    js_space(c)
+        || matches!(c, 0x27 | 0x22 | 0x2018 | 0x2019 | 0x201A | 0x201B | 0x201C | 0x201D | 0x201E | 0x201F | 0xB4 | 0x60 | 0xAB | 0xBB)
+}
+
+/// The reader's `foldc`.
+fn dense_fold(c: u16) -> u16 {
+    match c {
+        0xB5 => 0x3BC,
+        0x2018 | 0x2019 => 0x27,
+        0x201C | 0x201D => 0x22,
+        0x2010..=0x2014 | 0x2212 => 0x2D,
+        0x41..=0x5A => c + 32,
+        0..=0x7F | 0xD800..=0xDFFF => c,
+        _ => match char::from_u32(c as u32) {
+            Some(ch) => {
+                let l: Vec<u16> = ch.to_lowercase().collect::<String>().encode_utf16().collect();
+                if l.len() == 1 {
+                    l[0]
+                } else {
+                    c
+                }
+            }
+            None => c,
+        },
+    }
+}
+
+fn index_of(hay: &[u16], needle: &[u16], from: usize) -> Option<usize> {
+    if needle.is_empty() || hay.len() < needle.len() || from > hay.len() - needle.len() {
+        return None;
+    }
+    (from..=hay.len() - needle.len()).find(|&i| hay[i] == needle[0] && hay[i..i + needle.len()] == *needle)
+}
+
 /// Where a quote is in `text`, as a byte range of `text`.
 pub fn locate(text: &str, quote: &str, before: Option<&str>) -> Result<(usize, usize)> {
     let dense_q = fold(quote, true).chars;

@@ -22,6 +22,8 @@ pub mod import;
 pub mod index;
 pub mod metadata;
 pub mod model;
+#[cfg(feature = "convert")]
+pub mod pagetext;
 pub mod store;
 
 use model::*;
