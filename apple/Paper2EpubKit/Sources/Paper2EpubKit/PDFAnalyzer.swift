@@ -50,7 +50,7 @@ final class Para {
     var size: CGFloat {
         var c: [CGFloat: Int] = [:]
         for l in lines { c[l.size, default: 0] += l.text.count }
-        return c.max { $0.value < $1.value }?.key ?? 0
+        return c.max { ($0.value, $0.key) < ($1.value, $1.key) }?.key ?? 0
     }
 }
 
@@ -60,7 +60,13 @@ func joinLines(_ parts: [String]) -> String {
         let p = raw.trimmingCharacters(in: .whitespaces)
         if p.isEmpty { continue }
         if out.isEmpty { out = p; continue }
-        if out.range(of: "[A-Za-z]-$", options: .regularExpression) != nil, p.first?.isLowercase == true {
+        if out.hasSuffix(PDFAnalyzer.glue) {
+            out.removeLast(); out += p
+        } else if out.hasSuffix(PDFAnalyzer.hardHyphen) {
+            out.removeLast(); out += "-" + p
+        } else if urlContinues(out, p) {
+            out += p
+        } else if out.range(of: "[A-Za-z]-$", options: .regularExpression) != nil, p.first?.isLowercase == true {
             out.removeLast(); out += p
         } else if (out.hasSuffix("-") || out.hasSuffix("/") || out.hasSuffix("–")) && !out.hasSuffix(" -") {
             out += p
@@ -68,7 +74,21 @@ func joinLines(_ parts: [String]) -> String {
             out += " " + p
         }
     }
-    return out
+    return lineEndsCleaned(out)
+}
+
+/// A web address broken across lines ("https://doi.org/10." + "1038/nature21350") goes on without a space.
+func urlContinues(_ out: String, _ next: String) -> Bool {
+    guard let lastWord = out.split(separator: " ").last.map(String.init), lastWord.matches(#"^\(?(https?://|www\.|doi\.org/)\S*$"#),
+          let n = next.first else { return false }
+    if n == "/" || n == "." { return true }
+    return lastWord.last.map { ".-_/=?&#".contains($0) } == true && (n.isLowercase || n.isNumber)
+}
+
+/// Turns the line-end markers PDFAnalyzer puts in PLine.text back into plain text.
+func lineEndsCleaned(_ s: String) -> String {
+    guard s.contains(PDFAnalyzer.glue) || s.contains(PDFAnalyzer.hardHyphen) else { return s }
+    return s.replacingOccurrences(of: PDFAnalyzer.glue, with: "").replacingOccurrences(of: PDFAnalyzer.hardHyphen, with: "-")
 }
 
 private func re(_ p: String, _ opts: NSRegularExpression.Options = []) -> NSRegularExpression {
@@ -93,7 +113,9 @@ final class PDFAnalyzer {
         + #"appendix|keywords|significance|highlights|limitations|related work|experiments?|"#
         + #"figure legends|figures|tables|abbreviations|ethics statement|resource availability)\s*[:.]?$"#, .caseInsensitive)
     static let captionRE = re(
-        #"^(?:Supplementary\s+|Extended\s+Data\s+|Supporting\s+)?(Figure|Fig\.?|Table|Algorithm|Box)\s*S?\d+[A-Za-z]?\s*[.:|\-–—]?"#,
+        // the label must be followed by punctuation, a capitalised word or nothing: running text that
+        // wraps onto a line starting "Figure S2G). Top genes…" or "Fig. 1a and …" is not a caption
+        #"^(?:Supplementary\s+|Extended\s+Data\s+|Supporting\s+)?(Figure|Fig\.?|Table|Algorithm|Box)\s*S?\d+[A-Za-z]?(?![\w)\];,])\s*(?:[.:|\-–—]|(?-i:[A-Z(\[])|$)"#,
         .caseInsensitive)
 
     let doc: PDFDocument
@@ -103,6 +125,14 @@ final class PDFAnalyzer {
     var bodySize: CGFloat = 10
     var running = Set<String>()
     private var imageCounter = 0
+    /// Line-end markers in PLine.text: `glue` = the word continues on the next line (PDFKit removed a
+    /// hyphenation hyphen); `hardHyphen` = a real hyphen at the end of a line ("sample-|level").
+    static let glue = "\u{AD}", hardHyphen = "\u{2011}"
+    private var gluedLines: [CGFloat: Int] = [:]   // by font size
+    static let spacingAccents: [String: String] = ["¨": "\u{0308}", "´": "\u{0301}", "ˆ": "\u{0302}", "˜": "\u{0303}",
+                                                    "ˇ": "\u{030C}", "¸": "\u{0327}", "˚": "\u{030A}"]
+    static let noSpaceBefore: Set<String> = [",", ".", ";", ":", "!", "?", ")", "]", "}", "’", "”", "%"]
+    static let noSpaceAfter: Set<String> = ["(", "[", "{", "‘", "“"]
     let log: (String) -> Void
 
     init(doc: PDFDocument, log: @escaping (String) -> Void) {
@@ -128,7 +158,19 @@ final class PDFAnalyzer {
             pagesLines.append(lines)
             if pno % 5 == 4 { log("Reading page \(pno + 1) of \(doc.pageCount)") }
         }
-        if let best = sizes.max(by: { $0.value < $1.value }) { bodySize = best.key }
+        if let best = sizes.max(by: { ($0.value, $0.key) < ($1.value, $1.key) }) { bodySize = best.key }
+        // When PDFKit itself takes out the hyphenation hyphens (it can tell them apart in this PDF), the
+        // hyphens left at line ends are real ones ("sample-|level"): keep them when the lines are joined.
+        // Decided per font size: PDFKit may do it for the body text and not for the legends.
+        let hyphenEnds = Dictionary(grouping: pagesLines.joined().filter {
+            $0.text.range(of: "[A-Za-z]-$", options: .regularExpression) != nil
+        }) { ($0.size * 2).rounded() / 2 }
+        for (size, ends) in hyphenEnds {
+            let glued = gluedLines[size] ?? 0
+            if glued >= 3 && glued >= ends.count / 2 {
+                for l in ends { l.text = String(l.text.dropLast()) + Self.hardHyphen }
+            }
+        }
         findRunning()
     }
 
@@ -160,12 +202,21 @@ final class PDFAnalyzer {
         }
 
         var out: [PLine] = []
+        var lineSels: [(sel: PDFSelection, range: NSRange)] = []
         for ls in sel.selectionsByLine() {
             let nr = ls.numberOfTextRanges(on: page)
             guard nr > 0 else { continue }
             var range = ls.range(at: 0, on: page)
             for k in 1..<max(1, nr) { range = NSUnionRange(range, ls.range(at: k, on: page)) }
             guard range.location != NSNotFound, range.location + range.length <= ns.length, range.length > 0 else { continue }
+            lineSels.append((ls, range))
+        }
+        let letters = CharacterSet.letters
+        func isLetter(_ i: Int) -> Bool {
+            guard i >= 0, i < ns.length, let u = Unicode.Scalar(ns.character(at: i)) else { return false }
+            return letters.contains(u)
+        }
+        for (li, (ls, range)) in lineSels.enumerated() {
             let bbox = toTop(ls.bounds(for: page))
             if bbox.h > 2.5 * bbox.w && range.length > 2 { continue }   // rotated margin text
 
@@ -176,19 +227,25 @@ final class PDFAnalyzer {
                 let r = ns.rangeOfComposedCharacterSequence(at: i)
                 let ch = ns.substring(with: r)
                 i = r.location + r.length
-                if ch == "\n" || ch == "\r" { continue }
+                if ch == "\n" || ch == "\r" {
+                    // PDFKit removes soft hyphens and moves the line break to the end of the rejoined word
+                    // ("ques-|tions require" → "questions\nrequire"): a break inside a line is a word space
+                    if let p = chars.last, p.ch != " " { chars.append(C(ch: " ", size: p.size, box: R(x0: p.box.x1, y0: p.box.y0, x1: p.box.x1, y1: p.box.y1), run: nil)) }
+                    continue
+                }
                 let f = attr.attribute(.font, at: r.location, effectiveRange: nil) as? PFont
                 // characterBounds(at:) uses a different index space on some PDFs; a 1-char selection is reliable
                 let box = page.selection(for: r).map { toTop($0.bounds(for: page)) } ?? R(x0: 0, y0: 0, x1: 0, y1: 0)
                 let size = f?.pointSize ?? 0
                 chars.append(C(ch: ch, size: size, box: box, run: nil))
             }
+            while chars.last?.ch == " " { chars.removeLast() }
             guard !chars.isEmpty else { continue }
             var sizeCount: [CGFloat: Int] = [:]
             for c in chars where !c.ch.trimmingCharacters(in: .whitespaces).isEmpty {
                 sizeCount[(c.size * 2).rounded() / 2, default: 0] += 1
             }
-            guard let dom = sizeCount.max(by: { $0.value < $1.value })?.key, dom > 0 else { continue }
+            guard let dom = sizeCount.max(by: { ($0.value, $0.key) < ($1.value, $1.key) })?.key, dom > 0 else { continue }
             let mains = chars.filter { abs($0.size - dom) < 0.6 && $0.box.h > 0 }
             let mainCenter = mains.isEmpty ? bbox.y0 + bbox.h / 2 : mains.map { ($0.box.y0 + $0.box.y1) / 2 }.reduce(0, +) / CGFloat(mains.count)
             let mainHeight = mains.isEmpty ? bbox.h : mains.map(\.box.h).reduce(0, +) / CGFloat(mains.count)
@@ -197,21 +254,44 @@ final class PDFAnalyzer {
             var last: TextRun?
             var text = ""
             // Some PDFs place words by position and never encode a space: put one back wherever the
-            // content stream jumped right between two characters (see PageGraphics.gaps).
+            // content stream jumped right between two characters (see PageGraphics.gaps) — but never
+            // before closing or after opening punctuation.
             var spaced: [C] = []
             for c in chars {
                 if let p = spaced.last, !p.ch.trimmingCharacters(in: .whitespaces).isEmpty,
-                   !c.ch.trimmingCharacters(in: .whitespaces).isEmpty, p.box.w > 0, c.box.w > 0, c.box.x0 >= p.box.x0 {
+                   !c.ch.trimmingCharacters(in: .whitespaces).isEmpty, p.box.w > 0, c.box.w > 0, c.box.x0 >= p.box.x0,
+                   !Self.noSpaceBefore.contains(c.ch), !Self.noSpaceAfter.contains(p.ch) {
                     let lo = (p.box.x0 + p.box.x1) / 2, hi = (c.box.x0 + c.box.x1) / 2
                     let key = Int(c.box.y1 / 4)
+                    // the gap must sit on this line's baseline (lower part of the glyph box), not the line above
                     let hit = ((key - 2)...(key + 2)).contains { k in
-                        (gapBuckets[k] ?? []).contains { g in g.x > lo && g.x < hi && g.y >= c.box.y0 - 1 && g.y <= c.box.y1 + 1.5 }
+                        (gapBuckets[k] ?? []).contains { g in
+                            g.x > lo && g.x < hi && g.y >= c.box.y0 + 0.4 * c.box.h && g.y <= c.box.y1 + 1.5
+                        }
                     }
                     if hit { spaced.append(C(ch: " ", size: c.size, box: R(x0: p.box.x1, y0: c.box.y0, x1: c.box.x0, y1: c.box.y1), run: nil)) }
                 }
                 spaced.append(c)
             }
             chars = spaced
+            // Accents drawn as separate spacing glyphs after their letter ("Bu¨ ttner"): fold them into
+            // the letter and drop the space the accent's backward move leaves behind.
+            if chars.contains(where: { Self.spacingAccents[$0.ch] != nil }) {
+                var folded: [C] = []
+                var k = 0
+                while k < chars.count {
+                    let c = chars[k]
+                    if let comb = Self.spacingAccents[c.ch], let p = folded.last, p.ch.count == 1, p.ch.first!.isLetter {
+                        folded[folded.count - 1].ch = ((p.ch == "ı" ? "i" : p.ch) + comb).precomposedStringWithCanonicalMapping
+                        if k + 2 < chars.count, chars[k + 1].ch == " ", chars[k + 2].ch.first?.isLowercase == true { k += 1 }
+                        k += 1
+                        continue
+                    }
+                    folded.append(c)
+                    k += 1
+                }
+                chars = folded
+            }
             for idx in chars.indices {
                 let c = chars[idx]
                 let isSpace = c.ch.trimmingCharacters(in: .whitespaces).isEmpty
@@ -242,6 +322,14 @@ final class PDFAnalyzer {
                 }
             }
             guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+            // the word goes on in the next line with nothing between (PDFKit dropped a hyphenation hyphen):
+            // mark it so the lines are joined without a space
+            let end = range.location + range.length
+            if li + 1 < lineSels.count, lineSels[li + 1].range.location == end, isLetter(end - 1), isLetter(end),
+               text.last.map({ $0.isLetter }) == true {
+                text += Self.glue
+                gluedLines[(dom * 2).rounded() / 2, default: 0] += 1
+            }
             out.append(PLine(text: text, bbox: bbox, size: dom, bold: CGFloat(nBold) / CGFloat(max(1, n)),
                              math: CGFloat(nMath) / CGFloat(max(1, n)), spans: spans, page: pno))
         }
@@ -281,6 +369,13 @@ final class PDFAnalyzer {
         if t.matches(#"^\d{1,4}$"#) && l.bbox.w < 25 { return true }
         if t.matches(#"^(bioRxiv|medRxiv) preprint doi"#, .caseInsensitive) || t.contains("copyright holder for this preprint") { return true }
         if inMargin && t.matches(#"^(downloaded from|arxiv:\d{4}\.\d+)"#, .caseInsensitive) { return true }
+        if t.allSatisfy({ $0 == "\u{FFFC}" || $0.isWhitespace }) { return true }   // logo placeholder
+        if t.matches(#"^\((figure )?legend (continued )?on (the )?(next|previous|following) page\)$"#, .caseInsensitive) { return true }
+        // publisher footer: "Cell 190, 1–19 … © 2026 Elsevier Inc." / "All rights are reserved, …"
+        if l.bbox.y0 > 0.86 * h && l.size <= bodySize + 0.5 && t.count < 200
+            && t.matches(#"©|\bAll rights (are )?reserved\b|^for text and data mining\b"#, .caseInsensitive) { return true }
+        // first-page citation footer: "Jiang et al., 2027, Cell 190, 1–19"
+        if l.page <= 1 && l.bbox.y0 > 0.86 * h && t.matches(#"^[A-Z][\w'’-]+ et al\., \d{4}, .+\d$"#) { return true }
         return false
     }
 
@@ -512,10 +607,13 @@ final class PDFAnalyzer {
             p.asset = g.image
             units.append(p)
         }
-        units = order(pno, units)
+        let (ordered, gutter) = order(pno, units)
+        units = ordered
         let txt = units.filter { $0.kind == .text }.map { $0.lines[0] }
         func rightEdge(_ l: PLine) -> CGFloat {
-            let ov = txt.filter { min($0.bbox.x1, l.bbox.x1) - max($0.bbox.x0, l.bbox.x0) > 0.3 * l.bbox.w }.map(\.bbox.x1)
+            // the column's right edge: full-width lines (legends, summary) across the gutter do not count
+            let sameColumn = txt.filter { o in gutter.map { g in !(o.bbox.x0 < g - 3 && o.bbox.x1 > g + 3) } ?? true }
+            let ov = sameColumn.filter { min($0.bbox.x1, l.bbox.x1) - max($0.bbox.x0, l.bbox.x0) > 0.3 * l.bbox.w }.map(\.bbox.x1)
             return ov.max() ?? l.bbox.x1
         }
         let abbrev = re(#"(\b(e\.g|i\.e|et al|cf|Fig|Figs|Eq|Eqs|vs|approx|ca|resp|Ref|Refs|No|Dr|Prof|al)\.|\b[A-Z]\.)$"#)
@@ -535,13 +633,16 @@ final class PDFAnalyzer {
             let at = a.text.trimmingCharacters(in: .whitespaces)
             let endsSentence = at.hasSuffix(".") || at.hasSuffix(":") || at.hasSuffix("?") || at.hasSuffix("!")
             let shortA = (reA - a.bbox.x1) > 0.18 * width && endsSentence && !abbrev.test(at)
-            let indent = l.bbox.x0 - left > 8 && cur.dropFirst().allSatisfy { abs($0.bbox.x0 - left) < 3 } && endsSentence && !abbrev.test(at)
+            // (not the hanging indent of a numbered reference: "4. Satija, R., … (2015)." / "Spatial …")
+            let numberedItem = cur[0].text.trimmingCharacters(in: .whitespaces).matches(#"^(\[\d+\]|\d+\.)\s"#)
+            let indent = l.bbox.x0 - left > 8 && cur.dropFirst().allSatisfy { abs($0.bbox.x0 - left) < 3 } && endsSentence
+                && !abbrev.test(at) && !numberedItem
             let hanging = cur.count >= 2 && l.bbox.x0 < a.bbox.x0 - 6 && cur[0].bbox.x0 < a.bbox.x0 - 6
             let sizeChange = abs(l.size - a.size) >= 1.0
             let styleBreak = (a.bold > 0.9) != (l.bold > 0.9) && (at.count < 120 || l.text.count < 120)
             let cap = Self.captionRE.test(l.text.trimmingCharacters(in: .whitespaces))
             if jumped || gap > 0.75 * max(l.size, a.size) || shortA || indent || hanging || sizeChange || styleBreak || cap
-                || (cur.count == 1 && l.bbox.x0 > a.bbox.x0 + 8 && gap > 0.3 * l.size) {
+                || (cur.count == 1 && l.bbox.x0 > a.bbox.x0 + 8 && gap > 0.3 * l.size && !numberedItem) {
                 if jumped && !(gap > 0.75 * l.size) && !shortA && !sizeChange && !cap
                     && l.text.trimmingCharacters(in: .whitespaces).first?.isLowercase == true {
                     cur.append(l); continue   // column continuation
@@ -554,30 +655,65 @@ final class PDFAnalyzer {
         return paras
     }
 
-    func order(_ pno: Int, _ paras: [Para]) -> [Para] {
+    /// Reading order of a page's lines and blocks; also returns the column gutter's x on two-column pages.
+    func order(_ pno: Int, _ paras: [Para]) -> ([Para], CGFloat?) {
         let W = boxes[pno].width
-        let textual = paras.filter { $0.kind == .text }
-        let narrow = textual.filter { $0.bbox.w < 0.55 * W }
-        let charsN = narrow.reduce(0) { $0 + $1.text.count }
-        let charsAll = max(1, textual.reduce(0) { $0 + $1.text.count })
-        let left = narrow.filter { $0.bbox.cx < W / 2 }.reduce(0) { $0 + $1.text.count }
-        let right = charsN - left
-        let twoCol = Double(charsN) > 0.5 * Double(charsAll) && Double(left) > 0.2 * Double(charsN) && Double(right) > 0.2 * Double(charsN)
-        if !twoCol {
-            return paras.sorted { (($0.bbox.y0 / 4).rounded(), $0.bbox.x0) < (($1.bbox.y0 / 4).rounded(), $1.bbox.x0) }
+        // The column gutter: the gap that most often separates two lines side by side on the same row
+        // (text left of it and text right of it). Decided row by row, so full-width blocks (summary,
+        // figure legends) or a shifted abstract do not hide the columns however much text they hold.
+        let textual = paras.filter { $0.kind == .text && $0.bbox.w >= 0.15 * W }
+        var gaps: [(CGFloat, CGFloat)] = []
+        for a in textual {
+            let rightOf = textual.filter { b in
+                b !== a && b.bbox.x0 >= a.bbox.x1 + 3 && b.bbox.x0 - a.bbox.x1 < 0.4 * W
+                    && min(a.bbox.y1, b.bbox.y1) - max(a.bbox.y0, b.bbox.y0) > 0.5 * min(a.bbox.h, b.bbox.h)
+            }
+            if let b = rightOf.min(by: { $0.bbox.x0 < $1.bbox.x0 }) { gaps.append((a.bbox.x1, b.bbox.x0)) }
         }
-        let wide = paras.filter { $0.bbox.w >= 0.55 * W }.sorted { $0.bbox.y0 < $1.bbox.y0 }
-        let rest = paras.filter { $0.bbox.w < 0.55 * W }
+        var cover: [(x: CGFloat, n: Int)] = []
+        for x in stride(from: 0.25 * W, through: 0.75 * W, by: 1) {
+            cover.append((x, gaps.filter { $0.0 < x && x < $0.1 }.count))
+        }
+        let maxN = cover.map(\.n).max() ?? 0
+        var bestRun: (lo: Int, hi: Int)?
+        var i = 0
+        while i < cover.count {
+            guard cover[i].n == maxN else { i += 1; continue }
+            var j = i
+            while j + 1 < cover.count && cover[j + 1].n == maxN { j += 1 }
+            if bestRun.map({ j - i > $0.hi - $0.lo }) ?? true { bestRun = (i, j) }
+            i = j + 1
+        }
+        let gutter = bestRun.map { (cover[$0.lo].x + cover[$0.hi].x) / 2 } ?? W / 2
+        // pages with little text (end matter): fall back on "most text sits in one half or the other"
+        let narrow = paras.filter { $0.kind == .text && $0.bbox.w < 0.55 * W }
+        let leftN = narrow.filter { $0.bbox.x1 <= gutter }.reduce(0) { $0 + $1.text.count }
+        let rightN = narrow.filter { $0.bbox.x0 >= gutter }.reduce(0) { $0 + $1.text.count }
+        let allN = max(1, paras.filter { $0.kind == .text }.reduce(0) { $0 + $1.text.count })
+        let halves = Double(leftN + rightN) > 0.5 * Double(allN) && Double(min(leftN, rightN)) > 0.2 * Double(leftN + rightN)
+        let twoCol = maxN >= 4 || halves
+        if !twoCol {
+            return (paras.sorted { (($0.bbox.y0 / 4).rounded(), $0.bbox.x0) < (($1.bbox.y0 / 4).rounded(), $1.bbox.x0) }, nil)
+        }
+        // full-width blocks cut the page into bands; each band is read left column, then right column
+        // (text never crosses the gutter unless it spans both columns; a figure's box, grown by its labels,
+        // may stick out of its column a little)
+        func isWide(_ p: Para) -> Bool {
+            let m: CGFloat = p.kind == .text ? 3 : 0.05 * W
+            return (p.bbox.x0 < gutter - m && p.bbox.x1 > gutter + m) || (p.kind != .text && p.bbox.w >= 0.55 * W)
+        }
+        let wide = paras.filter(isWide).sorted { $0.bbox.y0 < $1.bbox.y0 }
+        let rest = paras.filter { !isWide($0) }
         var out: [Para] = []
-        var prevY: CGFloat = -1
+        var prevY: CGFloat = -.greatestFiniteMagnitude
         for wp in wide.map(Optional.some) + [nil] {
             let y = wp?.bbox.y0 ?? .greatestFiniteMagnitude
             let band = rest.filter { prevY <= $0.bbox.y0 && $0.bbox.y0 < y }
-            out += band.filter { $0.bbox.cx < W / 2 }.sorted { $0.bbox.y0 < $1.bbox.y0 }
-            out += band.filter { $0.bbox.cx >= W / 2 }.sorted { $0.bbox.y0 < $1.bbox.y0 }
+            out += band.filter { $0.bbox.cx < gutter }.sorted { $0.bbox.y0 < $1.bbox.y0 }
+            out += band.filter { $0.bbox.cx >= gutter }.sorted { $0.bbox.y0 < $1.bbox.y0 }
             if let wp { out.append(wp); prevY = wp.bbox.y0 }
         }
-        return out
+        return (out, gutter)
     }
 
     func classify(_ input: [Para]) -> [Para] {
@@ -637,6 +773,9 @@ final class PDFAnalyzer {
         for (k, p) in paras.enumerated() {
             if p.page > 1 { break }
             let t = p.text.trimmingCharacters(in: .whitespaces)
+            // a summary page's "Highlights" box is still front matter (Cell: graphical abstract, highlights,
+            // in brief — then the article itself with title and authors on the next page)
+            if p.kind == .heading && t.matches(#"^(highlights|graphical abstract|in brief)$"#, .caseInsensitive) { continue }
             if p.kind == .heading && (Self.knownSections.test(t) || t.matches(#"^\d+\.?\s+[A-Z]"#)) { boundary = k; break }
         }
         let bnd = boundary ?? (paras.firstIndex { $0.page > 1 || ($0.page == 1 && $0.kind == .heading) } ?? paras.count)
@@ -728,7 +867,13 @@ final class PDFAnalyzer {
         var out = "", outPlain = ""
         for (plain, html) in linesHTML where !plain.isEmpty {
             if outPlain.isEmpty { out = html; outPlain = plain; continue }
-            if outPlain.range(of: "[A-Za-z]-$", options: .regularExpression) != nil, plain.first?.isLowercase == true,
+            if outPlain.hasSuffix(Self.glue) {
+                out += html; outPlain = String(outPlain.dropLast()) + plain
+            } else if outPlain.hasSuffix(Self.hardHyphen) {
+                out += html; outPlain = String(outPlain.dropLast()) + "-" + plain
+            } else if urlContinues(outPlain, plain) {
+                out += html; outPlain += plain
+            } else if outPlain.range(of: "[A-Za-z]-$", options: .regularExpression) != nil, plain.first?.isLowercase == true,
                let r = out.range(of: #"-((</[a-z]+>)*)$"#, options: .regularExpression) {
                 let tags = String(out[r].dropFirst())
                 out.replaceSubrange(r, with: tags)
@@ -817,7 +962,8 @@ enum PDFBook {
             let t = p.text.trimmingCharacters(in: .whitespaces)
             let legendLike = t.matches(#"^\([A-Z][A-Za-z]{0,3}\)\s|^See also Figure|^Scale bars?"#)
             if p.kind == .text, p.size < an.bodySize - 0.4,
-               let j = folded.lastIndex(where: { $0.kind == .caption }), folded.count - j <= 8,
+               // a legend's "(D) …" panels continue after the page's body text when it runs onto the next page
+               let j = folded.lastIndex(where: { $0.kind == .caption }), folded.count - j <= 8 || legendLike,
                abs(folded[j].page - p.page) <= 1, abs(p.size - folded[j].size) < 0.8,
                legendLike || j == folded.count - 1 {
                 folded[j] = Para(folded[j].lines + p.lines, page: folded[j].page, kind: .caption)

@@ -41,6 +41,9 @@ struct PageGraphics {
 final class PDFContentScanner {
     private struct GState {
         var ctm = CGAffineTransform.identity
+        /// Text state parameters in force at `q` (Tc, Tw, Tz, TL, Tf are part of the graphics state and
+        /// come back at `Q`; the text matrices are not).
+        var savedText: TextState?
     }
     private struct TextState {
         var tm = CGAffineTransform.identity, tlm = CGAffineTransform.identity
@@ -337,8 +340,19 @@ final class PDFContentScanner {
     static let operatorTable: CGPDFOperatorTableRef = {
         let t = CGPDFOperatorTableCreate()!
         func add(_ op: String, _ cb: @escaping CGPDFOperatorCallback) { CGPDFOperatorTableSetCallback(t, op, cb) }
-        add("q") { _, i in let m = me(i); m.gstack.append(m.gstack.last!) }
-        add("Q") { _, i in let m = me(i); if m.gstack.count > 1 { m.gstack.removeLast() } }
+        add("q") { _, i in
+            let m = me(i)
+            var g = m.gstack.last!
+            g.savedText = m.ts
+            m.gstack.append(g)
+        }
+        add("Q") { _, i in
+            let m = me(i)
+            guard m.gstack.count > 1 else { return }
+            if let t = m.gstack.removeLast().savedText {
+                m.ts.tc = t.tc; m.ts.tw = t.tw; m.ts.th = t.th; m.ts.tl = t.tl; m.ts.size = t.size; m.ts.font = t.font
+            }
+        }
         add("cm") { s, i in
             let m = me(i)
             if let v = pop(s, 6) { m.ctm = CGAffineTransform(a: v[0], b: v[1], c: v[2], d: v[3], tx: v[4], ty: v[5]).concatenating(m.ctm) }
