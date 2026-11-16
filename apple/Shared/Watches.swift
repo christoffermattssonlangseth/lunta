@@ -906,6 +906,9 @@ final class WatchCenter: ObservableObject {
     // MARK: notifications
 
     private func requestNotifications() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-noNotificationPrompt") { return }   // screenshots
+        #endif
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
     }
 

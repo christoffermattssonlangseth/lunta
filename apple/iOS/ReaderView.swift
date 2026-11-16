@@ -253,6 +253,7 @@ struct ReaderView: View {
             find.use(findBackend)
             if mode == .pdf { try? await Task.sleep(for: .milliseconds(500)); find.pageSettled() }
             #if DEBUG
+            Task { await shotHooks() }
             await positionTest()
             await controller.figureTest()
             await findTest()
@@ -281,6 +282,21 @@ struct ReaderView: View {
     }
 
     #if DEBUG
+    /// Screenshots: -pdfMode shows the PDF, -hideChrome hides the bars, -showAppearance opens Text & Theme, -readerJS <js> runs
+    /// in the page after -readerJSDelay <seconds> (default 8).
+    private func shotHooks() async {
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("-pdfMode") { mode = .pdf }
+        if args.contains("-hideChrome") { try? await Task.sleep(for: .seconds(4)); chromeHidden = true }
+        if args.contains("-showAppearance") { try? await Task.sleep(for: .seconds(5)); showAppearance = true }
+        if let i = args.firstIndex(of: "-readerJS"), args.indices.contains(i + 1) {
+            let delay = args.firstIndex(of: "-readerJSDelay").flatMap { args.indices.contains($0 + 1) ? Double(args[$0 + 1]) : nil } ?? 8
+            try? await Task.sleep(for: .seconds(delay))
+            let r = try? await controller.webView?.evaluateJavaScript(args[i + 1])
+            print("SHOTJS", r.map { "\($0)" } ?? "nil"); fflush(stdout)
+        }
+    }
+
     /// -findTest <query> (see PaperFind.selfTest); -findPDF searches the PDF instead.
     private func findTest() async {
         let args = ProcessInfo.processInfo.arguments

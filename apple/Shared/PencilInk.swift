@@ -424,11 +424,46 @@ final class InkOverlay: NSView {
 
 #if DEBUG
 extension PDFInk {
+    /// Screenshots: -inkDemo <json> draws strokes on a page, [{"page":0,"ink":"pen|marker|pencil",
+    /// "color":"#rrggbb","alpha":1,"width":4,"points":[[x,y],…]}, …] (page points, top left origin).
+    func inkDemo(_ args: [String]) {
+        guard let i = args.firstIndex(of: "-inkDemo"), args.indices.contains(i + 1),
+              let data = args[i + 1].data(using: .utf8),
+              let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            var pages: [Int: [PKStroke]] = [:]
+            for s in list {
+                let page = s["page"] as? Int ?? 0
+                let w = s["width"] as? Double ?? 4
+                let hex = (s["color"] as? String ?? "#ff0000").dropFirst()
+                let v = Int(hex, radix: 16) ?? 0xff0000
+                #if os(macOS)
+                let color = NSColor(red: CGFloat((v >> 16) & 255) / 255, green: CGFloat((v >> 8) & 255) / 255, blue: CGFloat(v & 255) / 255, alpha: s["alpha"] as? Double ?? 1)
+                #else
+                let color = UIColor(red: CGFloat((v >> 16) & 255) / 255, green: CGFloat((v >> 8) & 255) / 255, blue: CGFloat(v & 255) / 255, alpha: s["alpha"] as? Double ?? 1)
+                #endif
+                let type: PKInk.InkType = s["ink"] as? String == "marker" ? .marker : s["ink"] as? String == "pencil" ? .pencil : .pen
+                let pts = (s["points"] as? [[Double]] ?? []).enumerated().map { k, p in
+                    PKStrokePoint(location: CGPoint(x: p[0], y: p[1]), timeOffset: Double(k) * 0.02, size: CGSize(width: w, height: w),
+                                  opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
+                }
+                pages[page, default: []].append(PKStroke(ink: PKInk(type, color: color), path: PKStrokePath(controlPoints: pts, creationDate: Date())))
+            }
+            for (page, strokes) in pages {
+                let d = PKDrawing(strokes: strokes)
+                changed(page, d)
+                overlays[page]?.show(d)
+            }
+        }
+    }
+
     /// Simulator test of saving and loading (the simulator has no Pencil): -inkTest puts a
     /// drawing on page 1, saves it, forgets it, reads the file back and checks that it is the same;
     /// -inkMarkup turns Markup on (for a screenshot of the tool picker).
     func inkTest() {
         let args = ProcessInfo.processInfo.arguments
+        inkDemo(args)
         if args.contains("-inkMarkup") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.markup = true }
         }
