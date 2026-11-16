@@ -515,14 +515,35 @@ final class LibraryModel: ObservableObject {
 
     /// Imports a BibTeX / RIS export (e.g. ReadCube Papers' “Export to… → Bibliography file”),
     /// then optionally matches a folder of exported PDFs and builds reading views in the background.
-    func importExport(file: URL, pdfFolder: URL?) async {
+    /// `folder`: put the imported papers in this folder (made if needed). Exports carry no folders, so
+    /// a collection is moved by exporting it on its own and importing it into a folder of the same name.
+    func importExport(file: URL, pdfFolder: URL?, folder: String? = nil) async {
         status = "Importing \(file.lastPathComponent)…"
         let lib = self.lib
         do {
             let text = try String(contentsOf: file, encoding: .utf8)
-            let report = try await Task.detached { try lib.importEntries(entries: parseImport(text: text)) }.value
+            // PDF paths relative to the export (Zotero's "Export Files": files/12/paper.pdf) are found next to it
+            let base = file.deletingLastPathComponent()
+            let entries = parseImport(text: text).map { e -> ImportEntry in
+                var e = e
+                e.files = e.files.map { path in
+                    if FileManager.default.fileExists(atPath: path) { return path }
+                    let rel = base.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+                    return FileManager.default.fileExists(atPath: rel.path) ? rel.path : path
+                }
+                return e
+            }
+            let report = try await Task.detached { try lib.importEntries(entries: entries) }.value
+            if let name = folder?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty, !report.paperIds.isEmpty {
+                let ids = report.paperIds
+                try await Task.detached {
+                    let col = try lib.collections().first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame })
+                        ?? lib.createCollection(name: name, parent: nil)
+                    for id in ids { try lib.setMembership(collection: col.id, paper: id, present: true) }
+                }.value
+            }
             reload()
-            status = "Imported \(report.added) new papers, merged \(report.merged)."
+            status = "Imported \(report.added) new papers, merged \(report.merged)" + (folder.map { $0.isEmpty ? "." : " into “\($0)”." } ?? ".")
             if let pdfFolder { await importPDFFolder(pdfFolder) }
             await makeReadingViews()
         } catch {

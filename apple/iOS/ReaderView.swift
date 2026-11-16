@@ -30,6 +30,8 @@ struct ReaderView: View {
     @State private var chromeHidden = false
     @State private var editingAnnotation: Annotation?
     @StateObject private var pdfHighlights = PDFHighlighter()
+    @StateObject private var find = PaperFind()
+    @State private var pdfFinder = PDFFinder()
     @State private var showHighlights = false
     @State private var current: String?
     @State private var scrollRequest = ScrollRequest()
@@ -55,13 +57,13 @@ struct ReaderView: View {
                 ProgressView(message ?? "Opening…")
             } else if mode == .reading, let book {
                 EpubWebViewIOS(url: URL(fileURLWithPath: book.combined), readAccess: URL(fileURLWithPath: book.dir),
-                               fontScale: fontScale, theme: theme, paged: paged, scrollRequest: scrollRequest, controller: controller,
+                               fontScale: fontScale, theme: theme, paged: paged, findBar: find.shown, scrollRequest: scrollRequest, controller: controller,
                                onPinch: { step in fontScale = min(2.2, max(0.7, ((fontScale + step * 0.1) * 10).rounded() / 10)) },
                                onToggleChrome: {
                                    withAnimation(.easeInOut(duration: 0.22)) { chromeHidden.toggle() }
                                },
                                onChrome: { hide in
-                                   guard hide != chromeHidden, !(hide && listening) else { return }
+                                   guard hide != chromeHidden, !(hide && listening), !find.shown else { return }
                                    withAnimation(.easeInOut(duration: 0.22)) { chromeHidden = hide }
                                }) { current = $0 }
                     // pages stay put when the bars come and go: the view always fills the screen
@@ -76,6 +78,19 @@ struct ReaderView: View {
             } else {
                 PaperInfoView(paperID: paperID, embedded: true)
             }
+        }
+        // find in paper: over the page, so the page keeps its size (and its pages)
+        .modifier(FindOverlay(find: find, theme: mode == .reading ? theme : nil))
+        // ⌘F, ⌘G and ⇧⌘G from a hardware keyboard (buttons the keyboard can reach, not seen)
+        .background {
+            Group {
+                Button("Find in Paper") { openFind() }.keyboardShortcut("f", modifiers: .command)
+                if find.shown {
+                    Button("Find Next") { find.next() }.keyboardShortcut("g", modifiers: .command)
+                    Button("Find Previous") { find.previous() }.keyboardShortcut("g", modifiers: [.command, .shift])
+                }
+            }
+            .opacity(0).allowsHitTesting(false).accessibilityHidden(true)
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarVisibility(chromeHidden && mode == .reading ? .hidden : .visible, for: .navigationBar)
@@ -137,6 +152,9 @@ struct ReaderView: View {
                         .pickerStyle(.menu)
                         Divider()
                     }
+                    if (mode == .reading && book != nil) || (mode == .pdf && pdfURL != nil) {
+                        Button { openFind() } label: { Label("Find in Paper", systemImage: "magnifyingglass") }
+                    }
                     if (mode == .reading && book != nil) || mode == .pdf {
                         Button { showHighlights = true } label: { Label("Highlights & Notes", systemImage: "highlighter") }
                     }
@@ -193,7 +211,13 @@ struct ReaderView: View {
         .sheet(isPresented: $showInfo) { NavigationStack { PaperInfoView(paperID: paperID, embedded: false) } }
         .onChange(of: highlightMode) { _, on in controller.setHighlightMode(on, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow) }
         .onChange(of: highlightModeColor) { controller.setHighlightMode(highlightMode, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow) }
-        .onChange(of: mode) { _, m in if m == .pdf, pdfURL == nil { Task { await loadPDF() } } }
+        .onChange(of: mode) { _, m in
+            if m == .pdf, pdfURL == nil { Task { await loadPDF(); find.use(findBackend) } }
+            find.use(findBackend)
+        }
+        // finding: in pages the bar takes the navigation bar's place (the pages make room for it);
+        // scrolling, the bars stay
+        .onChange(of: find.shown) { _, shown in withAnimation { chromeHidden = shown && paged && mode == .reading } }
         .task {
             controller.onFigure = { figure = $0 }
             controller.onPageReady = {
@@ -227,10 +251,17 @@ struct ReaderView: View {
             ask.model = model
             ask.passages = { [weak controller] in await controller?.narrationItems(includeCaptions: true) ?? [] }
             ask.selection = { [weak controller] in await controller?.selectedText() }
+            pdfFinder.highlighter = pdfHighlights
+            // opened from a library search that found this paper: find the search in it
+            if let q = PaperFind.libraryQuery(for: paperID, in: model) { find.prefill(q) }
+            position.onSettled = { [weak find] in find?.pageSettled() }
             await load()
+            find.use(findBackend)
+            if mode == .pdf { try? await Task.sleep(for: .milliseconds(500)); find.pageSettled() }
             #if DEBUG
             await positionTest()
             await controller.figureTest()
+            await findTest()
             #endif
         }
         .onAppear { OpenReader.set(paperID); position.resume() }
@@ -246,6 +277,44 @@ struct ReaderView: View {
     }
 
     private func refreshHighlights() { controller.showAnnotations(model.annotations(paperID)) }
+
+    /// What the find bar searches: the reading view or the PDF.
+    private var findBackend: FindBackend? { mode == .pdf ? (pdfURL != nil ? pdfFinder : nil) : (book != nil ? controller : nil) }
+
+    private func openFind() {
+        find.use(findBackend)
+        find.open()
+    }
+
+    #if DEBUG
+    /// -findTest <query> (see PaperFind.selfTest); -findPDF searches the PDF instead.
+    private func findTest() async {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("-findTest") else { return }
+        if args.contains("-findPDF") {
+            mode = .pdf
+            for _ in 0..<40 where pdfFinder.highlighter?.view?.document == nil { try? await Task.sleep(for: .milliseconds(250)) }
+            find.use(findBackend)
+        } else {
+            // the page loaded and at its place (the restore holds it for a moment after)
+            for _ in 0..<80 { if await controller.readingOffset() != nil { break }; try? await Task.sleep(for: .milliseconds(250)) }
+        }
+        await find.selfTest(reader: {
+            if mode == .pdf {
+                guard let v = pdfHighlights.view, let doc = v.document else { return "no pdf" }
+                let page = v.currentPage.map { doc.index(for: $0) } ?? -1
+                return "pdf page=\(page + 1)/\(doc.pageCount) highlighted=\(v.highlightedSelections?.count ?? 0) \(pdfFinder.currentMatchInfo)"
+            }
+            let sv = controller.webView?.scrollView
+            let place = await controller.readingOffset() ?? -1
+            let js = (try? await controller.webView?.evaluateJavaScript("JSON.stringify(luntaFindState())")) as? String ?? "-"
+            return "paged=\(paged) x=\(Int(sv?.contentOffset.x ?? -1)) y=\(Int(sv?.contentOffset.y ?? -1)) place=\(place) \(js)"
+        }, annotations: {
+            let n = (try? await controller.webView?.evaluateJavaScript("document.querySelectorAll('mark.m-hl').length")) as? Int ?? -1
+            return "annotationMarks=\(n) saved=\(model.annotations(paperID).count)"
+        })
+    }
+    #endif
 
     #if DEBUG
     /// Simulator test of the saved place: -posTrace logs the place every second for a while after
@@ -394,6 +463,8 @@ struct EpubWebViewIOS: UIViewRepresentable {
     let fontScale: Double
     var theme: ReaderTheme = .automatic
     var paged = false
+    /// The find bar is over the page: pages start below it.
+    var findBar = false
     let scrollRequest: ScrollRequest
     let controller: ReaderController
     var onPinch: (Double) -> Void = { _ in }
@@ -416,6 +487,8 @@ struct EpubWebViewIOS: UIViewRepresentable {
         cfg.userContentController.addUserScript(WKUserScript(source: theme.js, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         context.coordinator.theme = theme
         cfg.addAnnotations(controller)
+        // find in paper; a match counts as in view between the bars and the keyboard
+        cfg.userContentController.addUserScript(WKUserScript(source: "window.luntaFindZone = [0.18, 0.55];" + ReaderAssets.findJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         // text size: the font scales, the page itself is never zoomed
         cfg.userContentController.addUserScript(WKUserScript(source: "document.documentElement.style.setProperty('--m-scale', '\(fontScale)');", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         context.coordinator.textScale = fontScale
@@ -450,7 +523,7 @@ struct EpubWebViewIOS: UIViewRepresentable {
     private func pagedState() -> PagedState {
         let win = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
         let inset = win?.safeAreaInsets ?? UIEdgeInsets(top: 50, left: 0, bottom: 34, right: 0)
-        return PagedState(on: paged, top: inset.top + 14, bottom: max(inset.bottom, 12) + 22, native: true)
+        return PagedState(on: paged, top: inset.top + 14 + (findBar && paged ? 52 : 0), bottom: max(inset.bottom, 12) + 22, native: true)
     }
 
     private func configureScroll(_ sv: UIScrollView) {

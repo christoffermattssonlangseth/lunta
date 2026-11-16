@@ -146,10 +146,11 @@ struct iPadLibrary: View {
                     .keyboardShortcut("n", modifiers: .command)
             }
         }
-        // ⌘F: to the search field (a button the keyboard can reach, not seen)
+        // ⌘F: to the search field (a button the keyboard can reach, not seen). With a paper open,
+        // ⌘F finds in the paper (ReaderView) and the library's search is ⌥⌘F.
         .background {
-            Button("Search") { if columns == .detailOnly { withAnimation { columns = narrow ? .doubleColumn : .all } }; searching = true }
-                .keyboardShortcut("f", modifiers: .command)
+            Button("Search Library") { if columns == .detailOnly { withAnimation { columns = narrow ? .doubleColumn : .all } }; searching = true }
+                .keyboardShortcut("f", modifiers: selected.flatMap(model.paper) == nil ? .command : [.command, .option])
                 .opacity(0).allowsHitTesting(false).accessibilityHidden(true)
         }
         // PDFs dragged in from Files or another app
@@ -270,7 +271,7 @@ struct iPadLibrary: View {
     }
 
     #if DEBUG
-    /// Simulator testing: -openPaper <id>, -openFirstPaper, -openForYou, -fullScreen, -allColumns.
+    /// Simulator testing: -openPaper <id>, -searchLibrary <query>, -openFirstPaper, -openForYou, -fullScreen, -allColumns.
     private func debugLaunch() async {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-openForYou") {
@@ -282,6 +283,11 @@ struct iPadLibrary: View {
         if let i = args.firstIndex(of: "-openPaper"), args.indices.contains(i + 1) {
             for _ in 0..<40 where model.paper(args[i + 1]) == nil { try? await Task.sleep(for: .milliseconds(250)) }
             id = args[i + 1]
+        } else if let i = args.firstIndex(of: "-searchLibrary"), args.indices.contains(i + 1) {   // a library search, then its first paper
+            try? await Task.sleep(for: .milliseconds(800))
+            model.query = args[i + 1]
+            for _ in 0..<40 where model.snippets.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
+            id = model.papers.first?.id
         } else if args.contains("-openFirstPaper") {
             for _ in 0..<40 where model.papers.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
             id = model.papers.first?.id

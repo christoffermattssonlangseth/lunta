@@ -59,6 +59,8 @@ final class ModelHolder: ObservableObject {
                 let m = try await Task.detached { try LibraryModel.openLibrary(root: url) }.value
                 NSLog("Lunta: core opened after %.1fs", Date().timeIntervalSince(t0))
                 model = LibraryModel(lib: m, root: url, inCloud: cloud)
+                // the citation card in a reader: add the cited paper (or say it's already there)
+                if let model { ExternalLinks.onLunta = { url, web in Task { @MainActor in web.citationDone(await model.paperForCitation(url).label) } } }
                 NSLog("Lunta: ready after %.1fs, %d papers", Date().timeIntervalSince(t0), model?.counts.all ?? -1)
                 if let model { Task { await model.importShared() }; WatchCenter.shared.start(model); model.freshenReadingViews() }
                 if ProcessInfo.processInfo.arguments.contains("-testDownload"), let model {

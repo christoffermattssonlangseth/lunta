@@ -241,6 +241,8 @@ final class PositionKeeper: ObservableObject {
     private weak var controller: ReaderController?
     private var saver: Task<Void, Never>?
     private var quitting: NSObjectProtocol?
+    /// Called once the page is at its place (restored, or there was none to restore).
+    var onSettled: (() -> Void)?
 
     init() {
         #if os(macOS)
@@ -280,6 +282,7 @@ final class PositionKeeper: ObservableObject {
             }
             guard !Task.isCancelled else { return }
             self?.ready = true
+            self?.onSettled?()
             await self?.keepSaving()
         }
     }

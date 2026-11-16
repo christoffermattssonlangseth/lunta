@@ -28,6 +28,8 @@ struct ReaderWindow: View {
     @State private var asking = false
     @State private var editingAnnotation: Annotation?
     @StateObject private var pdfHighlights = PDFHighlighter()
+    @StateObject private var find = PaperFind()
+    @State private var pdfFinder = PDFFinder()
     @State private var showHighlights = false
     @StateObject private var ask: AskEngine
     @Environment(\.openWindow) private var openWindow
@@ -78,7 +80,7 @@ struct ReaderWindow: View {
                 case .reading:
                     if let book {
                         EpubWebView(url: URL(fileURLWithPath: book.combined), readAccess: URL(fileURLWithPath: book.dir),
-                                    fontScale: fontScale, theme: theme, paged: paged, scrollRequest: scrollRequest, controller: controller) { id in current = id }
+                                    fontScale: fontScale, theme: theme, paged: paged, findBar: find.shown, scrollRequest: scrollRequest, controller: controller) { id in current = id }
                             .safeAreaInset(edge: .bottom) {
                                 if listening { NarrationBar(narrator: narrator) { stopListening() } }
                             }
@@ -96,6 +98,8 @@ struct ReaderWindow: View {
                     }
                 }
             }
+            // find in paper (⌘F): over the page, so the page keeps its size (and its pages)
+            .modifier(FindOverlay(find: find, theme: mode == .reading ? theme : nil))
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Picker("View", selection: $mode) { ForEach(Mode.allCases, id: \.self) { Text($0.rawValue) } }
@@ -195,6 +199,7 @@ struct ReaderWindow: View {
         }
         .environment(\.highlightUndo, undo)
         .background(ReaderUndoKeys(undo: undo))
+        .modifier(ReaderFindHooks(find: find, backend: findBackend, webView: mode == .reading ? controller.webView : nil))
         // an undone or redone highlight: redraw (the reading view; the PDF follows the model)
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidUndoChange, object: undo)) { _ in refreshHighlights() }
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidRedoChange, object: undo)) { _ in refreshHighlights() }
@@ -226,9 +231,15 @@ struct ReaderWindow: View {
             ask.model = model
             ask.passages = { [weak controller] in await controller?.narrationItems(includeCaptions: true) ?? [] }
             ask.selection = { [weak controller] in await controller?.selectedText() }
+            pdfFinder.highlighter = pdfHighlights
+            // opened from a library search that found this paper: find the search in it
+            if let q = PaperFind.libraryQuery(for: paperID, in: model) { find.prefill(q) }
+            position.onSettled = { [weak find] in find?.pageSettled() }
             // warm up the natural voice so Listen starts right away
             if KokoroLive.shared.installed { Task { _ = await KokoroLive.shared.start() } }
             await load()
+            find.use(findBackend)
+            if mode == .pdf { try? await Task.sleep(for: .milliseconds(500)); find.pageSettled() }
         }
     }
 
@@ -244,6 +255,9 @@ struct ReaderWindow: View {
             self.error = error.readable
         }
     }
+
+    /// What the find bar searches: the reading view or the PDF.
+    private var findBackend: FindBackend? { mode == .pdf ? pdfFinder : (book != nil ? controller : nil) }
 
     private var hlColor: HighlightColor { HighlightColor(rawValue: highlightModeColor) ?? .yellow }
 
@@ -331,13 +345,15 @@ struct EpubWebView: NSViewRepresentable {
     let fontScale: Double
     var theme: ReaderTheme = .automatic
     var paged = false
+    /// The find bar is over the page: pages start below it.
+    var findBar = false
     let scrollRequest: ScrollRequest
     let controller: ReaderController
     let onPosition: (String) -> Void
 
     private func pagedState(_ zoom: Double) -> PagedState {
         let z = max(zoom, 0.5)
-        return PagedState(on: paged, top: 30 / z, bottom: 40 / z, native: false)
+        return PagedState(on: paged, top: (findBar && paged ? 64 : 30) / z, bottom: 40 / z, native: false)
     }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -355,6 +371,7 @@ struct EpubWebView: NSViewRepresentable {
         cfg.userContentController.addUserScript(WKUserScript(source: theme.js, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         context.coordinator.theme = theme
         cfg.addAnnotations(controller)
+        cfg.userContentController.addUserScript(WKUserScript(source: ReaderAssets.findJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         let state = pagedState(fontScale)
         context.coordinator.paging = cfg.addPaging(state)
         context.coordinator.applied = state
@@ -383,11 +400,13 @@ struct EpubWebView: NSViewRepresentable {
         v.pageZoom = fontScale
         let state = pagedState(fontScale)
         if state != context.coordinator.applied {
+            let turnedOn = state.on && context.coordinator.applied?.on != true
             context.coordinator.applied = state
             context.coordinator.paging?.state = state
             v.evaluateJavaScript(state.call)
-            // keys go to the page
-            if state.on { v.window?.makeFirstResponder(v) }
+            // keys go to the page (when pages are turned on; not when only the margins changed,
+            // e.g. for the find bar, whose field has the keys)
+            if turnedOn { v.window?.makeFirstResponder(v) }
         }
         if context.coordinator.loaded != url {
             context.coordinator.loaded = url

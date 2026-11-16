@@ -20,6 +20,14 @@ public enum Paper2Epub {
         return try await run(cands, into: dir, log: log)
     }
 
+    /// Converts a JATS XML file the way a PDF with an XML version is converted: figures the XML has
+    /// no images for are cut from the paper's PDF (used by the `p2e --pdf` flag for evaluation).
+    public static func convert(jats file: URL, pdf: URL, into dir: URL, log: @escaping Log = { _ in }) async throws -> ConversionResult {
+        let xml = try Data(contentsOf: file), pdfData = try Data(contentsOf: pdf)
+        let book = try await build(.jats(xml, assets: .none, meta: PaperMeta(), label: "JATS \(file.lastPathComponent)"), pdf: pdfData, log: log)
+        return try write(book, into: dir, log: log)
+    }
+
     static func run(_ cands: [Candidate], into dir: URL, log: @escaping Log) async throws -> ConversionResult {
         var errors: [String] = []
         for c in cands {

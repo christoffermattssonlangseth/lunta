@@ -23,6 +23,7 @@ struct LuntaApp: App {
         }
         .commands {
             LuntaCommands(model: holder.model)
+            PaperFindCommands()
             CommandMenu("Listen") {
                 Button("Play / Pause") { Narrator.active?.toggle() }.keyboardShortcut("p", modifiers: [.command, .option])
                 Button("Next Paragraph") { Narrator.active?.next() }.keyboardShortcut(.rightArrow, modifiers: [.command, .option])
@@ -187,6 +188,17 @@ struct LuntaCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        CommandGroup(replacing: .help) {
+            Button("Getting Started with Lunta") {
+                NSWorkspace.shared.open(URL(string: "https://christoffermattssonlangseth.github.io/lunta/getting-started.html")!)
+            }
+            Button("Importing from Zotero, Mendeley, ReadCube…") {
+                NSWorkspace.shared.open(URL(string: "https://christoffermattssonlangseth.github.io/lunta/getting-started.html#import")!)
+            }
+            Button("Lunta Support") {
+                NSWorkspace.shared.open(URL(string: "https://christoffermattssonlangseth.github.io/lunta/support.html")!)
+            }
+        }
         CommandGroup(after: .appSettings) {
             Button("Connect AI Agents…") { openWindow(id: "agents") }
             Button("Citations in Word & Google Docs…") { openWindow(id: "citations") }
@@ -201,7 +213,7 @@ struct LuntaCommands: Commands {
             Button("Add PDF Privately…") { addPDFs(privately: true) }
                 .keyboardShortcut("o", modifiers: [.command, .option])
             Divider()
-            Button("Import from ReadCube Papers / BibTeX / RIS…") { importExport() }
+            Button("Import from Zotero, Mendeley, ReadCube, EndNote… (BibTeX / RIS)") { importExport() }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
             Button("Import Folder of PDFs…") { importPDFFolder() }
             Divider()
@@ -221,7 +233,18 @@ struct LuntaCommands: Commands {
         f.canChooseDirectories = true
         f.canChooseFiles = false
         let folder = f.runModal() == .OK ? f.url : nil
-        Task { await model.importExport(file: file, pdfFolder: folder) }
+        // a folder for the imported papers: an exported collection keeps its name ("Thesis.bib" → "Thesis")
+        let ask = NSAlert()
+        ask.messageText = "Put the imported papers in a folder?"
+        ask.informativeText = "Exports don't include your folders. To move a collection from Zotero or Mendeley, export it on its own and import it into a folder of the same name."
+        let name = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        name.stringValue = file.deletingPathExtension().lastPathComponent
+        ask.accessoryView = name
+        ask.addButton(withTitle: "Import into Folder")
+        ask.addButton(withTitle: "Import Without Folder")
+        let into = ask.runModal() == .alertFirstButtonReturn
+        let target = into ? name.stringValue : nil
+        Task { await model.importExport(file: file, pdfFolder: folder, folder: target) }
     }
 
     /// Pick PDFs; each becomes a library entry with metadata from its DOI or an OpenAlex title match.

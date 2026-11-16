@@ -50,7 +50,7 @@ struct LibraryWindow: View {
                     MultiSelection(ids: Array(selection))
                 } else {
                     ContentUnavailableView("No paper selected", systemImage: "doc.text",
-                                           description: Text("Add papers with ⇧⌘N, or import your ReadCube library with ⇧⌘I."))
+                                           description: Text("Add papers with ⇧⌘N, or import your library from Zotero, Mendeley, ReadCube or EndNote with ⇧⌘I."))
                 }
             }
             // never narrower than the toolbar's search field above it, and a solid edge under the
@@ -104,6 +104,16 @@ struct LibraryWindow: View {
             asking = true
             if ask.busy { return }
             ask.overview(ids, name: c.name)
+        }
+        .task {
+            // the citation card in a reader: open the cited paper, adding it first if needed
+            ExternalLinks.onLunta = { [model] url, web in
+                Task { @MainActor in
+                    let r = await model.paperForCitation(url)
+                    web.citationDone(r.label)
+                    if let id = r.id { openWindow(value: id) }
+                }
+            }
         }
         .onOpenURL { url in
             // lunta://open?id=<paper id>  (from the browser extension)
@@ -394,7 +404,7 @@ struct PaperTable: View {
             if model.papers.isEmpty {
                 if model.query.isEmpty {
                     ContentUnavailableView("No papers", systemImage: "books.vertical",
-                                           description: Text("Add a paper (⇧⌘N), drop PDFs here, or import from ReadCube Papers (⇧⌘I)."))
+                                           description: Text("Add a paper (⇧⌘N), drop PDFs here, or import from Zotero, Mendeley, ReadCube or EndNote (⇧⌘I)."))
                 } else {
                     ContentUnavailableView.search(text: model.query)
                 }
