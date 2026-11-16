@@ -8,11 +8,16 @@ Importing is done in **Lunta for Mac**: **File › Import from Zotero, Mendeley,
 The library then syncs to your iPhone and iPad through iCloud, and to Android, Windows and Linux through
 Google Drive (see [Using Lunta on several devices](#using-lunta-on-several-devices)).
 
-The import asks two things:
+The import asks three things:
 
 1. **The export file** (.bib or .ris).
 2. **Optionally, a folder of PDFs.** Lunta matches each PDF to its paper by the DOI printed in it, or by
    finding the paper's title on the first pages. PDFs that match nothing are listed, not added.
+
+3. **Whether to put the papers in a folder.** Exports don't include your folders, so to keep a
+   collection, export it on its own and import it into a folder of the same name (Lunta suggests the
+   file's name: `Thesis.bib` goes into a *Thesis* folder). Repeat for each collection. Papers that are in
+   several collections end up in several folders, not duplicated.
 
 After the import, Lunta makes a reading view for every paper it has a PDF or an open version of. For papers
 without a PDF, **File › Find Missing PDFs** fetches legal open-access copies (PubMed Central, Europe PMC,
@@ -27,8 +32,8 @@ Menu names in the other apps vary a little between versions.
 3. In Lunta, choose the .bib file. The PDFs are found from the paths in the export; if any are missed,
    choose the same export folder when Lunta asks for a folder of PDFs.
 
-Zotero's notes and tags come along. Collections don't (BibTeX has no place for them); use tags in Zotero
-first if you want to keep them.
+Zotero's notes and tags come along. To keep a collection, right-click it › **Export Collection…** and
+import it into a folder of the same name.
 
 ## Mendeley
 

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lunta – Getting started</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<h1>Getting started with Lunta</h1>
+<p class="muted">Lunta: reader and reference manager · for Mac, iPhone, iPad, Android, Windows and Linux</p>
+
+<p>Contents: <a href="#setup">1. Choose your setup</a> · <a href="#install">2. Install</a> ·
+<a href="#import">3. Bring your library</a> · <a href="#first">4. First steps</a> · <a href="#help">Help</a></p>
+
+<h2 id="setup">1. Choose your setup</h2>
+<p>Your library (papers, PDFs, reading views, highlights and notes) is kept in your own cloud storage, not on
+a Lunta server. Which storage depends on your devices:</p>
+<table>
+  <tr><th>Your devices</th><th>Where the library lives</th><th>What to do</th></tr>
+  <tr><td>Mac, iPhone, iPad only</td><td>iCloud Drive</td><td>Nothing: be signed in to iCloud and the
+    library syncs by itself.</td></tr>
+  <tr><td>A Mac (and iPhone/iPad) plus Android, Windows or Linux</td><td>iCloud Drive, with a copy in Google
+    Drive</td><td>On the Mac, choose <strong>Lunta › Google Drive for Android…</strong> and connect your
+    Google account. Sign in with the same account on Android, Windows or Linux. The Mac passes changes
+    between the two while Lunta is open on it, every few minutes.</td></tr>
+  <tr><td>Android, Windows or Linux only</td><td>Google Drive</td><td>Sign in with your Google account in
+    the app. Lunta keeps its library in a <em>Lunta</em> folder in your Drive.</td></tr>
+</table>
+
+<h2 id="install">2. Install</h2>
+<ul>
+  <li><strong>Mac, Windows, Linux, Android:</strong> download from the
+    <a href="https://github.com/christoffermattssonlangseth/lunta/releases/latest">latest release</a>
+    (the page says which file you need). The Mac app is signed and notarized by Apple.</li>
+  <li><strong>iPhone and iPad:</strong> through TestFlight for now (ask for the invite link), and the App
+    Store soon.</li>
+  <li><strong>Chrome:</strong> the Lunta extension saves the paper you're looking at, with its PDF, using
+    the access your browser already has (Lunta for Mac must be open).</li>
+  <li><strong>Word and Google Docs:</strong> cite from your library; see <a href="support.html">Lunta
+    Citations</a>.</li>
+</ul>
+
+<h2 id="import">3. Bring your library from Zotero, Mendeley, ReadCube, EndNote…</h2>
+<p>Lunta imports BibTeX (.bib) and RIS (.ris) exports from any reference manager. Titles, authors, DOIs,
+tags and notes come along, PDFs too where the export points to them, and duplicates are merged. Importing is
+done in <strong>Lunta for Mac</strong>: <strong>File › Import from Zotero, Mendeley, ReadCube,
+EndNote…</strong> (⇧⌘I). The import asks for</p>
+<ol>
+  <li>the export file,</li>
+  <li>optionally, a folder of PDFs, which Lunta matches to the papers by DOI or title, and</li>
+  <li>whether to put the papers in a folder. Exports don't include your folders, so <strong>to keep a
+    collection, export it on its own and import it into a folder of the same name</strong> (Lunta suggests
+    the file's name: <em>Thesis.bib</em> goes into <em>Thesis</em>). Repeat for each collection you want
+    to keep; papers in several collections end up in several folders, not duplicated.</li>
+</ol>
+
+<h3>Zotero</h3>
+<p><strong>File › Export Library…</strong> (or right-click a collection › <strong>Export
+Collection…</strong>), format <strong>BibTeX</strong>, tick <strong>Export Files</strong>. Choose the .bib
+file in Lunta; the PDFs in the export's <code>files</code> folder come along.</p>
+
+<h3>Mendeley</h3>
+<p><strong>Mendeley Reference Manager:</strong> select the papers (a collection, or ⌘A for all), then
+<strong>File › Export…</strong> as <strong>BibTeX</strong>. The export doesn't include PDFs: after importing,
+use <strong>File › Find Missing PDFs</strong> for open-access papers, and <strong>File › Import Folder of
+PDFs…</strong> for PDFs you have in a folder. <strong>Mendeley Desktop</strong> (the older app):
+<strong>File › Export…</strong> as BibTeX; choose Mendeley's PDF folder (Tools › Options › File Organizer)
+when Lunta asks for a folder of PDFs.</p>
+
+<h3>ReadCube Papers</h3>
+<p>Select the papers, <strong>Export › BibTeX</strong>, and also <strong>Export PDFs</strong> to a folder;
+choose both in Lunta.</p>
+
+<h3>EndNote</h3>
+<p><strong>File › Export…</strong> with the output style <strong>RefMan (RIS) Export</strong>. When Lunta
+asks for PDFs, choose the library's <code>.Data/PDF</code> folder (next to the <code>.enl</code> file).</p>
+
+<h3>Paperpile, JabRef, BibDesk</h3>
+<p>Paperpile: <strong>Settings › Export</strong> as BibTeX; its PDFs are in the <em>Paperpile</em> folder in
+your Google Drive. JabRef and BibDesk: choose the .bib file directly; linked PDFs are copied in.</p>
+
+<p>Step-by-step details: <a href="https://github.com/christoffermattssonlangseth/lunta/blob/main/docs/importing.md">Bringing
+your library to Lunta</a>.</p>
+
+<h2 id="first">4. First steps</h2>
+<ul>
+  <li><strong>Add a paper:</strong> the + button (⇧⌘N on the Mac) with a DOI, PubMed ID or arXiv link; drop PDFs on the list; or share a page from Safari or Chrome.</li>
+  <li><strong>Read:</strong> open a paper for its reading view: text that fits the screen, tappable figures
+    and citations, themes, scroll or turn pages. The PDF is one tap away.</li>
+  <li><strong>Highlight:</strong> select text and pick a colour, or turn on highlight mode (the highlighter
+    button) to highlight every selection at once. On iPad, draw with Apple Pencil.</li>
+  <li><strong>Organize:</strong> folders, tags, stars, Smart Folders and the Must Read list.</li>
+  <li><strong>New for You:</strong> describe your research once, and every morning Lunta picks new papers
+    for you.</li>
+  <li><strong>Listen and ask:</strong> have a paper read aloud, or ask questions about it; both run on
+    your device.</li>
+</ul>
+
+<h2 id="help">Help</h2>
+<p>Questions, problems or ideas: <a href="https://github.com/christoffermattssonlangseth/lunta/issues">GitHub
+Issues</a>. Privacy: <a href="app-privacy.html">Lunta collects nothing</a>.</p>
+</body></html>
