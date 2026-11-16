@@ -145,39 +145,7 @@ struct LibraryView: View {
                 NavigationLink(value: p.id) { PaperRow(paper: p, snippet: model.snippets[p.id]) }
                     .id(p.id)
                     .listRowBackground(reveal == p.id ? Color.luntaTeal.opacity(0.18) : nil)
-                    // only from the right, so a swipe in from the left can't change a paper by accident
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button { deleting = p } label: { Label("Delete", systemImage: "trash") }
-                            .tint(.red)
-                        Button { organizing = ShareTargetIOS(id: p.id) } label: { Label("Folders & Tags", systemImage: "folder") }
-                            .tint(.luntaTeal)
-                        Button { model.toggleStar(p) } label: { Label(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") }
-                            .tint(.luntaCopper)
-                        Button { model.toggleMustRead(p) } label: { Label(p.mustRead ? "Not Must Read" : "Must Read", systemImage: p.mustRead ? "bookmark.slash" : "bookmark") }
-                            .tint(.luntaTeal)
-                        Button { model.setRead(p, !p.read) } label: { Label(p.read ? "Unread" : "Read", systemImage: p.read ? "circle" : "checkmark.circle") }
-                            .tint(.gray)
-                    }
-                    .contextMenu {
-                        Button(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") { model.toggleStar(p) }
-                        Button(p.mustRead ? "Remove from Must Read" : "Must Read", systemImage: p.mustRead ? "bookmark.slash" : "bookmark") { model.toggleMustRead(p) }
-                        Button(p.read ? "Mark as Unread" : "Mark as Read", systemImage: p.read ? "circle" : "checkmark.circle") { model.setRead(p, !p.read) }
-                        Divider()
-                        Button("Folders & Tags…", systemImage: "folder") { organizing = ShareTargetIOS(id: p.id) }
-                        FolderMenu(ids: [p.id]) {
-                            prompt = NameRequest(title: "New Folder", action: "Create") { model.newFolder($0, with: [p.id]) }
-                        }
-                        TagMenu(ids: [p.id]) {
-                            prompt = NameRequest(title: "New Tag", action: "Add") { model.setTag([p.id], $0, true) }
-                        }
-                        if case .collection(let cid) = model.source {
-                            Button("Remove from This Folder", systemImage: "folder.badge.minus") { model.setMembership([p.id], collection: cid, false) }
-                        }
-                        Button("Share…", systemImage: "square.and.arrow.up") { sharing = ShareTargetIOS(id: p.id) }
-                        Menu("Watch", systemImage: "bell") { WatchMenu(paper: p) }
-                        Divider()
-                        Button("Delete Paper…", systemImage: "trash", role: .destructive) { deleting = p }
-                    }
+                    .modifier(PaperRowActions(paper: p, deleting: $deleting, organizing: $organizing, sharing: $sharing, prompt: $prompt))
               }
               if !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
                   Button { model.searchBeyondLibrary() } label: {
@@ -217,6 +185,8 @@ struct LibraryView: View {
 /// The first screen: every place papers can be listed from, like Mail's list of mailboxes.
 struct LibraryHome: View {
     @EnvironmentObject var model: LibraryModel
+    /// The iPad's sidebar selection; nil on the iPhone, where each place is pushed.
+    var selection: Binding<SidebarItem?>? = nil
     @ObservedObject private var center = WatchCenter.shared
     @State private var managing = false
     @State private var cleaning = false
@@ -225,55 +195,13 @@ struct LibraryHome: View {
     @State private var prompt: NameRequest?
 
     var body: some View {
-        List {
-            Section {
-                place(.all, "All Papers", "books.vertical", count: model.counts.all)
-                place(.starred, "Starred", "star", count: model.counts.starred)
-                place(.mustRead, "Must Read", "bookmark", count: model.counts.mustRead)
-                place(.unread, "Unread", "smallcircle.filled.circle", count: model.counts.unread)
-            }
-            Section {
-                place(.alerts, "New for You", "bell.badge", count: center.newCount, badge: true)
-                place(.discover, "Discover New Papers", "globe.europe.africa")
-            }
-            Section("Folders") {
-                ForEach(model.foldersFlat, id: \.folder.id) { item in
-                    place(.collection(item.folder.id), item.folder.name, item.depth == 0 ? "folder" : "folder.fill", indent: item.depth)
-                        .contextMenu {
-                            Button("New Subfolder…", systemImage: "folder.badge.plus") {
-                                prompt = NameRequest(title: "New Folder", action: "Create") { _ = model.newFolder($0, parent: item.folder.id) }
-                            }
-                            Button("Rename…", systemImage: "pencil") {
-                                prompt = NameRequest(title: "Rename Folder", initial: item.folder.name, action: "Rename") { model.renameFolder(item.folder.id, $0) }
-                            }
-                            Button("Delete Folder", systemImage: "trash", role: .destructive) { model.deleteFolder(item.folder.id) }
-                        }
-                }
-                Button {
-                    prompt = NameRequest(title: "New Folder", action: "Create") { _ = model.newFolder($0) }
-                } label: { Label("New Folder", systemImage: "plus").foregroundStyle(Color.luntaTeal) }
-            }
-            Section("Smart Folders") {
-                ForEach(model.smartFolders) { f in
-                    place(.smart(f.id), f.name, "gearshape.2")
-                        .contextMenu {
-                            Button("Edit…", systemImage: "slider.horizontal.3") { editingSmart = f }
-                            Button("Delete", systemImage: "trash", role: .destructive) { model.deleteSmartFolder(f.id) }
-                        }
-                }
-                Button { newSmart = true } label: { Label("New Smart Folder", systemImage: "plus").foregroundStyle(Color.luntaTeal) }
-            }
-            if !model.tags.isEmpty {
-                Section("Tags") {
-                    ForEach(model.tags, id: \.self) { t in place(.tag(t), t, "tag") }
-                }
-            }
-            Section {
-                Button { managing = true } label: { Label("Manage Folders & Tags…", systemImage: "folder.badge.gearshape") }
-                Button { cleaning = true } label: { Label("Clean Up Library…", systemImage: "wand.and.sparkles") }
+        Group {
+            if let selection {
+                List(selection: selection) { places }.listStyle(.sidebar)
+            } else {
+                List { places }.listStyle(.insetGrouped)
             }
         }
-        .listStyle(.insetGrouped)
         .navigationTitle("Lunta")
         .namePrompt($prompt)
         .sheet(isPresented: $managing) { ManageFoldersView().environmentObject(model) }
@@ -287,25 +215,80 @@ struct LibraryHome: View {
         }
     }
 
-    private func place(_ item: SidebarItem, _ title: String, _ icon: String, count: Int? = nil,
-                       indent: Int = 0, badge: Bool = false) -> some View {
-        NavigationLink(value: item) {
-            HStack {
-                Label {
-                    Text(title)
-                } icon: {
-                    Image(systemName: icon).foregroundStyle(Color.luntaTeal)
-                }
-                .padding(.leading, CGFloat(indent) * 18)
-                Spacer()
-                if let count, count > 0 {
-                    if badge {
-                        Text("\(count)").font(.footnote.weight(.semibold).monospacedDigit()).foregroundStyle(.white)
-                            .padding(.horizontal, 7).padding(.vertical, 2)
-                            .background(Capsule().fill(Color.luntaTeal))
-                    } else {
-                        Text("\(count)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+    @ViewBuilder private var places: some View {
+        Section {
+            place(.all, "All Papers", "books.vertical", count: model.counts.all)
+            place(.starred, "Starred", "star", count: model.counts.starred)
+            place(.mustRead, "Must Read", "bookmark", count: model.counts.mustRead)
+            place(.unread, "Unread", "smallcircle.filled.circle", count: model.counts.unread)
+        }
+        Section {
+            place(.alerts, "New for You", "bell.badge", count: center.newCount, badge: true)
+            place(.discover, "Discover New Papers", "globe.europe.africa")
+        }
+        Section("Folders") {
+            ForEach(model.foldersFlat, id: \.folder.id) { item in
+                place(.collection(item.folder.id), item.folder.name, item.depth == 0 ? "folder" : "folder.fill", indent: item.depth)
+                    .contextMenu {
+                        Button("New Subfolder…", systemImage: "folder.badge.plus") {
+                            prompt = NameRequest(title: "New Folder", action: "Create") { _ = model.newFolder($0, parent: item.folder.id) }
+                        }
+                        Button("Rename…", systemImage: "pencil") {
+                            prompt = NameRequest(title: "Rename Folder", initial: item.folder.name, action: "Rename") { model.renameFolder(item.folder.id, $0) }
+                        }
+                        Button("Delete Folder", systemImage: "trash", role: .destructive) { model.deleteFolder(item.folder.id) }
                     }
+            }
+            Button {
+                prompt = NameRequest(title: "New Folder", action: "Create") { _ = model.newFolder($0) }
+            } label: { Label("New Folder", systemImage: "plus").foregroundStyle(Color.luntaTeal) }
+        }
+        Section("Smart Folders") {
+            ForEach(model.smartFolders) { f in
+                place(.smart(f.id), f.name, "gearshape.2")
+                    .contextMenu {
+                        Button("Edit…", systemImage: "slider.horizontal.3") { editingSmart = f }
+                        Button("Delete", systemImage: "trash", role: .destructive) { model.deleteSmartFolder(f.id) }
+                    }
+            }
+            Button { newSmart = true } label: { Label("New Smart Folder", systemImage: "plus").foregroundStyle(Color.luntaTeal) }
+        }
+        if !model.tags.isEmpty {
+            Section("Tags") {
+                ForEach(model.tags, id: \.self) { t in place(.tag(t), t, "tag") }
+            }
+        }
+        Section {
+            Button { managing = true } label: { Label("Manage Folders & Tags…", systemImage: "folder.badge.gearshape") }
+            Button { cleaning = true } label: { Label("Clean Up Library…", systemImage: "wand.and.sparkles") }
+        }
+    }
+
+    @ViewBuilder private func place(_ item: SidebarItem, _ title: String, _ icon: String, count: Int? = nil,
+                                    indent: Int = 0, badge: Bool = false) -> some View {
+        if selection != nil {
+            placeLabel(title, icon, count: count, indent: indent, badge: badge).tag(item)
+        } else {
+            NavigationLink(value: item) { placeLabel(title, icon, count: count, indent: indent, badge: badge) }
+        }
+    }
+
+    private func placeLabel(_ title: String, _ icon: String, count: Int?, indent: Int, badge: Bool) -> some View {
+        HStack {
+            Label {
+                Text(title)
+            } icon: {
+                Image(systemName: icon).foregroundStyle(Color.luntaTeal)
+            }
+            .padding(.leading, CGFloat(indent) * 18)
+            Spacer()
+            if let count, count > 0 {
+                if badge {
+                    Text("\(count)").font(.footnote.weight(.semibold).monospacedDigit()).foregroundStyle(.white)
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Capsule().fill(Color.luntaTeal))
+                } else {
+                    Text("\(count)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
                 }
             }
         }
@@ -377,6 +360,54 @@ struct DiscoverListIOS: View {
 }
 
 struct ShareTargetIOS: Identifiable { let id: String }
+
+/// The swipe actions and context menu of a paper in the list (iPhone and iPad).
+struct PaperRowActions: ViewModifier {
+    @EnvironmentObject var model: LibraryModel
+    let paper: Paper
+    @Binding var deleting: Paper?
+    @Binding var organizing: ShareTargetIOS?
+    @Binding var sharing: ShareTargetIOS?
+    @Binding var prompt: NameRequest?
+
+    func body(content: Content) -> some View {
+        let p = paper
+        content
+            // only from the right, so a swipe in from the left can't change a paper by accident
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button { deleting = p } label: { Label("Delete", systemImage: "trash") }
+                    .tint(.red)
+                Button { organizing = ShareTargetIOS(id: p.id) } label: { Label("Folders & Tags", systemImage: "folder") }
+                    .tint(.luntaTeal)
+                Button { model.toggleStar(p) } label: { Label(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") }
+                    .tint(.luntaCopper)
+                Button { model.toggleMustRead(p) } label: { Label(p.mustRead ? "Not Must Read" : "Must Read", systemImage: p.mustRead ? "bookmark.slash" : "bookmark") }
+                    .tint(.luntaTeal)
+                Button { model.setRead(p, !p.read) } label: { Label(p.read ? "Unread" : "Read", systemImage: p.read ? "circle" : "checkmark.circle") }
+                    .tint(.gray)
+            }
+            .contextMenu {
+                Button(p.starred ? "Unstar" : "Star", systemImage: p.starred ? "star.slash" : "star") { model.toggleStar(p) }
+                Button(p.mustRead ? "Remove from Must Read" : "Must Read", systemImage: p.mustRead ? "bookmark.slash" : "bookmark") { model.toggleMustRead(p) }
+                Button(p.read ? "Mark as Unread" : "Mark as Read", systemImage: p.read ? "circle" : "checkmark.circle") { model.setRead(p, !p.read) }
+                Divider()
+                Button("Folders & Tags…", systemImage: "folder") { organizing = ShareTargetIOS(id: p.id) }
+                FolderMenu(ids: [p.id]) {
+                    prompt = NameRequest(title: "New Folder", action: "Create") { model.newFolder($0, with: [p.id]) }
+                }
+                TagMenu(ids: [p.id]) {
+                    prompt = NameRequest(title: "New Tag", action: "Add") { model.setTag([p.id], $0, true) }
+                }
+                if case .collection(let cid) = model.source {
+                    Button("Remove from This Folder", systemImage: "folder.badge.minus") { model.setMembership([p.id], collection: cid, false) }
+                }
+                Button("Share…", systemImage: "square.and.arrow.up") { sharing = ShareTargetIOS(id: p.id) }
+                Menu("Watch", systemImage: "bell") { WatchMenu(paper: p) }
+                Divider()
+                Button("Delete Paper…", systemImage: "trash", role: .destructive) { deleting = p }
+            }
+    }
+}
 
 /// The library's search field (not on New for You, which is a feed).
 struct LibrarySearch: ViewModifier {

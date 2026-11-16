@@ -213,6 +213,65 @@ extension ReaderAssets {
         s.removeAllRanges();
         try { window.webkit.messageHandlers.ann.postMessage('__hl__:' + j); } catch (x) {}
       }
+      // Apple Pencil (iPad). A stroke along the text highlights from the word under its start to
+      // the word under its end; points are in the viewport (page pixels). The result is what
+      // luntaSelection gives for a selection of that text.
+      function selectionJSON(text, s, e){
+        while (s < e && /\s/.test(text[s])) s++;
+        while (e > s && /\s/.test(text[e - 1])) e--;
+        if (e <= s) return '';
+        return JSON.stringify({ quote: text.slice(s, e), prefix: text.slice(Math.max(0, s - 40), s), suffix: text.slice(e, e + 40), start: s });
+      }
+      function caretOffset(nodes, x, y){
+        var r = document.caretRangeFromPoint && document.caretRangeFromPoint(x, y);
+        if (!r) return -1;
+        var n = r.startContainer, o = r.startOffset;
+        if (n.nodeType === 3) return offsetOf(nodes, n, o);
+        // between blocks or beside an image: the first text after that point
+        var el = n.childNodes[o] || n, pos = 0;
+        for (var i = 0; i < nodes.length; i++) {
+          if (el === nodes[i] || (el.compareDocumentPosition(nodes[i]) & 4)) return pos;
+          pos += nodes[i].nodeValue.length;
+        }
+        return -1;
+      }
+      var wordChar = /[\p{L}\p{N}\p{M}_'’\-]/u;
+      window.luntaSelectionBetween = function(x1, y1, x2, y2){
+        var nodes = textNodes(), text = fullText(nodes);
+        var a = caretOffset(nodes, x1, y1), b = caretOffset(nodes, x2, y2);
+        if (a < 0 || b < 0) return '';
+        var s = Math.min(a, b), e = Math.max(a, b);
+        // whole words at both ends
+        if (s < text.length && wordChar.test(text[s])) { while (s > 0 && wordChar.test(text[s - 1])) s--; }
+        if (e > 0 && wordChar.test(text[e - 1])) { while (e < text.length && wordChar.test(text[e])) e++; }
+        return selectionJSON(text, s, e);
+      };
+      // the stroke's passage coloured at once (as in highlight mode); the app saves it and redraws
+      window.luntaPencilHighlight = function(x1, y1, x2, y2, color){
+        if (document.body.classList.contains('listening')) return '';
+        var j = window.luntaSelectionBetween(x1, y1, x2, y2); if (!j) return '';
+        try { var o = JSON.parse(j); wrap(textNodes(), o.start, o.start + o.quote.length, { id: '__pending', color: color || 'yellow' }); } catch (x) {}
+        return j;
+      };
+      // a note on the paragraph at a point: anchored to its first sentence (or ~120 characters)
+      window.luntaParagraphAt = function(x, y){
+        var el = document.elementFromPoint(x, y);
+        var block = el && el.closest && el.closest('p, li, blockquote, figcaption, dd, td, h1, h2, h3, h4, h5, h6');
+        if (!block) return '';
+        var nodes = textNodes(), text = fullText(nodes), s = -1, e = -1, pos = 0;
+        for (var i = 0; i < nodes.length; i++) {
+          var len = nodes[i].nodeValue.length;
+          if (block.contains(nodes[i])) { if (s < 0) s = pos; e = pos + len; }
+          pos += len;
+        }
+        if (s < 0) return '';
+        var para = text.slice(s, e), lead = para.length - para.replace(/^\s+/, '').length;
+        s += lead; para = para.slice(lead);
+        var m = para.match(/^[\s\S]{20,}?[.!?](?=\s|$)/), q;
+        if (m && m[0].length <= 160) q = m[0];
+        else { q = para.slice(0, 120); if (para.length > 120) { var cut = q.lastIndexOf(' '); if (cut > 60) q = q.slice(0, cut); } }
+        return selectionJSON(text, s, s + q.length);
+      };
       if ('ontouchstart' in window) {
         document.addEventListener('selectionchange', function(){
           if (!window.luntaHLMode) return;
@@ -244,6 +303,11 @@ final class AnnotationMessageHandler: NSObject, WKScriptMessageHandler {
 
 extension ReaderController {
     func pageSelection() async -> PageSelection? {
+        // a passage the Pencil marked (PencilReader.swift) stands in for the selection, once
+        if let (sel, at) = pencilSelection {
+            pencilSelection = nil
+            if Date().timeIntervalSince(at) < 5 { return sel }
+        }
         guard let json = try? await webView?.evaluateJavaScript("luntaSelection()") as? String,
               let data = json.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(PageSelection.self, from: data)
@@ -342,6 +406,10 @@ struct AnnotationEditor: View {
     @Environment(\.highlightUndo) private var undo
     @State var annotation: Annotation
     var onDone: () -> Void = {}
+    @FocusState private var noteFocused: Bool
+    /// Set just before a note made with the Pencil opens here: the note field gets the focus,
+    /// ready for handwriting.
+    static var focusNext: Date?
 
     var body: some View {
         NavigationStack {
@@ -364,7 +432,15 @@ struct AnnotationEditor: View {
                     .padding(.vertical, 4)
                 }
                 Section("Note") {
-                    TextField("Add a note", text: $annotation.note, axis: .vertical).lineLimit(3...10)
+                    TextField("Add a note", text: $annotation.note, axis: .vertical)
+                        .focused($noteFocused)
+                        #if os(iOS)
+                        // room to write by hand (Scribble turns it into text) on iPad
+                        .lineLimit(UIDevice.current.userInterfaceIdiom == .pad ? 6...16 : 3...10)
+                        .frame(minHeight: UIDevice.current.userInterfaceIdiom == .pad ? 150 : nil, alignment: .topLeading)
+                        #else
+                        .lineLimit(3...10)
+                        #endif
                 }
                 Section {
                     Button("Copy Quote") { copyText(annotation.quote) }
@@ -374,6 +450,12 @@ struct AnnotationEditor: View {
                 }
             }
             .formStyle(.grouped)
+            .onAppear {
+                guard let t = Self.focusNext else { return }
+                Self.focusNext = nil
+                guard Date().timeIntervalSince(t) < 5 else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { noteFocused = true }
+            }
             .navigationTitle(annotation.note.isEmpty ? "Highlight" : "Note")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -488,6 +570,13 @@ final class ReaderWebView: WKWebView {
 #else
 final class ReaderWebView: WKWebView {
     weak var controller: ReaderController?
+    /// Apple Pencil highlighting and notes (iPad).
+    private var pencil: PencilReader?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil, pencil == nil, UIDevice.current.userInterfaceIdiom == .pad { pencil = PencilReader(self) }
+    }
 
     override func buildMenu(with builder: UIMenuBuilder) {
         super.buildMenu(with: builder)

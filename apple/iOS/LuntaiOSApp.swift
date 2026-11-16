@@ -13,7 +13,7 @@ struct LuntaiOSApp: App {
         WindowGroup {
             Group {
                 if let model = holder.model {
-                    LibraryView().environmentObject(model)
+                    AdaptiveLibrary().environmentObject(model)
                 } else if let error = holder.error {
                     ContentUnavailableView("Can't open the library", systemImage: "exclamationmark.triangle", description: Text(error))
                 } else {

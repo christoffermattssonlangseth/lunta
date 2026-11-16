@@ -17,8 +17,11 @@ final class ReaderController: ObservableObject {
     var onPageReady: (() -> Void)?
     /// Highlight mode: the user finished a selection.
     var onSelectionDone: ((PageSelection?) -> Void)?
-    /// Called from the text selection menu.
+    /// Called from the text selection menu (and by the Pencil, with `pencilSelection` set).
     var onMenu: ((ReaderMenuAction) -> Void)?
+    /// A passage marked with the Apple Pencil, used once by `pageSelection()` instead of the
+    /// selection (so a Pencil highlight or note is saved the way the menu's are).
+    var pencilSelection: (PageSelection, Date)?
 
     func narrationItems(includeCaptions: Bool = false) async -> [NarrationItem] {
         guard let v = webView,

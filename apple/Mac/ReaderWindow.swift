@@ -361,6 +361,7 @@ struct EpubWebView: NSViewRepresentable {
         let v = ReaderWebView(frame: .zero, configuration: cfg)
         v.controller = controller
         v.setValue(false, forKey: "drawsBackground")
+        v.navigationDelegate = ExternalLinks.shared   // web links open in the browser, not in the reader
         v.appearance = Self.appearance(theme)   // only the page: the window keeps the system's look
         controller.webView = v
         v.loadFileURL(url, allowingReadAccessTo: readAccess)

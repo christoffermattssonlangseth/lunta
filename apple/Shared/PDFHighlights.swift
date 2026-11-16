@@ -18,6 +18,8 @@ final class PDFHighlighter: ObservableObject {
     /// The document shown, for views that follow the PDF view (page thumbnails, its outline).
     @Published private(set) var document: PDFDocument?
     weak var view: PDFView?
+    /// Pencil drawings on the pages (see PencilInk.swift).
+    let ink = PDFInk()
     var onTap: (String) -> Void = { _ in }
     private var observers: [NSObjectProtocol] = []
     private var pageText: [Int: (norm: NSString, map: [Int])] = [:]
@@ -214,13 +216,17 @@ struct HighlightablePDFView: NSViewRepresentable {
         let v = ClickablePDFView()
         v.autoScales = true
         v.displayMode = .singlePageContinuous
+        highlighter.ink.attach(v, folder: url.deletingLastPathComponent())   // (before the document)
         v.document = PDFDocument(url: url)
         v.onClick = { [weak highlighter] p in highlighter?.handleTap(at: p) ?? false }
         highlighter.attach(v)
         return v
     }
     func updateNSView(_ v: PDFView, context: Context) {
-        if v.document?.documentURL != url { v.document = PDFDocument(url: url) }
+        if v.document?.documentURL != url {
+            highlighter.ink.attach(v, folder: url.deletingLastPathComponent())
+            v.document = PDFDocument(url: url)
+        }
     }
 }
 #else
@@ -231,6 +237,7 @@ struct HighlightablePDFView: UIViewRepresentable {
         let v = PDFView()
         v.autoScales = true
         v.displayMode = .singlePageContinuous
+        highlighter.ink.attach(v, folder: url.deletingLastPathComponent())   // (before the document)
         v.document = PDFDocument(url: url)
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped(_:)))
         tap.cancelsTouchesInView = false
@@ -282,6 +289,7 @@ struct PDFReader: View {
             .onReceive(model.objectWillChange.debounce(for: .milliseconds(250), scheduler: RunLoop.main)) { _ in
                 highlighter.apply(model.annotations(paperID))
             }
+            .onDisappear { highlighter.ink.detach() }
     }
 
     private func highlight(_ color: HighlightColor, note: Bool) {

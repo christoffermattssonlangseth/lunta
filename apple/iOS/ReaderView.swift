@@ -89,6 +89,8 @@ struct ReaderView: View {
                 }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
+                // iPad: draw on the PDF's pages with Apple Pencil (PencilInk.swift)
+                if mode == .pdf, pdfURL != nil, UIDevice.current.userInterfaceIdiom == .pad { PDFMarkupButton(ink: pdfHighlights.ink) }
                 if mode == .reading, book != nil {
                     // figures up front; listening is in the … menu (the narration bar has its stop button)
                     FiguresButton(controller: controller) { showFigures = true }
@@ -147,7 +149,8 @@ struct ReaderView: View {
         }
         .environment(\.highlightUndo, undoManager)
         // the theme's light/dark (reading view only; the PDF keeps the system's)
-        .preferredColorScheme(mode == .reading ? theme.scheme : nil)
+        // (iPhone only: on iPad the reader shares the window with the library, so only the page changes)
+        .preferredColorScheme(mode == .reading && UIDevice.current.userInterfaceIdiom == .phone ? theme.scheme : nil)
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidUndoChange)) { _ in refreshHighlights() }
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidRedoChange)) { _ in refreshHighlights() }
         .sheet(item: $editingAnnotation) { a in AnnotationEditor(annotation: a) { refreshHighlights() }.environmentObject(model) }
@@ -423,6 +426,8 @@ struct EpubWebViewIOS: UIViewRepresentable {
         v.controller = controller
         controller.webView = v
         v.isOpaque = false
+        v.navigationDelegate = ExternalLinks.shared   // web links open in the browser, not in the reader
+        v.overrideUserInterfaceStyle = Self.style(theme)   // the page follows the theme (on iPad the window doesn't)
         v.backgroundColor = .clear
         v.scrollView.alwaysBounceHorizontal = false
         v.scrollView.showsHorizontalScrollIndicator = false
@@ -457,10 +462,15 @@ struct EpubWebViewIOS: UIViewRepresentable {
         sv.isDirectionalLockEnabled = paged
     }
 
+    static func style(_ t: ReaderTheme) -> UIUserInterfaceStyle {
+        switch t.scheme { case .some(.dark): return .dark; case .some(.light): return .light; default: return .unspecified }
+    }
+
     func updateUIView(_ v: WKWebView, context: Context) {
         if context.coordinator.theme != theme {
             context.coordinator.theme = theme
             v.evaluateJavaScript(theme.js)
+            v.overrideUserInterfaceStyle = Self.style(theme)
         }
         context.coordinator.onPosition = onPosition
         context.coordinator.onChrome = onChrome
