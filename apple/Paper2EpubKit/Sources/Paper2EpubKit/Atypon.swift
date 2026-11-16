@@ -59,6 +59,16 @@ enum Atypon {
         log("Converting the \(site.isNEJM ? "NEJM" : "Atypon (\(site.name))") page")
         func byID(_ id: String) -> XNode? { doc.all(where: { $0.attr("id") == id }).first }
 
+        // cell.com and other Atypon sites: each in-text citation carries its whole reference in a
+        // hidden pop-up (.dropBlock__holder) and links to "#": drop the pop-up (it would land in the
+        // text) and point the citation at the reference list (data-xml-rid="bib1" → #bib1)
+        for s in doc.all(where: { $0.hasClass("reference-citations") }) {
+            for h in s.all(where: { $0.hasClass("dropBlock__holder") }) { h.remove() }
+        }
+        for a in doc.all(where: { $0.name == "a" && !($0.attr("data-xml-rid") ?? "").isEmpty }) {
+            let h = a.attr("href") ?? "#"
+            if h == "#" || h.isEmpty, let rid = a.attr("data-xml-rid") { a.attrs["href"] = "#" + rid }
+        }
         // in-text citations point at the side pane's copy of the list: point them at ours
         var targets = Set<String>()
         for a in doc.all(where: { $0.name == "a" }) {
