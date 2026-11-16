@@ -12,6 +12,7 @@
 //! into MathML here.
 
 use super::xml::{self, Node};
+use super::webpage::PageImages;
 use super::{esc, fail, images, net, Book, BookImage, Chapter, Heading, Options, PaperMeta, Result};
 use regex::Regex;
 use std::collections::HashMap;
@@ -37,6 +38,18 @@ pub fn looks_like(html: &str) -> bool {
 /// Figures come in high resolution from Elsevier's image server (unless `opts.offline`), else
 /// from the saved copy, else from the image link on the page.
 pub fn book(html: &str, dir: Option<&Path>, base: Option<&url::Url>, opts: &Options) -> Result<Book> {
+    book_with(html, dir, base, None, opts)
+}
+
+/// [`book`] with figure images the browser extension fetched with the reader's access (`posted`,
+/// used first).
+pub fn book_with(
+    html: &str,
+    dir: Option<&Path>,
+    base: Option<&url::Url>,
+    posted: Option<&PageImages>,
+    opts: &Options,
+) -> Result<Book> {
     let no_text = || fail("This ScienceDirect page has no full text (are you signed in?).");
     let body = element_by_id(html, "body").ok_or_else(no_text)?;
     let mut meta = metadata(html);
@@ -136,10 +149,23 @@ pub fn book(html: &str, dir: Option<&Path>, base: Option<&url::Url>, opts: &Opti
         let r = net::fetch(u, None, timeout).ok()?;
         (200..300).contains(&r.status).then_some(r.data)
     };
+    let from_page: Vec<Option<Vec<u8>>> = conv
+        .figures
+        .iter()
+        .map(|f| {
+            let p = posted?;
+            let cands: Vec<&str> =
+                [f.hi_res.as_deref(), f.remote.as_deref(), f.local.as_deref()].into_iter().flatten().collect();
+            p.data(&cands).map(|(_, d)| d.to_vec())
+        })
+        .collect();
     let hi_res: Vec<Option<Vec<u8>>> = if opts.offline {
-        vec![None; conv.figures.len()]
+        from_page
     } else {
-        net::par_map(&conv.figures, 4, |f| f.hi_res.as_deref().and_then(|u| fetch_ok(u, 40.0)))
+        let idx: Vec<usize> = (0..conv.figures.len()).collect();
+        net::par_map(&idx, 4, |&i| {
+            from_page[i].clone().or_else(|| conv.figures[i].hi_res.as_deref().and_then(|u| fetch_ok(u, 40.0)))
+        })
     };
     let mut imgs: Vec<BookImage> = Vec::new();
     let mut missing = 0;
@@ -594,12 +620,19 @@ impl Conv {
     // MARK: MathJax CHTML → MathML
 
     fn math(&mut self, c: Node) -> String {
-        let Some(m) = c.first_descendant("mjx-math") else { return esc(&c.plain()) };
-        self.math_count += 1;
-        let block = if c.attr("display") == Some("true") { " display=\"block\"" } else { "" };
-        let inner: String = m.elements().map(mml).collect();
-        format!("<math xmlns=\"http://www.w3.org/1998/Math/MathML\"{block}>{inner}</math>")
+        if c.first_descendant("mjx-math").is_some() {
+            self.math_count += 1;
+        }
+        mjx_math(c)
     }
+}
+
+/// A MathJax CHTML `mjx-container` as MathML (its text if it has no `mjx-math`).
+pub(crate) fn mjx_math(c: Node) -> String {
+    let Some(m) = c.first_descendant("mjx-math") else { return esc(&c.plain()) };
+    let block = if c.attr("display") == Some("true") { " display=\"block\"" } else { "" };
+    let inner: String = m.elements().map(mml).collect();
+    format!("<math xmlns=\"http://www.w3.org/1998/Math/MathML\"{block}>{inner}</math>")
 }
 
 /// The characters of a token element: each `mjx-c` carries its code point in its class

@@ -161,6 +161,197 @@ impl<'a> Node<'a> {
     }
 }
 
+impl<'a> Node<'a> {
+    /// The document this node belongs to.
+    pub fn doc(&self) -> &'a Doc {
+        self.doc
+    }
+    /// Class names (split on whitespace).
+    pub fn classes(&self) -> Vec<&'a str> {
+        self.attr("class").map(|c| c.split_whitespace().collect()).unwrap_or_default()
+    }
+    /// Class and id words split on `-` and `_` ("c-article-share-box" → c, article, share, box),
+    /// lower-cased.
+    pub fn name_tokens(&self) -> std::collections::HashSet<String> {
+        let mut out = std::collections::HashSet::new();
+        for c in self.classes().into_iter().chain(std::iter::once(self.attr("id").unwrap_or(""))) {
+            for t in c.to_lowercase().split(['-', '_']) {
+                if !t.is_empty() {
+                    out.insert(t.to_string());
+                }
+            }
+        }
+        out
+    }
+    /// Pre-order elements (not including self) for which `pred` holds.
+    pub fn all(&self, pred: impl Fn(Node<'a>) -> bool) -> Vec<Node<'a>> {
+        fn rec<'a>(x: Node<'a>, pred: &dyn Fn(Node<'a>) -> bool, out: &mut Vec<Node<'a>>) {
+            for c in x.elements() {
+                if pred(c) {
+                    out.push(c);
+                }
+                rec(c, pred, out);
+            }
+        }
+        let mut out = Vec::new();
+        rec(*self, &pred, &mut out);
+        out
+    }
+    /// The first element (pre-order, not self) for which `pred` holds.
+    pub fn first(&self, pred: impl Fn(Node<'a>) -> bool) -> Option<Node<'a>> {
+        fn rec<'a>(x: Node<'a>, pred: &dyn Fn(Node<'a>) -> bool) -> Option<Node<'a>> {
+            for c in x.elements() {
+                if pred(c) {
+                    return Some(c);
+                }
+                if let Some(d) = rec(c, pred) {
+                    return Some(d);
+                }
+            }
+            None
+        }
+        rec(*self, &pred)
+    }
+    /// Parent, grandparent, … up to the root.
+    pub fn ancestors(&self) -> Vec<Node<'a>> {
+        let mut out = Vec::new();
+        let mut p = self.parent();
+        while let Some(x) = p {
+            out.push(x);
+            p = x.parent();
+        }
+        out
+    }
+    /// Whether any ancestor satisfies `pred`.
+    pub fn has_ancestor(&self, pred: impl Fn(Node<'a>) -> bool) -> bool {
+        let mut p = self.parent();
+        while let Some(x) = p {
+            if pred(x) {
+                return true;
+            }
+            p = x.parent();
+        }
+        false
+    }
+    /// Whether `self` is inside `other` (not counting itself).
+    pub fn is_inside(&self, other: Node<'a>) -> bool {
+        self.has_ancestor(|a| a.id == other.id)
+    }
+    /// Index among the parent's children.
+    pub fn index_in_parent(&self) -> Option<usize> {
+        let p = self.parent()?;
+        p.d().children.iter().position(|&c| c == self.id)
+    }
+}
+
+// Building and rewriting a document (the web-page readers normalise publisher markup in place).
+// Nodes taken out stay in the arena, detached (no parent).
+impl Doc {
+    /// An empty document whose root (node 0) is an element named `root`.
+    pub fn with_root(root: &str) -> Doc {
+        Doc {
+            nodes: vec![NodeData {
+                name: root.into(),
+                attrs: vec![],
+                text: String::new(),
+                is_math: false,
+                parent: None,
+                children: vec![],
+            }],
+        }
+    }
+    /// A new detached element.
+    pub fn new_element(&mut self, name: &str, attrs: Vec<(String, String)>) -> NodeId {
+        self.push(name, attrs, String::new(), false)
+    }
+    /// A new detached text node.
+    pub fn new_text(&mut self, t: &str) -> NodeId {
+        self.push("#text", vec![], t.to_string(), false)
+    }
+    pub(crate) fn push(&mut self, name: &str, attrs: Vec<(String, String)>, text: String, is_math: bool) -> NodeId {
+        self.nodes.push(NodeData { name: name.into(), attrs, text, is_math, parent: None, children: vec![] });
+        self.nodes.len() - 1
+    }
+    /// Appends a text node to `parent` (joined to a text node that is its last child).
+    pub(crate) fn add_text(&mut self, parent: NodeId, t: &str, is_math: bool) {
+        if let Some(&last) = self.nodes[parent].children.last() {
+            if self.nodes[last].name == "#text" {
+                self.nodes[last].text.push_str(t);
+                return;
+            }
+        }
+        let id = self.push("#text", vec![], t.to_string(), is_math);
+        self.nodes[id].parent = Some(parent);
+        self.nodes[parent].children.push(id);
+    }
+    /// Takes the node out of its parent.
+    pub fn remove(&mut self, id: NodeId) {
+        if let Some(p) = self.nodes[id].parent.take() {
+            self.nodes[p].children.retain(|&c| c != id);
+        }
+    }
+    /// Adds nodes as the last children of `parent` (taking them out of where they were).
+    pub fn append(&mut self, parent: NodeId, kids: &[NodeId]) {
+        for &k in kids {
+            self.remove(k);
+            self.nodes[k].parent = Some(parent);
+            self.nodes[parent].children.push(k);
+        }
+    }
+    /// Puts `with` where `id` is (and takes `id` out).
+    pub fn replace(&mut self, id: NodeId, with: &[NodeId]) {
+        let Some(p) = self.nodes[id].parent else { return };
+        for &n in with {
+            if n != id {
+                self.remove(n);
+            }
+        }
+        let Some(i) = self.nodes[p].children.iter().position(|&c| c == id) else { return };
+        self.nodes[p].children.remove(i);
+        self.nodes[id].parent = None;
+        for (k, &n) in with.iter().enumerate() {
+            self.nodes[n].parent = Some(p);
+            self.nodes[p].children.insert(i + k, n);
+        }
+    }
+    /// Detaches all children.
+    pub fn clear_children(&mut self, id: NodeId) {
+        for c in std::mem::take(&mut self.nodes[id].children) {
+            self.nodes[c].parent = None;
+        }
+    }
+    /// The children's ids.
+    pub fn child_ids(&self, id: NodeId) -> Vec<NodeId> {
+        self.nodes[id].children.clone()
+    }
+    /// Sets (Some) or removes (None) an attribute.
+    pub fn set_attr(&mut self, id: NodeId, k: &str, v: Option<&str>) {
+        let attrs = &mut self.nodes[id].attrs;
+        match v {
+            Some(v) => match attrs.iter_mut().find(|(n, _)| n == k) {
+                Some(x) => x.1 = v.to_string(),
+                None => attrs.push((k.to_string(), v.to_string())),
+            },
+            None => attrs.retain(|(n, _)| n != k),
+        }
+    }
+    /// A copy of a node of another document (with its subtree), detached.
+    pub fn import(&mut self, n: Node) -> NodeId {
+        let d = n.d();
+        let id = self.push(&d.name, d.attrs.clone(), d.text.clone(), d.is_math);
+        for c in n.children() {
+            let k = self.import(c);
+            self.nodes[k].parent = Some(id);
+            self.nodes[id].children.push(k);
+        }
+        id
+    }
+    /// Replaces a text node's text.
+    pub fn set_text(&mut self, id: NodeId, t: &str) {
+        self.nodes[id].text = t.to_string();
+    }
+}
+
 /// Parses XML into a DOM.
 pub fn parse(data: &[u8]) -> Result<Doc, ConvertError> {
     let s = prepare(data);
@@ -349,7 +540,7 @@ pub fn prepare(data: &[u8]) -> String {
     s
 }
 
-fn named_entities() -> &'static HashMap<&'static str, u32> {
+pub(crate) fn named_entities() -> &'static HashMap<&'static str, u32> {
     static T: OnceLock<HashMap<&'static str, u32>> = OnceLock::new();
     T.get_or_init(|| {
         [

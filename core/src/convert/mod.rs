@@ -13,8 +13,11 @@
 //! Everything is synchronous (ureq), like `metadata.rs`.
 
 pub mod arxiv;
+pub mod atypon;
+pub mod cellpress;
 pub mod cover;
 pub mod epub;
+pub mod html;
 pub mod images;
 pub mod jats;
 pub mod net;
@@ -22,12 +25,17 @@ pub mod net;
 pub mod pdf;
 pub mod resolver;
 pub mod sciencedirect;
+pub mod silverchair;
+pub mod springer;
+pub mod webarchive;
+pub mod webpage;
 pub mod xml;
 
 use regex::Regex;
 use resolver::{Candidate, Source};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+pub use webpage::PageImage;
 pub use xml::esc;
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -178,7 +186,7 @@ pub fn convert_file_with(path: &Path, out_dir: &Path, opts: &Options) -> Result<
 /// Converts a publisher's article page given as HTML — as the browser shows it to a reader with
 /// access, e.g. sent by an app or browser extension — into `out_dir/<slug>.epub`. `base_url` is
 /// the page's address (image links relative to it are resolved against it; may be empty).
-/// Supported: ScienceDirect.
+/// Without figure images; see [`convert_page_with`].
 pub fn convert_html_with(html: &str, base_url: &str, out_dir: &Path, opts: &Options) -> Result<ConversionResult> {
     let book = html_book(html, base_url, opts)?;
     write(&book, out_dir, opts)
@@ -186,11 +194,48 @@ pub fn convert_html_with(html: &str, base_url: &str, out_dir: &Path, opts: &Opti
 
 /// The book for a publisher's article page given as HTML (see [`convert_html_with`]).
 pub fn html_book(html: &str, base_url: &str, opts: &Options) -> Result<Book> {
-    if !sciencedirect::looks_like(html) {
-        return Err(fail("This page is not a full-text article page Lunta can read (ScienceDirect)."));
-    }
-    let base = url::Url::parse(base_url).ok();
-    sciencedirect::book(html, None, base.as_ref(), opts)
+    page_book(html, base_url, Vec::new(), opts)
+}
+
+/// "Use this page's full text": an article page the reader has open in the browser (the HTML as
+/// the server delivered it, its address, and the figure images — and linked table pages — the
+/// browser fetched with the reader's access, each with every address the page uses for it)
+/// becomes `out_dir/<slug>.epub`. The reader is picked by the publishing platform (see
+/// [`page_reader`]); a page without a substantial body is refused (an abstract-only page — no
+/// access — with a message saying so).
+pub fn convert_page_with(
+    html: &str,
+    url: &str,
+    images: Vec<PageImage>,
+    out_dir: &Path,
+    opts: &Options,
+) -> Result<ConversionResult> {
+    let book = page_book(html, url, images, opts)?;
+    write(&book, out_dir, opts)
+}
+
+/// The book for an article page (see [`convert_page_with`]).
+pub fn page_book(html: &str, url: &str, images: Vec<PageImage>, opts: &Options) -> Result<Book> {
+    let u = url::Url::parse(url).ok();
+    webpage::book(html, u.as_ref(), images, opts)
+}
+
+/// Which reader [`convert_page_with`] uses for a page: "ScienceDirect", "NEJM", "Atypon",
+/// "Springer Nature", "Silverchair", "Cell Press / Lancet" or "generic".
+pub fn page_reader(url: &str, html: &str) -> &'static str {
+    webpage::pick(url::Url::parse(url).ok().as_ref(), html).name()
+}
+
+/// Converts a Safari web archive of an article page (the page and the images it loaded).
+pub fn convert_webarchive_with(data: &[u8], out_dir: &Path, opts: &Options) -> Result<ConversionResult> {
+    let p = webarchive::read(data)?;
+    opts.log(&format!(
+        "Web archive: {}, {} image(s)",
+        p.url.as_ref().map(|u| u.to_string()).unwrap_or_else(|| "no URL".into()),
+        p.images.len()
+    ));
+    let book = webpage::book(&p.html, p.url.as_ref(), p.images, opts)?;
+    write(&book, out_dir, opts)
 }
 
 fn run(cands: Vec<Candidate>, out_dir: &Path, opts: &Options) -> Result<ConversionResult> {
@@ -483,5 +528,7 @@ pub(crate) fn capitalized(s: &str) -> String {
     out
 }
 
+#[cfg(test)]
+mod pages_tests;
 #[cfg(test)]
 mod tests;

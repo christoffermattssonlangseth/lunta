@@ -3,7 +3,7 @@
 
 use super::net::{self, sniff};
 use super::xml::Doc;
-use super::{arxiv, fail, sciencedirect, Options, PaperMeta, Result};
+use super::{arxiv, fail, sciencedirect, webarchive, webpage, Options, PaperMeta, Result};
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
@@ -112,6 +112,13 @@ pub fn candidates_for_file(path: &Path) -> Result<Vec<Candidate>> {
         "jats" => Ok(vec![cand(format!("JATS {name}"), move |_| {
             Ok(Source::Jats { data, assets: AssetLocator::None, meta: PaperMeta::default(), label: "JATS file".into() })
         })]),
+        _ if webarchive::is_webarchive(&data) => {
+            // a page saved from Safari: the page and its images
+            Ok(vec![cand(format!("Web archive {name}"), move |o| {
+                let p = webarchive::read(&data)?;
+                Ok(Source::Book(Box::new(webpage::book(&p.html, p.url.as_ref(), p.images, o)?)))
+            })])
+        }
         _ => {
             // a publisher's article page saved from the browser
             let html = String::from_utf8(data).unwrap_or_else(|e| e.into_bytes().iter().map(|&b| b as char).collect());
