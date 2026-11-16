@@ -42,8 +42,17 @@ do {
         var imgs: [PageImage] = []
         if let imagesDir {
             let dir = URL(fileURLWithPath: imagesDir)
-            for f in (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [] {
-                if let d = try? Data(contentsOf: f) { imgs.append(PageImage(urls: [f.lastPathComponent], data: d)) }
+            // urls.tsv (optional): "file<TAB>address" lines, the address the browser fetched it from
+            // (e.g. a table's own page, which is looked up by address only)
+            var addr: [String: [String]] = [:]
+            if let tsv = try? String(contentsOf: dir.appendingPathComponent("urls.tsv"), encoding: .utf8) {
+                for line in tsv.split(separator: "\n") {
+                    let p = line.split(separator: "\t").map(String.init)
+                    if p.count >= 2 { addr[p[0], default: []].append(contentsOf: p[1...]) }
+                }
+            }
+            for f in (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [] where f.lastPathComponent != "urls.tsv" {
+                if let d = try? Data(contentsOf: f) { imgs.append(PageImage(urls: [f.lastPathComponent] + (addr[f.lastPathComponent] ?? []), data: d)) }
             }
         }
         let u = URL(string: pageURL)

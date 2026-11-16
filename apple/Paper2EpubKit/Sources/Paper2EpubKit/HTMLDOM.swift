@@ -286,3 +286,51 @@ extension XNode {
         return out
     }
 }
+
+// Building and rewriting parsed pages (the platform readers normalise publisher markup in place).
+extension XNode {
+    static func element(_ name: String, _ attrs: [String: String] = [:], _ kids: [XNode] = []) -> XNode {
+        let x = XNode(name: name, attrs: attrs, attrOrder: attrs.keys.sorted())
+        x.append(kids)
+        return x
+    }
+
+    static func textNode(_ t: String) -> XNode { XNode(name: "#text", text: t) }
+
+    /// Adds nodes as the last children (taking them out of where they were).
+    func append(_ kids: [XNode]) {
+        for k in kids {
+            k.remove()
+            k.parent = self
+            children.append(k)
+        }
+    }
+
+    /// Takes this node out of its parent.
+    func remove() {
+        guard let p = parent else { return }
+        p.children.removeAll { $0 === self }
+        parent = nil
+    }
+
+    /// Puts `nodes` where this node is (and takes this node out).
+    func replace(with nodes: [XNode]) {
+        guard let p = parent, let i = p.children.firstIndex(where: { $0 === self }) else { return }
+        for n in nodes { n.remove() }
+        let i2 = p.children.firstIndex(where: { $0 === self }) ?? i
+        p.children.remove(at: i2)
+        for n in nodes { n.parent = p }
+        p.children.insert(contentsOf: nodes, at: i2)
+        parent = nil
+    }
+
+    func hasClassPrefix(_ prefix: String) -> Bool { classes.contains { $0.hasPrefix(prefix) } }
+
+    func first(where pred: (XNode) -> Bool) -> XNode? {
+        for c in children where !c.isText {
+            if pred(c) { return c }
+            if let x = c.first(where: pred) { return x }
+        }
+        return nil
+    }
+}

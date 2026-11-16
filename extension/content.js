@@ -40,8 +40,20 @@
   }
 
   // publishers whose article pages Lunta can read (also when a page lacks citation_* tags)
-  const KNOWN_HOSTS = /(^|\.)(sciencedirect\.com|cell\.com|thelancet\.com|nejm\.org|science\.org|nature\.com|pnas\.org|wiley\.com|oup\.com|plos\.org|elifesciences\.org|frontiersin\.org|springer\.com|biomedcentral\.com|tandfonline\.com|jamanetwork\.com|bmj\.com|acs\.org|sagepub\.com|embopress\.org|biorxiv\.org|medrxiv\.org|ncbi\.nlm\.nih\.gov|mdpi\.com|annualreviews\.org|aacrjournals\.org|rupress\.org|ahajournals\.org)$/i;
-  const ARTICLE_PATH = /\/(science\/article|article|articles|doi|content|fulltext|full)\b/i;
+  // (by platform: Elsevier; Atypon; Springer Nature; Silverchair; others)
+  const KNOWN_HOSTS = new RegExp("(^|\\.)(" + [
+    "sciencedirect\\.com", "cell\\.com", "thelancet\\.com",
+    "nejm\\.org", "science\\.org", "pnas\\.org", "wiley\\.com", "tandfonline\\.com", "sagepub\\.com", "acs\\.org", "ahajournals\\.org",
+    "asm\\.org", "annualreviews\\.org", "liebertpub\\.com", "physiology\\.org", "ascopubs\\.org", "atsjournals\\.org",
+    "psychiatryonline\\.org", "royalsocietypublishing\\.org", "journals\\.uchicago\\.edu", "rsna\\.org", "ajronline\\.org",
+    "healthaffairs\\.org", "neurology\\.org", "embopress\\.org",
+    "nature\\.com", "springer\\.com", "biomedcentral\\.com", "springeropen\\.com",
+    "jamanetwork\\.com", "oup\\.com", "ashpublications\\.org", "rupress\\.org", "aacrjournals\\.org", "diabetesjournals\\.org",
+    "direct\\.mit\\.edu", "geoscienceworld\\.org", "karger\\.com", "portlandpress\\.com", "biologists\\.com", "iwaponline\\.com",
+    "publications\\.aap\\.org", "journals\\.aai\\.org",
+    "plos\\.org", "elifesciences\\.org", "frontiersin\\.org", "bmj\\.com", "biorxiv\\.org", "medrxiv\\.org", "ncbi\\.nlm\\.nih\\.gov", "mdpi\\.com",
+  ].join("|") + ")$", "i");
+  const ARTICLE_PATH = /\/(science\/article|article|articles|doi|content|fulltext|fullarticle|full)\b/i;
   const knownArticle = KNOWN_HOSTS.test(location.hostname) && ARTICLE_PATH.test(location.pathname);
 
   const doi = findDoi();
@@ -302,6 +314,26 @@
     return out;
   }
 
+  // Tables the page only links to (Springer Nature: "Full size table" → /articles/…/tables/1):
+  // their own pages, fetched with the reader's access (same site), so the reading view has them.
+  async function linkedTablePages() {
+    const links = new Map();
+    document.querySelectorAll('a[data-test="table-link"][href]').forEach((a) => {
+      if (!a.closest("#lunta-ext-root")) links.set(a.href, a.getAttribute("href"));
+    });
+    const out = [];
+    for (const [u, raw] of [...links].slice(0, 30)) {
+      try {
+        const r = await fetch(u, { credentials: "include" });
+        if (!r.ok || !/html/i.test(r.headers.get("content-type") || "")) continue;
+        const text = await r.text();
+        if (!/<table[\s>]/i.test(text)) continue;
+        out.push({ urls: [...new Set([u, raw])], base64: toBase64(new TextEncoder().encode(text).buffer) });
+      } catch (_) { /* that table stays a link */ }
+    }
+    return out;
+  }
+
   async function useFullText() {
     if (ftBusy) return;
     ftBusy = true;
@@ -311,8 +343,13 @@
       ftMessage("Reading the page…");
       const page = await pageHTML();
       const images = figureImages();
+      let pages = [];
+      if (document.querySelector('a[data-test="table-link"]')) {
+        ftMessage("Fetching the tables…");
+        pages = await linkedTablePages();
+      }
       ftMessage(images.length ? `Fetching ${images.length} figure image${images.length === 1 ? "" : "s"}…` : "Sending the page to Lunta…");
-      const r = await send({ type: "fullText", url: location.href, doi, title, html: page.html, liveHtml: page.liveHtml, images });
+      const r = await send({ type: "fullText", url: location.href, doi, title, html: page.html, liveHtml: page.liveHtml, images, pages });
       if (r.error) {
         ftMessage("");
         showError(r.error);

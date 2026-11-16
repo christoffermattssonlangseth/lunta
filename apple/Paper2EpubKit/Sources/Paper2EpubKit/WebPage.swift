@@ -21,8 +21,10 @@ final class PageImages {
         self.list = list
         self.base = base
         for (i, img) in list.enumerated() {
+            let isPage = Self.isHTML(img.data)
             for u in img.urls {
                 byURL[Self.key(u, base: base)] = i
+                if isPage { continue }   // pages (e.g. a table's own page) only by their address
                 let st = Self.stem(u)
                 if !st.isEmpty, !(byStem[st]?.contains(i) ?? false) { byStem[st, default: []].append(i) }
             }
@@ -40,6 +42,20 @@ final class PageImages {
         return nil
     }
 
+    /// A page the browser sent along with the images (e.g. the page of a table that the article
+    /// page only links to), by its address.
+    func page(for candidates: [String]) -> String? {
+        for c in candidates where !c.isEmpty {
+            if let i = byURL[Self.key(c, base: base)], Self.isHTML(list[i].data) { return String(decoding: list[i].data, as: UTF8.self) }
+        }
+        return nil
+    }
+
+    static func isHTML(_ d: Data) -> Bool {
+        let head = String(decoding: d.prefix(512), as: UTF8.self).lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        return head.hasPrefix("<!doctype html") || head.hasPrefix("<html") || (head.hasPrefix("<") && head.contains("<head"))
+    }
+
     static func key(_ u: String, base: URL?) -> String {
         var s = u.trimmingCharacters(in: .whitespaces)
         if s.hasPrefix("//") { s = "https:" + s }
@@ -54,6 +70,7 @@ final class PageImages {
         s = (s.removingPercentEncoding ?? s).components(separatedBy: "/").last ?? s
         if let dot = s.lastIndex(of: "."), s.distance(from: dot, to: s.endIndex) <= 5 { s = String(s[..<dot]) }
         s = s.lowercased()
+        if s.hasPrefix("m_"), s.count > 6 { s.removeFirst(2) }   // Silverchair's medium-size copy ("m_gkae1105fig1")
         for suffix in ["_lrg", "_large", "-large", "_hires", "_highres", "-highres", "_full", "_med", "_sml", "_small", "_thumb", "-thumb"] where s.hasSuffix(suffix) {
             s = String(s.dropLast(suffix.count))
         }
@@ -64,9 +81,12 @@ final class PageImages {
 extension Paper2Epub {
     /// Converts an article page the reader has open in the browser (sent by Lunta's browser
     /// extension with the HTML as the server delivered it and the figure images the browser
-    /// fetched). Picks the publisher's reader by the page's host: ScienceDirect, NEJM (generic for
-    /// now), otherwise the generic reader for standard scholarly markup, which refuses pages
-    /// without a substantial body rather than make a poor reading view.
+    /// fetched). Picks the reader by the publishing platform (`PageReader`): ScienceDirect; Atypon
+    /// core markup (NEJM, Science, PNAS, Wiley, T&F, SAGE, ACS, …); Springer Nature (nature.com,
+    /// Springer Link, BMC); Silverchair (JAMA, Oxford Academic, ASH, RUP, …); Cell Press / Lancet;
+    /// otherwise the generic reader for standard scholarly markup. Pages without a substantial body
+    /// are refused rather than made into a poor reading view (an abstract-only page — no access —
+    /// with a message saying so).
     public static func convert(page html: String, url: URL?, images: [PageImage], into dir: URL,
                                log: @escaping Log = { _ in }) async throws -> ConversionResult {
         let book = try await pageBook(html: html, url: url, images: images, log: log)
@@ -79,8 +99,14 @@ extension Paper2Epub {
         switch PageReader.pick(url: url, html: html) {
         case .scienceDirect:
             book = try await ScienceDirect.book(html: html, dir: nil, images: bag, log: log)
-        case .nejm:
-            book = try await NEJM.book(html: html, url: url, images: bag, log: log)
+        case .nejm, .atypon:
+            book = try await Atypon.book(html: html, url: url, images: bag, log: log)
+        case .springerNature:
+            book = try await SpringerNature.book(html: html, url: url, images: bag, log: log)
+        case .silverchair:
+            book = try await Silverchair.book(html: html, url: url, images: bag, log: log)
+        case .cellPress:
+            book = try await CellPress.book(html: html, url: url, images: bag, log: log)
         case .generic:
             book = try await GenericPage.book(html: html, url: url, images: bag, label: "Full text from \(url?.host ?? "the publisher")", log: log)
         }
@@ -89,17 +115,48 @@ extension Paper2Epub {
         return book
     }
 
-    /// Which reader `convert(page:)` uses for a page ("ScienceDirect", "NEJM", "generic").
+    /// Which reader `convert(page:)` uses for a page ("ScienceDirect", "NEJM", "Atypon", "Springer Nature",
+    /// "Silverchair", "Cell Press / Lancet", "generic").
     public static func pageReader(url: URL?, html: String) -> String { PageReader.pick(url: url, html: html).rawValue }
 }
 
+/// The reader for a page: by the publishing platform its host runs on; for a page without an
+/// address (a saved file), by the platform's markup.
+///
+/// Rust port: the same table in core/src/convert/webpage.rs.
 enum PageReader: String {
-    case scienceDirect = "ScienceDirect", nejm = "NEJM", generic
+    case scienceDirect = "ScienceDirect", nejm = "NEJM", atypon = "Atypon", springerNature = "Springer Nature",
+         silverchair = "Silverchair", cellPress = "Cell Press / Lancet", generic
+
+    /// Atypon Literatum sites (journals on their own domains).
+    static let atyponHosts = ["science.org", "pnas.org", "onlinelibrary.wiley.com", "tandfonline.com", "journals.sagepub.com",
+                              "pubs.acs.org", "ahajournals.org", "journals.asm.org", "annualreviews.org", "liebertpub.com",
+                              "journals.physiology.org", "ascopubs.org", "atsjournals.org", "psychiatryonline.org", "royalsocietypublishing.org",
+                              "journals.uchicago.edu", "pubs.rsna.org", "ajronline.org", "healthaffairs.org", "pubsonline.informs.org",
+                              "epubs.siam.org", "arc.aiaa.org", "ajph.aphapublications.org", "cdnsciencepub.com", "futuremedicine.com",
+                              "neurology.org", "embopress.org"]
+    /// Silverchair sites.
+    static let silverchairHosts = ["jamanetwork.com", "academic.oup.com", "ashpublications.org", "rupress.org", "aacrjournals.org",
+                                   "diabetesjournals.org", "direct.mit.edu", "pubs.geoscienceworld.org", "karger.com", "portlandpress.com",
+                                   "journals.biologists.com", "iwaponline.com", "asmedigitalcollection.asme.org", "spiedigitallibrary.org",
+                                   "meridian.allenpress.com", "publications.aap.org", "journals.aai.org", "pubs.asahq.org"]
+    static let springerHosts = ["nature.com", "link.springer.com", "springer.com", "biomedcentral.com", "springeropen.com", "springermedizin.de"]
+    static let cellHosts = ["cell.com", "thelancet.com"]
+
+    static func on(_ host: String, _ list: [String]) -> Bool { list.contains { host == $0 || host.hasSuffix("." + $0) } }
 
     static func pick(url: URL?, html: String) -> PageReader {
         let host = url?.host?.lowercased() ?? ""
         if host.hasSuffix("sciencedirect.com") || (host.isEmpty && ScienceDirect.looksLike(html)) { return .scienceDirect }
         if host.hasSuffix("nejm.org") { return .nejm }
+        if on(host, cellHosts) { return .cellPress }   // (Atypon core or ScienceDirect markup: decided there)
+        // the platform's markup first (a journal on its own domain, a site that moved platform), then the host
+        if Atypon.looksLike(html) { return .atypon }
+        if SpringerNature.looksLike(html) { return .springerNature }
+        if Silverchair.looksLike(html) { return .silverchair }
+        if on(host, springerHosts) { return .springerNature }
+        if on(host, silverchairHosts) { return .silverchair }
+        if on(host, atyponHosts) { return .atypon }
         return .generic
     }
 }
@@ -141,18 +198,35 @@ enum MathML {
 /// are dropped. Conservative: a page without a substantial body (under 1,000 words, or no
 /// headings) is refused.
 ///
+/// Platform readers (Springer Nature, Silverchair, Cell Press) use it through an `Adapter` that
+/// rewrites their markup first.
+///
 /// Rust port (desktop / Android): this whole reader, `HTMLDOM` and `PageImages` would move to
 /// core/src/convert (e.g. `convert/webpage.rs`), with `sciencedirect.rs::book` taking posted images.
 enum GenericPage {
     static let minWords = 1000
 
-    static func book(html: String, url: URL?, images: PageImages, label: String, log: @escaping (String) -> Void) async throws -> Book {
+    /// A platform's adjustments before the generic reading: `prepare` rewrites the parsed page in
+    /// place (platform figures and tables as plain `figure` / table wraps, javascript links as
+    /// `#id` links, furniture removed); `main` names the article's text when the platform marks it.
+    struct Adapter {
+        var prepare: (XNode) -> Void = { _ in }
+        var main: (XNode) -> XNode? = { _ in nil }
+    }
+
+    /// Elements an adapter marks with this attribute survive `clean` (e.g. a list of links that
+    /// is the supplementary material).
+    static let keepAttr = "data-lunta-keep"
+
+    static func book(html: String, url: URL?, images: PageImages, label: String, adapter: Adapter = Adapter(),
+                     log: @escaping (String) -> Void) async throws -> Book {
         log("Reading the page (\(label))")
         let pre = html
             .replacingOccurrences(of: #"<script\b[^>]*type="math/mml"[^>]*>([\s\S]*?)</script>"#, with: "$1", options: .regularExpression)
             .replacingOccurrences(of: #"<script\b[^>]*type="math/tex; *mode=display"[^>]*>([\s\S]*?)</script>"#, with: "<code class=\"tex-display\">$1</code>", options: .regularExpression)
             .replacingOccurrences(of: #"<script\b[^>]*type="math/tex"[^>]*>([\s\S]*?)</script>"#, with: "<code class=\"tex\">$1</code>", options: .regularExpression)
         let doc = HTMLDOM.parse(pre)
+        adapter.prepare(doc)
         var base = url
         if let b = doc.all(where: { $0.name == "base" }).first?.attr("href"), let u = URL(string: b, relativeTo: url) { base = u.absoluteURL }
         var meta = metadata(doc, url: url)
@@ -162,8 +236,12 @@ enum GenericPage {
         for a in doc.all(where: { $0.name == "a" }) {
             if let h = a.attr("href"), let i = h.firstIndex(of: "#") { r.targets.insert(String(h[h.index(after: i)...])) }
         }
+        // the abstract anywhere on the page (to tell a page without access from a page that isn't an article)
+        let pageAbstract = body.all(where: { x in
+            (x.nameTokens.contains("abstract") || x.attr("role") == "doc-abstract") && !["meta", "a", "span", "li", "p"].contains(x.name)
+        }).map { words($0.plain) }.max() ?? 0
         clean(body)
-        guard let main = mainElement(body) else { throw refusal(words: 0, headings: 0) }
+        guard let main = adapter.main(body) ?? mainElement(body) else { throw refusal(words: 0, headings: 0, abstractWords: pageAbstract) }
         log("Main text: <\(main.name)\(main.attr("id").map { " id=\($0)" } ?? "")\(main.attr("class").map { " class=\($0.prefix(60))" } ?? "")>")
 
         // the abstract may sit outside the main text
@@ -191,7 +269,10 @@ enum GenericPage {
         let wordCount = bodyChapters.reduce(0) { $0 + words(ReaderText.textOf(Substring($1.html))) }
         let headingCount = r.headingCount
         log("\(wordCount) words, \(headingCount) headings, \(r.images.count) figure image(s), \(r.missingImages) missing")
-        if wordCount < minWords || headingCount == 0 { throw refusal(words: wordCount, headings: headingCount) }
+        if wordCount < minWords || headingCount == 0 {
+            let abstractWords = chapters.filter { Renderer.isAbstract($0.title) }.reduce(0) { $0 + words(ReaderText.textOf(Substring($1.html))) }
+            throw refusal(words: wordCount, headings: headingCount, abstractWords: max(abstractWords, words(meta.abstract), min(pageAbstract, wordCount)))
+        }
         if meta.abstract.isEmpty, let abs = chapters.first(where: { $0.headings.first?.id == "abstract" }) {
             meta.abstract = ReaderText.textOf(Substring(abs.html)).split(whereSeparator: \.isWhitespace).joined(separator: " ")
                 .replacingOccurrences(of: #"^Abstract\s*"#, with: "", options: .regularExpression)
@@ -205,8 +286,13 @@ enum GenericPage {
         return Book(meta: meta, chapters: chapters, images: r.images, sourceLabel: label, notes: notes)
     }
 
-    static func refusal(words: Int, headings: Int) -> ConversionError {
-        fail("This page doesn't look like the article's full text (found \(words) words of article text"
+    /// The message for a page with only the abstract (no access to the full text).
+    static let abstractOnly = "This page only shows the abstract — open it with your institution's access (or sign in) so the full text shows, and try again."
+
+    static func refusal(words: Int, headings: Int, abstractWords: Int) -> ConversionError {
+        // an abstract and little else: the page of a reader without access
+        if abstractWords >= 40, words - min(abstractWords, words) < 400 { return fail(abstractOnly) }
+        return fail("This page doesn't look like the article's full text (found \(words) words of article text"
              + (headings == 0 ? " and no section headings" : "") + "). If you have access, open the full-text view of the article and try again.")
     }
 
@@ -275,6 +361,7 @@ enum GenericPage {
     static func dropReason(_ c: XNode) -> String? {
         let r: Bool = { (c: XNode) -> Bool in
             guard !c.isText, !c.isMath else { return false }
+            if c.attrs[keepAttr] != nil { return false }
             // a button or label around a figure (zoomable images): kept, it's only a wrapper
             if (c.name == "button" || c.name == "label"), c.firstDescendant("img") != nil || c.firstDescendant("figure") != nil || c.firstDescendant("math") != nil { return false }
             if dropNames.contains(c.name) { return true }

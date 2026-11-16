@@ -85,6 +85,10 @@ async function sendFullText(msg, tabId) {
     total += b.length;
     images.push({ urls: list[i].urls, base64: bytesToBase64(b) });
   }
+  // pages the content script fetched itself (tables an article page only links to), sent as they are
+  for (const p of (msg.pages || []).slice(0, 30)) {
+    if (p && p.base64 && Array.isArray(p.urls)) images.push({ urls: p.urls, base64: p.base64 });
+  }
   const mb = (total / 1048576).toFixed(1);
   progress(`Lunta is making the reading view (${images.length} figure${images.length === 1 ? "" : "s"}, ${mb} MB)…`);
   const body = JSON.stringify({
