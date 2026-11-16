@@ -143,9 +143,57 @@ label.check { display: flex; gap: 6px; align-items: center; }
 #selbar .swatch { width: 20px; height: 20px; }
 #selbar button:not(.swatch) { border: none; padding: 2px 8px; }
 #resume { position: absolute; top: 58px; left: 50%; transform: translateX(-50%); background: var(--bg); border: 1px solid var(--line); border-radius: 16px; padding: 6px 14px; box-shadow: 0 4px 16px rgba(0,0,0,.15); font-weight: 500; z-index: 30; }
-.figure-view { margin: 0; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center; gap: 10px; background: #fff; padding: 16px; border-radius: 10px; color: #222; }
-.figure-view img { max-width: 86vw; max-height: 76vh; object-fit: contain; }
-.figure-view figcaption { max-width: 80ch; max-height: 10vh; overflow-y: auto; font-size: 13px; }
+/* dark: the reader is true black, like the page itself (reader.css); the themes' colours around the page */
+@media (prefers-color-scheme: dark) { #page, #page iframe { background: #000; } }
+#reader[data-theme="light"] #page, #reader[data-theme="light"] #page iframe { background: #fff; }
+#reader[data-theme="paper"] #page, #reader[data-theme="paper"] #page iframe { background: #f5ecd9; }
+#reader[data-theme="quiet"] #page, #reader[data-theme="quiet"] #page iframe { background: #2a2927; }
+#reader[data-theme="black"] #page, #reader[data-theme="black"] #page iframe { background: #000; }
+
+/* highlight mode: the toggle is filled with the chosen colour while on */
+#hlmode-btn.on { background: color-mix(in srgb, var(--hl, var(--yellow)) 55%, transparent); box-shadow: inset 0 0 0 1.5px var(--hl, var(--yellow)); }
+#reader .tools .hl-more { min-width: 16px; padding: 4px 3px; margin-left: -3px; font-size: 10px; color: var(--dim); }
+
+/* the figure viewer (FigureViewer.swift): over the whole window, the reader's paper (black in dark mode) */
+#figure { position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column; background: #fffdf8; color: #1d1d1f; outline: none; }
+#figure .fv-head { display: flex; align-items: center; gap: 6px; padding: 10px 16px; }
+#figure .fv-head button.icon { font-size: 20px; line-height: 1; min-width: 34px; color: inherit; opacity: .85; }
+#figure .fv-head button.icon.on { background: transparent; }
+#figure .fv-label { font-weight: 600; font-size: 15px; }
+#figure .fv-sub { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+#figure .fv-stage { flex: 1; min-height: 0; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+#figure .fv-stage img { max-width: 100%; max-height: 100%; object-fit: contain; background: #fff; transform-origin: center; user-select: none; -webkit-user-select: none; }
+#figure .fv-stage.zoomed { cursor: grab; }
+#figure .fv-images { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 16px; padding: 3px 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+#figure .fv-caption { border-top: 1px solid var(--line); max-height: 40vh; min-height: 60px; overflow-y: auto; padding: 14px 18px; }
+#figure .fv-caption.alone { flex: 1; max-height: none; border-top: 0; }
+#figure .fv-text { max-width: 760px; margin: 0 auto; font-size: 14px; line-height: 1.55; user-select: text; -webkit-user-select: text; }
+#figure mark { color: inherit; border-radius: 2px; }
+#figure mark.c-yellow { background: rgba(250,212,77,.45); } #figure mark.c-green { background: rgba(140,209,122,.45); }
+#figure mark.c-blue { background: rgba(122,184,242,.45); } #figure mark.c-pink { background: rgba(245,143,179,.45); }
+#figure.dark { background: #000; color: #d8d5ce; }
+#figure.dark .fv-stage img { opacity: .92; }
+#figure.dark .fv-images { background: #1e1e1e; border-color: rgba(255,255,255,.12); }
+#figure.dark .fv-caption { border-color: rgba(255,255,255,.12); }
+#figure.dark mark.c-yellow { background: rgba(250,212,77,.35); } #figure.dark mark.c-green { background: rgba(140,209,122,.35); }
+#figure.dark mark.c-blue { background: rgba(122,184,242,.35); } #figure.dark mark.c-pink { background: rgba(245,143,179,.35); }
+#figure.light .fv-images { background: #fff; border-color: rgba(0,0,0,.1); }
+#figure.light .fv-caption { border-color: rgba(0,0,0,.1); }
+
+/* the grid of figures */
+#figures { outline: none; }
+.modal.figure-grid { width: min(920px, 92vw); max-height: 86vh; padding: 14px 18px 18px; gap: 12px; }
+.figure-grid .fg-head { display: flex; align-items: center; gap: 10px; }
+.figure-grid .fg-setting { font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+.figure-grid .fg-grid { overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 18px 14px; padding: 2px; }
+.fg-cell { display: flex; flex-direction: column; align-items: stretch; gap: 4px; text-align: left; border: none; background: transparent; padding: 4px; border-radius: 8px; white-space: normal; }
+.fg-thumb { height: 130px; background: #fff; border: 1px solid var(--line); border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.fg-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; padding: 4px; }
+.fg-thumb span { font-size: 28px; opacity: .5; }
+.fg-label { font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fg-title { font-size: 11.5px; color: var(--dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+@media (prefers-color-scheme: dark) { .fg-thumb img { opacity: .92; } }
 
 /* PDF.js */
 .pdf-container { position: absolute; inset: 0; overflow: auto; background: #8a8a8a; }

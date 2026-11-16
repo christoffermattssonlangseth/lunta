@@ -8,8 +8,9 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { api, type Annotation, type Paper, type PageSelection, type TocItem } from './api';
-import { fill, h, $, status, copy } from './ui';
+import { fill, h, $, status, copy, menu, type MenuItem } from './ui';
 import { showPdf, closePdf, pdfZoom } from './pdf';
+import { closeFigureOverlay, figureList, figureOpen, showFigureGrid, showFigureViewer, type Fig } from './figures';
 
 const COLORS = ['yellow', 'green', 'blue', 'pink'] as const;
 
@@ -23,6 +24,16 @@ let paged = localStorage.getItem('readerPaged') === '1';
 let restored = false;
 let saver: number | undefined;
 let showingList = false;
+// highlight mode (Highlights.swift): every finished selection is highlighted at once in this colour
+let hlMode = localStorage.getItem('highlightMode') === '1';
+let hlColor = COLORS.includes(localStorage.getItem('highlightModeColor') as any) ? localStorage.getItem('highlightModeColor')! : 'yellow';
+// figures in the text as cards (default) or in full (FigureSetting)
+let figureCards = localStorage.getItem('readerFigureCards') !== '0';
+// the reader's theme (ReaderTheme.swift)
+const THEMES = ['automatic', 'light', 'paper', 'quiet', 'black'] as const;
+let theme: string = THEMES.includes(localStorage.getItem('readerTheme') as any) ? localStorage.getItem('readerTheme')! : 'automatic';
+// the paper's figures, as the page reported them when it loaded
+let figures: Fig[] = [];
 
 export const readerPaper = () => paper?.id || null;
 
@@ -58,7 +69,9 @@ window.addEventListener('message', (e) => {
   const body = d.body;
   switch (d.name) {
     case 'ann':      // the page is ready, or a highlight was clicked
-      if (body === '__ready__') pageReady(); else editAnnotation(String(body));
+      if (body === '__ready__') pageReady();
+      else if (typeof body === 'string' && body.startsWith('__hl__')) selectionDone(body.slice(6).replace(/^:/, ''));
+      else editAnnotation(String(body));
       break;
     case 'page':     // pagedJS loaded: tell it the mode (PageMessageHandler in Swift)
       if (body === 'hello') run(pagedCall());
@@ -66,14 +79,20 @@ window.addEventListener('message', (e) => {
     case 'pos':      // the heading at the top of the screen
       markToc(String(body));
       break;
-    case 'fig':
-      showFigure(body.src, body.caption);
+    case 'fig': {      // the page's figures as it loads, or a tapped mention, card or image
+      const list = figureList(body);
+      if (list) { figures = list; figuresButton(); break; }
+      const o = figureOpen(body);
+      if (o) { selectionBar(null); showFigureViewer(o, refocus, readerDark()); }
       break;
+    }
     case '__selection':
-      selectionBar(body);
+      selectionBar(hlMode ? null : body);     // in highlight mode the selection is highlighted at once
       break;
     case '__key':
-      if (body === 'highlight') highlight('yellow');
+      if (body === 'highlight') highlight(hlColor);
+      else if (body === 'hlmode') setHighlightMode(!hlMode);
+      else if (body === 'figures') openFigureGrid();
       else if (body === 'escape') { if (!closeOverlay()) selectionBar(null); }
       else if (body === 'larger') scale(0.1);
       else if (body === 'smaller') scale(-0.1);
@@ -102,6 +121,8 @@ export async function closeReader() {
   await savePosition();
   clearInterval(saver);
   closePdf();
+  while (closeFigureOverlay());
+  figures = [];
   frame = null;
   paper = null;
   $('#reader').hidden = true;
@@ -115,14 +136,26 @@ function render() {
     h('button' + (mode === m ? '.on' : ''), { text: label, disabled: !enabled, onclick: () => { if (mode !== m) { savePosition(); mode = m; render(); show(); } } });
   const reading = mode === 'reading';
   const hlBtn: HTMLElement = h('button.icon', { text: '☰', title: 'Highlights and notes', onclick: () => toggleList() });
+  const modeBtn = reading ? h('button.icon#hlmode-btn', {
+    text: '🖍', onclick: () => setHighlightMode(!hlMode),
+    oncontextmenu: (e: MouseEvent) => { e.preventDefault(); highlightMenu(e.clientX, e.clientY); },
+  }) : null;
   $('#reader').replaceChildren(
     h('header.toolbar', {},
       h('button', { text: '‹ Library', onclick: closeReader, title: 'Back to the library (Esc)' }),
       h('div.title', { text: p.meta.title }),
       h('div.segmented', {}, seg('reading', 'Reading', p.has_epub), seg('pdf', 'PDF', p.has_pdf)),
       h('div.tools', {},
-        reading ? h('button.icon.hl-yellow', { text: '🖍', title: 'Highlight the selected text (Ctrl+Shift+H)', onclick: () => highlight('yellow') }) : null,
+        modeBtn,
+        reading ? h('button.icon.hl-more', { text: '▾', title: 'Highlight colour, and highlight the selection now', onclick: (e: MouseEvent) => {
+          const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); highlightMenu(r.left, r.bottom + 4);
+        } }) : null,
         hlBtn,
+        reading ? h('button.icon#theme-btn', { text: '◐', title: `Theme: ${themeName(theme)}`, onclick: (e: MouseEvent) => {
+          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          menu(r.left, r.bottom + 4, THEMES.map((t) => ({ label: themeName(t), checked: t === theme, action: () => setTheme(t) })));
+        } }) : null,
+        reading ? h('button.icon#figures-btn', { text: '🖼', hidden: !figures.length, onclick: () => openFigureGrid() }) : null,
         reading ? h('button.icon#paged-btn' + (paged ? '.on' : ''), { text: '📖', title: paged ? 'Scroll instead of turning pages' : 'Turn pages (arrow keys, space or swipe)', onclick: (e: Event) => togglePaged(e) }) : null,
         h('button.icon', { text: 'A−', title: 'Smaller text', onclick: () => (reading ? scale(-0.1) : pdfZoom(1 / 1.15)) }),
         h('button.icon', { text: 'A+', title: 'Larger text', onclick: () => (reading ? scale(0.1) : pdfZoom(1.15)) }))),
@@ -134,6 +167,31 @@ function render() {
     h('div#selbar', { hidden: true }, COLORS.map((c) => h(`button.swatch.c-${c}`, { title: `Highlight ${c}`, onmousedown: (e: Event) => { e.preventDefault(); highlight(c); } })),
       h('button', { text: 'Note…', onmousedown: (e: Event) => { e.preventDefault(); noteOnSelection(); } })),
   );
+  modeButton();
+  figuresButton();
+  $('#reader').dataset.theme = reading ? theme : 'automatic';
+}
+
+// ---- themes ----
+
+function themeName(t: string) { return t[0].toUpperCase() + t.slice(1); }
+
+/** Sets the theme in the page (and the space around it), keeping the place. */
+function setTheme(t: string) {
+  theme = t;
+  localStorage.setItem('readerTheme', t);
+  if (mode === 'reading') run(`window.luntaSetTheme && luntaSetTheme('${t}')`);
+  $('#reader').dataset.theme = mode === 'reading' ? t : 'automatic';
+  const b = document.querySelector<HTMLElement>('#theme-btn');
+  if (b) b.title = `Theme: ${themeName(t)}`;
+  frame?.contentWindow?.focus();
+}
+
+/** Is the reader shown dark (the theme's appearance, or the system's)? */
+export function readerDark() {
+  if (theme === 'quiet' || theme === 'black') return true;
+  if (theme === 'light' || theme === 'paper') return false;
+  return matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
 async function show() {
@@ -157,8 +215,11 @@ async function show() {
     const book = await api.openBook(p.id);
     toc = book.toc;
     renderToc();
+    figures = [];
+    figuresButton();
+    lastAuto = null;
     const base = convertFileSrc('', 'lunta');   // lunta://localhost/ (http://lunta.localhost/ on Windows)
-    frame = h('iframe', { src: `${base}${book.path}?scale=${fontScale}&paged=${paged ? 1 : 0}`, title: 'Reading view' }) as HTMLIFrameElement;
+    frame = h('iframe', { src: `${base}${book.path}?scale=${fontScale}&paged=${paged ? 1 : 0}&cards=${figureCards ? 1 : 0}&theme=${theme}`, title: 'Reading view' }) as HTMLIFrameElement;
     frame.addEventListener('load', () => frame?.contentWindow?.focus());
     page.replaceChildren(frame);
   } catch (e) {
@@ -168,6 +229,7 @@ async function show() {
 
 /** The page loaded: draw the highlights, then go to where the reader stopped (on any device). */
 async function pageReady() {
+  run(hlModeJS());
   await refreshHighlights();
   if (restored || !paper) return;
   restored = true;
@@ -238,10 +300,12 @@ function togglePaged(e?: Event) {
 // keys for the reader when the page doesn't have the keyboard
 document.addEventListener('keydown', (e) => {
   if (!paper || $('#reader').hidden || (e.target as HTMLElement).closest?.('input, textarea')) return;
-  if (document.querySelector('.modal-back, #figure')) { if (e.key === 'Escape') closeOverlay(); return; }
+  if (document.querySelector('.modal-back, #figure, #figures')) { if (e.key === 'Escape') closeOverlay(); return; }
   const mod = e.metaKey || e.ctrlKey;
   if (e.key === 'Escape') { closeReader(); return; }
-  if (mod && e.shiftKey && e.key.toLowerCase() === 'h') { e.preventDefault(); highlight('yellow'); return; }
+  if (mode === 'reading' && e.ctrlKey && e.altKey && !e.shiftKey && e.code === 'KeyH') { e.preventDefault(); setHighlightMode(!hlMode); return; }
+  if (mod && e.shiftKey && !e.altKey && e.code === 'KeyH') { e.preventDefault(); highlight(hlColor); return; }
+  if (mode === 'reading' && mod && e.shiftKey && !e.altKey && e.code === 'KeyF') { e.preventDefault(); openFigureGrid(); return; }
   if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); scale(0.1); return; }
   if (mod && e.key === '-') { e.preventDefault(); scale(-0.1); return; }
   if (mode === 'reading' && paged && !mod) {
@@ -380,16 +444,123 @@ function renderList(all: Annotation[]) {
   );
 }
 
+// ---- highlight mode ----
+
+function setHighlightMode(on: boolean) {
+  hlMode = on;
+  localStorage.setItem('highlightMode', on ? '1' : '0');
+  if (mode === 'reading') run(hlModeJS());
+  if (on) selectionBar(null);
+  modeButton();
+}
+
+function setHighlightColor(c: string) {
+  hlColor = c;
+  localStorage.setItem('highlightModeColor', c);
+  if (mode === 'reading') run(hlModeJS());
+  modeButton();
+}
+
+/** Highlight mode and its colour in the page (the selection itself shows in the colour while on). */
+function hlModeJS() {
+  return `window.luntaHLMode = ${hlMode}; window.luntaHLColor = '${hlColor}';` +
+    `document.documentElement.classList.toggle('m-hlmode', ${hlMode}); document.documentElement.setAttribute('data-hlcolor', '${hlColor}');`;
+}
+
+/** The toggle shows the mode: tinted with the chosen colour while on. */
+function modeButton() {
+  const b = document.querySelector<HTMLElement>('#hlmode-btn');
+  if (!b) return;
+  b.classList.toggle('on', hlMode);
+  b.style.setProperty('--hl', `var(--${hlColor})`);
+  b.setAttribute('aria-pressed', String(hlMode));
+  b.title = hlMode
+    ? `Highlight mode is on: selections are highlighted in ${hlColor} at once (Ctrl+Alt+H). Right-click for the colour.`
+    : 'Highlight mode: highlight every selection at once (Ctrl+Alt+H). Right-click for the colour; Ctrl+Shift+H highlights one selection.';
+}
+
+function highlightMenu(x: number, y: number) {
+  const items: MenuItem[] = [
+    { label: 'Highlight Mode (Ctrl+Alt+H)', checked: hlMode, action: () => setHighlightMode(!hlMode) },
+    { label: 'Highlight Selection (Ctrl+Shift+H)', action: () => highlight(hlColor) },
+    '-',
+    ...COLORS.map((c) => ({ label: c[0].toUpperCase() + c.slice(1), checked: c === hlColor, action: () => setHighlightColor(c) })),
+  ];
+  menu(x, y, items);
+}
+
+// the highlight just made in highlight mode (AutoHighlighter in Highlights.swift): a selection
+// overlapping it soon after (the selection was adjusted) replaces it instead of adding another
+let lastAuto: { id: string; start: number; end: number; at: number } | null = null;
+let autoQueue: Promise<void> = Promise.resolve();
+
+/** Highlight mode: the page coloured a finished selection (mouse released) and sends it to be saved. */
+function selectionDone(json: string) {
+  autoQueue = autoQueue.then(async () => {
+    if (!hlMode || mode !== 'reading' || !paper) return;
+    let sel: PageSelection | null = null;
+    try { sel = json ? JSON.parse(json) as PageSelection : null; } catch { sel = null; }
+    if (!sel) sel = await pageSelection();
+    if (!sel || !paper) { await refreshHighlights(); return; }
+    const id = paper.id;
+    const end = sel.start + sel.quote.length;
+    try {
+      const l = lastAuto;
+      if (l && Date.now() - l.at < 60_000 && sel.start < l.end && end > l.start) {
+        const old = (await api.annotations(id)).find((a) => a.id === l.id);
+        if (old && !old.note.trim()) {
+          if (sel.start === l.start && end === l.end) { run('window.getSelection().removeAllRanges()'); await refreshHighlights(); return; }
+          await api.deleteAnnotation(id, old.id);
+        }
+      }
+      const a = await api.addHighlight(id, sel, hlColor, '');
+      lastAuto = { id: a.id, start: sel.start, end, at: Date.now() };
+      run('window.getSelection().removeAllRanges()');
+      selectionBar(null);
+      await refreshHighlights();
+    } catch (e) { status(String(e), 'error'); }
+  });
+}
+
 // ---- figures ----
 
-function showFigure(src: string, caption: string) {
-  const back = h('div#figure.modal-back', { onclick: () => back.remove() },
-    h('figure.figure-view', {}, h('img', { src }), caption ? h('figcaption', { text: caption }) : null));
-  document.body.append(back);
+function figuresButton() {
+  const b = document.querySelector<HTMLElement>('#figures-btn');
+  if (!b) return;
+  b.hidden = !figures.length || mode !== 'reading';
+  b.title = `Figures (${figures.length}) — Ctrl+Shift+F`;
+}
+
+/** Gives the keyboard back to the page (closing a figure or the grid). */
+function refocus() {
+  if (document.querySelector('#figures')) (document.querySelector('#figures') as HTMLElement).focus();
+  else frame?.contentWindow?.focus();
+}
+
+function openFigureGrid() {
+  if (mode !== 'reading' || !figures.length) return;
+  showFigureGrid(figures, {
+    cards: figureCards,
+    setCards: (on) => {
+      figureCards = on;
+      localStorage.setItem('readerFigureCards', on ? '1' : '0');
+      run(`window.luntaFigureCards && luntaFigureCards(${on})`);
+    },
+    open: async (i) => {
+      // as the page shows it now (with the highlights in its caption), else as it was listed
+      const json = await run<string>(`window.luntaFigures ? luntaFigures.data(${i}) : ''`);
+      let o = null;
+      try { o = json ? figureOpen(JSON.parse(json)) : null; } catch { o = null; }
+      showFigureViewer(o || { set: figures, index: i, start: 0, panel: '' }, refocus, readerDark());
+    },
+    done: refocus,
+  });
 }
 
 function closeOverlay(): boolean {
-  const o = document.querySelector('#figure, .modal-back');
+  if (closeFigureOverlay()) return true;
+  const all = document.querySelectorAll('.modal-back');
+  const o = all[all.length - 1];
   if (o) { o.remove(); return true; }
   return false;
 }

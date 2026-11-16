@@ -39,6 +39,25 @@ class Settings(context: Context) {
         get() = p.getBoolean("readerPaged", false)
         set(v) = p.edit { putBoolean("readerPaged", v) }
 
+    /** Highlight mode: every finished selection is highlighted at once, in [highlightModeColor]. */
+    var highlightMode: Boolean
+        get() = p.getBoolean("highlightMode", false)
+        set(v) = p.edit { putBoolean("highlightMode", v) }
+
+    var highlightModeColor: String
+        get() = p.getString("highlightModeColor", "yellow")!!.takeIf { it in listOf("yellow", "green", "blue", "pink") } ?: "yellow"
+        set(v) = p.edit { putString("highlightModeColor", v) }
+
+    /** The reading view's theme: automatic, light, paper, quiet or black (ReaderTheme.swift). */
+    var readerTheme: String
+        get() = p.getString("readerTheme", "automatic")!!.takeIf { it in listOf("automatic", "light", "paper", "quiet", "black") } ?: "automatic"
+        set(v) = p.edit { putString("readerTheme", v) }
+
+    /** Figures in the reading text as cards (tap to open) or in full. */
+    var readerFigureCards: Boolean
+        get() = p.getBoolean("readerFigureCards", true)
+        set(v) = p.edit { putBoolean("readerFigureCards", v) }
+
     var syncMinutes: Int
         get() = p.getInt("syncMinutes", 30)
         set(v) = p.edit { putInt("syncMinutes", v) }
