@@ -545,3 +545,15 @@ fn dom_text_like_the_page() {
     let x = "<html><head><title>x</title></head><body class=\"c\"><p a=\"1>2\">A<!-- no --><b>B</b>&lt;&#x41;&unknown;</p><style>s{}</style><br/>C</body></html>";
     assert_eq!(highlight::dom_text(x), "AB<A&unknown;C");
 }
+
+#[test]
+fn abstracts_keep_less_than_signs() {
+    // NEJM via Crossref: "P<0.001" was taken for the start of a tag and half the abstract vanished
+    let a = metadata::strip_tags("<jats:p>Recurrence-free survival was 82.2% vs 70.0% (two-sided P&lt;0.001; hazard ratio, 0.62). Distant metastasis &gt; 1 site.</jats:p><jats:sec><jats:title>Conclusions</jats:title><jats:p>Adjuvant therapy prolonged survival.</jats:p></jats:sec>");
+    assert!(a.contains("(two-sided P<0.001; hazard ratio, 0.62)"), "{a}");
+    assert!(a.contains("Distant metastasis > 1 site."), "{a}");
+    assert!(a.contains("Conclusions Adjuvant therapy prolonged survival."), "{a}");
+    // already-decoded text with a bare "<" and ">" around words
+    let b = metadata::strip_tags("<p>Patients with n<5 lesions and age >60 years.</p> <i>P</i> < 0.05 <br/>done");
+    assert_eq!(b, "Patients with n<5 lesions and age >60 years. P < 0.05 done");
+}

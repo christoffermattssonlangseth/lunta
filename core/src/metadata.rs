@@ -126,8 +126,11 @@ fn s(v: &Value) -> String {
     }
 }
 
-fn strip_tags(x: &str) -> String {
-    let re = Regex::new(r"<[^>]+>").unwrap();
+/// Removes markup (JATS/HTML tags) from a title or abstract. Only real tags go: a "<" followed by
+/// a tag name. A less-than sign in the text ("P<0.001", "n < 5") is kept; the old pattern took
+/// everything from it to the next ">" with it, cutting abstracts in half.
+pub(crate) fn strip_tags(x: &str) -> String {
+    let re = Regex::new(r#"</?[A-Za-z][A-Za-z0-9:_.-]*(?:\s+[A-Za-z_:][-A-Za-z0-9_:.]*(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>]+))?)*\s*/?>"#).unwrap();
     let t = re.replace_all(x, " ");
     t.split_whitespace().collect::<Vec<_>>().join(" ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
 }
