@@ -41,6 +41,8 @@ sealed interface Screen {
     data class Papers(val place: Place) : Screen
     data class Info(val id: String) : Screen
     data class Reader(val id: String, val pdf: Boolean = false) : Screen
+    /** The paper's page on the journal's site, in the app (JournalScreen). */
+    data class Journal(val id: String) : Screen
 }
 
 /** One row of a paper list: the paper, and the matching text when it came from a search. */
@@ -415,6 +417,33 @@ class AppModel(val app: Application) {
     fun makeReadingView(id: String) {
         val lib = library ?: return
         busy("Making the reading view…", { withContext(Dispatchers.IO) { lib.makeReadingView(id, progress) } }) { reload() }
+    }
+
+    /** Where the paper's journal page is: its DOI, else its link, else PubMed Central or arXiv. */
+    fun journalUrl(p: Paper): String? = when {
+        p.meta.doi.isNotBlank() -> "https://doi.org/" + Uri.encode(p.meta.doi.trim(), "/")
+        p.meta.url.startsWith("http") -> p.meta.url
+        p.meta.pmcid.isNotBlank() -> "https://pmc.ncbi.nlm.nih.gov/articles/${p.meta.pmcid.trim()}/"
+        p.meta.arxiv.isNotBlank() -> "https://arxiv.org/abs/${p.meta.arxiv.trim()}"
+        else -> null
+    }
+
+    /**
+     * "Use this page's full text" (JournalScreen): the page becomes the paper's reading view (the
+     * core decides: attached, replaced after a backup into the app's own files, or kept because a
+     * highlight wouldn't be found). Throws with the core's message when the page isn't the full text.
+     */
+    suspend fun usePageFullText(page: PageSubmission, onProgress: (String) -> Unit): PageFullText {
+        val lib = library ?: throw IllegalStateException("The library isn't open yet. Try again.")
+        // the current reading view must be on this device to be checked and backed up (Drive syncs lazily)
+        page.paperId?.let { id -> if ("book.epub" in availableFiles(id)) ensureFiles(id, FileKind.EPUB, FileKind.FULLTEXT) }
+        val listener = object : ProgressListener {
+            override fun onProgress(message: String) { scope.launch { onProgress(message) } }
+        }
+        val backups = File(app.filesDir, "page-backups").absolutePath
+        val r = withContext(Dispatchers.IO) { lib.usePageFullText(page, backups, false, listener) }
+        reload()
+        return r
     }
 
     /** Handles text shared from another app: a DOI or a link. */

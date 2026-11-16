@@ -72,8 +72,9 @@ private fun AppNav(model: AppModel) {
             is Screen.Papers -> PapersScreen(model, s.place)
             is Screen.Info -> InfoScreen(model, s.id)
             is Screen.Reader -> ReaderScreen(model, s.id, s.pdf)
+            is Screen.Journal -> JournalScreen(model, s.id)
         }
     }
 }
 
-private fun depth(s: Screen) = when (s) { Screen.Home -> 0; is Screen.Papers -> 1; is Screen.Info -> 2; is Screen.Reader -> 3 }
+private fun depth(s: Screen) = when (s) { Screen.Home -> 0; is Screen.Papers -> 1; is Screen.Info -> 2; is Screen.Reader -> 3; is Screen.Journal -> 4 }

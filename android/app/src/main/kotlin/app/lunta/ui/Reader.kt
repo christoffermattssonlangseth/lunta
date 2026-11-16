@@ -457,6 +457,10 @@ private fun EpubReader(model: AppModel, paper: Paper) {
                                     scope.launch { savePosition(); model.ensureFiles(id, FileKind.PDF); model.pop(); model.push(Screen.Reader(id, true)) }
                                 }, leadingIcon = { Icon(Icons.Outlined.PictureAsPdf, null) })
                             }
+                            if (model.journalUrl(paper) != null) DropdownMenuItem({ Text("Open journal page") }, {
+                                overflow = false
+                                scope.launch { savePosition(); model.push(Screen.Journal(id)) }
+                            }, leadingIcon = { Icon(Icons.Outlined.Language, null) })
                             DropdownMenuItem({ Text("Paper info") }, { overflow = false; close() }, leadingIcon = { Icon(Icons.Outlined.Info, null) })
                             DropdownMenuItem({ Text(if (paper.read) "Mark as unread" else "Mark as read") }, { overflow = false; model.toggleRead(paper) },
                                 leadingIcon = { Icon(if (paper.read) Icons.Outlined.MarkEmailUnread else Icons.Outlined.DoneAll, null) })

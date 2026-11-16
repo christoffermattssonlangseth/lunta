@@ -110,6 +110,9 @@ fun InfoScreen(model: AppModel, id: String) {
                 if (!hasEpub && (hasPdf || p.meta.doi.isNotBlank() || p.meta.pmcid.isNotBlank() || p.meta.arxiv.isNotBlank())) {
                     OutlinedButton({ model.makeReadingView(p.id) }) { Icon(Icons.AutoMirrored.Outlined.Article, null); Spacer(Modifier.width(6.dp)); Text("Make reading view") }
                 }
+                if (model.journalUrl(p) != null) {
+                    OutlinedButton({ model.push(Screen.Journal(p.id)) }) { Icon(Icons.Outlined.Language, null); Spacer(Modifier.width(6.dp)); Text("Journal page") }
+                }
                 if (!hasPdf) {
                     OutlinedButton({ pickPdf.launch(arrayOf("application/pdf")) }) { Icon(Icons.Outlined.FileOpen, null); Spacer(Modifier.width(6.dp)); Text("Add PDF from Files") }
                     if (p.meta.doi.isNotBlank() || p.meta.arxiv.isNotBlank()) {
