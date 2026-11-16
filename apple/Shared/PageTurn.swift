@@ -152,11 +152,17 @@ extension ReaderAssets {
         }
       };
 
+      var lastShownPage = -1;
       window.addEventListener('scroll', function(){
         if (!on || busy) return;
         clearTimeout(settle);
         settle = setTimeout(function(){
           if (Math.abs(vw() - W) < 0.01 && page() !== heldPage) { heldPage = -1; remember(); }
+          // a different page: a selection left on the previous one (and its Copy/Highlight menu) goes
+          if (page() !== lastShownPage) {
+            lastShownPage = page();
+            var sl = window.getSelection(); if (sl && !sl.isCollapsed) sl.removeAllRanges();
+          }
           // Mac: never left between two pages (a selection dragged past the edge scrolls the page)
           if (!native && W && Math.abs(window.scrollX - page() * W) > 2) window.luntaGoToPage(page(), false);
           show();
@@ -323,7 +329,13 @@ extension PageMessageHandler {
     @MainActor private func moved(_ sv: UIScrollView) {
         guard selecting, state?.on == true else { return }
         let x = sv.contentOffset.x
-        if sv.isDragging || sv.isDecelerating { held = x; return }   // a swipe turns the page as usual
+        if sv.isDragging || sv.isDecelerating {
+            // a swipe turns the page as usual, and the selection (with its Copy/Highlight menu) is
+            // dropped at once rather than left floating over the next page
+            if held != nil, let v = webView { v.evaluateJavaScript("window.getSelection().removeAllRanges()") }
+            held = x
+            return
+        }
         guard let held else { held = x; return }
         guard abs(x - held) > 0.5 else { return }
         // WebKit's autoscroll: undo it at once (nothing shows of it), and tell the page too, which

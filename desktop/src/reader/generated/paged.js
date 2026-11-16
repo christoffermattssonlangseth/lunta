@@ -139,11 +139,17 @@
     }
   };
 
+  var lastShownPage = -1;
   window.addEventListener('scroll', function(){
     if (!on || busy) return;
     clearTimeout(settle);
     settle = setTimeout(function(){
       if (Math.abs(vw() - W) < 0.01 && page() !== heldPage) { heldPage = -1; remember(); }
+      // a different page: a selection left on the previous one (and its Copy/Highlight menu) goes
+      if (page() !== lastShownPage) {
+        lastShownPage = page();
+        var sl = window.getSelection(); if (sl && !sl.isCollapsed) sl.removeAllRanges();
+      }
       // Mac: never left between two pages (a selection dragged past the edge scrolls the page)
       if (!native && W && Math.abs(window.scrollX - page() * W) > 2) window.luntaGoToPage(page(), false);
       show();
