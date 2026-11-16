@@ -17,7 +17,11 @@ struct ReaderView: View {
     @State private var showInfo = false
     @AppStorage("readerFontScale") private var fontScale = 1.0
     @AppStorage("readerPaged") private var paged = false
+    @AppStorage("highlightMode") private var highlightMode = false
+    @AppStorage("highlightModeColor") private var highlightModeColor = HighlightColor.yellow.rawValue
+    @State private var autoHighlighter = AutoHighlighter()
     @State private var figure: ReaderFigure?
+    @State private var showFigures = false
     @State private var sharing = false
     @State private var organizing = false
     @State private var editing = false
@@ -87,7 +91,23 @@ struct ReaderView: View {
                     Button { listening ? stopListening() : startListening() } label: {
                         Image(systemName: listening ? "headphones.circle.fill" : "headphones")
                     }
+                    // highlight mode: tap to turn on/off; hold for the colour
+                    Menu {
+                        Toggle(isOn: $highlightMode) { Label("Highlight Mode", systemImage: "highlighter") }
+                        Picker("Color", selection: $highlightModeColor) {
+                            ForEach(HighlightColor.allCases) { c in
+                                Label { Text(c.name) } icon: { Image(systemName: "circle.fill").foregroundStyle(c.color) }.tag(c.rawValue)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "highlighter")
+                            .foregroundStyle(highlightMode ? (HighlightColor(rawValue: highlightModeColor) ?? .yellow).color : Color.accentColor)
+                            .padding(4)
+                            .background(highlightMode ? (HighlightColor(rawValue: highlightModeColor) ?? .yellow).color.opacity(0.22) : .clear, in: Circle())
+                    } primaryAction: { highlightMode.toggle() }
+                    .accessibilityLabel(highlightMode ? "Highlight mode on" : "Highlight mode off")
                     Button { asking = true } label: { Image(systemName: "sparkles") }
+                    FiguresButton(controller: controller) { showFigures = true }
                     Button { showContents = true } label: { Image(systemName: "list.bullet") }
                 }
                 Menu {
@@ -101,6 +121,7 @@ struct ReaderView: View {
                             Label("Turn Pages", systemImage: "book").tag(true)
                         } label: { Label("Layout", systemImage: paged ? "book" : "scroll") }
                         .pickerStyle(.menu)
+                        FigureSettingPicker()
                         Picker(selection: Binding(get: { PhoneVoice.shared.voice }, set: { PhoneVoice.shared.voice = $0 })) {
                             ForEach(PhoneVoice.voices, id: \.id) { Text($0.name).tag($0.id) }
                         } label: { Label("Natural Voice", systemImage: "waveform") }
@@ -153,15 +174,28 @@ struct ReaderView: View {
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         }
         .fullScreenCover(item: $figure) { f in FigureViewer(figure: f) }
+        .readerFigures(controller, browsing: $showFigures)
         .sheet(isPresented: $sharing) {
             ScrollView { SharePanel(ids: [paperID]) }.environmentObject(model).presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showInfo) { NavigationStack { PaperInfoView(paperID: paperID, embedded: false) } }
+        .onChange(of: highlightMode) { _, on in controller.setHighlightMode(on) }
         .onChange(of: mode) { _, m in if m == .pdf, pdfURL == nil { Task { await loadPDF() } } }
         .task {
             controller.onFigure = { figure = $0 }
             controller.onPageReady = {
+                controller.setHighlightMode(highlightMode)
                 refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
+            }
+            controller.onSelectionDone = {
+                guard highlightMode, mode == .reading else { return }
+                Task {
+                    guard let sel = await controller.pageSelection() else { return }
+                    autoHighlighter.apply(sel, paper: paperID, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow,
+                                          model: model, undo: undoManager)
+                    controller.clearSelection()
+                    refreshHighlights()
+                }
             }
             controller.onAnnotation = { id in editingAnnotation = model.annotations(paperID).first { $0.id == id } }
             controller.onMenu = { action in

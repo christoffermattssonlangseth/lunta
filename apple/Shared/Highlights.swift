@@ -76,6 +76,7 @@ extension ReaderAssets {
           var p = m.parentNode; while (m.firstChild) p.insertBefore(m.firstChild, m); p.removeChild(m); p.normalize();
         });
       }
+      var lcache = { text: null };
       function locate(text, a){
         if (!a.quote || !a.quote.trim()) return null;   // a note without a passage: nothing to mark (and indexOf('') never ends)
         var best = -1, bestScore = -1, i = text.indexOf(a.quote);
@@ -91,12 +92,18 @@ extension ReaderAssets {
           // whitespace may differ between devices: match ignoring it
           var squash = function(s){ return s.replace(/\s+/g, ' '); };
           var q = squash(a.quote).trim(); if (q.length < 4) return null;
-          var map = [], flat = '';
-          for (var k = 0; k < text.length; k++) {
-            var c = text[k];
-            if (/\s/.test(c)) { if (flat.length && flat[flat.length - 1] === ' ') continue; c = ' '; }
-            map.push(k); flat += c;
+          // the page text's squashed and dense forms are built once per text (all highlights share them)
+          if (lcache.text !== text) lcache = { text: text };
+          if (!lcache.flat) {
+            var map = [], flat = '';
+            for (var k = 0; k < text.length; k++) {
+              var c = text[k];
+              if (/\s/.test(c)) { if (flat.length && flat[flat.length - 1] === ' ') continue; c = ' '; }
+              map.push(k); flat += c;
+            }
+            lcache.flat = flat; lcache.map = map;
           }
+          var map = lcache.map, flat = lcache.flat;
           var j = flat.indexOf(q);
           if (j >= 0) return [map[j], map[j + q.length - 1] + 1];
           // made in the PDF view: spacing ("(Fig. 2)" vs "( Fig. 2 )"), dashes, quotes and µ differ;
@@ -112,8 +119,12 @@ extension ReaderAssets {
           var skip = /[\s'"\u2018\u2019\u201A\u201B\u201C\u201D\u201E\u201F\u00B4\u0060\u00AB\u00BB]/;
           var dq = ''; for (var u = 0; u < a.quote.length; u++) { if (!skip.test(a.quote[u])) dq += foldc(a.quote[u]); }
           if (dq.length < 4) return null;
-          var dmap = [], dense = '';
-          for (var k2 = 0; k2 < text.length; k2++) { if (!skip.test(text[k2])) { dmap.push(k2); dense += foldc(text[k2]); } }
+          if (!lcache.dense) {
+            var dm = [], dn = [];
+            for (var k2 = 0; k2 < text.length; k2++) { if (!skip.test(text[k2])) { dm.push(k2); dn.push(foldc(text[k2])); } }
+            lcache.dense = dn.join(''); lcache.dmap = dm;
+          }
+          var dmap = lcache.dmap, dense = lcache.dense;
           var d = dense.indexOf(dq);
           var whole = dq;
           if (d < 0 && dq.length > 140) { dq = dq.slice(0, 100); d = dense.indexOf(dq); }
@@ -153,11 +164,17 @@ extension ReaderAssets {
       }
       window.luntaApplyAnnotations = function(json){
         unwrapAll();
-        var list = JSON.parse(json), missing = [];
-        list.sort(function(x, y){ return (y.start || 0) - (x.start || 0); });   // last first keeps earlier offsets valid
+        var list = JSON.parse(json), missing = [], found = [];
+        // marks add no text, so every highlight is found in the same page text (built once) …
+        var text = fullText(textNodes());
         for (var i = 0; i < list.length; i++) {
-          var nodes = textNodes(), text = fullText(nodes), at = locate(text, list[i]);
-          if (!at || !wrap(nodes, at[0], at[1], list[i])) missing.push(list[i].id);
+          var at = locate(text, list[i]);
+          if (at) found.push([at[0], at[1], list[i]]); else missing.push(list[i].id);
+        }
+        // … then drawn last first (splitting text nodes keeps the earlier offsets valid)
+        found.sort(function(x, y){ return y[0] - x[0]; });
+        for (var j = 0; j < found.length; j++) {
+          if (!wrap(textNodes(), found[j][0], found[j][1], found[j][2])) missing.push(found[j][2].id);
         }
         return JSON.stringify(missing);
       };
@@ -175,6 +192,24 @@ extension ReaderAssets {
         try { window.webkit.messageHandlers.ann.postMessage(m.getAttribute('data-ann')); } catch (x) {}
         ev.preventDefault(); ev.stopPropagation();
       }, true);
+      // highlight mode: a finished selection is highlighted at once (the app decides the colour).
+      // Mac: when the mouse is released. iPhone: when the selection has stopped changing for a
+      // moment (handles can be dragged, so there is no "done" event).
+      window.luntaHLMode = false;
+      var hlTimer = null;
+      function hlFire(){
+        if (!window.luntaHLMode || document.body.classList.contains('listening')) return;
+        var s = window.getSelection(); if (!s || s.isCollapsed || s.toString().trim().length < 2) return;
+        try { window.webkit.messageHandlers.ann.postMessage('__hl__'); } catch (x) {}
+      }
+      if ('ontouchstart' in window) {
+        document.addEventListener('selectionchange', function(){
+          if (!window.luntaHLMode) return;
+          clearTimeout(hlTimer); hlTimer = setTimeout(hlFire, 900);
+        });
+      } else {
+        document.addEventListener('mouseup', function(){ if (window.luntaHLMode) setTimeout(hlFire, 30); });
+      }
       try { window.webkit.messageHandlers.ann.postMessage('__ready__'); } catch (x) {}
     })();
     """#.replacingOccurrences(of: "CSS", with: annotationCSS.replacingOccurrences(of: "`", with: ""))
@@ -186,7 +221,9 @@ final class AnnotationMessageHandler: NSObject, WKScriptMessageHandler {
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
         guard let id = m.body as? String else { return }
         Task { @MainActor in
-            if id == "__ready__" { self.controller?.onPageReady?() } else { self.controller?.onAnnotation?(id) }
+            if id == "__ready__" { self.controller?.onPageReady?() }
+            else if id == "__hl__" { self.controller?.onSelectionDone?() }
+            else { self.controller?.onAnnotation?(id) }
         }
     }
 }
@@ -215,6 +252,11 @@ extension ReaderController {
     func showAnnotation(_ id: String) {
         let safe = id.filter { $0.isLetter || $0.isNumber || $0 == "-" }
         webView?.evaluateJavaScript("luntaShowAnnotation('\(safe)')")
+    }
+
+    /// Highlight mode on or off in the page (call again after the page reloads).
+    func setHighlightMode(_ on: Bool) {
+        webView?.evaluateJavaScript("window.luntaHLMode = \(on)")
     }
 
     func clearSelection() {
@@ -454,5 +496,23 @@ extension WKWebViewConfiguration {
         let h = AnnotationMessageHandler()
         h.controller = controller
         userContentController.add(h, name: "ann")
+    }
+}
+
+/// Highlight mode: every selection is highlighted as soon as it's made, in the chosen colour, so
+/// marking up a paper doesn't need a menu each time. A selection that overlaps the highlight just
+/// made (the selection was adjusted after a pause) replaces it rather than stacking a second one.
+@MainActor
+final class AutoHighlighter {
+    private var last: (id: String, start: Int, end: Int, at: Date)?
+
+    func apply(_ sel: PageSelection, paper: String, color: HighlightColor, model: LibraryModel, undo: UndoManager?) {
+        let end = sel.start + sel.quote.utf16.count
+        if let l = last, Date().timeIntervalSince(l.at) < 60, sel.start < l.end, end > l.start,
+           let old = model.annotations(paper).first(where: { $0.id == l.id }), old.note.isEmpty {
+            if sel.start == l.start && end == l.end { return }
+            model.deleteAnnotation(old)
+        }
+        if let a = model.addHighlight(paper, sel, color: color, undo: undo) { last = (a.id, sel.start, end, Date()) }
     }
 }

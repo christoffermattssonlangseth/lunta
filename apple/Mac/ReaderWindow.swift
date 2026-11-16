@@ -13,7 +13,11 @@ struct ReaderWindow: View {
     @State private var scrollRequest = ScrollRequest()
     @AppStorage("readerFontScale") private var fontScale = 1.0
     @AppStorage("readerPagedMac") private var paged = false
+    @AppStorage("highlightMode") private var highlightMode = false
+    @AppStorage("highlightModeColor") private var highlightModeColor = HighlightColor.yellow.rawValue
+    @State private var autoHighlighter = AutoHighlighter()
     @State private var figure: ReaderFigure?
+    @State private var showFigures = false
     @State private var error: String?
     @StateObject private var narrator = Narrator()
     @StateObject private var controller = ReaderController()
@@ -109,10 +113,32 @@ struct ReaderWindow: View {
                             .help("Make natural-voice narration (renders on this Mac, syncs to iPhone)")
                             .disabled(book == nil || NarrationRenderer.shared.rendering.contains(paperID))
                         }
-                        Button { highlightSelection(.yellow) } label: { Image(systemName: "highlighter") }
-                            .help("Highlight the selected text (⇧⌘H). Right-click a selection for colors and notes.")
-                            .keyboardShortcut("h", modifiers: [.command, .shift])
-                            .disabled(book == nil && mode != .pdf)
+                        // click: highlight mode on/off (every selection is highlighted at once);
+                        // the menu: highlight the selection now, and the colour
+                        // highlight mode as an on/off button (the toolbar shows it filled while on);
+                        // right-click: highlight the selection now, and the colour
+                        Toggle(isOn: $highlightMode) {
+                            Image(systemName: "highlighter")
+                                .foregroundStyle(highlightMode ? hlColor.color : Color.primary)
+                        }
+                        .toggleStyle(.button)
+                        .contextMenu {
+                            Button("Highlight Selection") { highlightSelection(hlColor) }
+                            Picker("Color", selection: $highlightModeColor) {
+                                ForEach(HighlightColor.allCases) { c in Text(c.name).tag(c.rawValue) }
+                            }
+                        }
+                        .help(highlightMode ? "Highlight mode is on: selections are highlighted at once (⌃⌘H). Right-click for the color."
+                                            : "Highlight mode: highlight every selection at once (⌃⌘H). Right-click for the color; ⇧⌘H highlights one selection.")
+                        .disabled(book == nil && mode != .pdf)
+                        .background {
+                            // keyboard shortcuts for the two actions above
+                            Group {
+                                Button("") { highlightSelection(hlColor) }.keyboardShortcut("h", modifiers: [.command, .shift])
+                                Button("") { highlightMode.toggle() }.keyboardShortcut("h", modifiers: [.command, .control])
+                            }
+                            .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+                        }
                         Button { showHighlights.toggle() } label: {
                             Image(systemName: "list.bullet.rectangle")
                         }
@@ -125,6 +151,7 @@ struct ReaderWindow: View {
                                 .frame(width: 380, height: 460)
                                 .environmentObject(model)
                         }
+                        FiguresButton(controller: controller) { showFigures = true }
                         Button { asking.toggle() } label: { Image(systemName: asking ? "sparkles.rectangle.stack.fill" : "sparkles") }
                             .help("Ask about this paper (Apple Intelligence)")
                             .keyboardShortcut("j", modifiers: .command)
@@ -148,8 +175,10 @@ struct ReaderWindow: View {
             }
         }
         .sheet(item: $figure) { f in FigureViewer(figure: f) }
+        .readerFigures(controller, browsing: $showFigures)
         .sheet(item: $editingAnnotation) { a in AnnotationEditor(annotation: a) { refreshHighlights() } }
         .onChange(of: paper?.annotationCount) { refreshHighlights() }
+        .onChange(of: highlightMode) { _, on in controller.setHighlightMode(on) }
         .onDisappear { position.stop(paperID, model: model, controller: controller) }
         .onReceive(NotificationCenter.default.publisher(for: .luntaReaderMode)) { n in
             if n.object as? String == paperID, let m = Self.requestedMode.removeValue(forKey: paperID) { mode = m }
@@ -162,7 +191,19 @@ struct ReaderWindow: View {
         .navigationTitle(paper?.meta.title ?? "Reader")
         .task {
             controller.onFigure = { figure = $0 }
-            controller.onPageReady = { refreshHighlights(); position.pageReady(paperID, model: model, controller: controller) }
+            controller.onPageReady = {
+                controller.setHighlightMode(highlightMode)
+                refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
+            }
+            controller.onSelectionDone = {
+                guard highlightMode, mode == .reading else { return }
+                Task {
+                    guard let sel = await controller.pageSelection() else { return }
+                    autoHighlighter.apply(sel, paper: paperID, color: hlColor, model: model, undo: undo)
+                    controller.clearSelection()
+                    refreshHighlights()
+                }
+            }
             controller.onAnnotation = { id in editingAnnotation = model.annotations(paperID).first { $0.id == id } }
             controller.onMenu = { action in
                 switch action {
@@ -191,6 +232,8 @@ struct ReaderWindow: View {
             self.error = error.readable
         }
     }
+
+    private var hlColor: HighlightColor { HighlightColor(rawValue: highlightModeColor) ?? .yellow }
 
     private func refreshHighlights() { controller.showAnnotations(model.annotations(paperID)) }
 

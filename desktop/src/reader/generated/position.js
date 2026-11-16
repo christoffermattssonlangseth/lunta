@@ -10,12 +10,18 @@
     var ns = nodes(), pos = 0;
     // pages: the exact character at the start of the page, so the place survives new page sizes
     // scroll: the character in the first line under the top edge (the middle of the line, clear of margins)
-    var o = (window.luntaPageOrigin && window.luntaPageOrigin()) || { x: window.innerWidth / 2, y: 64 };
-    var c = o && document.caretRangeFromPoint ? document.caretRangeFromPoint(o.x, o.y) : null;
-    if (c && c.startContainer.nodeType === 3) {
-      for (var j = 0; j < ns.length; j++) { if (ns[j] === c.startContainer) return pos + c.startOffset; pos += ns[j].nodeValue.length; }
+    // (a figure or the gap between paragraphs at that point: a little lower, then off-centre,
+    // before falling back to the start of the first visible paragraph, which can be far above)
+    var origin = window.luntaPageOrigin && window.luntaPageOrigin();
+    var w = window.innerWidth, points = origin ? [origin] : [];
+    if (!origin) [64, 84, 110, 140, 180, 230].forEach(function(y){ [0.5, 0.3, 0.7].forEach(function(x){ points.push({ x: w * x, y: y }); }); });
+    for (var p = 0; p < points.length && document.caretRangeFromPoint; p++) {
+      var c = document.caretRangeFromPoint(points[p].x, points[p].y);
+      if (!c || c.startContainer.nodeType !== 3 || !c.startContainer.nodeValue.trim()) continue;
       pos = 0;
+      for (var j = 0; j < ns.length; j++) { if (ns[j] === c.startContainer) return pos + c.startOffset; pos += ns[j].nodeValue.length; }
     }
+    pos = 0;
     for (var i = 0; i < ns.length; i++) {
       var n = ns[i], len = n.nodeValue.length;
       if (n.nodeValue.trim()) {
@@ -50,5 +56,45 @@
       pos += len;
     }
     return false;
+  };
+  // goes to the offset and keeps it there while figures and tables load and push the text down
+  // (and, in pages, while the pages are laid out again for the real screen size), until you
+  // touch or scroll (or after 6 s)
+  var held = null;
+  window.luntaHoldOffset = function(off){
+    if (window.luntaHold) window.luntaHold();
+    held = off;
+    var ok = window.luntaScrollToOffset(off);
+    // pages: a new layout goes back to this place, not to the page shown before
+    if (window.luntaKeepPlace) window.luntaKeepPlace(off);
+    var stopped = false, again = function(){ if (!stopped) { window.luntaScrollToOffset(off); if (window.luntaKeepPlace) window.luntaKeepPlace(off); } };
+    var ro = window.ResizeObserver ? new ResizeObserver(again) : null;
+    if (ro) ro.observe(document.body);
+    // pages grow sideways inside a body of fixed size, which ResizeObserver doesn't see
+    var root = document.documentElement, size = root.scrollWidth + 'x' + root.scrollHeight;
+    var poll = setInterval(function(){ var s = root.scrollWidth + 'x' + root.scrollHeight; if (s !== size) { size = s; again(); } }, 200);
+    var imgs = Array.prototype.slice.call(document.images);
+    imgs.forEach(function(i){ if (!i.complete) i.addEventListener('load', again); });
+    var events = ['touchstart', 'wheel', 'keydown', 'mousedown'];
+    var stop = function(){
+      if (stopped) return; stopped = true; held = null;
+      if (ro) ro.disconnect();
+      clearInterval(poll);
+      imgs.forEach(function(i){ i.removeEventListener('load', again); });
+      events.forEach(function(e){ window.removeEventListener(e, stop, true); });
+      if (window.luntaHold === stop) window.luntaHold = null;
+    };
+    events.forEach(function(e){ window.addEventListener(e, stop, true); });
+    setTimeout(stop, 6000);
+    window.luntaHold = stop;
+    return ok;
+  };
+  // the place to save: while holding, the place being held (the page may not have settled);
+  // in pages, the place the pages are kept at (the page's first word would creep back);
+  // otherwise the first text on the screen
+  window.luntaPlace = function(){
+    if (held != null) return held;
+    var a = window.luntaPageAnchor && window.luntaPageAnchor();
+    return a != null ? a : window.luntaReadingOffset();
   };
 })();

@@ -66,7 +66,8 @@ function plain(file, name) {
 
 const cloud = 'apple/Shared/CloudLibrary.swift';
 const css = plain(cloud, 'css');
-const figureJS = plain(cloud, 'figureJS');
+// the figure links, cards and viewer (FigureViewer.swift); with no setting from the app, figures show as cards
+const figureJS = plain('apple/Shared/FigureViewer.swift', 'figureJS');
 const overflowJS = plain(cloud, 'overflowJS');
 const trackingJS = plain(cloud, 'trackingJS');
 const narrationJS = plain(cloud, 'narrationJS');
@@ -83,7 +84,7 @@ const annotationJS = ann.text.split('CSS').join(annotationCSS.split('`').join(''
 // styleScript (CloudLibrary.swift) puts `css` into a <style> on the root element, then runs the
 // figure and overflow scripts; the same here. (It also adds a mobile viewport tag: kept, harmless.)
 const cloudSrc = readFileSync(join(repo, cloud), 'utf8').replace(/\r\n/g, '\n');
-for (const piece of ["s.textContent=`\\(c)`;document.documentElement.appendChild(s);", '+ figureJS + overflowJS']) {
+for (const piece of ["s.textContent=`\\(c)`;document.documentElement.appendChild(s);", '+ figureSettingJS + figureJS + overflowJS']) {
   if (!cloudSrc.includes(piece)) throw new Error(`${cloud}: styleScript changed; update extract-reader-assets.mjs`);
 }
 const styleJS =

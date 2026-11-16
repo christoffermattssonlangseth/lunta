@@ -81,6 +81,10 @@
   };
 
   function remember(){ if (window.luntaReadingOffset) anchor = window.luntaReadingOffset(); }
+  // the saved place being restored: lay out at it (not at the page that was showing) and keep
+  // it while you stay on its page
+  window.luntaKeepPlace = function(off){ anchor = off; heldPage = target; };
+  window.luntaPageAnchor = function(){ return on && Math.abs(vw() - W) < 0.01 ? anchor : null; };
   function restore(){
     if (!(anchor != null && window.luntaScrollToOffset && window.luntaScrollToOffset(anchor))) window.luntaGoToPage(page(), false);
   }
@@ -138,7 +142,12 @@
   window.addEventListener('scroll', function(){
     if (!on || busy) return;
     clearTimeout(settle);
-    settle = setTimeout(function(){ if (Math.abs(vw() - W) < 0.01 && page() !== heldPage) { heldPage = -1; remember(); } show(); }, 150);
+    settle = setTimeout(function(){
+      if (Math.abs(vw() - W) < 0.01 && page() !== heldPage) { heldPage = -1; remember(); }
+      // Mac: never left between two pages (a selection dragged past the edge scrolls the page)
+      if (!native && W && Math.abs(window.scrollX - page() * W) > 2) window.luntaGoToPage(page(), false);
+      show();
+    }, 150);
   });
   var resizing = null;
   window.addEventListener('resize', function(){
@@ -149,12 +158,27 @@
   if (window.visualViewport) window.visualViewport.addEventListener('resize', function(){ if (on) watchSize(); });
   window.addEventListener('load', function(){ if (on) { show(); } });
 
+  // Selecting text never turns the page. iPhone: dragging a selection handle near the screen's
+  // edge makes WebKit scroll the page sideways (its selection autoscroll); the app holds the
+  // page still while text is selected (PageMessageHandler.held) and lines it up again after.
+  // Mac: a selection dragged past the edge can shift the page; it is put back once settled.
+  var selOn = false, selAt = 0;
+  document.addEventListener('selectionchange', function(){
+    var s = window.getSelection(), has = !!(s && !s.isCollapsed);
+    if (has || selOn) selAt = Date.now();
+    if (has === selOn) return;
+    selOn = has;
+    if (native) post({ selecting: has });
+  });
+
   // taps: edges turn the page, the middle shows or hides the bars (iPhone)
   document.addEventListener('click', function(e){
     if (!on || !native || e.defaultPrevented) return;
     if (document.body.classList.contains('listening')) return;
     if (e.target.closest && e.target.closest('a, img, mark, button, input, .m-scroll, svg')) return;
     var s = window.getSelection(); if (s && !s.isCollapsed) return;
+    // the tap that only dismissed a selection (or ended a handle drag) doesn't turn
+    if (Date.now() - selAt < 600) return;
     var x = e.clientX / window.innerWidth;
     if (x < 0.22) window.luntaTurn(-1);
     else if (x > 0.78) window.luntaTurn(1);

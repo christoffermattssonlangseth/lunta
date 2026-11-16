@@ -3,7 +3,9 @@ html { font-size: calc(112% * var(--m-scale, 1)); scroll-behavior: smooth; -webk
 body { max-width: 42em; margin: 2.2em auto !important; padding: 0 2em 6em; font-family: "Iowan Old Style", Georgia, serif;
        line-height: 1.6; color: #1d1d1f; background: #fffdf8; }
 @media (max-width: 640px) { html { font-size: calc(122% * var(--m-scale, 1)); } body { margin-top: 1em !important; padding: 0 1.05em 5em; line-height: 1.55; } }
-@media (prefers-color-scheme: dark) { body { color: #e6e3dc; background: #1c1b19; } a { color: #9ec9d8; } img { opacity: .92; } }
+/* dark: true black (off on an OLED screen), with slightly softened text so it doesn't glare */
+@media (prefers-color-scheme: dark) { html, body { background: #000; } body { color: #d8d5ce; } a { color: #9ec9d8; } img { opacity: .9; }
+                                      table, th, td { border-color: #333 !important; } .box { background: #111 !important; border-color: #333 !important; } }
 h1, h2, h3 { font-family: -apple-system, "Helvetica Neue", sans-serif; scroll-margin-top: 1em; }
 h1 { margin-top: 2.4em; padding-top: 1.2em; border-top: 1px solid rgba(127,127,127,.25); }
 .titlepage h1 { border-top: none; padding-top: 0; margin-top: .6em; }

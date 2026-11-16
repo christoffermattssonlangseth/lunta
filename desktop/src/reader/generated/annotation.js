@@ -40,7 +40,9 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
       var p = m.parentNode; while (m.firstChild) p.insertBefore(m.firstChild, m); p.removeChild(m); p.normalize();
     });
   }
+  var lcache = { text: null };
   function locate(text, a){
+    if (!a.quote || !a.quote.trim()) return null;   // a note without a passage: nothing to mark (and indexOf('') never ends)
     var best = -1, bestScore = -1, i = text.indexOf(a.quote);
     while (i >= 0) {
       var score = 0;
@@ -54,12 +56,18 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
       // whitespace may differ between devices: match ignoring it
       var squash = function(s){ return s.replace(/\s+/g, ' '); };
       var q = squash(a.quote).trim(); if (q.length < 4) return null;
-      var map = [], flat = '';
-      for (var k = 0; k < text.length; k++) {
-        var c = text[k];
-        if (/\s/.test(c)) { if (flat.length && flat[flat.length - 1] === ' ') continue; c = ' '; }
-        map.push(k); flat += c;
+      // the page text's squashed and dense forms are built once per text (all highlights share them)
+      if (lcache.text !== text) lcache = { text: text };
+      if (!lcache.flat) {
+        var map = [], flat = '';
+        for (var k = 0; k < text.length; k++) {
+          var c = text[k];
+          if (/\s/.test(c)) { if (flat.length && flat[flat.length - 1] === ' ') continue; c = ' '; }
+          map.push(k); flat += c;
+        }
+        lcache.flat = flat; lcache.map = map;
       }
+      var map = lcache.map, flat = lcache.flat;
       var j = flat.indexOf(q);
       if (j >= 0) return [map[j], map[j + q.length - 1] + 1];
       // made in the PDF view: spacing ("(Fig. 2)" vs "( Fig. 2 )"), dashes, quotes and µ differ;
@@ -71,13 +79,30 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
         if (/[\u2010-\u2014\u2212]/.test(c)) return '-';
         return c.toLowerCase();
       };
-      var dq = ''; for (var u = 0; u < a.quote.length; u++) { if (!/\s/.test(a.quote[u])) dq += foldc(a.quote[u]); }
+      // quote marks are left out too: a PDF's ‘‘x’’ is the web's “x”
+      var skip = /[\s'"\u2018\u2019\u201A\u201B\u201C\u201D\u201E\u201F\u00B4\u0060\u00AB\u00BB]/;
+      var dq = ''; for (var u = 0; u < a.quote.length; u++) { if (!skip.test(a.quote[u])) dq += foldc(a.quote[u]); }
       if (dq.length < 4) return null;
-      var dmap = [], dense = '';
-      for (var k2 = 0; k2 < text.length; k2++) { if (!/\s/.test(text[k2])) { dmap.push(k2); dense += foldc(text[k2]); } }
+      if (!lcache.dense) {
+        var dm = [], dn = [];
+        for (var k2 = 0; k2 < text.length; k2++) { if (!skip.test(text[k2])) { dm.push(k2); dn.push(foldc(text[k2])); } }
+        lcache.dense = dn.join(''); lcache.dmap = dm;
+      }
+      var dmap = lcache.dmap, dense = lcache.dense;
       var d = dense.indexOf(dq);
+      var whole = dq;
       if (d < 0 && dq.length > 140) { dq = dq.slice(0, 100); d = dense.indexOf(dq); }
-      if (d < 0) return null;
+      if (d < 0) {
+        dq = whole;
+        // the text changed inside the passage (e.g. a PDF that ran two columns together, now
+        // rebuilt from a better source): its longest surviving start and end, close together
+        var pre = -1, preLen = 0, suf = -1, sufLen = 0;
+        for (var L = Math.min(dq.length - 1, 120); L >= 30; L -= 5) { var x = dense.indexOf(dq.slice(0, L)); if (x >= 0) { pre = x; preLen = L; break; } }
+        if (pre < 0) return null;
+        for (var L2 = Math.min(dq.length - 1, 120); L2 >= 30; L2 -= 5) { var y = dense.indexOf(dq.slice(dq.length - L2), pre + preLen); if (y >= 0) { suf = y; sufLen = L2; break; } }
+        if (suf < 0 || suf + sufLen - pre > dq.length * 2) return null;
+        return [dmap[pre], dmap[suf + sufLen - 1] + 1];
+      }
       return [dmap[d], dmap[d + dq.length - 1] + 1];
     }
     return [best, best + a.quote.length];
@@ -103,11 +128,17 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
   }
   window.luntaApplyAnnotations = function(json){
     unwrapAll();
-    var list = JSON.parse(json), missing = [];
-    list.sort(function(x, y){ return (y.start || 0) - (x.start || 0); });   // last first keeps earlier offsets valid
+    var list = JSON.parse(json), missing = [], found = [];
+    // marks add no text, so every highlight is found in the same page text (built once) …
+    var text = fullText(textNodes());
     for (var i = 0; i < list.length; i++) {
-      var nodes = textNodes(), text = fullText(nodes), at = locate(text, list[i]);
-      if (!at || !wrap(nodes, at[0], at[1], list[i])) missing.push(list[i].id);
+      var at = locate(text, list[i]);
+      if (at) found.push([at[0], at[1], list[i]]); else missing.push(list[i].id);
+    }
+    // … then drawn last first (splitting text nodes keeps the earlier offsets valid)
+    found.sort(function(x, y){ return y[0] - x[0]; });
+    for (var j = 0; j < found.length; j++) {
+      if (!wrap(textNodes(), found[j][0], found[j][1], found[j][2])) missing.push(found[j][2].id);
     }
     return JSON.stringify(missing);
   };
@@ -125,5 +156,23 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
     try { window.webkit.messageHandlers.ann.postMessage(m.getAttribute('data-ann')); } catch (x) {}
     ev.preventDefault(); ev.stopPropagation();
   }, true);
+  // highlight mode: a finished selection is highlighted at once (the app decides the colour).
+  // Mac: when the mouse is released. iPhone: when the selection has stopped changing for a
+  // moment (handles can be dragged, so there is no "done" event).
+  window.luntaHLMode = false;
+  var hlTimer = null;
+  function hlFire(){
+    if (!window.luntaHLMode || document.body.classList.contains('listening')) return;
+    var s = window.getSelection(); if (!s || s.isCollapsed || s.toString().trim().length < 2) return;
+    try { window.webkit.messageHandlers.ann.postMessage('__hl__'); } catch (x) {}
+  }
+  if ('ontouchstart' in window) {
+    document.addEventListener('selectionchange', function(){
+      if (!window.luntaHLMode) return;
+      clearTimeout(hlTimer); hlTimer = setTimeout(hlFire, 900);
+    });
+  } else {
+    document.addEventListener('mouseup', function(){ if (window.luntaHLMode) setTimeout(hlFire, 30); });
+  }
   try { window.webkit.messageHandlers.ann.postMessage('__ready__'); } catch (x) {}
 })();

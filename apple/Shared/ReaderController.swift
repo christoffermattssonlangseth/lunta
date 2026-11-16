@@ -7,12 +7,16 @@ final class ReaderController: ObservableObject {
     weak var webView: WKWebView?
     /// Called when the user taps a figure.
     var onFigure: ((ReaderFigure) -> Void)?
+    /// The paper's figures (label, title, thumbnail), sent by the page when it loads.
+    @Published var figures: [ReaderFigure] = []
     /// Called when the user taps a paragraph while listening.
     var onTapParagraph: ((String) -> Void)?
     /// Called when the user taps a highlight (its annotation id).
     var onAnnotation: ((String) -> Void)?
     /// Called when the page has loaded (to draw highlights).
     var onPageReady: (() -> Void)?
+    /// Highlight mode: the user finished a selection.
+    var onSelectionDone: (() -> Void)?
     /// Called from the text selection menu.
     var onMenu: ((ReaderMenuAction) -> Void)?
 
