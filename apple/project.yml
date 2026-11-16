@@ -74,6 +74,8 @@ targets:
     info:
       path: Mac/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: Lunta
         CFBundleName: Lunta
         LSApplicationCategoryType: public.app-category.education
@@ -125,6 +127,8 @@ targets:
     info:
       path: iOS/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: Lunta
         UILaunchScreen: {}
         ITSAppUsesNonExemptEncryption: false
@@ -155,6 +159,8 @@ targets:
     info:
       path: ShareExtension/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: Lunta
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
