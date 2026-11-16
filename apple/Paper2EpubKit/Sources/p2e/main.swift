@@ -18,6 +18,9 @@ if let i = argv.firstIndex(of: "--images"), i + 1 < argv.count { imagesDir = arg
 var highlightsPath: String?
 if let i = argv.firstIndex(of: "--highlights"), i + 1 < argv.count { highlightsPath = argv[i + 1]; argv.removeSubrange(i...(i + 1)) }
 // --reader-text <file>: writes the text of the reading view as the reader sees it
+// --fulltext <file>: writes the plain full text (what Lunta stores as the paper's fulltext.txt)
+var fulltextPath: String?
+if let i = argv.firstIndex(of: "--fulltext"), i + 1 < argv.count { fulltextPath = argv[i + 1]; argv.removeSubrange(i...(i + 1)) }
 var readerTextPath: String?
 if let i = argv.firstIndex(of: "--reader-text"), i + 1 < argv.count { readerTextPath = argv[i + 1]; argv.removeSubrange(i...(i + 1)) }
 let args = argv[...]
@@ -30,7 +33,10 @@ let log: Paper2Epub.Log = { FileHandle.standardError.write(Data("\($0)\n".utf8))
 
 do {
     let r: ConversionResult
-    if let pageURL {
+    if input.lowercased().hasSuffix(".webarchive") {
+        // a page saved from Safari: its main resource and images, converted as a page
+        r = try await Paper2Epub.convert(webArchive: Data(contentsOf: URL(fileURLWithPath: input)), into: outDir, log: log)
+    } else if let pageURL {
         let data = try Data(contentsOf: URL(fileURLWithPath: input))
         let html = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
         var imgs: [PageImage] = []
@@ -55,6 +61,7 @@ do {
     print("✓ \(r.file.path)")
     print("  source: \(r.source)   words: \(r.words)   images: \(r.images)")
     for n in r.notes { print("  note: \(n)") }
+    if let fulltextPath { try r.fulltext.write(toFile: fulltextPath, atomically: true, encoding: .utf8) }
     if let readerTextPath { try r.readerText.write(toFile: readerTextPath, atomically: true, encoding: .utf8) }
     if let highlightsPath {
         let list = (try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: highlightsPath))) as? [[String: Any]]) ?? []

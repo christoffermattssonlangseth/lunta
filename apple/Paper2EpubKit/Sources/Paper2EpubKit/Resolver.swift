@@ -68,6 +68,12 @@ enum Resolver {
             return [("PDF \(url.lastPathComponent)", { .pdf(data, meta: PaperMeta(), label: "PDF file") })]
         case "jats":
             return [("JATS \(url.lastPathComponent)", { .jats(data, assets: .none, meta: PaperMeta(), label: "JATS file") })]
+        case _ where WebArchive.isWebArchive(data):
+            // a page saved from Safari: the page and its images
+            return [("Web archive \(url.lastPathComponent)", {
+                let page = try WebArchive.read(data)
+                return .book(try await Paper2Epub.pageBook(html: page.html, url: page.url, images: page.images, log: log))
+            })]
         default:
             // a publisher's article page saved from the browser
             if let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1), ScienceDirect.looksLike(html) {

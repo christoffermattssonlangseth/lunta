@@ -69,6 +69,11 @@ extension Paper2Epub {
     /// without a substantial body rather than make a poor reading view.
     public static func convert(page html: String, url: URL?, images: [PageImage], into dir: URL,
                                log: @escaping Log = { _ in }) async throws -> ConversionResult {
+        let book = try await pageBook(html: html, url: url, images: images, log: log)
+        return try write(book, into: dir, log: log)
+    }
+
+    static func pageBook(html: String, url: URL?, images: [PageImage], log: @escaping Log) async throws -> Book {
         let bag = PageImages(images, base: url)
         var book: Book
         switch PageReader.pick(url: url, html: html) {
@@ -81,7 +86,7 @@ extension Paper2Epub {
         }
         if book.meta.url.isEmpty, let url { book.meta.url = url.absoluteString }
         if book.meta.doi.isEmpty, let url, let d = Resolver.doi(in: url.absoluteString) { book.meta.doi = d }
-        return try write(book, into: dir, log: log)
+        return book
     }
 
     /// Which reader `convert(page:)` uses for a page ("ScienceDirect", "NEJM", "generic").
@@ -96,14 +101,6 @@ enum PageReader: String {
         if host.hasSuffix("sciencedirect.com") || (host.isEmpty && ScienceDirect.looksLike(html)) { return .scienceDirect }
         if host.hasSuffix("nejm.org") { return .nejm }
         return .generic
-    }
-}
-
-/// NEJM article pages. Placeholder: until a saved NEJM page is available to build a dedicated
-/// reader from, NEJM pages go through the generic reader.
-enum NEJM {
-    static func book(html: String, url: URL?, images: PageImages, log: @escaping (String) -> Void) async throws -> Book {
-        try await GenericPage.book(html: html, url: url, images: images, label: "NEJM full text", log: log)
     }
 }
 
