@@ -14,6 +14,7 @@ struct ReaderView: View {
     @State private var loading = true
     @State private var message: String?
     @State private var showContents = false
+    @State private var showAppearance = false
     @State private var showInfo = false
     @AppStorage("readerFontScale") private var fontScale = 1.0
     @AppStorage("readerPaged") private var paged = false
@@ -109,6 +110,13 @@ struct ReaderView: View {
                 if mode == .reading, book != nil {
                     // figures up front; listening is in the … menu (the narration bar has its stop button)
                     FiguresButton(controller: controller) { showFigures = true }
+                }
+                // find in the paper: one tap (reading view and PDF)
+                if (mode == .reading && book != nil) || (mode == .pdf && pdfURL != nil) {
+                    Button { openFind() } label: { Image(systemName: "magnifyingglass") }
+                        .accessibilityLabel("Find in Paper")
+                }
+                if mode == .reading, book != nil {
                     // highlight mode: tap to turn on/off; hold for the colour
                     Menu {
                         Toggle(isOn: $highlightMode) { Label("Highlight Mode", systemImage: "highlighter") }
@@ -125,35 +133,16 @@ struct ReaderView: View {
                     } primaryAction: { highlightMode.toggle() }
                     .accessibilityLabel(highlightMode ? "Highlight mode on" : "Highlight mode off")
                     Button { asking = true } label: { Image(systemName: "sparkles") }
-                    Button { showContents = true } label: { Image(systemName: "list.bullet") }
                 }
                 Menu {
+                    // every item works with one tap (appearance settings are in Text & Theme)
                     if mode == .reading, book != nil {
+                        Button { showContents = true } label: { Label("Contents", systemImage: "list.bullet") }
+                        Button { showAppearance = true } label: { Label("Text & Theme…", systemImage: "textformat.size") }
                         Button { listening ? stopListening() : startListening() } label: {
                             Label(listening ? "Stop Listening" : "Listen", systemImage: listening ? "stop.circle" : "headphones")
                         }
-                        ControlGroup {
-                            Button { fontScale = max(0.7, fontScale - 0.1) } label: { Label("Smaller", systemImage: "textformat.size.smaller") }
-                            Button { fontScale = min(2.2, fontScale + 0.1) } label: { Label("Larger", systemImage: "textformat.size.larger") }
-                        } label: { Text("Text Size") }
-                        Picker(selection: $paged) {
-                            Label("Scroll", systemImage: "scroll").tag(false)
-                            Label("Turn Pages", systemImage: "book").tag(true)
-                        } label: { Label("Layout", systemImage: paged ? "book" : "scroll") }
-                        .pickerStyle(.menu)
-                        FigureSettingPicker()
-                        Picker(selection: $themeRaw) {
-                            ForEach(ReaderTheme.allCases) { t in Text(t.name).tag(t.rawValue) }
-                        } label: { Label("Theme", systemImage: "circle.lefthalf.filled") }
-                        .pickerStyle(.menu)
-                        Picker(selection: Binding(get: { PhoneVoice.shared.voice }, set: { PhoneVoice.shared.voice = $0 })) {
-                            ForEach(PhoneVoice.voices, id: \.id) { Text($0.name).tag($0.id) }
-                        } label: { Label("Natural Voice", systemImage: "waveform") }
-                        .pickerStyle(.menu)
                         Divider()
-                    }
-                    if (mode == .reading && book != nil) || (mode == .pdf && pdfURL != nil) {
-                        Button { openFind() } label: { Label("Find in Paper", systemImage: "magnifyingglass") }
                     }
                     if (mode == .reading && book != nil) || mode == .pdf {
                         Button { showHighlights = true } label: { Label("Highlights & Notes", systemImage: "highlighter") }
@@ -207,6 +196,11 @@ struct ReaderView: View {
         .readerFigures(controller, browsing: $showFigures)
         .sheet(isPresented: $sharing) {
             ScrollView { SharePanel(ids: [paperID]) }.environmentObject(model).presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showAppearance) {
+            ReaderAppearanceSheet(fontScale: $fontScale, paged: $paged, themeRaw: $themeRaw)
+                .presentationDetents([.medium, .large])
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         }
         .sheet(isPresented: $showInfo) { NavigationStack { PaperInfoView(paperID: paperID, embedded: false) } }
         .onChange(of: highlightMode) { _, on in controller.setHighlightMode(on, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow) }
