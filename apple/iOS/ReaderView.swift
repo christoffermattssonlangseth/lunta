@@ -275,6 +275,10 @@ struct ReaderView: View {
         guard let p = model.paper(paperID) else { loading = false; return }
         if p.hasEpub {
             message = model.needsDownload(paperID, .epub) ? "Downloading from iCloud…" : nil
+            if model.inCloud, !model.needsDownload(paperID, .epub),
+               CloudLibrary.isStale(URL(fileURLWithPath: model.lib.expectedFilePath(id: paperID, kind: .epub))) {
+                message = "Getting the newest version from iCloud…"
+            }
             if await model.ensureLocal(paperID, .epub) != nil {
                 let lib = model.lib
                 let id = paperID

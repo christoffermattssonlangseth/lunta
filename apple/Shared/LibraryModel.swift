@@ -246,7 +246,11 @@ final class LibraryModel: ObservableObject {
         guard lib.fileStatus(id: id, kind: kind) != .missing else { return nil }
         let url = URL(fileURLWithPath: lib.expectedFilePath(id: id, kind: kind))
         if !inCloud { return url }
-        return await CloudLibrary.download(url) ? url : nil
+        guard await CloudLibrary.download(url) else { return nil }
+        // reading views and full texts can be remade on another device (e.g. figures added): if
+        // iCloud has a newer version than the copy here, wait briefly for it
+        if kind == .epub || kind == .fulltext { await CloudLibrary.freshen(url) }
+        return url
     }
 
     /// True if the file still has to come down from iCloud (for "Downloading…" messages).
@@ -712,6 +716,18 @@ final class LibraryModel: ObservableObject {
         let url = dir.appendingPathComponent("figures.log")
         let data = Data("\(Date().formatted(.iso8601)) \(line)\n".utf8)
         if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(data); try? h.close() } else { try? data.write(to: url) }
+    }
+
+    /// Asks iCloud for newer versions of reading views that are already on this device (another
+    /// device may have remade them), so they're current before they're opened.
+    func freshenReadingViews() {
+        guard inCloud else { return }
+        let urls = papers.filter(\.hasEpub).map { URL(fileURLWithPath: lib.expectedFilePath(id: $0.id, kind: .epub)) }
+        Task.detached(priority: .utility) {
+            var n = 0
+            for u in urls where CloudLibrary.isStale(u) { CloudLibrary.startDownload(u); n += 1 }
+            NSLog("Lunta: newer reading views to fetch: %d", n)
+        }
     }
 
     func remakeMissingFigures() async {

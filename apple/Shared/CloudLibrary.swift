@@ -87,8 +87,32 @@ enum CloudLibrary {
         guard FileManager.default.fileExists(atPath: u.path) else { return false }
         guard let v = try? u.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey]),
               v.isUbiquitousItem == true else { return true }
-        // .downloaded = a local copy that may not be the newest version; library files never change
+        // .downloaded = a local copy that may not be the newest version (see isStale/freshen)
         return v.ubiquitousItemDownloadingStatus == .current || v.ubiquitousItemDownloadingStatus == .downloaded
+    }
+
+    /// A local copy that iCloud says is older than the one in iCloud (e.g. a reading view another
+    /// device remade). iOS doesn't always fetch the new version by itself.
+    static func isStale(_ url: URL) -> Bool {
+        var u = URL(fileURLWithPath: url.path)
+        u.removeAllCachedResourceValues()
+        guard let v = try? u.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey]),
+              v.isUbiquitousItem == true else { return false }
+        return v.ubiquitousItemDownloadingStatus == .downloaded
+    }
+
+    /// Fetches the newest version of a file that is already here, if iCloud has a newer one,
+    /// waiting at most `timeout` (then the local copy is used).
+    @discardableResult
+    static func freshen(_ url: URL, timeout: TimeInterval = 8) async -> Bool {
+        guard isStale(url) else { return false }
+        startDownload(url)
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if !isStale(url) { return true }
+        }
+        return false
     }
 
     static func startDownload(_ url: URL) {

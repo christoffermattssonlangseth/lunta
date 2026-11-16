@@ -27,7 +27,7 @@ struct LuntaiOSApp: App {
             .tint(.luntaTeal)
         }
         .onChange(of: phase) { _, p in
-            if p == .active, let m = holder.model { m.refresh(); Task { await m.importShared() } }
+            if p == .active, let m = holder.model { m.refresh(); m.freshenReadingViews(); Task { await m.importShared() } }
             if p == .background { MorningNotice.schedule() }
         }
         .backgroundTask(.appRefresh(MorningNotice.taskID)) { await MorningNotice.refresh() }
@@ -60,7 +60,7 @@ final class ModelHolder: ObservableObject {
                 NSLog("Lunta: core opened after %.1fs", Date().timeIntervalSince(t0))
                 model = LibraryModel(lib: m, root: url, inCloud: cloud)
                 NSLog("Lunta: ready after %.1fs, %d papers", Date().timeIntervalSince(t0), model?.counts.all ?? -1)
-                if let model { Task { await model.importShared() }; WatchCenter.shared.start(model) }
+                if let model { Task { await model.importShared() }; WatchCenter.shared.start(model); model.freshenReadingViews() }
                 if ProcessInfo.processInfo.arguments.contains("-testDownload"), let model {
                     // diagnostics: fetch a few reading views from iCloud and report how long it took
                     for p in model.papers.filter(\.hasEpub).prefix(4) {
