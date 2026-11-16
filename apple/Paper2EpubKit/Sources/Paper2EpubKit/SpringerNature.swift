@@ -188,11 +188,12 @@ enum SpringerNature {
         let capB = t.first { $0.attr("data-test") == "table-caption" }
         let id = capB?.attr("id") ?? t.attr("id") ?? ""
         let link = t.first { $0.attr("data-test") == "table-link" }?.attr("href") ?? ""
-        let caption = XNode.element("div", ["class": "caption"], capB.map { $0.children } ?? [])
         if let page = pages[link] {
             let d = HTMLDOM.parse(page)
             // (the table page's own markup only: a page without access has no table container)
             if let container = d.first(where: { $0.hasClass("c-article-table-container") }), let table = container.first(where: { $0.name == "table" }) {
+                // (made only now: making it moves the caption's children, which the link below needs otherwise)
+                let caption = XNode.element("div", ["class": "caption"], capB.map { $0.children } ?? [])
                 var kids = [caption, table]
                 if let foot = d.first(where: { $0.hasClass("c-article-table-footer") }) {
                     let items = foot.all(where: { $0.name == "li" })
