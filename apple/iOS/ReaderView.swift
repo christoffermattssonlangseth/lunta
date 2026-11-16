@@ -182,7 +182,7 @@ struct ReaderView: View {
             .presentationDetents([.medium, .large])
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         }
-        .fullScreenCover(item: $figure) { f in FigureViewer(figure: f) }
+        .figureOverlay($figure)
         .readerFigures(controller, browsing: $showFigures)
         .sheet(isPresented: $sharing) {
             ScrollView { SharePanel(ids: [paperID]) }.environmentObject(model).presentationDetents([.medium, .large])

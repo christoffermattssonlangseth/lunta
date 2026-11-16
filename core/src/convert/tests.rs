@@ -304,3 +304,33 @@ fn network_elife_patterns() {
     let imgs = images::fetch_assets(&hrefs[..3], &assets, &o);
     assert!(!imgs.is_empty());
 }
+
+#[test]
+fn figure_keys_match_xml_labels_and_pdf_captions() {
+    use super::jats::figure_key;
+    assert_eq!(figure_key("Fig. 3 | Title").as_deref(), Some("fig 3"));
+    assert_eq!(figure_key("Figure 3.").as_deref(), Some("fig 3"));
+    assert_eq!(figure_key("Extended Data Fig. 2 | See next page").as_deref(), Some("extended data fig 2"));
+    assert_eq!(figure_key("Extended  Data Figure 10").as_deref(), Some("extended data fig 10"));
+    assert_eq!(figure_key("Supplementary Figure S1").as_deref(), Some("supplementary fig 1"));
+    assert_eq!(figure_key("Figure S4").as_deref(), Some("supplementary fig 4"));
+    assert_eq!(figure_key("Table 1"), None);
+}
+
+#[test]
+fn jats_figures_without_images_come_from_the_pdf() {
+    let data = std::fs::read(FIXTURE).unwrap();
+    let doc = super::xml::parse(&data).unwrap();
+    let none = std::collections::HashMap::new();
+    let mut conv = super::jats::JatsConverter::new(doc.root(), &none);
+    let html: String = conv.chapters().iter().map(|c| c.html.clone()).collect();
+    assert!(conv.missing_figures > 0);
+    assert!(html.contains("[Figure image not available]"));
+    let crop = BookImage { file_name: "p3-fig-1.png".into(), data: vec![1, 2, 3], media_type: "image/png".into() };
+    let figs = std::collections::HashMap::from([("fig 1".to_string(), crop)]);
+    let mut conv = super::jats::JatsConverter::new(doc.root(), &none).with_pdf_figures(figs);
+    let html: String = conv.chapters().iter().map(|c| c.html.clone()).collect();
+    assert_eq!(conv.used_from_pdf.len(), 1);
+    assert_eq!(conv.used_from_pdf[0].file_name, "pdf-fig-1.png");
+    assert!(html.contains("<img src=\"../images/pdf-fig-1.png\" alt=\"Figure 1\"/>"), "{html}");
+}

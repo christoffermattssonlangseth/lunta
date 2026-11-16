@@ -192,6 +192,74 @@ pub fn build(data: &[u8], extra: &PaperMeta, opts: &Options) -> Result<Book> {
     assemble(paras, guessed, extra, body_size, opts)
 }
 
+/// The figures in the PDF by their label ([`super::jats::figure_key`]: "fig 3", "extended data
+/// fig 2", "supplementary fig 1"): to fill in figures another source (an XML version without its
+/// images) doesn't have. Empty when the PDF can't be read.
+///
+/// Matched by page, not through caption detection: a figure is the page with a line that starts
+/// its caption ("Fig. 3 | …", "Extended Data Fig. 2 | See next page for caption"), and the image
+/// is all figure areas on that page together (figures are often found in pieces). With several
+/// captions on a page, each area goes to the nearest one.
+pub fn figures_by_label(data: &[u8], log: &dyn Fn(&str)) -> std::collections::HashMap<String, super::BookImage> {
+    use std::collections::HashMap;
+    let mut out = HashMap::new();
+    let Ok(p) = pdfium() else { return out };
+    let Ok(doc) = open(p, data) else { return out };
+    if doc.pages().is_empty() {
+        return out;
+    }
+    let pages = extract::pages(&doc, log);
+    let mut renderer = extract::PdfiumRenderer::new(&doc);
+    let mut an = Analyzer::new(pages, &mut renderer, log);
+    let paras = an.analyze();
+    let mut areas: HashMap<usize, Vec<layout::R>> = HashMap::new();
+    for p in paras.iter().filter(|p| p.kind == Kind::Figure) {
+        areas.entry(p.page).or_default().push(p.bbox());
+    }
+    // caption starts: the label, then a separator (not "Fig. 5a)" in the text)
+    let head = re!(r"(?i)^(?:Extended\s+Data\s+|Supplementary\s+|Supporting\s+)?(?:Figure|Fig\.?)\s*S?\d+\s*(?:[|.:—–]|\s-\s)");
+    let mut heads: Vec<(usize, Vec<(String, f64)>)> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for (pno, page) in an.pages.iter().enumerate() {
+        if !areas.contains_key(&pno) {
+            continue;
+        }
+        let mut hs = Vec::new();
+        for l in &page.lines {
+            let t = layout::line_ends_cleaned(super::trim_ws(&l.text));
+            if !head.is_match(&t) {
+                continue;
+            }
+            let Some(key) = super::jats::figure_key(&t) else { continue };
+            if seen.insert(key.clone()) {
+                hs.push((key, (l.bbox.y0 + l.bbox.y1) / 2.0));
+            }
+        }
+        if !hs.is_empty() {
+            heads.push((pno, hs));
+        }
+    }
+    for (pno, hs) in heads {
+        let mut rects: Vec<(String, layout::R)> = Vec::new();
+        for a in &areas[&pno] {
+            let cy = (a.y0 + a.y1) / 2.0;
+            let Some(near) = hs.iter().min_by(|x, y| (x.1 - cy).abs().total_cmp(&(y.1 - cy).abs())) else { continue };
+            match rects.iter_mut().find(|r| r.0 == near.0) {
+                Some(r) => r.1 = r.1.union(a),
+                None => rects.push((near.0.clone(), *a)),
+            }
+        }
+        for (key, r) in rects {
+            let photo = an.pages[pno].graphics.images.iter().any(|g| r.contains(g, 5.0) && g.area() > 0.3 * r.area());
+            let name = format!("p{}-{}", pno + 1, super::slug(&key, 60));
+            if let Some(img) = an.render(pno, r, photo, &name) {
+                out.insert(key, img);
+            }
+        }
+    }
+    out
+}
+
 /// Debug listing of the analysed paragraphs (set `P2E_DEBUG`), in the Swift converter's format.
 fn debug_dump(paras: &[Para]) {
     for p in paras {
@@ -257,7 +325,8 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
         let legend_like = re!(r"^\([A-Z][A-Za-z]{0,3}\)\s|^See also Figure|^Scale bars?").is_match(t);
         if p.kind == Kind::Text && p.size() < body_size - 0.4 {
             if let Some(j) = folded.iter().rposition(|q| q.kind == Kind::Caption) {
-                if folded.len() - j <= 8
+                // a legend's "(D) …" panels continue after the page's body text when it runs onto the next page
+                if (folded.len() - j <= 8 || legend_like)
                     && folded[j].page.abs_diff(p.page) <= 1
                     && (p.size() - folded[j].size()).abs() < 0.8
                     && (legend_like || j == folded.len() - 1)

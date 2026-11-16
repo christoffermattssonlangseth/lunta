@@ -140,6 +140,12 @@ fn attach_accents(cs: &mut Vec<C>) {
         }
         let b = b - removed_before_b;
         acc.bx = cs[b].bx;
+        // TeX puts accents on a dotless i or j
+        match cs[b].ch {
+            'ı' => cs[b].ch = 'i',
+            'ȷ' => cs[b].ch = 'j',
+            _ => {}
+        }
         cs.insert(b + 1, acc);
         if b + 2 < cs.len() && cs[b + 2].generated && is_space(cs[b + 2].ch) && b + 3 < cs.len() && !is_space(cs[b + 3].ch) {
             // "Ruckl ¨ e" → "Rückle": a generated space right after the joined letter
@@ -201,7 +207,13 @@ pub fn extract_lines(text: &PdfPageText, mb: &MediaBox, pno: usize) -> Vec<PLine
             // PDFium marks a line-end hyphen as U+0002 (and emits no line break after it); in
             // symbol fonts U+0002 is just an unmapped glyph
             if ch == '\u{2}' && c.is_hyphen().unwrap_or(false) {
-                push_char(&mut raw_lines, c_hyphen(&c, mb));
+                let mut h = c_hyphen(&c, mb);
+                // a discretionary hyphen drawn on its own (InDesign): the word goes on in the next
+                // line; mark it so the lines are joined without the hyphen (see `layout::GLUE`)
+                if is_soft_hyphen(&c, &h) {
+                    h.ch = super::layout::GLUE;
+                }
+                push_char(&mut raw_lines, h);
             }
             continue;
         }
@@ -392,6 +404,15 @@ fn c_hyphen(c: &PdfPageTextChar, mb: &MediaBox) -> C {
     C { ch: '-', size: c.scaled_font_size().value as f64, bx, style: None, generated: false }
 }
 
+/// A line-end hyphen PDFium found that is a hyphenation (soft) hyphen rather than part of the
+/// word: drawn as a text object of its own, with a glyph box far shorter than the line. Layout
+/// programs that do this (InDesign) draw real hyphens within the word's text run.
+fn is_soft_hyphen(c: &PdfPageTextChar, h: &C) -> bool {
+    h.bx.h() > 0.0
+        && h.bx.h() < 0.4 * h.size
+        && c.text_object().map(|o| o.text().trim().chars().count() <= 1).unwrap_or(false)
+}
+
 fn push_char(lines: &mut [Vec<C>], c: C) {
     lines.last_mut().unwrap().push(c);
 }
@@ -418,7 +439,7 @@ fn make_line(chars: Vec<C>, pno: usize) -> Option<PLine> {
             None => size_count.push((k, 1)),
         }
     }
-    let dom = super::layout::first_max(&size_count, |x| x.1)?.0;
+    let dom = super::layout::first_max(&size_count, |x| (x.1, x.0))?.0;
     if dom <= 0.0 {
         return None;
     }
@@ -505,6 +526,28 @@ fn concat(inner: &Affine, outer: &Affine) -> Affine {
     ]
 }
 
+/// Bounding box of a path's points (control points included), in top-left page coordinates.
+fn path_rect(p: &PdfPagePathObject, ctm: &Affine, mb: &MediaBox) -> Option<R> {
+    let m = p.matrix().ok()?;
+    let pm = [m.a() as f64, m.b() as f64, m.c() as f64, m.d() as f64, m.e() as f64, m.f() as f64];
+    let full = concat(&pm, ctm);
+    let segs = p.segments();
+    let n = segs.len();
+    if n == 0 {
+        return None;
+    }
+    let (mut l, mut b, mut r, mut t) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for i in 0..n {
+        let Ok(sg) = segs.get(i) else { continue };
+        let (x, y) = apply(&full, sg.x().value as f64, sg.y().value as f64);
+        l = l.min(x);
+        r = r.max(x);
+        b = b.min(y);
+        t = t.max(y);
+    }
+    (l.is_finite() && b.is_finite()).then(|| mb.to_top(l, b, r, t))
+}
+
 fn walk(o: &PdfPageObject, ctm: Affine, mb: &MediaBox, g: &mut PageGraphics, depth: usize) {
     let rect = |o: &PdfPageObject| -> Option<R> {
         let q = o.bounds().ok()?;
@@ -525,7 +568,17 @@ fn walk(o: &PdfPageObject, ctm: Affine, mb: &MediaBox, g: &mut PageGraphics, dep
             let filled = p.fill_mode().map(|m| m != PdfPathFillMode::None).unwrap_or(true);
             let stroked = p.is_stroked().unwrap_or(true);
             if filled || stroked {
-                if let Some(r) = rect(o) {
+                // PDFium's object bounds grow a stroked path by its line width scaled through the
+                // path's matrix, which can turn a thin rule into something taller than the page:
+                // where they overshoot the path's own points by far, the points are used
+                let r = match (rect(o), path_rect(p, &ctm, mb)) {
+                    (Some(b), Some(pts)) => {
+                        let over = (pts.x0 - b.x0).max(b.x1 - pts.x1).max(pts.y0 - b.y0).max(b.y1 - pts.y1);
+                        Some(if over > 20.0 { pts } else { b })
+                    }
+                    (b, pts) => b.or(pts),
+                };
+                if let Some(r) = r {
                     g.drawings.push(r);
                 }
             }
@@ -554,6 +607,10 @@ pub fn pages(doc: &PdfDocument, log: &dyn Fn(&str)) -> Vec<Page> {
         if let Ok(text) = page.text() {
             if !is_cover_sheet(&text.all()) {
                 p.graphics = graphics(&page, &mb);
+                if std::env::var("P2E_DEBUG_GFX").ok().and_then(|v| v.parse::<usize>().ok()) == Some(pno + 1) {
+                    for r in &p.graphics.images { eprintln!("IMG {:?}", r); }
+                    for r in &p.graphics.drawings { if r.area() > 2000.0 { eprintln!("DRAW {:?}", r); } }
+                }
                 p.lines = extract_lines(&text, &mb, pno);
             }
         }

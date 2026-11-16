@@ -21,6 +21,7 @@ pub mod net;
 #[cfg(feature = "pdf")]
 pub mod pdf;
 pub mod resolver;
+pub mod sciencedirect;
 pub mod xml;
 
 use regex::Regex;
@@ -174,6 +175,24 @@ pub fn convert_file_with(path: &Path, out_dir: &Path, opts: &Options) -> Result<
     run(cands, out_dir, opts)
 }
 
+/// Converts a publisher's article page given as HTML — as the browser shows it to a reader with
+/// access, e.g. sent by an app or browser extension — into `out_dir/<slug>.epub`. `base_url` is
+/// the page's address (image links relative to it are resolved against it; may be empty).
+/// Supported: ScienceDirect.
+pub fn convert_html_with(html: &str, base_url: &str, out_dir: &Path, opts: &Options) -> Result<ConversionResult> {
+    let book = html_book(html, base_url, opts)?;
+    write(&book, out_dir, opts)
+}
+
+/// The book for a publisher's article page given as HTML (see [`convert_html_with`]).
+pub fn html_book(html: &str, base_url: &str, opts: &Options) -> Result<Book> {
+    if !sciencedirect::looks_like(html) {
+        return Err(fail("This page is not a full-text article page Lunta can read (ScienceDirect)."));
+    }
+    let base = url::Url::parse(base_url).ok();
+    sciencedirect::book(html, None, base.as_ref(), opts)
+}
+
 fn run(cands: Vec<Candidate>, out_dir: &Path, opts: &Options) -> Result<ConversionResult> {
     let mut errors: Vec<String> = Vec::new();
     for c in cands {
@@ -185,7 +204,7 @@ fn run(cands: Vec<Candidate>, out_dir: &Path, opts: &Options) -> Result<Conversi
                 continue;
             }
         };
-        let book = build(src, opts, &errors)?;
+        let book = build(src, None, opts, &errors)?;
         return write(&book, out_dir, opts);
     }
     if errors.len() == 1 {
@@ -195,8 +214,10 @@ fn run(cands: Vec<Candidate>, out_dir: &Path, opts: &Options) -> Result<Conversi
     Err(fail(format!("No usable source found.\n{}", errors.join("\n"))))
 }
 
-fn build(src: Source, opts: &Options, earlier: &[String]) -> Result<Book> {
+/// `pdf`: the paper's PDF, when converting from it: figures an XML version lacks are cut from it.
+fn build(src: Source, pdf: Option<&[u8]>, opts: &Options, earlier: &[String]) -> Result<Book> {
     match src {
+        Source::Book(book) => Ok(*book),
         Source::Pdf { data, meta, label } => {
             // An open-access XML version beats any PDF analysis: check for one via the PDF's DOI.
             if !opts.offline {
@@ -205,7 +226,9 @@ fn build(src: Source, opts: &Options, earlier: &[String]) -> Result<Book> {
                     for c in resolver::doi_candidates(&doi) {
                         let Ok(src) = (c.load)(opts) else { continue };
                         match src {
-                            Source::Jats { .. } | Source::Html { .. } => return build(src, opts, earlier),
+                            Source::Jats { .. } | Source::Html { .. } | Source::Book(_) => {
+                                return build(src, Some(&data), opts, earlier)
+                            }
                             Source::Pdf { .. } => continue, // the arXiv PDF candidate: we already have this PDF
                         }
                     }
@@ -272,9 +295,17 @@ fn build(src: Source, opts: &Options, earlier: &[String]) -> Result<Book> {
             let hrefs = jats::graphic_hrefs(doc.root());
             let images = images::fetch_assets(&hrefs, &assets, opts);
             let mut conv = jats::JatsConverter::new(doc.root(), &images);
+            let mut chapters = conv.chapters();
+            if conv.missing_figures > 0 {
+                if let Some(figs) = pdf.map(pdf_figures).filter(|f| !f.is_empty()) {
+                    // figure images not available (e.g. a PMC author manuscript): cut them from the PDF
+                    opts.log(&format!("{} figure image(s) missing; taking them from the PDF", conv.missing_figures));
+                    conv = jats::JatsConverter::new(doc.root(), &images).with_pdf_figures(figs);
+                    chapters = conv.chapters();
+                }
+            }
             let mut meta = conv.meta();
             meta.merge(&extra);
-            let mut chapters = conv.chapters();
             let has_body = chapters.iter().any(|c| !c.headings.iter().any(|h| h.id.starts_with("abstract")));
             if !has_body {
                 return Err(fail("The XML only contains the abstract, not the full text."));
@@ -295,6 +326,9 @@ fn build(src: Source, opts: &Options, earlier: &[String]) -> Result<Book> {
                 );
             }
             let mut notes = Vec::new();
+            if !conv.used_from_pdf.is_empty() {
+                notes.push(format!("{} figure image(s) taken from the PDF.", conv.used_from_pdf.len()));
+            }
             if conv.missing_figures > 0 {
                 notes.push(format!(
                     "{} figure image(s) could not be downloaded; captions are kept.",
@@ -311,6 +345,7 @@ fn build(src: Source, opts: &Options, earlier: &[String]) -> Result<Book> {
             let all: String = chapters.iter().map(|c| c.html.as_str()).collect();
             let mut imgs: Vec<BookImage> = images
                 .values()
+                .chain(conv.used_from_pdf.iter())
                 .filter(|i| all.contains(&format!("../images/{}\"", i.file_name)))
                 .cloned()
                 .collect();
@@ -327,6 +362,17 @@ fn pdf_doi(data: &[u8]) -> Option<String> {
         return Some(d);
     }
     resolver::doi_in_pdf_metadata(data)
+}
+
+/// The PDF's figures by label (feature "pdf"; none without it).
+fn pdf_figures(data: &[u8]) -> std::collections::HashMap<String, BookImage> {
+    #[cfg(feature = "pdf")]
+    return pdf::figures_by_label(data, &|_| {});
+    #[cfg(not(feature = "pdf"))]
+    {
+        let _ = data;
+        std::collections::HashMap::new()
+    }
 }
 
 #[cfg(feature = "pdf")]

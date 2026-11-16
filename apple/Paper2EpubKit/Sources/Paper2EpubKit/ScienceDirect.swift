@@ -123,7 +123,7 @@ enum ScienceDirect {
         m.date = (meta("citation_publication_date").first ?? meta("citation_online_date").first ?? "").replacingOccurrences(of: "/", with: "-")
         m.url = m.doi.isEmpty ? "" : "https://doi.org/\(m.doi)"
         // authors: "given-name" + "surname" spans in the author list
-        let re = try! NSRegularExpression(pattern: #"<span class="given-name">([^<]*)</span><span class="text surname">([^<]*)</span>"#)
+        let re = try! NSRegularExpression(pattern: #"<span class="given-name">([^<]*)</span>\s*<span class="text surname">([^<]*)</span>"#)
         let ns = html as NSString
         var seen = Set<String>()
         for r in re.matches(in: html, range: NSRange(location: 0, length: ns.length)) {

@@ -2,7 +2,7 @@
 //! (itself a port of `JatsConverter` in converter/paper2epub.py).
 
 use super::xml::{esc, Node};
-use super::{capitalized, trim_ws, BookImage, Chapter, Heading, PaperMeta};
+use super::{capitalized, slug, trim_ws, BookImage, Chapter, Heading, PaperMeta};
 use std::collections::{HashMap, HashSet};
 
 const BLOCK_TAGS: &[&str] = &[
@@ -30,6 +30,23 @@ pub fn graphic_hrefs(root: Node) -> Vec<String> {
     out
 }
 
+/// "Fig. 3 | Title", "Figure 3.", "Extended Data Fig. 3", "Supplementary Figure S1" → a key that
+/// is the same for the XML's label and the PDF's caption ("fig 3", "extended data fig 3",
+/// "supplementary fig 1"). None for anything that isn't a figure.
+pub fn figure_key(text: &str) -> Option<String> {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(r"(?i)^(Extended\s+Data\s+|Supplementary\s+|Supporting\s+|Appendix\s+)?(?:Figure|Fig\.?)\s*(S?)(\d+)").unwrap()
+    });
+    let c = re.captures(text.trim())?;
+    let g = |i: usize| c.get(i).map(|m| m.as_str()).unwrap_or("");
+    let mut kind = g(1).to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ");
+    if kind == "supporting" || kind == "appendix" || (!g(2).is_empty() && kind.is_empty()) {
+        kind = "supplementary".into();
+    }
+    Some(format!("{}fig {}", if kind.is_empty() { String::new() } else { format!("{kind} ") }, g(3)))
+}
+
 fn id_attr(el: Node) -> String {
     el.attr("id").map(|v| format!(" id=\"{}\"", esc(v))).unwrap_or_default()
 }
@@ -41,6 +58,11 @@ fn label_of(el: Node) -> String {
 pub struct JatsConverter<'a> {
     root: Node<'a>,
     images: &'a HashMap<String, BookImage>,
+    /// Figures cut from the paper's PDF, by [`figure_key`] of their label: used for figures whose
+    /// own images couldn't be downloaded (PMC author manuscripts have none).
+    from_pdf: HashMap<String, BookImage>,
+    /// The figures `from_pdf` supplied (renamed `pdf-<key>.<ext>`).
+    pub used_from_pdf: Vec<BookImage>,
     pub missing_figures: usize,
     pub tex_formulas: usize,
     headings: Vec<Heading>,
@@ -68,6 +90,8 @@ impl<'a> JatsConverter<'a> {
         JatsConverter {
             root,
             images,
+            from_pdf: HashMap::new(),
+            used_from_pdf: Vec::new(),
             missing_figures: 0,
             tex_formulas: 0,
             headings: vec![],
@@ -689,9 +713,33 @@ impl<'a> JatsConverter<'a> {
         out
     }
 
+    /// Figures cut from the paper's PDF (see `pdf::figures_by_label`), for figures the XML has
+    /// no images for.
+    pub fn with_pdf_figures(mut self, figs: HashMap<String, BookImage>) -> Self {
+        self.from_pdf = figs;
+        self
+    }
+
     fn fig(&mut self, el: Node<'a>) -> String {
         let label = el.child_text("label").unwrap_or_else(|| "Figure".into()).trim().to_string();
         let mut imgs = self.graphic_imgs(el, &label);
+        if imgs.is_empty() {
+            if let Some(key) = figure_key(&label) {
+                let name = format!("pdf-{}.", slug(&key, 60));
+                let done = self.used_from_pdf.iter().find(|i| i.file_name.starts_with(&name)).map(|i| i.file_name.clone());
+                let file = done.or_else(|| {
+                    let mut img = self.from_pdf.get(&key)?.clone();
+                    let ext = img.file_name.rsplit_once('.').map(|x| x.1.to_string()).unwrap_or_else(|| "png".into());
+                    img.file_name = format!("{name}{ext}");
+                    let f = img.file_name.clone();
+                    self.used_from_pdf.push(img);
+                    Some(f)
+                });
+                if let Some(f) = file {
+                    imgs = vec![format!("<img src=\"../images/{}\" alt=\"{}\"/>", esc(&f), esc(&label))];
+                }
+            }
+        }
         if imgs.is_empty() {
             self.missing_figures += 1;
             imgs = vec!["<span class=\"missing\">[Figure image not available]</span>".into()];

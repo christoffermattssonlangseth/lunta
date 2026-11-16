@@ -138,7 +138,7 @@ impl Para {
                 None => c.push((l.size, n)),
             }
         }
-        first_max(&c, |x| x.1).map(|x| x.0).unwrap_or(0.0)
+        first_max(&c, |x| (x.1, x.0)).map(|x| x.0).unwrap_or(0.0)
     }
     fn char_count(&self) -> usize {
         self.lines.iter().map(|l| count(&l.text)).sum()
@@ -170,6 +170,34 @@ fn first_is_lower(s: &str) -> bool {
     s.chars().next().map(|c| c.is_lowercase()).unwrap_or(false)
 }
 
+/// Line-end markers in [`PLine::text`] (and the last span): `GLUE` = the word continues on the
+/// next line (a hyphenation hyphen was taken out); `HARD_HYPHEN` = a real hyphen at the end of a
+/// line ("sample-|level"), kept when the lines are joined.
+pub const GLUE: char = '\u{AD}';
+pub const HARD_HYPHEN: char = '\u{2011}';
+
+/// A web address broken across lines ("https://doi.org/10." + "1038/nature21350") goes on
+/// without a space.
+pub fn url_continues(out: &str, next: &str) -> bool {
+    let Some(last_word) = out.split(' ').next_back() else { return false };
+    if !re!(r"^\(?(https?://|www\.|doi\.org/)\S*$").is_match(last_word) {
+        return false;
+    }
+    let Some(n) = next.chars().next() else { return false };
+    if n == '/' || n == '.' {
+        return true;
+    }
+    last_word.chars().last().is_some_and(|c| ".-_/=?&#".contains(c)) && (n.is_lowercase() || n.is_numeric())
+}
+
+/// Turns the line-end markers back into plain text.
+pub fn line_ends_cleaned(s: &str) -> String {
+    if !s.contains(GLUE) && !s.contains(HARD_HYPHEN) {
+        return s.to_string();
+    }
+    s.replace(GLUE, "").replace(HARD_HYPHEN, "-")
+}
+
 /// Joins wrapped lines, undoing end-of-line hyphenation.
 pub fn join_lines<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
     let mut out = String::new();
@@ -182,7 +210,16 @@ pub fn join_lines<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
             out = p.to_string();
             continue;
         }
-        if re!(r"[A-Za-z]-$").is_match(&out) && first_is_lower(p) {
+        if out.ends_with(GLUE) {
+            out.pop();
+            out += p;
+        } else if out.ends_with(HARD_HYPHEN) {
+            out.pop();
+            out.push('-');
+            out += p;
+        } else if url_continues(&out, p) {
+            out += p;
+        } else if re!(r"[A-Za-z]-$").is_match(&out) && first_is_lower(p) {
             out.pop();
             out += p;
         } else if (out.ends_with('-') || out.ends_with('/') || out.ends_with('–')) && !out.ends_with(" -") {
@@ -192,7 +229,7 @@ pub fn join_lines<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
             out += p;
         }
     }
-    out
+    line_ends_cleaned(&out)
 }
 
 pub fn known_sections() -> &'static Regex {
@@ -208,7 +245,13 @@ pub fn known_sections() -> &'static Regex {
 }
 
 pub fn caption_re() -> &'static Regex {
-    re!(r"(?i)^(?:Supplementary\s+|Extended\s+Data\s+|Supporting\s+)?(Figure|Fig\.?|Table|Algorithm|Box)\s*S?\d+[A-Za-z]?\s*[.:|\-–—]?")
+    // the label must be followed by punctuation, a capitalised word or nothing: running text that
+    // wraps onto a line starting "Figure S2G). Top genes…" or "Fig. 1a and …" is not a caption
+    re!(concat!(
+        r"(?i)^(?:Supplementary\s+|Extended\s+Data\s+|Supporting\s+)?(Figure|Fig\.?|Table|Algorithm|Box)\s*S?\d+[A-Za-z]?",
+        // (a dash straight into a letter or digit is a range: "Fig. 4a–c)")
+        r"(?:$|[.:|—]|[\-–](?:$|(?-i:[^a-z0-9]))|\s+(?:[.:|\-–—]|(?-i:[A-Z(\[])|$))"
+    ))
 }
 
 /// Image placements and vector drawings on a page (top-left coordinates).
@@ -275,7 +318,9 @@ impl<'a> Analyzer<'a> {
                 None => sizes.push((l.size, n)),
             }
         }
-        let body_size = first_max(&sizes, |x| x.1).map(|x| x.0).unwrap_or(10.0);
+        let body_size = first_max(&sizes, |x| (x.1, x.0)).map(|x| x.0).unwrap_or(10.0);
+        let mut pages = pages;
+        mark_hard_hyphens(&mut pages);
         let mut a = Analyzer { pages, body_size, running: HashSet::new(), renderer, log };
         a.find_running();
         a
@@ -325,6 +370,24 @@ impl<'a> Analyzer<'a> {
             return true;
         }
         if in_margin && re!(r"(?i)^(downloaded from|arxiv:\d{4}\.\d+)").is_match(t) {
+            return true;
+        }
+        if t.chars().all(|c| c == '\u{FFFC}' || c.is_whitespace()) {
+            return true; // logo placeholder
+        }
+        if re!(r"(?i)^\((figure )?legend (continued )?on (the )?(next|previous|following) page\)$").is_match(t) {
+            return true;
+        }
+        // publisher footer: "Cell 190, 1–19 … © 2026 Elsevier Inc." / "All rights are reserved, …"
+        if l.bbox.y0 > 0.86 * h
+            && l.size <= self.body_size + 0.5
+            && count(t) < 200
+            && re!(r"(?i)©|\bAll rights (are )?reserved\b|^for text and data mining\b").is_match(t)
+        {
+            return true;
+        }
+        // first-page citation footer: "Jiang et al., 2027, Cell 190, 1–19"
+        if l.page <= 1 && l.bbox.y0 > 0.86 * h && re!(r"^[A-Z][\w'’-]+ et al\., \d{4}, .+\d$").is_match(t) {
             return true;
         }
         false
@@ -616,7 +679,9 @@ impl<'a> Analyzer<'a> {
             if let Some(m) = merged.last_mut() {
                 if (m.bbox.y0 - l.bbox.y0).abs() < 2.0
                     && l.bbox.x0 >= m.bbox.x1 - 1.0
-                    && l.bbox.x0 - m.bbox.x1 < 1.2 * l.size
+                    // (PDFium already joins a line's pieces up to 2 em apart; a wider gap here
+                    // is usually a narrow column gutter)
+                    && l.bbox.x0 - m.bbox.x1 < 1.0 * l.size
                 {
                     if !m.text.ends_with(' ') {
                         m.text.push(' ');
@@ -637,10 +702,12 @@ impl<'a> Analyzer<'a> {
             p.asset = g.image;
             units.push(p);
         }
-        let units = self.order(pno, units);
+        let (units, gutter) = self.order_with_gutter(pno, units);
         let txt: Vec<R> = units.iter().filter(|u| u.kind == Kind::Text).map(|u| u.lines[0].bbox).collect();
         let right_edge = |l: &PLine| -> f64 {
+            // the column's right edge: full-width lines (legends, summary) across the gutter do not count
             txt.iter()
+                .filter(|b| gutter.map(|g| !(b.x0 < g - 3.0 && b.x1 > g + 3.0)).unwrap_or(true))
                 .filter(|b| b.x1.min(l.bbox.x1) - b.x0.max(l.bbox.x0) > 0.3 * l.bbox.w())
                 .map(|b| b.x1)
                 .fold(None, |m: Option<f64>, x| Some(m.map_or(x, |m| m.max(x))))
@@ -674,10 +741,13 @@ impl<'a> Analyzer<'a> {
             let at = trim(&a.text);
             let ends_sentence = at.ends_with('.') || at.ends_with(':') || at.ends_with('?') || at.ends_with('!');
             let short_a = (re_a - a.bbox.x1) > 0.18 * width && ends_sentence && !abbrev.is_match(at);
+            // (not the hanging indent of a numbered reference: "4. Satija, R., … (2015)." / "Spatial …")
+            let numbered_item = re!(r"^(\[\d+\]|\d+\.)\s").is_match(trim(&cur[0].text));
             let indent = l.bbox.x0 - left > 8.0
                 && cur[1..].iter().all(|c| (c.bbox.x0 - left).abs() < 3.0)
                 && ends_sentence
-                && !abbrev.is_match(at);
+                && !abbrev.is_match(at)
+                && !numbered_item;
             let hanging = cur.len() >= 2 && l.bbox.x0 < a.bbox.x0 - 6.0 && cur[0].bbox.x0 < a.bbox.x0 - 6.0;
             let size_change = (l.size - a.size).abs() >= 1.0;
             let style_break = (a.bold > 0.9) != (l.bold > 0.9) && (count(at) < 120 || count(&l.text) < 120);
@@ -690,7 +760,7 @@ impl<'a> Analyzer<'a> {
                 || size_change
                 || style_break
                 || cap
-                || (cur.len() == 1 && l.bbox.x0 > a.bbox.x0 + 8.0 && gap > 0.3 * l.size)
+                || (cur.len() == 1 && l.bbox.x0 > a.bbox.x0 + 8.0 && gap > 0.3 * l.size && !numbered_item)
             {
                 if jumped
                     && gap <= 0.75 * l.size
@@ -712,47 +782,116 @@ impl<'a> Analyzer<'a> {
 
     /// Reading order: one column top to bottom, or two columns between full-width blocks.
     pub fn order(&self, pno: usize, paras: Vec<Para>) -> Vec<Para> {
+        self.order_with_gutter(pno, paras).0
+    }
+
+    /// Reading order of a page's lines and blocks; also returns the column gutter's x on
+    /// two-column pages.
+    pub fn order_with_gutter(&self, pno: usize, paras: Vec<Para>) -> (Vec<Para>, Option<f64>) {
         let w = self.pages[pno].width;
         let info: Vec<(R, usize, bool)> = paras.iter().map(|p| (p.bbox(), count(&p.text()), p.kind == Kind::Text)).collect();
-        let chars_n: usize = info.iter().filter(|x| x.2 && x.0.w() < 0.55 * w).map(|x| x.1).sum();
-        let chars_all = info.iter().filter(|x| x.2).map(|x| x.1).sum::<usize>().max(1);
-        let left: usize = info.iter().filter(|x| x.2 && x.0.w() < 0.55 * w && x.0.cx() < w / 2.0).map(|x| x.1).sum();
-        let right = chars_n - left;
-        let two_col = chars_n as f64 > 0.5 * chars_all as f64
-            && left as f64 > 0.2 * chars_n as f64
-            && right as f64 > 0.2 * chars_n as f64;
+        // The column gutter: the gap that most often separates two lines side by side on the same
+        // row (text left of it and text right of it). Decided row by row, so full-width blocks
+        // (summary, figure legends) or a shifted abstract do not hide the columns however much
+        // text they hold.
+        let textual: Vec<usize> = (0..info.len()).filter(|&i| info[i].2 && info[i].0.w() >= 0.15 * w).collect();
+        let mut gaps: Vec<(f64, f64)> = Vec::new();
+        for &a in &textual {
+            let ra = info[a].0;
+            let right_of = textual
+                .iter()
+                .filter(|&&b| {
+                    let rb = info[b].0;
+                    b != a
+                        && rb.x0 >= ra.x1 + 3.0
+                        && rb.x0 - ra.x1 < 0.4 * w
+                        && ra.y1.min(rb.y1) - ra.y0.max(rb.y0) > 0.5 * ra.h().min(rb.h())
+                })
+                .map(|&b| info[b].0.x0)
+                .fold(None, |m: Option<f64>, x| Some(m.map_or(x, |m| m.min(x))));
+            if let Some(bx) = right_of {
+                gaps.push((ra.x1, bx));
+            }
+        }
+        let mut cover: Vec<(f64, usize)> = Vec::new();
+        let mut x = 0.25 * w;
+        while x <= 0.75 * w {
+            cover.push((x, gaps.iter().filter(|g| g.0 < x && x < g.1).count()));
+            x += 1.0;
+        }
+        let max_n = cover.iter().map(|c| c.1).max().unwrap_or(0);
+        let mut best_run: Option<(usize, usize)> = None;
+        let mut i = 0;
+        while i < cover.len() {
+            if cover[i].1 != max_n {
+                i += 1;
+                continue;
+            }
+            let mut j = i;
+            while j + 1 < cover.len() && cover[j + 1].1 == max_n {
+                j += 1;
+            }
+            if best_run.map(|b| j - i > b.1 - b.0).unwrap_or(true) {
+                best_run = Some((i, j));
+            }
+            i = j + 1;
+        }
+        let gutter = best_run.map(|b| (cover[b.0].0 + cover[b.1].0) / 2.0).unwrap_or(w / 2.0);
+        // pages with little text (end matter): fall back on "most text sits in one half or the other"
+        let narrow = |i: usize| info[i].2 && info[i].0.w() < 0.55 * w;
+        let left_n: usize = (0..info.len()).filter(|&i| narrow(i) && info[i].0.x1 <= gutter).map(|i| info[i].1).sum();
+        let right_n: usize = (0..info.len()).filter(|&i| narrow(i) && info[i].0.x0 >= gutter).map(|i| info[i].1).sum();
+        let all_n = info.iter().filter(|x| x.2).map(|x| x.1).sum::<usize>().max(1);
+        let halves = (left_n + right_n) as f64 > 0.5 * all_n as f64
+            && left_n.min(right_n) as f64 > 0.2 * (left_n + right_n) as f64;
+        let two_col = max_n >= 4 || halves;
+        if std::env::var("P2E_DEBUG_ORDER").ok().and_then(|v| v.parse::<usize>().ok()) == Some(pno + 1) {
+            eprintln!("ORDER gutter={gutter:.1} max_n={max_n} halves={halves} two_col={two_col} gaps={}", gaps.len());
+        }
         let mut idx: Vec<usize> = (0..paras.len()).collect();
         let cmp = |a: f64, b: f64| a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal);
+        let mut slots: Vec<Option<Para>> = paras.into_iter().map(Some).collect();
         if !two_col {
             idx.sort_by(|&a, &b| {
                 let (ra, rb) = (info[a].0, info[b].0);
                 cmp((ra.y0 / 4.0).round(), (rb.y0 / 4.0).round()).then(cmp(ra.x0, rb.x0))
             });
-        } else {
-            let mut wide: Vec<usize> = idx.iter().copied().filter(|&i| info[i].0.w() >= 0.55 * w).collect();
-            wide.sort_by(|&a, &b| cmp(info[a].0.y0, info[b].0.y0));
-            let rest: Vec<usize> = idx.iter().copied().filter(|&i| info[i].0.w() < 0.55 * w).collect();
-            let mut out: Vec<usize> = Vec::new();
-            let mut prev_y = -1.0;
-            for wp in wide.iter().map(Some).chain(std::iter::once(None)) {
-                let y = wp.map(|&i| info[i].0.y0).unwrap_or(f64::MAX);
-                let band: Vec<usize> =
-                    rest.iter().copied().filter(|&i| prev_y <= info[i].0.y0 && info[i].0.y0 < y).collect();
-                for left_side in [true, false] {
-                    let mut side: Vec<usize> =
-                        band.iter().copied().filter(|&i| (info[i].0.cx() < w / 2.0) == left_side).collect();
-                    side.sort_by(|&a, &b| cmp(info[a].0.y0, info[b].0.y0));
-                    out.extend(side);
-                }
-                if let Some(&i) = wp {
-                    out.push(i);
-                    prev_y = info[i].0.y0;
-                }
-            }
-            idx = out;
+            return (idx.into_iter().filter_map(|i| slots[i].take()).collect(), None);
         }
-        let mut slots: Vec<Option<Para>> = paras.into_iter().map(Some).collect();
-        idx.into_iter().filter_map(|i| slots[i].take()).collect()
+        // full-width blocks cut the page into bands; each band is read left column, then right
+        // column (text never crosses the gutter unless it spans both columns; a figure's box,
+        // grown by its labels, may stick out of its column a little)
+        let is_wide = |i: usize| {
+            let (r, _, text) = info[i];
+            let m = if text { 3.0 } else { 0.05 * w };
+            (r.x0 < gutter - m && r.x1 > gutter + m) || (!text && r.w() >= 0.55 * w)
+        };
+        let mut wide: Vec<usize> = idx.iter().copied().filter(|&i| is_wide(i)).collect();
+        wide.sort_by(|&a, &b| cmp(info[a].0.y0, info[b].0.y0));
+        let rest: Vec<usize> = idx.iter().copied().filter(|&i| !is_wide(i)).collect();
+        let mut out: Vec<usize> = Vec::new();
+        let mut prev_y = f64::MIN;
+        for wp in wide.iter().map(Some).chain(std::iter::once(None)) {
+            let y = wp.map(|&i| info[i].0.y0).unwrap_or(f64::MAX);
+            let band: Vec<usize> = rest.iter().copied().filter(|&i| prev_y <= info[i].0.y0 && info[i].0.y0 < y).collect();
+            for left_side in [true, false] {
+                let mut side: Vec<usize> = band.iter().copied().filter(|&i| (info[i].0.cx() < gutter) == left_side).collect();
+                side.sort_by(|&a, &b| cmp(info[a].0.y0, info[b].0.y0));
+                out.extend(side);
+            }
+            if let Some(&i) = wp {
+                out.push(i);
+                prev_y = info[i].0.y0;
+            }
+        }
+        idx = out;
+        if std::env::var("P2E_DEBUG_ORDER").ok().and_then(|v| v.parse::<usize>().ok()) == Some(pno + 1) {
+            for &i in &idx {
+                let t: String = slots[i].as_ref().map(|p| p.text()).unwrap_or_default().chars().take(40).collect();
+                eprintln!("  {:?} wide={} {t}", info[i].0, is_wide(i));
+            }
+        }
+        (idx.into_iter().filter_map(|i| slots[i].take()).collect(), Some(gutter))
     }
 
     pub fn classify(&mut self, input: Vec<Para>) -> Vec<Para> {
@@ -853,6 +992,11 @@ impl<'a> Analyzer<'a> {
             }
             let text = p.text();
             let t = trim(&text);
+            // a summary page's "Highlights" box is still front matter (Cell: graphical abstract,
+            // highlights, in brief — then the article itself with title and authors on the next page)
+            if p.kind == Kind::Heading && re!(r"(?i)^(highlights|graphical abstract|in brief)$").is_match(t) {
+                continue;
+            }
             if p.kind == Kind::Heading && (known_sections().is_match(t) || re!(r"^\d+\.?\s+[A-Z]").is_match(t)) {
                 boundary = Some(k);
                 break;
@@ -995,6 +1139,37 @@ impl<'a> Analyzer<'a> {
     }
 }
 
+/// When the PDF tells hyphenation hyphens apart (lines ending in [`GLUE`]), the hyphens left at
+/// line ends are real ones ("sample-|level"): mark them [`HARD_HYPHEN`] so joining keeps them.
+/// Decided per font size: a layout program may do it for the body text and not for the legends.
+pub fn mark_hard_hyphens(pages: &mut [Page]) {
+    let key = |s: f64| ((s * 2.0).round() / 2.0 * 10.0) as i64;
+    let mut glued: HashMap<i64, usize> = HashMap::new();
+    let mut ends: HashMap<i64, usize> = HashMap::new();
+    for l in pages.iter().flat_map(|p| &p.lines) {
+        if l.text.ends_with(GLUE) {
+            *glued.entry(key(l.size)).or_insert(0) += 1;
+        } else if re!(r"[A-Za-z]-$").is_match(&l.text) {
+            *ends.entry(key(l.size)).or_insert(0) += 1;
+        }
+    }
+    for l in pages.iter_mut().flat_map(|p| p.lines.iter_mut()) {
+        let k = key(l.size);
+        let g = glued.get(&k).copied().unwrap_or(0);
+        if g < 3 || g < ends.get(&k).copied().unwrap_or(0) / 2 || !re!(r"[A-Za-z]-$").is_match(&l.text) {
+            continue;
+        }
+        l.text.pop();
+        l.text.push(HARD_HYPHEN);
+        if let Some(sp) = l.spans.iter_mut().rev().find(|sp| !sp.text.trim_end().is_empty()) {
+            let t = sp.text.trim_end().to_string();
+            if let Some(stripped) = t.strip_suffix('-') {
+                sp.text = format!("{stripped}{HARD_HYPHEN}");
+            }
+        }
+    }
+}
+
 fn merge_clusters(cs: &mut Vec<Cluster>, should_merge: impl Fn(&R, &R) -> bool) {
     let mut merged = true;
     while merged {
@@ -1074,7 +1249,9 @@ pub fn styled(p: &Para) -> String {
             h += &c;
             h += &trail;
         }
-        lines_html.push((trim(&l.text).to_string(), trim(&h).to_string()));
+        // the line-end markers: the plain text keeps them to decide the join, the HTML never does
+        let h = trim(&h).replace(GLUE, "").replace(HARD_HYPHEN, "-");
+        lines_html.push((trim(&l.text).to_string(), h));
     }
     // join with the same de-hyphenation rules as join_lines
     let mut out = String::new();
@@ -1089,7 +1266,19 @@ pub fn styled(p: &Para) -> String {
             continue;
         }
         let hyph = re!(r"-((</[a-z]+>)*)$");
-        if re!(r"[A-Za-z]-$").is_match(&out_plain) && first_is_lower(&plain) && hyph.is_match(&out) {
+        if out_plain.ends_with(GLUE) {
+            out += &html;
+            out_plain.pop();
+            out_plain += &plain;
+        } else if out_plain.ends_with(HARD_HYPHEN) {
+            out += &html;
+            out_plain.pop();
+            out_plain.push('-');
+            out_plain += &plain;
+        } else if url_continues(&out_plain, &plain) {
+            out += &html;
+            out_plain += &plain;
+        } else if re!(r"[A-Za-z]-$").is_match(&out_plain) && first_is_lower(&plain) && hyph.is_match(&out) {
             let m = hyph.find(&out).unwrap();
             let tags = out[m.start() + 1..].to_string();
             out.truncate(m.start());

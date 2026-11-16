@@ -367,11 +367,16 @@ struct FigureViewer: View {
     @Environment(\.colorScheme) private var scheme
     @State private var current: Int
     @State private var showCaption = true
+    /// Shown as a card over the text (`figureOverlay`): closing goes through this instead of dismiss.
+    var onClose: (() -> Void)? = nil
 
-    init(figure: ReaderFigure) {
+    init(figure: ReaderFigure, onClose: (() -> Void)? = nil) {
         self.figure = figure
+        self.onClose = onClose
         _current = State(initialValue: figure.set.isEmpty ? 0 : figure.index)
     }
+
+    private func close() { if let onClose { onClose() } else { dismiss() } }
 
     private var figures: [ReaderFigure] { figure.set.isEmpty ? [figure] : figure.set }
     private var shown: ReaderFigure { figures[min(current, figures.count - 1)] }
@@ -388,11 +393,12 @@ struct FigureViewer: View {
             let args = ProcessInfo.processInfo.arguments
             if args.contains("-figNext") { try? await Task.sleep(for: .seconds(3)); withAnimation { current = min(figures.count - 1, current + 1) } }
             guard args.contains("-figClose") else { return }
-            try? await Task.sleep(for: .seconds(4)); dismiss()
+            try? await Task.sleep(for: .seconds(4)); close()
         }
         #endif
         #if os(macOS)
-        .frame(minWidth: 760, idealWidth: 1100, minHeight: 600, idealHeight: 860)
+        .frame(minWidth: onClose == nil ? 760 : nil, idealWidth: onClose == nil ? 1100 : nil,
+               minHeight: onClose == nil ? 600 : nil, idealHeight: onClose == nil ? 860 : nil)
         #endif
     }
 
@@ -437,7 +443,7 @@ struct FigureViewer: View {
                 }
                 .help(showCaption ? "Hide the caption" : "Show the caption")
             }
-            Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").symbolRenderingMode(.hierarchical) }
+            Button { close() } label: { Image(systemName: "xmark.circle.fill").symbolRenderingMode(.hierarchical) }
                 .keyboardShortcut(.cancelAction)
                 .help("Back to the text")
         }
@@ -886,3 +892,42 @@ struct ZoomableImage: NSViewRepresentable {
     }
 }
 #endif
+
+/// The figure viewer as a card over the reading text: the text stays visible (dimmed) around it,
+/// and tapping or clicking it closes the figure, as does the close button or Esc.
+private struct FigureOverlay: ViewModifier {
+    @Binding var figure: ReaderFigure?
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if let f = figure {
+                    ZStack {
+                        Color.black.opacity(0.42)
+                            .ignoresSafeArea()
+                            .contentShape(Rectangle())
+                            .onTapGesture { figure = nil }
+                            .accessibilityLabel("Back to the text")
+                            .accessibilityAddTraits(.isButton)
+                        FigureViewer(figure: f, onClose: { figure = nil })
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .shadow(color: .black.opacity(0.35), radius: 24, y: 8)
+                            #if os(iOS)
+                            .padding(.horizontal, 8)
+                            .padding(.top, 44)       // a strip of text stays visible above …
+                            .padding(.bottom, 56)    // … and below: tap it to go back
+                            #else
+                            .padding(36)
+                            #endif
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                }
+            }
+            .animation(.easeOut(duration: 0.18), value: figure?.id)
+    }
+}
+
+extension View {
+    /// Shows `figure` as a card over this view (see `FigureOverlay`).
+    func figureOverlay(_ figure: Binding<ReaderFigure?>) -> some View { modifier(FigureOverlay(figure: figure)) }
+}

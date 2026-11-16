@@ -183,7 +183,7 @@ struct ReaderWindow: View {
                     .inspectorColumnWidth(min: 300, ideal: 380, max: 560)
             }
         }
-        .sheet(item: $figure) { f in FigureViewer(figure: f) }
+        .figureOverlay($figure)
         .readerFigures(controller, browsing: $showFigures)
         .sheet(item: $editingAnnotation) { a in AnnotationEditor(annotation: a) { refreshHighlights() } }
         .onChange(of: paper?.annotationCount) { refreshHighlights() }

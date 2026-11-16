@@ -3,7 +3,7 @@
 
 use super::net::{self, sniff};
 use super::xml::Doc;
-use super::{arxiv, fail, Options, PaperMeta, Result};
+use super::{arxiv, fail, sciencedirect, Options, PaperMeta, Result};
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
@@ -25,6 +25,8 @@ pub enum Source {
     Pdf { data: Vec<u8>, meta: PaperMeta, label: String },
     /// LaTeXML HTML (arXiv / ar5iv); image paths are relative to `base`.
     Html { doc: Doc, base: url::Url, meta: PaperMeta, label: String },
+    /// Already converted (a publisher's page, e.g. ScienceDirect).
+    Book(Box<super::Book>),
 }
 
 pub type Loader = Box<dyn FnOnce(&Options) -> Result<Source> + Send>;
@@ -110,7 +112,17 @@ pub fn candidates_for_file(path: &Path) -> Result<Vec<Candidate>> {
         "jats" => Ok(vec![cand(format!("JATS {name}"), move |_| {
             Ok(Source::Jats { data, assets: AssetLocator::None, meta: PaperMeta::default(), label: "JATS file".into() })
         })]),
-        _ => Err(fail(format!("{name} is not a PDF or JATS XML file."))),
+        _ => {
+            // a publisher's article page saved from the browser
+            let html = String::from_utf8(data).unwrap_or_else(|e| e.into_bytes().iter().map(|&b| b as char).collect());
+            if sciencedirect::looks_like(&html) {
+                let dir = path.parent().map(|d| d.to_path_buf());
+                return Ok(vec![cand(format!("ScienceDirect page {name}"), move |o| {
+                    Ok(Source::Book(Box::new(sciencedirect::book(&html, dir.as_deref(), None, o)?)))
+                })]);
+            }
+            Err(fail(format!("{name} is not a PDF, JATS XML or a saved article page.")))
+        }
     }
 }
 

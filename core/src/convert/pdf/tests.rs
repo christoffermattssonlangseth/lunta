@@ -193,6 +193,131 @@ fn running_heads_are_noise() {
     assert!(!an.is_noise(&pages[2].lines[1]));
 }
 
+#[test]
+fn line_end_markers_urls_and_captions() {
+    // a hyphenation hyphen taken out (GLUE) joins with nothing; a real one (HARD_HYPHEN) is kept
+    assert_eq!(join_lines([format!("ques{GLUE}").as_str(), "tions remain"]), "questions remain");
+    assert_eq!(join_lines([format!("scA{GLUE}").as_str(), "TAC-seq"]), "scATAC-seq");
+    assert_eq!(join_lines([format!("sample{HARD_HYPHEN}").as_str(), "level data"]), "sample-level data");
+    // URLs broken across lines go on without a space
+    assert_eq!(join_lines(["see https://doi.org/10.", "1038/nature21350."]), "see https://doi.org/10.1038/nature21350.");
+    assert_eq!(join_lines(["at https://doi", ".org/10.1/x"]), "at https://doi.org/10.1/x");
+    assert_eq!(join_lines(["Fig. 1.", "Next"]), "Fig. 1. Next");
+    assert!(!url_continues("plain text.", "next"));
+    // styled HTML follows the same joins and never shows the markers
+    let p = Para::new(
+        vec![line(&format!("sample{HARD_HYPHEN}"), 0, 0.0, 0.0, 10.0), line(&format!("level ques{GLUE}"), 0, 0.0, 12.0, 10.0), line("tions", 0, 0.0, 24.0, 10.0)],
+        0,
+        Kind::Text,
+    );
+    assert_eq!(styled(&p), "sample-level questions");
+    assert_eq!(p.text(), "sample-level questions");
+    // captions: a label followed by punctuation, a capital or nothing; not running text
+    for c in ["Figure 2. Foo", "Fig. 5 | Bar", "Figure 3", "Extended Data Fig. 2 | X", "Figure 1 Overview", "Table S1: x", "Figure 1—The model", "Figure 2 - Overview"] {
+        assert!(caption_re().is_match(c), "{c}");
+    }
+    for c in ["Figure S2G). Top genes", "Fig. 1a and b show", "Figure 2, which", "Figure 4) mapped", "Extended Data Fig. 4a–c). These", "Figs. 3-5 show"] {
+        assert!(!caption_re().is_match(c), "{c}");
+    }
+}
+
+#[test]
+fn hard_hyphens_only_where_the_pdf_tells_soft_ones_apart() {
+    let mk = |texts: &[&str]| {
+        let lines = texts.iter().enumerate().map(|(i, t)| line(t, 0, 50.0, 100.0 + 12.0 * i as f64, 10.0)).collect();
+        vec![Page { width: 612.0, height: 792.0, lines, graphics: PageGraphics::default() }]
+    };
+    let g = format!("ab{GLUE}");
+    let mut pages = mk(&[&g, &g, &g, "sample-", "cd"]);
+    mark_hard_hyphens(&mut pages);
+    assert_eq!(pages[0].lines[3].text, format!("sample{HARD_HYPHEN}"));
+    assert_eq!(pages[0].lines[3].spans[0].text, format!("sample{HARD_HYPHEN}"));
+    // no glued lines: the old rule (drop the hyphen before a lowercase letter) stays
+    let mut pages = mk(&["sample-", "level"]);
+    mark_hard_hyphens(&mut pages);
+    assert_eq!(pages[0].lines[0].text, "sample-");
+}
+
+#[test]
+fn publisher_footers_and_legend_notes_are_noise() {
+    let mut lines = para(LOREM, 0, 72.0, 100.0, 8, 90);
+    lines.push(line("Cell 190, 1–19, January 21, 2027 © 2026 Elsevier Inc. All rights are reserved.", 0, 72.0, 740.0, 7.0));
+    lines.push(line("Jiang et al., 2027, Cell 190, 1–19", 0, 72.0, 752.0, 7.0));
+    lines.push(line("(legend continued on next page)", 0, 400.0, 500.0, 7.5));
+    lines.push(line("(Legend on next page)", 0, 400.0, 520.0, 7.0));
+    let page = Page { width: 612.0, height: 792.0, lines, graphics: PageGraphics::default() };
+    let mut r = White;
+    let log = |_: &str| {};
+    let an = Analyzer::new(vec![page.clone()], &mut r, &log);
+    let n = page.lines.len();
+    for l in &page.lines[n - 4..] {
+        assert!(an.is_noise(l), "{}", l.text);
+    }
+    assert!(!an.is_noise(&page.lines[0]));
+}
+
+/// Two columns with full-width legends between them, and a left column that runs past the
+/// right one: the gutter comes from lines side by side, each band is read left then right.
+#[test]
+fn two_columns_with_full_width_blocks_read_in_bands() {
+    let mut lines = Vec::new();
+    let col = |s: &str, x: f64, y: f64| {
+        let mut l = line(s, 0, x, y, 10.0);
+        l.bbox.x1 = x + 240.0;
+        l
+    };
+    for i in 0..6 {
+        let y = 80.0 + 12.0 * i as f64;
+        lines.push(col(&format!("top left line {i} with words"), 50.0, y));
+        lines.push(col(&format!("top right line {i} with words"), 320.0, y));
+    }
+    // a full-width legend: as much text as both columns
+    for i in 0..8 {
+        let mut l = line(&format!("wide legend line {i} that runs across both of the columns of the page"), 0, 50.0, 180.0 + 9.0 * i as f64, 7.5);
+        l.bbox.x1 = 560.0;
+        lines.push(l);
+    }
+    for i in 0..6 {
+        let y = 280.0 + 12.0 * i as f64;
+        lines.push(col(&format!("bottom left line {i} with words"), 50.0, y));
+        lines.push(col(&format!("bottom right line {i} with words"), 320.0, y));
+    }
+    let page = Page { width: 612.0, height: 792.0, lines, graphics: PageGraphics::default() };
+    let mut r = White;
+    let log = |_: &str| {};
+    let an = Analyzer::new(vec![page.clone()], &mut r, &log);
+    let units: Vec<Para> = page.lines.iter().map(|l| Para::new(vec![l.clone()], 0, Kind::Text)).collect();
+    let (ordered, gutter) = an.order_with_gutter(0, units);
+    let g = gutter.expect("two columns");
+    assert!(g > 290.0 && g < 320.0, "{g}");
+    let texts: Vec<String> = ordered.iter().map(|p| p.text()).collect();
+    let pos = |s: &str| texts.iter().position(|t| t.starts_with(s)).unwrap();
+    assert!(pos("top left line 5") < pos("top right line 0"));
+    assert!(pos("top right line 5") < pos("wide legend line 0"));
+    assert!(pos("wide legend line 7") < pos("bottom left line 0"));
+    assert!(pos("bottom left line 5") < pos("bottom right line 0"));
+}
+
+#[test]
+fn summary_page_highlights_are_front_matter() {
+    let mut p1 = vec![bold(line("Highlights", 0, 72.0, 100.0, 11.0))];
+    p1.extend(para(LOREM, 0, 72.0, 120.0, 3, 60));
+    let mut p2 = vec![
+        bold(line("A Tiny Test Paper About Boxes", 1, 72.0, 80.0, 18.0)),
+        line("Ada Lovelace and Alan Turing", 1, 72.0, 110.0, 11.0),
+        bold(line("SUMMARY", 1, 72.0, 150.0, 11.0)),
+    ];
+    p2.extend(para(LOREM, 1, 72.0, 170.0, 4, 90));
+    let pages = vec![
+        Page { width: 612.0, height: 792.0, lines: p1, graphics: PageGraphics::default() },
+        Page { width: 612.0, height: 792.0, lines: p2, graphics: PageGraphics::default() },
+    ];
+    let (paras, _) = analyse(pages);
+    let hl = paras.iter().find(|p| p.text() == "Highlights").unwrap();
+    assert_eq!(hl.kind, Kind::Front);
+    assert!(paras.iter().any(|p| p.kind == Kind::Heading && p.text() == "SUMMARY"));
+}
+
 // MARK: - PDFium (generated PDF)
 
 /// A small two-page PDF with base-14 fonts: title, authors, abstract, numbered sections, an
