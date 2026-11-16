@@ -17,6 +17,13 @@ local one; see [Desktop app](#desktop-app-windows-and-linux). Devices that canno
 (Android, or anyone who prefers it) can sync the same library through the Google Drive API; see
 [Google Drive sync](#google-drive-sync).
 
+## Coming from Zotero, Mendeley, ReadCube or EndNote?
+
+Export your library as BibTeX or RIS and import it in Lunta for Mac (**File › Import from Zotero,
+Mendeley, ReadCube, EndNote…**, ⇧⌘I). Tags, notes and PDFs come along where the export carries them, and
+duplicates are merged. Step-by-step instructions for each app, and how to use Lunta on a Mac together with
+an Android phone, are in **[Bringing your library to Lunta](docs/importing.md)**.
+
 ## Features
 
 - **Library:** add papers by DOI, link, PMCID or PDF (drag and drop on the Mac; share sheet on iPhone,
