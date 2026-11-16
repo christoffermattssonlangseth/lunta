@@ -2549,7 +2549,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "lunta-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ab_glyph",
  "base64 0.22.1",
@@ -2576,7 +2576,7 @@ dependencies = [
 
 [[package]]
 name = "lunta-desktop"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "block2",
  "lunta-core",
