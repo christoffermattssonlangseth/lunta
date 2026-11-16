@@ -431,6 +431,8 @@ async function read(p: Paper, mode: 'reading' | 'pdf') {
 // ---- wiring ----
 
 listen<string>('status', (e) => { if (busy) status(e.payload, 'busy'); });
+// the browser extension saved a paper, a PDF or a page's full text: show it
+listen<string>('extension', (e) => { if (e.payload) status(e.payload); if (!$('#library').hidden) reload(); });
 
 $('#add').onclick = addPaper;
 $<HTMLSelectElement>('#sort').onchange = (e) => { sort = (e.target as HTMLSelectElement).value; localStorage.setItem('sort', sort); reloadList(); };

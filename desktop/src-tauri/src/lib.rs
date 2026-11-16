@@ -4,11 +4,13 @@
 //! frontend (../src) talks to it through the commands below. Reading views are served by the
 //! `lunta` URI scheme: `lunta://localhost/epub/<paper>/<file>` (http://lunta.localhost/… on
 //! Windows) serves the unpacked EPUB, with the apps' reader scripts injected into the continuous
-//! document, and `/reader/<file>` serves those scripts.
+//! document, and `/reader/<file>` serves those scripts. The browser extension talks to the app
+//! on 127.0.0.1:47480 (`extension`).
 
 mod add;
 #[cfg(all(debug_assertions, target_os = "macos"))]
 mod devsnap;
+mod extension;
 mod positions;
 mod settings;
 mod smart;
@@ -746,6 +748,8 @@ pub fn run() {
                 }
             }
             app.manage(state);
+            // the browser extension's endpoint (127.0.0.1:47480), as Lunta for Mac has it
+            extension::start(app.handle().clone());
             // the window starts hidden (no white flash while the page loads); scripted debug
             // runs keep it hidden so they don't pop up over other work (LUNTA_DEV_SHOW=1 shows it)
             let scripted = cfg!(debug_assertions) && std::env::var("LUNTA_DEV_EVAL_DIR").is_ok() && std::env::var("LUNTA_DEV_SHOW").is_err();

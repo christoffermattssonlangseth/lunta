@@ -184,8 +184,14 @@ and `P2E_DEBUG_CHARS=<page>` dump PDFium's lines and characters for one page.
 
 ### Browser extension
 
-Chrome → `chrome://extensions` → Developer mode → Load unpacked → `extension/`. The Lunta Mac app
-must be running; the extension talks to it on `127.0.0.1:47480` (extension requests only).
+Chrome → `chrome://extensions` → Developer mode → Load unpacked → `extension/`. Lunta (for Mac,
+Windows or Linux) must be running; the extension talks to it on `127.0.0.1:47480` (extension
+requests only): `apple/Mac/ExtensionServer.swift` on the Mac, `desktop/src-tauri/src/extension.rs`
+in the desktop app (same endpoints; "Use this page's full text" through `core/src/pagetext.rs`,
+with the page readers ported to `core/src/convert/webpage.rs` and friends; backups of replaced
+reading views in the app's data folder, `backups/`). A debug desktop build takes another port from
+`LUNTA_EXTENSION_PORT`; on macOS, where the port is Lunta for Mac's, the desktop app opens the
+endpoint only then.
 
 ## Google Drive sync
 
@@ -356,7 +362,7 @@ For scripted UI checks, debug builds run any `*.js` dropped into `$LUNTA_DEV_EVA
 Not in the desktop app yet (the Mac app has them): highlighting in the PDF (PDF highlights made on the
 Mac or iPhone are listed, not drawn), reading views from PDFs, adding a paper from a PDF alone,
 import (Papers, BibTeX, RIS), Discover, New for You,
-Clean Up, Listen, Ask, the MCP server, the browser extension and the Word / Google Docs add-ins.
+Clean Up, Listen, Ask, the MCP server and the Word / Google Docs add-ins.
 
 ## Android app
 

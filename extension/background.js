@@ -1,4 +1,4 @@
-// Lunta extension: talks to the Lunta Mac app on 127.0.0.1:47480 (the app must be running).
+// Lunta extension: talks to the Lunta app (for Mac, Windows or Linux) on 127.0.0.1:47480 (the app must be running).
 const API = "http://127.0.0.1:47480";
 
 async function api(path, options = {}) {
