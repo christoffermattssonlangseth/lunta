@@ -105,6 +105,7 @@ struct LibraryWindow: View {
             if ask.busy { return }
             ask.overview(ids, name: c.name)
         }
+        .task { AppAppearance.apply() }
         .task {
             // the citation card in a reader: open the cited paper, adding it first if needed
             ExternalLinks.onLunta = { [model] url, web in

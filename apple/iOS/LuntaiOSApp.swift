@@ -9,6 +9,8 @@ struct LuntaiOSApp: App {
     @StateObject private var holder = ModelHolder()
     @Environment(\.scenePhase) private var phase
 
+    @AppStorage(AppAppearance.key) private var appearance = AppAppearance.system.rawValue
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -25,6 +27,7 @@ struct LuntaiOSApp: App {
                 }
             }
             .tint(.luntaTeal)
+            .preferredColorScheme((AppAppearance(rawValue: appearance) ?? .system).scheme)
         }
         .onChange(of: phase) { _, p in
             if p == .active, let m = holder.model { m.refresh(); m.freshenReadingViews(); Task { await m.importShared() } }

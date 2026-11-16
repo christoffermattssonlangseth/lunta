@@ -261,6 +261,7 @@ struct LibraryHome: View {
         Section {
             Button { managing = true } label: { Label("Manage Folders & Tags…", systemImage: "folder.badge.gearshape") }
             Button { cleaning = true } label: { Label("Clean Up Library…", systemImage: "wand.and.sparkles") }
+            AppearancePicker().pickerStyle(.menu)
         }
     }
 

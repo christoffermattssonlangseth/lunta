@@ -50,6 +50,7 @@ struct LuntaApp: App {
         }
             .windowResizability(.contentSize)
 
+        Settings { AppSettingsView() }
         WindowGroup("Reader", for: String.self) { $paperID in
             if let model = holder.model, let id = paperID {
                 ReaderWindow(paperID: id).environmentObject(model)
