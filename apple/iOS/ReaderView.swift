@@ -182,10 +182,13 @@ struct ReaderView: View {
             await load()
             #if DEBUG
             await positionTest()
+            await controller.figureTest()
             #endif
         }
         .onAppear { OpenReader.set(paperID); position.resume() }
         .onDisappear {
+            // a figure opened over the reader: it's still there, at the same place
+            guard figure == nil else { return }
             if listening { stopListening() }
             position.stop(paperID, model: model, controller: controller)
             OpenReader.clear(paperID)

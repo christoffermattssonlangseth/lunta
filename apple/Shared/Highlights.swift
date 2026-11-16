@@ -77,6 +77,7 @@ extension ReaderAssets {
         });
       }
       function locate(text, a){
+        if (!a.quote || !a.quote.trim()) return null;   // a note without a passage: nothing to mark (and indexOf('') never ends)
         var best = -1, bestScore = -1, i = text.indexOf(a.quote);
         while (i >= 0) {
           var score = 0;
@@ -107,13 +108,26 @@ extension ReaderAssets {
             if (/[\u2010-\u2014\u2212]/.test(c)) return '-';
             return c.toLowerCase();
           };
-          var dq = ''; for (var u = 0; u < a.quote.length; u++) { if (!/\s/.test(a.quote[u])) dq += foldc(a.quote[u]); }
+          // quote marks are left out too: a PDF's ‘‘x’’ is the web's “x”
+          var skip = /[\s'"\u2018\u2019\u201A\u201B\u201C\u201D\u201E\u201F\u00B4\u0060\u00AB\u00BB]/;
+          var dq = ''; for (var u = 0; u < a.quote.length; u++) { if (!skip.test(a.quote[u])) dq += foldc(a.quote[u]); }
           if (dq.length < 4) return null;
           var dmap = [], dense = '';
-          for (var k2 = 0; k2 < text.length; k2++) { if (!/\s/.test(text[k2])) { dmap.push(k2); dense += foldc(text[k2]); } }
+          for (var k2 = 0; k2 < text.length; k2++) { if (!skip.test(text[k2])) { dmap.push(k2); dense += foldc(text[k2]); } }
           var d = dense.indexOf(dq);
+          var whole = dq;
           if (d < 0 && dq.length > 140) { dq = dq.slice(0, 100); d = dense.indexOf(dq); }
-          if (d < 0) return null;
+          if (d < 0) {
+            dq = whole;
+            // the text changed inside the passage (e.g. a PDF that ran two columns together, now
+            // rebuilt from a better source): its longest surviving start and end, close together
+            var pre = -1, preLen = 0, suf = -1, sufLen = 0;
+            for (var L = Math.min(dq.length - 1, 120); L >= 30; L -= 5) { var x = dense.indexOf(dq.slice(0, L)); if (x >= 0) { pre = x; preLen = L; break; } }
+            if (pre < 0) return null;
+            for (var L2 = Math.min(dq.length - 1, 120); L2 >= 30; L2 -= 5) { var y = dense.indexOf(dq.slice(dq.length - L2), pre + preLen); if (y >= 0) { suf = y; sufLen = L2; break; } }
+            if (suf < 0 || suf + sufLen - pre > dq.length * 2) return null;
+            return [dmap[pre], dmap[suf + sufLen - 1] + 1];
+          }
           return [dmap[d], dmap[d + dq.length - 1] + 1];
         }
         return [best, best + a.quote.length];

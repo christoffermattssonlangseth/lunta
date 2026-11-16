@@ -150,7 +150,7 @@ claude mcp add --scope user lunta -- /Applications/Lunta.app/Contents/MacOS/lunt
 
 Tools: `search_papers`, `list_papers`, `get_paper`, `read_paper` (full text, or the passages matching a query), `cite`
 (APA, Vancouver, Nature, BibTeX, RIS), `library_overview`, `find_new_papers` (OpenAlex), `add_paper`, `find_pdf`,
-`tag_papers`, `add_to_collection`, `set_status`, `add_note`, `update_paper`.
+`tag_papers`, `add_to_collection`, `set_status`, `add_note`, `update_paper`, and for highlights `list_highlights` (across the library; filter by paper, colour, tag, collection or words), `add_highlight` (quote a passage; it shows in the reading view and the PDF) and `update_highlight` (note, colour, delete).
 
 The agent writes through its own change log (`ops/agent-….jsonl`), exactly like another device, so it can work while the
 apps are open and its changes sync to the Mac and iPhone. The same binary is a command-line tool:

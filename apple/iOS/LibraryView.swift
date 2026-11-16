@@ -59,6 +59,11 @@ struct LibraryView: View {
                 var p = NavigationPath(); p.append(SidebarItem.alerts); path = p
                 return
             }
+            if let i = args.firstIndex(of: "-openPaper"), args.indices.contains(i + 1) {   // -openPaper <id>
+                for _ in 0..<40 where model.paper(args[i + 1]) == nil { try? await Task.sleep(for: .milliseconds(250)) }
+                var p = NavigationPath(); p.append(model.source); p.append(ReadTarget(id: args[i + 1])); path = p
+                return
+            }
             guard args.contains("-openFirstPaper") || args.contains("-openFirstInfo") else { return }
             for _ in 0..<40 where model.papers.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
             guard let p = model.papers.first else { return }

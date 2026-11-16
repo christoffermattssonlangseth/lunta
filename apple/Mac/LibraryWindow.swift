@@ -383,6 +383,7 @@ struct PaperTable: View {
         // drag papers onto sidebar folders and tags (AppKit; see PaperDrag.swift). Dragging a
         // selected paper drags the whole selection, as the table drags all selected rows.
         .background(PaperDragSource { [papers = model.papers] row in row < papers.count ? papers[row].id : nil })
+        .background(TableRowHeights(ids: model.papers.map(\.id)))
         .contextMenu(forSelectionType: String.self) { ids in
             PaperMenu(ids: Array(ids))
         } primaryAction: { ids in

@@ -95,7 +95,7 @@ fn details(lib: &Library, p: &Paper) -> Value {
     let notes: Vec<Value> = lib
         .annotations(p.id.clone())
         .into_iter()
-        .map(|a| json!({"id": a.id, "kind": format!("{:?}", a.kind).to_lowercase(), "quote": a.quote, "note": a.note}))
+        .map(|a| json!({"id": a.id, "kind": format!("{:?}", a.kind).to_lowercase(), "color": a.color, "quote": a.quote, "note": a.note}))
         .collect();
     json!({
         "id": p.id,
@@ -120,6 +120,38 @@ fn details(lib: &Library, p: &Paper) -> Value {
         "open_in_app": format!("lunta://open?id={}", p.id),
         "doi_link": if p.meta.doi.is_empty() { Value::Null } else { json!(format!("https://doi.org/{}", p.meta.doi)) },
     })
+}
+
+/// A highlight or note as the tools show it.
+fn highlight_json(a: &Annotation, title: Option<&str>) -> Value {
+    let mut v = json!({
+        "highlight_id": a.id,
+        "paper_id": a.paper_id,
+        "kind": format!("{:?}", a.kind).to_lowercase(),
+        "color": a.color,
+        "quote": a.quote.split_whitespace().collect::<Vec<_>>().join(" "),
+        "note": a.note,
+        "made_in": match a.location.split(':').next().unwrap_or("") { "epub" => "reading view", "pdf" => "pdf", _ => "note on the paper" },
+        "created": date(a.created),
+    });
+    if let Some(t) = title {
+        v["paper_title"] = json!(t);
+    }
+    v
+}
+
+/// YYYY-MM-DD for a time in ms since 1970 (UTC).
+fn date(ms: i64) -> String {
+    let z = ms.div_euclid(86_400_000) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{y:04}-{m:02}-{d:02}")
 }
 
 fn full_text(lib: &Library, id: &str) -> Option<String> {
@@ -236,7 +268,7 @@ fn tools() -> Value {
     }
     let ids = json!({"type": "array", "items": {"type": "string"}, "description": "Paper ids"});
     json!([
-        t("search_papers", "Search the user's Lunta library (titles, authors, abstracts, full text, notes). Returns paper summaries with ids.",
+        t("search_papers", "Search the user's Lunta library (titles, authors, abstracts, full text, and the user's highlights and notes). Returns paper summaries with ids.",
           json!({"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}}), &["query"], true),
         t("list_papers", "List papers in the library, optionally filtered (unread, starred, must_read: the user's reading queue, tag, collection) and sorted.",
           json!({"unread": {"type": "boolean"}, "starred": {"type": "boolean"}, "must_read": {"type": "boolean"}, "tag": {"type": "string"},
@@ -264,6 +296,18 @@ fn tools() -> Value {
           json!({"ids": ids, "read": {"type": "boolean"}, "starred": {"type": "boolean"}, "must_read": {"type": "boolean"}}), &["ids"], false),
         t("add_note", "Attach a note to a paper (shown in Lunta on Mac and iPhone). Optionally quote the passage it refers to.",
           json!({"id": {"type": "string"}, "note": {"type": "string"}, "quote": {"type": "string"}}), &["id", "note"], false),
+        t("list_highlights", "The user's highlights and notes across the library, newest first, with the paper each is in. Filter by paper, colour, tag, collection, or words in the highlighted text or note (e.g. to find papers where the user highlighted something).",
+          json!({"paper_id": {"type": "string"}, "color": {"type": "string", "enum": ["yellow", "green", "blue", "pink"]},
+                 "tag": {"type": "string"}, "collection": {"type": "string", "description": "Collection name"},
+                 "query": {"type": "string", "description": "Words that must all appear in the highlighted text or the note"},
+                 "limit": {"type": "integer", "default": 25}, "offset": {"type": "integer", "default": 0}}), &[], true),
+        t("add_highlight", "Highlight a passage in a paper's reading view by quoting it exactly (copy the text from read_paper; a sentence or part of one). Optionally attach a note. Shows in Lunta on Mac and iPhone, in the reading view and the PDF. If the passage occurs more than once, pass `before`: a few words just before it.",
+          json!({"id": {"type": "string", "description": "Paper id"}, "quote": {"type": "string", "description": "The passage, word for word"},
+                 "before": {"type": "string", "description": "A few words just before the passage, to tell repeated passages apart"},
+                 "note": {"type": "string"}, "color": {"type": "string", "enum": ["yellow", "green", "blue", "pink"], "default": "yellow"}}), &["id", "quote"], false),
+        t("update_highlight", "Change a highlight's or note's text note or colour, or delete it (ids from list_highlights or get_paper).",
+          json!({"highlight_id": {"type": "string"}, "note": {"type": "string", "description": "New note; empty string removes the note"},
+                 "color": {"type": "string", "enum": ["yellow", "green", "blue", "pink"]}, "delete": {"type": "boolean", "default": false}}), &["highlight_id"], false),
         t("update_paper", "Correct a paper's details. Only the fields given are changed.",
           json!({"id": {"type": "string"}, "title": {"type": "string"}, "authors": {"type": "array", "items": {"type": "string"}},
                  "date": {"type": "string"}, "journal": {"type": "string"}, "doi": {"type": "string"}, "abstract": {"type": "string"},
@@ -417,6 +461,55 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
             };
             let saved = lib.save_annotation(ann).map_err(|e| e.to_string())?;
             Ok(json!({"note_id": saved.id}))
+        }
+        "list_highlights" => {
+            let collection = match arg_str(a, "collection") { Some(c) => Some(collection_id(lib, &c, false)?), None => None };
+            let paper = arg_str(a, "paper_id");
+            if let Some(p) = &paper { need(p)?; }
+            let all = lib.find_annotations(lunta_core::highlight::AnnotationFilter {
+                paper, color: arg_str(a, "color"), tag: arg_str(a, "tag"), collection, query: arg_str(a, "query"),
+            });
+            let off = arg_u(a, "offset", 0) as usize;
+            let lim = arg_u(a, "limit", 25).min(200) as usize;
+            let mut titles: HashMap<String, String> = HashMap::new();
+            let page: Vec<Value> = all.iter().skip(off).take(lim).map(|x| {
+                let t = titles.entry(x.paper_id.clone()).or_insert_with(|| lib.paper(x.paper_id.clone()).map(|p| p.meta.title).unwrap_or_default());
+                highlight_json(x, Some(t))
+            }).collect();
+            let next = if off + page.len() < all.len() { json!(off + page.len()) } else { Value::Null };
+            Ok(json!({"total": all.len(), "next_offset": next, "highlights": page}))
+        }
+        "add_highlight" => {
+            let id = arg_str(a, "id").ok_or("id is required")?;
+            let p = need(&id)?;
+            let quote = arg_str(a, "quote").ok_or("quote is required")?;
+            let saved = lib
+                .add_highlight(id, quote, arg_str(a, "before"), arg_str(a, "color").unwrap_or_default(), arg_str(a, "note").unwrap_or_default())
+                .map_err(|e| e.to_string())?;
+            Ok(highlight_json(&saved, Some(&p.meta.title)))
+        }
+        "update_highlight" => {
+            let hid = arg_str(a, "highlight_id").ok_or("highlight_id is required")?;
+            let mut h = lib.annotation(hid.clone()).ok_or(format!("no highlight with id {hid}"))?;
+            if a.get("delete").and_then(|v| v.as_bool()).unwrap_or(false) {
+                lib.delete_annotation(h.paper_id.clone(), hid.clone()).map_err(|e| e.to_string())?;
+                return Ok(json!({"deleted": hid}));
+            }
+            if let Some(c) = arg_str(a, "color") {
+                let c = c.trim().to_lowercase();
+                if !lunta_core::highlight::COLORS.contains(&c.as_str()) { return Err(format!("unknown colour {c}: use yellow, green, blue or pink")); }
+                h.color = c;
+            }
+            if let Some(n) = a.get("note").and_then(|v| v.as_str()) {
+                h.note = n.trim().to_string();
+                // a quoted passage without a note is a plain highlight; a note on the paper stays a note
+                if !h.quote.trim().is_empty() {
+                    h.kind = if h.note.is_empty() { AnnotationKind::Highlight } else { AnnotationKind::Note };
+                }
+            }
+            let saved = lib.save_annotation(h).map_err(|e| e.to_string())?;
+            let title = lib.paper(saved.paper_id.clone()).map(|p| p.meta.title);
+            Ok(highlight_json(&saved, title.as_deref()))
         }
         "update_paper" => {
             let id = arg_str(a, "id").ok_or("id is required")?;

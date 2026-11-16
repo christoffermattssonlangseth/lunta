@@ -47,13 +47,15 @@ public enum Paper2Epub {
                 for c in Resolver.doiCandidates(doi, log: log) {
                     guard let src = try? await c.load() else { continue }
                     switch src {
-                    case .jats, .html: return try await build(src, pdf: data, log: log)
+                    case .jats, .html, .book: return try await build(src, pdf: data, log: log)
                     case .pdf: continue      // the arXiv PDF candidate: we already have this PDF
                     }
                 }
                 log("No XML version; converting the PDF itself")
             }
             return try await PDFBook.build(data, meta: meta, log: log)
+        case .book(let book):
+            return book
         case .html(let root, let base, let meta, let label):
             log("Converting \(label)")
             let conv = ArxivConverter(root: root, base: base)

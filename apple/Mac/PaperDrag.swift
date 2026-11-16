@@ -196,3 +196,55 @@ struct PaperDragSource: NSViewRepresentable {
 }
 
 private var anchorKey: UInt8 = 0
+
+/// Makes the paper table measure its rows again when papers come or go.
+///
+/// SwiftUI's Table on macOS 26 keeps the height it measured for a row index: papers inserted while
+/// the table is on screen (a sync, New for You, the extension) were drawn at the old rows' heights
+/// and overlapped. When the list of ids changes, every row's height is asked for again.
+struct TableRowHeights: NSViewRepresentable {
+    let ids: [String]
+
+    func makeNSView(context: Context) -> Probe { Probe() }
+
+    func updateNSView(_ v: Probe, context: Context) {
+        guard v.ids != ids else { return }
+        let first = v.ids.isEmpty
+        v.ids = ids
+        if first { return }
+        // after SwiftUI has applied the new rows
+        DispatchQueue.main.async { v.remeasure() }
+    }
+
+    final class Probe: NSView {
+        var ids: [String] = []
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        func remeasure() {
+            guard let table = findTable() else { return }
+            let n = table.numberOfRows
+            guard n > 0 else { return }
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0
+                table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<n))
+            }
+        }
+
+        /// The table this probe sits behind: the nearest table among its ancestors' subviews with
+        /// one row per paper (not the sidebar's outline view).
+        private func findTable() -> NSTableView? {
+            var v: NSView? = superview
+            while let cur = v {
+                if let t = Self.table(in: cur, rows: ids.count) { return t }
+                v = cur.superview
+            }
+            return nil
+        }
+
+        private static func table(in v: NSView, rows: Int) -> NSTableView? {
+            if let t = v as? NSTableView, !(t is NSOutlineView), t.numberOfRows == rows { return t }
+            for s in v.subviews { if let t = table(in: s, rows: rows) { return t } }
+            return nil
+        }
+    }
+}

@@ -539,7 +539,7 @@ final class WatchCenter: ObservableObject {
         let venue = h.meta.journal.lowercased()
         return source.hasSuffix("Rxiv") || venue.contains("rxiv") || venue.contains("preprint")
             || venue.contains("research square") || venue.contains("ssrn") || venue.contains("qeios")
-            || h.meta.doi.hasPrefix("10.1101/") || h.meta.doi.hasPrefix("10.48550/") || h.meta.doi.hasPrefix("10.21203/")
+            || h.meta.doi.hasPrefix("10.1101/") || h.meta.doi.hasPrefix("10.64898/") || h.meta.doi.hasPrefix("10.48550/") || h.meta.doi.hasPrefix("10.21203/")
     }
 
     @Published var summarizing = false

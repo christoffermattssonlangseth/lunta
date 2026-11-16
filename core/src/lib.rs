@@ -17,6 +17,7 @@ pub mod convert;
 pub mod drive;
 pub mod epub;
 pub mod export;
+pub mod highlight;
 pub mod import;
 pub mod index;
 pub mod metadata;
@@ -420,6 +421,73 @@ impl Library {
         self.op(OpKind::AnnotationDelete { paper, id })?;
         self.reindex()?;
         Ok(())
+    }
+
+    /// Highlights and notes across the library, newest first, filtered (see `AnnotationFilter`).
+    pub fn find_annotations(&self, filter: highlight::AnnotationFilter) -> Vec<Annotation> {
+        let g = self.inner.lock().unwrap();
+        let want_color = filter.color.as_deref().map(|c| c.trim().to_lowercase()).filter(|c| !c.is_empty());
+        let query = filter.query.as_deref().map(str::trim).filter(|q| !q.is_empty());
+        let mut v: Vec<Annotation> = g
+            .state
+            .annotations
+            .iter()
+            .filter(|(pid, _)| filter.paper.as_ref().map_or(true, |p| p == *pid))
+            .filter(|(pid, _)| {
+                let Some(p) = g.state.papers.get(*pid) else { return false };
+                filter.tag.as_ref().map_or(true, |t| p.tags.iter().any(|x| x.eq_ignore_ascii_case(t)))
+                    && filter.collection.as_ref().map_or(true, |c| p.collections.contains(c))
+            })
+            .flat_map(|(_, m)| m.values())
+            .filter(|a| want_color.as_ref().map_or(true, |c| a.color.eq_ignore_ascii_case(c)))
+            .filter(|a| query.map_or(true, |q| highlight::matches_query(a, q)))
+            .cloned()
+            .collect();
+        v.sort_by(|a, b| (b.created, b.modified, &b.id).cmp(&(a.created, a.modified, &a.id)));
+        v
+    }
+
+    /// A highlight or note by its id (in any paper).
+    pub fn annotation(&self, id: String) -> Option<Annotation> {
+        let g = self.inner.lock().unwrap();
+        g.state.annotations.values().find_map(|m| m.get(&id).cloned())
+    }
+
+    /// Finds `quote` in the paper's reading view (or, without one, its full text) and returns an
+    /// unsaved highlight anchored there the way the reader anchors a selection. Whitespace, case,
+    /// curly quotes and dashes may differ from the page, and the quote may run across italics,
+    /// links and paragraphs. `before`: a few words just before the passage, to pick one of several
+    /// occurrences. Errors if the passage isn't found or occurs more than once.
+    pub fn anchor_highlight(&self, paper: String, quote: String, before: Option<String>) -> Result<Annotation> {
+        let p = self.paper(paper.clone()).ok_or(CoreError::NotFound(paper.clone()))?;
+        let (text, location) = if self.file_path(paper.clone(), FileKind::Epub).is_some() {
+            let book = self.open_epub(paper.clone())?;
+            (highlight::dom_text(&std::fs::read_to_string(&book.combined)?), "epub")
+        } else if let Some(ft) = self.file_path(paper.clone(), FileKind::Fulltext) {
+            (std::fs::read_to_string(ft)?, "pdf")
+        } else if p.has_epub {
+            return Err(CoreError::NotFound("the paper's reading view isn't downloaded on this device yet".into()));
+        } else {
+            return Err(CoreError::NotFound("the paper has no reading view or full text to highlight in".into()));
+        };
+        let range = highlight::locate(&text, &quote, before.as_deref().filter(|b| !b.trim().is_empty()))?;
+        Ok(highlight::anchor(&paper, &text, range, location))
+    }
+
+    /// Highlights a passage by quoting it (see `anchor_highlight`), with a colour ("yellow",
+    /// "green", "blue", "pink") and an optional note, and saves it.
+    pub fn add_highlight(&self, paper: String, quote: String, before: Option<String>, color: String, note: String) -> Result<Annotation> {
+        let color = if color.trim().is_empty() { "yellow".to_string() } else { color.trim().to_lowercase() };
+        if !highlight::COLORS.contains(&color.as_str()) {
+            return Err(CoreError::Invalid(format!("unknown colour {color}: use yellow, green, blue or pink")));
+        }
+        let mut a = self.anchor_highlight(paper, quote, before)?;
+        a.color = color;
+        a.note = note.trim().to_string();
+        if !a.note.is_empty() {
+            a.kind = AnnotationKind::Note;
+        }
+        self.save_annotation(a)
     }
 
     // ---- search & export ----

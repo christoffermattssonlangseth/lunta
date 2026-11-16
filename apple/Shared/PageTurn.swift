@@ -155,7 +155,12 @@ extension ReaderAssets {
       window.addEventListener('scroll', function(){
         if (!on || busy) return;
         clearTimeout(settle);
-        settle = setTimeout(function(){ if (Math.abs(vw() - W) < 0.01 && page() !== heldPage) { heldPage = -1; remember(); } show(); }, 150);
+        settle = setTimeout(function(){
+          if (Math.abs(vw() - W) < 0.01 && page() !== heldPage) { heldPage = -1; remember(); }
+          // Mac: never left between two pages (a selection dragged past the edge scrolls the page)
+          if (!native && W && Math.abs(window.scrollX - page() * W) > 2) window.luntaGoToPage(page(), false);
+          show();
+        }, 150);
       });
       var resizing = null;
       window.addEventListener('resize', function(){
@@ -166,12 +171,27 @@ extension ReaderAssets {
       if (window.visualViewport) window.visualViewport.addEventListener('resize', function(){ if (on) watchSize(); });
       window.addEventListener('load', function(){ if (on) { show(); } });
 
+      // Selecting text never turns the page. iPhone: dragging a selection handle near the screen's
+      // edge makes WebKit scroll the page sideways (its selection autoscroll); the app holds the
+      // page still while text is selected (PageMessageHandler.held) and lines it up again after.
+      // Mac: a selection dragged past the edge can shift the page; it is put back once settled.
+      var selOn = false, selAt = 0;
+      document.addEventListener('selectionchange', function(){
+        var s = window.getSelection(), has = !!(s && !s.isCollapsed);
+        if (has || selOn) selAt = Date.now();
+        if (has === selOn) return;
+        selOn = has;
+        if (native) post({ selecting: has });
+      });
+
       // taps: edges turn the page, the middle shows or hides the bars (iPhone)
       document.addEventListener('click', function(e){
         if (!on || !native || e.defaultPrevented) return;
         if (document.body.classList.contains('listening')) return;
         if (e.target.closest && e.target.closest('a, img, mark, button, input, .m-scroll, svg')) return;
         var s = window.getSelection(); if (s && !s.isCollapsed) return;
+        // the tap that only dismissed a selection (or ended a handle drag) doesn't turn
+        if (Date.now() - selAt < 600) return;
         var x = e.clientX / window.innerWidth;
         if (x < 0.22) window.luntaTurn(-1);
         else if (x > 0.78) window.luntaTurn(1);
@@ -225,12 +245,27 @@ struct PagedState: Equatable {
 final class PageMessageHandler: NSObject, WKScriptMessageHandler {
     var state: PagedState?
     var onChrome: () -> Void = {}
+    #if os(iOS)
+    /// Text is selected in the page (the page is then held still, see `moved`).
+    fileprivate var selecting = false
+    /// Where the page is held while text is selected.
+    fileprivate var held: CGFloat?
+    fileprivate weak var watched: UIScrollView?
+    fileprivate weak var webView: WKWebView?
+    fileprivate var sync: DispatchWorkItem?
+    fileprivate var offsetWatch: NSKeyValueObservation?
+    #endif
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
         #if os(iOS)
         if let d = m.body as? [String: Any], let n = d["page"] as? Int, let v = m.webView {
             Self.show(page: n, in: v, animated: d["smooth"] as? Bool ?? false)
             return
         }
+        if let d = m.body as? [String: Any], let on = d["selecting"] as? Bool, let v = m.webView {
+            selectionChanged(on, in: v)
+            return
+        }
+        if m.body as? String == "hello", let v = m.webView { selecting = false; held = nil; watch(v) }
         #endif
         guard let s = m.body as? String else { return }
         if s == "hello", let state, let v = m.webView { v.evaluateJavaScript(state.call) }
@@ -260,11 +295,72 @@ extension PageMessageHandler {
             return
         }
         latest[ObjectIdentifier(v)] = n
-        let x = min(CGFloat(n) * w, lastPage * w)
-        sv.setContentOffset(CGPoint(x: max(0, x), y: 0), animated: animated)
+        let x = max(0, min(CGFloat(n) * w, lastPage * w))
+        // a turn while text is selected (narration, contents): that page is the one to hold
+        let h = handlers.object(forKey: v)
+        h?.held = x
+        sv.setContentOffset(CGPoint(x: x, y: 0), animated: animated && h?.selecting != true)
     }
     @MainActor private static var latest: [ObjectIdentifier: Int] = [:]
+    @MainActor private static let handlers = NSMapTable<WKWebView, PageMessageHandler>.weakToWeakObjects()
 
+    // Selecting text must never move the page. Dragging a selection handle near the screen's edge
+    // makes WebKit scroll the page towards it (its selection autoscroll), a little at a time, which
+    // left the page shifted part-way to the next one. While text is selected the scroll view is held
+    // where it was; only a finger swiping the page (or a turn the app asks for) moves it then.
+
+    /// Follows the page's scroll view (once per web view).
+    @MainActor private func watch(_ v: WKWebView) {
+        Self.handlers.setObject(self, forKey: v)
+        webView = v
+        guard watched !== v.scrollView else { return }
+        watched = v.scrollView
+        offsetWatch = v.scrollView.observe(\.contentOffset, options: [.new]) { [weak self] sv, _ in
+            MainActor.assumeIsolated { self?.moved(sv) }
+        }
+    }
+
+    @MainActor private func moved(_ sv: UIScrollView) {
+        guard selecting, state?.on == true else { return }
+        let x = sv.contentOffset.x
+        if sv.isDragging || sv.isDecelerating { held = x; return }   // a swipe turns the page as usual
+        guard let held else { held = x; return }
+        guard abs(x - held) > 0.5 else { return }
+        // WebKit's autoscroll: undo it at once (nothing shows of it), and tell the page too, which
+        // would otherwise go on thinking it had scrolled (and place the selection by that)
+        sv.contentOffset.x = held
+        // (again a moment later: WebKit can deliver a last step of its scroll after the first)
+        sync?.cancel()
+        let now = DispatchWorkItem { [weak self] in self?.syncPage() }
+        let later = DispatchWorkItem { [weak self] in self?.syncPage() }
+        sync = later
+        DispatchQueue.main.async(execute: now)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: later)
+    }
+
+    @MainActor private func syncPage() {
+        guard selecting, let h = held, let v = webView else { return }
+        v.evaluateJavaScript("if (Math.abs(window.scrollX - \(h)) > 0.5) window.scrollTo(\(h), 0)")
+    }
+
+    @MainActor private func selectionChanged(_ on: Bool, in v: WKWebView) {
+        watch(v)
+        let sv = v.scrollView
+        selecting = on
+        guard state?.on == true else { return }
+        let w = sv.bounds.width
+        guard w > 0, !sv.isDragging, !sv.isDecelerating else { held = nil; return }
+        let x = sv.contentOffset.x
+        if on {
+            // the page being read (a long press needs a still finger, so the page is at rest)
+            held = x
+        } else {
+            held = nil
+            // whatever moved it meanwhile, the page ends up whole
+            let page = (x / w).rounded()
+            if abs(x - page * w) > 1 { Self.show(page: Int(page), in: v, animated: true) }
+        }
+    }
 }
 #endif
 

@@ -665,6 +665,12 @@ final class LibraryModel: ObservableObject {
 
     /// Makes the reflowable reading view for one paper: from its PDF if we have one (the converter
     /// still prefers an open-access XML version found via the PDF's DOI), else via PMCID / DOI.
+    /// DOIs of preprint servers (same list as the core's `is_preprint_doi`).
+    nonisolated static func isPreprintDOI(_ doi: String) -> Bool {
+        let d = doi.lowercased()
+        return ["10.1101/", "10.64898/", "10.48550/", "10.21203/", "10.2139/ssrn", "10.31219/", "10.31234/", "10.26434/", "10.20944/", "10.22541/"].contains { d.hasPrefix($0) }
+    }
+
     @discardableResult
     func makeReadingView(_ id: String) async -> Bool {
         guard let p = lib.paper(id: id) else { return false }
@@ -672,7 +678,10 @@ final class LibraryModel: ObservableObject {
         defer { try? FileManager.default.removeItem(at: tmp) }
         var result: ConversionResult?
         // arXiv: the HTML arXiv renders from the LaTeX (real equations, figures) beats the PDF
-        let arxiv = !p.meta.arxiv.isEmpty ? p.meta.arxiv
+        // (only for papers that are arXiv preprints: a paper published in a journal is read in its published form)
+        let journalDOI = !p.meta.doi.isEmpty && !Self.isPreprintDOI(p.meta.doi)
+        let arxiv = journalDOI ? ""
+            : !p.meta.arxiv.isEmpty ? p.meta.arxiv
             : (p.meta.doi.lowercased().hasPrefix("10.48550/arxiv.") ? String(p.meta.doi.dropFirst("10.48550/arxiv.".count)) : "")
         if !arxiv.isEmpty {
             result = try? await Paper2Epub.convert("arxiv:\(arxiv)", into: tmp)

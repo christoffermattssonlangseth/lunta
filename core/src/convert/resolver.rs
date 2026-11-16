@@ -76,7 +76,7 @@ pub fn candidates(input: &str) -> Result<Vec<Candidate>> {
     {
         let p = pmid.clone();
         return Ok(vec![cand(format!("PubMed {pmid}"), move |o| {
-            europe_pmc_by_query(&format!("EXT_ID:{p} AND SRC:MED"), &format!("PMID {p}"), o)
+            europe_pmc_by_query(&format!("EXT_ID:{p} AND SRC:MED"), &format!("PMID {p}"), false, o)
         })]);
     }
 
@@ -93,7 +93,7 @@ pub fn candidates(input: &str) -> Result<Vec<Candidate>> {
     if s.chars().all(|c| c.is_numeric()) && s.chars().count() >= 5 {
         let p = s.clone();
         return Ok(vec![cand(format!("PubMed {s}"), move |o| {
-            europe_pmc_by_query(&format!("EXT_ID:{p} AND SRC:MED"), &format!("PMID {p}"), o)
+            europe_pmc_by_query(&format!("EXT_ID:{p} AND SRC:MED"), &format!("PMID {p}"), false, o)
         })]);
     }
     Err(fail(format!("Don't know how to read “{input}”. Try a DOI, a link to the article, or a PMCID.")))
@@ -145,7 +145,7 @@ pub fn doi_in(s: &str) -> Option<String> {
     }
     d = d.trim_matches(|c| ".,;)".contains(c)).to_string();
     // bioRxiv / medRxiv URLs carry a version: 10.1101/2024.01.02.573123v2 -> 10.1101/2024.01.02.573123
-    if d.starts_with("10.1101/") {
+    if d.starts_with("10.1101/") || d.starts_with("10.64898/") {
         d = re(r"v\d+$", false).replace(&d, "").into_owned();
     }
     Some(d)
@@ -180,7 +180,7 @@ pub fn doi_candidates(doi: &str) -> Vec<Candidate> {
     let mut out = Vec::new();
     let d = doi.to_string();
     out.push(cand(format!("Europe PMC full text for {doi}"), move |o| {
-        europe_pmc_by_query(&format!("DOI:\"{d}\""), &d, o)
+        europe_pmc_by_query(&format!("DOI:\"{d}\""), &d, crate::metadata::is_preprint_doi(&d), o)
     }));
     if doi.to_lowercase().starts_with("10.7554/elife.") {
         let num: String = doi.split('.').next_back().unwrap_or("").chars().filter(|c| c.is_numeric()).collect();
@@ -192,7 +192,9 @@ pub fn doi_candidates(doi: &str) -> Vec<Candidate> {
 
 // MARK: - Europe PMC / PMC
 
-pub fn europe_pmc_by_query(query: &str, what: &str, o: &Options) -> Result<Source> {
+/// `allow_preprint`: a preprint's XML may be used (only when the paper itself is a preprint; a
+/// published paper never gets its preprint's text).
+pub fn europe_pmc_by_query(query: &str, what: &str, allow_preprint: bool, o: &Options) -> Result<Source> {
     let url = format!(
         "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query={}&resultType=core&format=json",
         net::encode_query(query)
@@ -205,7 +207,8 @@ pub fn europe_pmc_by_query(query: &str, what: &str, o: &Options) -> Result<Sourc
         .and_then(|x| x.as_array())
         .cloned()
         .unwrap_or_default();
-    let Some(hit) = results.first() else { return Err(fail(format!("Europe PMC does not know {what}"))) };
+    // the published article beats a preprint of it (Europe PMC can list both for one DOI)
+    let Some(hit) = results.iter().find(|h| h.get("source").and_then(|x| x.as_str()) != Some("PPR")).or(results.first()) else { return Err(fail(format!("Europe PMC does not know {what}"))) };
     let meta = epmc_meta(hit);
     if let Some(pmcid) = hit.get("pmcid").and_then(|x| x.as_str()) {
         let mut src = pmc_source(pmcid, o)?;
@@ -214,7 +217,7 @@ pub fn europe_pmc_by_query(query: &str, what: &str, o: &Options) -> Result<Sourc
         }
         return Ok(src);
     }
-    if hit.get("source").and_then(|x| x.as_str()) == Some("PPR") {
+    if allow_preprint && hit.get("source").and_then(|x| x.as_str()) == Some("PPR") {
         if let Some(id) = hit.get("id").and_then(|x| x.as_str()) {
             // preprint with full text
             let xml = europe_pmc_full_text(id, o)?;

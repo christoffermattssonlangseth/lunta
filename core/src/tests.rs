@@ -306,7 +306,12 @@ fn finds_open_access_pdfs() {
     let m = metadata::resolve("10.1016/j.cell.2024.02.030").unwrap();
     let c = metadata::pdf_candidates(&m);
     println!("{c:#?}");
-    assert!(c.iter().any(|x| x.url.contains("biorxiv")), "expected the bioRxiv preprint");
+    // a published (Cell) paper never gets its bioRxiv preprint
+    assert!(!c.iter().any(|x| x.url.contains("biorxiv") || x.version == "preprint"), "no preprints for a published paper");
+    assert!(metadata::is_preprint_doi("10.1101/2024.01.02.573123") && !metadata::is_preprint_doi("10.1016/j.cell.2024.02.030"));
+    // a preprint itself still finds its own PDF
+    let pre = metadata::resolve("10.1101/2023.04.13.536804").unwrap();
+    assert!(metadata::pdf_candidates(&pre).iter().any(|x| x.version == "preprint" || x.url.contains("rxiv")), "{:#?}", metadata::pdf_candidates(&pre));
     let banksy = metadata::resolve("PMC10937399").unwrap();
     let c2 = metadata::pdf_candidates(&banksy);
     assert_eq!(c2[0].label, "PubMed Central");
@@ -437,4 +442,106 @@ fn must_read_list() {
     lib.set_must_read(p.id.clone(), true).unwrap();
     let phone = open(&root, "phone");
     assert!(phone.paper(p.id.clone()).unwrap().must_read);
+}
+
+// ---- highlights by quote, and across the library ----
+
+/// A small two-section EPUB like the converter's (body text with inline markup, a script, entities).
+fn tiny_epub() -> Vec<u8> {
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+    let mut zw = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let o = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let mut add = |name: &str, data: &str| {
+        zw.start_file(name, o).unwrap();
+        zw.write_all(data.as_bytes()).unwrap();
+    };
+    add("mimetype", "application/epub+zip");
+    add("META-INF/container.xml", r#"<?xml version="1.0"?><container><rootfiles><rootfile full-path="EPUB/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>"#);
+    add("EPUB/content.opf", r#"<package><manifest><item id="c1" href="text/ch01.xhtml" media-type="application/xhtml+xml"/><item id="c2" href="text/ch02.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c1"/><itemref idref="c2"/></spine></package>"#);
+    let page = |body: &str| format!("<?xml version=\"1.0\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>t</title><style>p {{ x: 1 }}</style></head><body>\n{body}\n</body></html>");
+    add("EPUB/text/ch01.xhtml", &page("<h1>Introduction</h1>\n<p>Strains of <i>Escherichia</i>\n   coli grew &amp; divided within 20&#160;min.</p>\n<script>var t = 'grew';</script>\n<p>The cells were washed twice.</p>"));
+    add("EPUB/text/ch02.xhtml", &page("<h2>Methods</h2>\n<p>Before imaging, the cells were washed twice.</p>\n<p>Results are “robust” — see <a href=\"#f1\">Fig.&#160;2</a>.</p>"));
+    drop(add);
+    zw.finish().unwrap().into_inner()
+}
+
+#[test]
+fn highlights_by_quote() {
+    let root = tmp().join("lib");
+    let lib = open(&root, "mac");
+    let p = lib.add_paper(sample(), None, Some(tiny_epub()), None).unwrap();
+    let book = lib.open_epub(p.id.clone()).unwrap();
+    // the coordinate system: the page's body text, as the reader's textNodes() join it
+    let text = highlight::dom_text(&std::fs::read_to_string(&book.combined).unwrap());
+    assert!(text.contains("Strains of Escherichia\n   coli grew & divided within 20\u{a0}min."));
+    assert!(!text.contains("var t"), "script text is not page text");
+
+    // across inline markup, with whitespace and the no-break space written as plain spaces
+    let a = lib.add_highlight(p.id.clone(), "Escherichia coli grew & divided within 20 min".into(), None, "green".into(), "".into()).unwrap();
+    assert_eq!(a.location, "epub");
+    assert_eq!(a.quote, "Escherichia\n   coli grew & divided within 20\u{a0}min");
+    assert_eq!(a.kind, AnnotationKind::Highlight);
+    assert_eq!(a.color, "green");
+    // position: UTF-16 offset of the quote in the page text; prefix and suffix are the text around it
+    let start: usize = a.position.parse().unwrap();
+    let utf16: Vec<u16> = text.encode_utf16().collect();
+    assert_eq!(String::from_utf16(&utf16[start..start + a.quote.encode_utf16().count()]).unwrap(), a.quote);
+    assert!(a.prefix.ends_with("Strains of ") && text.contains(&format!("{}{}{}", a.prefix, a.quote, a.suffix)));
+
+    // across a paragraph boundary and with straight quotes / hyphen for curly quotes / em dash
+    let b = lib.add_highlight(p.id.clone(), "Results are \"robust\" - see Fig. 2".into(), None, "".into(), "check this".into()).unwrap();
+    assert_eq!(b.quote, "Results are “robust” — see Fig.\u{a0}2");
+    assert_eq!((b.kind, b.color.as_str()), (AnnotationKind::Note, "yellow"));
+
+    // ambiguous: twice in the paper, until the text before it picks one
+    let err = lib.add_highlight(p.id.clone(), "the cells were washed twice".into(), None, "".into(), "".into()).unwrap_err();
+    assert!(err.to_string().contains("occurs 2 times"), "{err}");
+    let c = lib.add_highlight(p.id.clone(), "the cells were washed twice".into(), Some("Before imaging,".into()), "pink".into(), "".into()).unwrap();
+    assert!(c.prefix.ends_with("Before imaging, "));
+    let c_start: usize = c.position.parse().unwrap();
+    assert!(c_start > start);
+    // not there at all: says how far it matched
+    let err = lib.add_highlight(p.id.clone(), "Strains of Escherichia coli died".into(), None, "".into(), "".into()).unwrap_err();
+    assert!(err.to_string().contains("continues"), "{err}");
+    assert!(lib.add_highlight(p.id.clone(), "grew".into(), None, "purple".into(), "".into()).is_err());
+
+    // listing across the library: newest first, by colour, words in quote or note, tag
+    let other = lib.add_paper(PaperMeta { title: "Another paper".into(), doi: "10.1/other".into(), ..Default::default() }, None, None, None).unwrap();
+    lib.save_annotation(Annotation {
+        id: String::new(), paper_id: other.id.clone(), kind: AnnotationKind::Note, color: "agent".into(),
+        location: "paper".into(), position: String::new(), quote: String::new(), prefix: String::new(),
+        suffix: String::new(), note: "Compare with E. coli growth".into(), created: 0, modified: 0,
+    }).unwrap();
+    let all = lib.find_annotations(Default::default());
+    assert_eq!(all.len(), 4);
+    assert!(all.windows(2).all(|w| w[0].created >= w[1].created));
+    let f = |filter: highlight::AnnotationFilter| lib.find_annotations(filter).into_iter().map(|a| a.id).collect::<Vec<_>>();
+    assert_eq!(f(highlight::AnnotationFilter { color: Some("Green".into()), ..Default::default() }), vec![a.id.clone()]);
+    assert_eq!(f(highlight::AnnotationFilter { query: Some("ESCHERICHIA divided".into()), ..Default::default() }), vec![a.id.clone()]);
+    assert_eq!(f(highlight::AnnotationFilter { query: Some("check".into()), ..Default::default() }), vec![b.id.clone()]);
+    assert_eq!(f(highlight::AnnotationFilter { paper: Some(other.id.clone()), ..Default::default() }).len(), 1);
+    lib.set_tag(other.id.clone(), "growth".into(), true).unwrap();
+    assert_eq!(f(highlight::AnnotationFilter { tag: Some("growth".into()), ..Default::default() }).len(), 1);
+    assert_eq!(lib.annotation(c.id.clone()).unwrap().color, "pink");
+
+    // highlights and notes are in the library search
+    let hits = lib.search("robust".into(), 10).unwrap();
+    assert!(hits.iter().any(|h| h.paper.id == p.id));
+    let hits = lib.search("growth compare".into(), 10).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].paper.id, other.id);
+
+    // the full text stands in when there is no reading view
+    let ft = lib.add_paper(PaperMeta { title: "Text only".into(), doi: "10.1/ft".into(), ..Default::default() }, None, None, Some("Line one.\nWe measured lactate in CSF.\n".into())).unwrap();
+    let d = lib.add_highlight(ft.id.clone(), "measured lactate in  CSF".into(), None, "blue".into(), "".into()).unwrap();
+    assert_eq!((d.location.as_str(), d.quote.as_str()), ("pdf", "measured lactate in CSF"));
+    let none = lib.add_paper(PaperMeta { title: "Nothing".into(), doi: "10.1/none".into(), ..Default::default() }, None, None, None).unwrap();
+    assert!(lib.add_highlight(none.id, "anything at all".into(), None, "".into(), "".into()).is_err());
+}
+
+#[test]
+fn dom_text_like_the_page() {
+    let x = "<html><head><title>x</title></head><body class=\"c\"><p a=\"1>2\">A<!-- no --><b>B</b>&lt;&#x41;&unknown;</p><style>s{}</style><br/>C</body></html>";
+    assert_eq!(highlight::dom_text(x), "AB<A&unknown;C");
 }

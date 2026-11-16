@@ -262,9 +262,37 @@ pub struct PdfCandidate {
     pub version: String,
 }
 
+/// DOIs of preprint servers (bioRxiv/medRxiv, arXiv, Research Square, SSRN, OSF, PsyArXiv,
+/// ChemRxiv, Preprints.org, Authorea).
+pub fn is_preprint_doi(doi: &str) -> bool {
+    let d = doi.to_lowercase();
+    ["10.1101/", "10.64898/", "10.48550/", "10.21203/", "10.2139/ssrn", "10.31219/", "10.31234/", "10.26434/", "10.20944/", "10.22541/"]
+        .iter()
+        .any(|p| d.starts_with(p))
+}
+
 /// Legal open-access PDF locations, best first: published versions, then accepted manuscripts,
 /// then preprints. Sources: PMC open-access archive, Europe PMC, OpenAlex, arXiv.
+///
+/// A published paper (a DOI that isn't a preprint server's) never gets a preprint: the
+/// preprint can differ from what was published, so it is better to have no PDF than that one.
 pub fn pdf_candidates(m: &PaperMeta) -> Vec<PdfCandidate> {
+    let published = !m.doi.is_empty() && !is_preprint_doi(&m.doi);
+    let mut out = pdf_candidates_all(m);
+    if published {
+        // (Europe PMC sometimes lists a bioRxiv link as the article's full text: judge by the URL too)
+        let preprint_host = |u: &str| {
+            let u = u.to_lowercase();
+            ["biorxiv.org", "medrxiv.org", "arxiv.org", "researchsquare.com", "ssrn.com", "osf.io", "chemrxiv.org", "preprints.org", "authorea.com"]
+                .iter()
+                .any(|h| u.contains(h))
+        };
+        out.retain(|c| c.version != "preprint" && !c.label.to_lowercase().contains("rxiv") && !preprint_host(&c.url));
+    }
+    out
+}
+
+fn pdf_candidates_all(m: &PaperMeta) -> Vec<PdfCandidate> {
     let mut out: Vec<PdfCandidate> = vec![];
     let mut push = |url: String, label: &str, version: &str| {
         if !url.is_empty() && !out.iter().any(|c| c.url == url) {

@@ -181,17 +181,6 @@ enum ReaderAssets {
     body.listening p, body.listening li, body.listening h1, body.listening h2, body.listening h3, body.listening figcaption { cursor: pointer; }
     """
 
-    /// Tapping a figure (or any image) asks the app to show it full screen, zoomable.
-    static let figureJS = """
-    document.addEventListener('click', function(e){
-      var img = e.target.closest && e.target.closest('img'); if (!img) return;
-      var fig = img.closest('figure, .fig, .table-wrap');
-      var cap = fig ? fig.querySelector('figcaption, .caption') : null;
-      try { window.webkit.messageHandlers.fig.postMessage({ src: img.src, caption: cap ? cap.innerText : (img.alt || '') }); } catch (x) { return; }
-      e.preventDefault(); e.stopPropagation();
-    }, true);
-    """
-
     /// Finds anything wider than the page (tables, equations, code, fixed-width boxes) and contains it,
     /// so the page itself never becomes wider than the screen. Runs again as images load.
     static let overflowJS = """

@@ -56,19 +56,3 @@ final class NarrationMessageHandler: NSObject, WKScriptMessageHandler {
         Task { @MainActor in self.controller?.onTapParagraph?(id) }
     }
 }
-
-struct ReaderFigure: Identifiable, Equatable {
-    let id = UUID()
-    let url: URL
-    let caption: String
-}
-
-/// Receives "fig" messages (tapped images) from the page.
-final class FigureMessageHandler: NSObject, WKScriptMessageHandler {
-    weak var controller: ReaderController?
-    func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
-        guard let d = m.body as? [String: Any], let src = d["src"] as? String, let url = URL(string: src) else { return }
-        let caption = d["caption"] as? String ?? ""
-        Task { @MainActor in self.controller?.onFigure?(ReaderFigure(url: url, caption: caption)) }
-    }
-}

@@ -14,6 +14,8 @@ enum Source {
     case pdf(Data, meta: PaperMeta, label: String)
     /// LaTeXML HTML (arXiv / ar5iv); image paths are relative to `base`.
     case html(XNode, base: URL, meta: PaperMeta, label: String)
+    /// Already converted (a publisher's page, e.g. ScienceDirect).
+    case book(Book)
 }
 
 typealias Candidate = (label: String, load: () async throws -> Source)
@@ -67,7 +69,12 @@ enum Resolver {
         case "jats":
             return [("JATS \(url.lastPathComponent)", { .jats(data, assets: .none, meta: PaperMeta(), label: "JATS file") })]
         default:
-            throw fail("\(url.lastPathComponent) is not a PDF or JATS XML file.")
+            // a publisher's article page saved from the browser
+            if let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1), ScienceDirect.looksLike(html) {
+                let dir = url.deletingLastPathComponent()
+                return [("ScienceDirect page \(url.lastPathComponent)", { .book(try await ScienceDirect.book(html: html, dir: dir, log: log)) })]
+            }
+            throw fail("\(url.lastPathComponent) is not a PDF, JATS XML or a saved article page.")
         }
     }
 
@@ -96,7 +103,7 @@ enum Resolver {
         }
         d = d.trimmingCharacters(in: CharacterSet(charactersIn: ".,;)"))
         // bioRxiv / medRxiv URLs carry a version: 10.1101/2024.01.02.573123v2 -> 10.1101/2024.01.02.573123
-        if d.hasPrefix("10.1101/"), let r = d.range(of: #"v\d+$"#, options: .regularExpression) { d.removeSubrange(r) }
+        if d.hasPrefix("10.1101/") || d.hasPrefix("10.64898/"), let r = d.range(of: #"v\d+$"#, options: .regularExpression) { d.removeSubrange(r) }
         return d
     }
 
@@ -109,13 +116,20 @@ enum Resolver {
 
     // MARK: - DOI
 
+    /// DOIs of preprint servers (bioRxiv/medRxiv, arXiv, Research Square, SSRN, OSF, ChemRxiv,
+    /// Preprints.org). A published paper's reading view never comes from a preprint.
+    static func isPreprintDOI(_ doi: String) -> Bool {
+        let d = doi.lowercased()
+        return ["10.1101/", "10.64898/", "10.48550/", "10.21203/", "10.2139/ssrn", "10.31219/", "10.31234/", "10.26434/", "10.20944/", "10.22541/"].contains { d.hasPrefix($0) }
+    }
+
     static func doiCandidates(_ doi: String, log: @escaping (String) -> Void) -> [Candidate] {
         var out: [Candidate] = []
         if doi.lowercased().hasPrefix("10.48550/arxiv.") {
             return ArxivHTML.candidates(String(doi.dropFirst("10.48550/arxiv.".count)), log: log)
         }
         out.append(("Europe PMC full text for \(doi)", {
-            try await europePMCByQuery("DOI:\"\(doi)\"", what: doi, log: log)
+            try await europePMCByQuery("DOI:\"\(doi)\"", what: doi, allowPreprint: isPreprintDOI(doi), log: log)
         }))
         if doi.lowercased().hasPrefix("10.7554/elife.") {
             let num = doi.split(separator: ".").last.map { String($0.filter(\.isNumber)) } ?? ""
@@ -126,21 +140,23 @@ enum Resolver {
 
     // MARK: - Europe PMC / PMC
 
-    static func europePMCByQuery(_ query: String, what: String, log: @escaping (String) -> Void) async throws -> Source {
+    static func europePMCByQuery(_ query: String, what: String, allowPreprint: Bool = false, log: @escaping (String) -> Void) async throws -> Source {
         var comps = URLComponents(string: "https://www.ebi.ac.uk/europepmc/webservices/rest/search")!
         comps.queryItems = [.init(name: "query", value: query), .init(name: "resultType", value: "core"),
                             .init(name: "format", value: "json")]
         log("Looking up \(what) in Europe PMC")
         let r = try await Net.withRetry { try await Net.json(comps.url!) }
         let results = ((r["resultList"] as? [String: Any])?["result"] as? [[String: Any]]) ?? []
-        guard let hit = results.first else { throw fail("Europe PMC does not know \(what)") }
+        // the published article beats a preprint of it (Europe PMC can list both for one DOI)
+        guard let hit = results.first(where: { $0["source"] as? String != "PPR" }) ?? results.first else { throw fail("Europe PMC does not know \(what)") }
         let meta = epmcMeta(hit)
         if let pmcid = hit["pmcid"] as? String {
             var src = try await pmcSource(pmcid, log: log)
             if case .jats(let d, let a, var m, let l) = src { m.merge(meta); src = .jats(d, assets: a, meta: m, label: l) }
             return src
         }
-        if hit["source"] as? String == "PPR", let id = hit["id"] as? String {   // preprint with full text
+        // preprint with full text: only for a paper that is itself a preprint, never for a published one
+        if hit["source"] as? String == "PPR", allowPreprint, let id = hit["id"] as? String {
             let xml = try await europePMCFullText(id, log: log)
             return .jats(xml, assets: .none, meta: meta, label: "Europe PMC preprint XML")
         }

@@ -40,6 +40,7 @@ struct ProposedChange: Identifiable, Equatable, Codable {
         case collection(String, [String])
         case markRead([String], Bool)
         case add(Int)                     // external source number
+        case highlight(String, String, String)   // paper id, quote, note
     }
     enum State: String, Codable { case pending, applied, dismissed, failed }
     var id = UUID()
@@ -340,7 +341,73 @@ struct ReadSectionTool: Tool {
     }
 }
 
+struct HighlightPassageTool: Tool {
+    let ctx: AskContext
+    let paperID: String
+    let name = "highlight_passage"
+    let description = "Highlights a passage of the open paper for the user (they confirm it), optionally with a note. Quote it word for word."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "The passage, copied exactly from the paper (a sentence or part of one)")
+        var quote: String
+        @Guide(description: "A short note to attach, or empty")
+        var note: String
+    }
+
+    func call(arguments: Arguments) async throws -> String { ctx.take(await run(arguments)) }
+
+    private func run(_ arguments: Arguments) async -> String {
+        let quote = arguments.quote.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"“”")))
+        do {
+            // check now, so the model hears at once if the words aren't in the paper
+            let a = try ctx.lib.anchorHighlight(paper: paperID, quote: quote, before: nil)
+            let note = arguments.note.trimmingCharacters(in: .whitespacesAndNewlines)
+            let shown = a.quote.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            ctx.emit(.proposal(ProposedChange(kind: .highlight(paperID, quote, note),
+                                              summary: "Highlight “\(clip(shown, 80))”" + (note.isEmpty ? "" : " with a note"))))
+            return "Proposed. The user will see a button to confirm the highlight; it has not been applied yet."
+        } catch {
+            return "Couldn't highlight that: \(error.readable)"
+        }
+    }
+}
+
 // MARK: - Tools: the library
+
+struct FindHighlightsTool: Tool {
+    let ctx: AskContext
+    let name = "find_highlights"
+    let description = "Finds the user's own highlights and notes across the library, newest first. Returns numbered papers with what was highlighted."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Words in the highlighted text or note, or empty for the latest highlights")
+        var query: String
+        @Guide(description: "How many highlights to return", .range(1...12))
+        var limit: Int
+    }
+
+    func call(arguments: Arguments) async throws -> String { ctx.take(await run(arguments)) }
+
+    private func run(_ arguments: Arguments) async -> String {
+        let q = arguments.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        ctx.emit(.activity(q.isEmpty ? "Looking at your highlights" : "Looking for “\(q)” in your highlights"))
+        let filter = AnnotationFilter(paper: nil, color: nil, tag: nil, collection: nil, query: q.isEmpty ? nil : q)
+        let list = ctx.lib.findAnnotations(filter: filter).prefix(max(1, min(12, arguments.limit)))
+        guard !list.isEmpty else { return q.isEmpty ? "The user has no highlights yet." : "No highlight or note mentions “\(q)”." }
+        var titles: [String: Paper] = [:]
+        return list.compactMap { a -> String? in
+            guard let p = titles[a.paperId] ?? ctx.lib.paper(id: a.paperId) else { return nil }
+            titles[a.paperId] = p
+            let n = ctx.register(.paper(p.id), p.meta.title)
+            let quote = a.quote.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            return "[\(n)] \(clip(p.meta.title, 100))"
+                + (quote.isEmpty ? "" : "\n   “\(clip(quote, 220))”")
+                + (a.note.isEmpty ? "" : "\n   note: \(clip(a.note, 160))")
+        }.joined(separator: "\n")
+    }
+}
 
 struct SearchLibraryTool: Tool {
     let ctx: AskContext
@@ -833,11 +900,11 @@ final class AskEngine: ObservableObject {
         var instructions: String
         switch scope {
         case .paper(let id):
-            tools = [FindInPaperTool(ctx: c), ReadSectionTool(ctx: c), SearchLibraryTool(ctx: c)]
+            tools = [FindInPaperTool(ctx: c), ReadSectionTool(ctx: c), SearchLibraryTool(ctx: c), HighlightPassageTool(ctx: c, paperID: id)]
             instructions = paperInstructions(model.paper(id), items: items)
         case .library:
             tools = [SearchLibraryTool(ctx: c), ListPapersTool(ctx: c), PaperDetailsTool(ctx: c),
-                     SearchInsidePaperTool(ctx: c), FindNewPapersTool(ctx: c), ProposeChangeTool(ctx: c)]
+                     SearchInsidePaperTool(ctx: c), FindHighlightsTool(ctx: c), FindNewPapersTool(ctx: c), ProposeChangeTool(ctx: c)]
             instructions = libraryInstructions(model)
         }
         // picked up after a relaunch: give the new session the gist of what was said
@@ -919,7 +986,7 @@ final class AskEngine: ObservableObject {
         what you use like [2] or [2][5]. Copy numbers exactly as they appear in the passages and never state a number \
         that isn't in them; if the passages you found don't answer the question, look again with other words or say \
         the paper doesn't say. search_library searches the user's \
-        other papers. Be concise and precise; use short paragraphs or bullet points; keep numbers and units exact.
+        other papers. To highlight a passage for the user, call highlight_passage with its exact words. Be concise and precise; use short paragraphs or bullet points; keep numbers and units exact.
         Sections: \(headings.isEmpty ? "unknown" : headings)
         Abstract: \(abstract.isEmpty ? "(none)" : abstract)\(highlights(p))
         """
@@ -948,6 +1015,7 @@ final class AskEngine: ObservableObject {
         cite them like [3], once per paper, right after its title. Papers from find_new_papers are NOT in the library: always call them new papers beyond the \
         library. You cannot change the library yourself: when the user asks to tag, collect, mark or add papers, call \
         propose_change right away (don't ask first); the app shows the user a button to confirm it. \
+        find_highlights shows what the user highlighted or noted. \
         Be concise; use short bullet lists of papers with their numbers.
         """
     }
@@ -1116,6 +1184,8 @@ final class AskEngine: ObservableObject {
                 for id in ids { try lib.setMembership(collection: col.id, paper: id, present: true) }
             case .markRead(let ids, let read):
                 for id in ids { try lib.setRead(id: id, read: read) }
+            case .highlight(let paper, let quote, let note):
+                _ = try lib.addHighlight(paper: paper, quote: quote, before: nil, color: HighlightColor.yellow.rawValue, note: note)
             case .add(let n):
                 guard let hit = ctx?.hit(n) else {
                     proposals[i].state = .failed
