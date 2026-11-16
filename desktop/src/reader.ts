@@ -9,8 +9,9 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { api, type Annotation, type Paper, type PageSelection, type TocItem } from './api';
 import { fill, h, $, status, copy, menu, type MenuItem } from './ui';
-import { showPdf, closePdf, pdfZoom } from './pdf';
+import { showPdf, closePdf, pdfZoom, pdfFind, pdfFindStep, pdfFindClear } from './pdf';
 import { closeFigureOverlay, figureList, figureOpen, showFigureGrid, showFigureViewer, type Fig } from './figures';
+import { openFind, closeFind, findOpen, findStep, findUpdate, type FindResult, type FindTarget } from './find';
 
 const COLORS = ['yellow', 'green', 'blue', 'pink'] as const;
 
@@ -93,12 +94,17 @@ window.addEventListener('message', (e) => {
       if (body === 'highlight') highlight(hlColor);
       else if (body === 'hlmode') setHighlightMode(!hlMode);
       else if (body === 'figures') openFigureGrid();
-      else if (body === 'escape') { if (!closeOverlay()) selectionBar(null); }
+      else if (body === 'escape') { if (!closeOverlay() && !closeAppearance() && !closeFind()) selectionBar(null); }
+      else if (body === 'find') startFind();
+      else if (body === 'findnext' || body === 'findprev') { if (findOpen()) findStep(body === 'findnext'); else startFind(); }
       else if (body === 'larger') scale(0.1);
       else if (body === 'smaller') scale(-0.1);
       break;
     case '__link':
       openUrl(String(body));
+      break;
+    case '__cite':     // the citation card's "Add to Lunta"
+      citeFromPage(String(body));
       break;
   }
 });
@@ -120,6 +126,8 @@ export async function closeReader() {
   if (!paper) return;
   await savePosition();
   clearInterval(saver);
+  closeFind();
+  closeAppearance();
   closePdf();
   while (closeFigureOverlay());
   figures = [];
@@ -132,6 +140,8 @@ export async function closeReader() {
 
 function render() {
   const p = paper!;
+  closeFind();
+  closeAppearance();
   const seg = (m: 'reading' | 'pdf', label: string, enabled: boolean) =>
     h('button' + (mode === m ? '.on' : ''), { text: label, disabled: !enabled, onclick: () => { if (mode !== m) { savePosition(); mode = m; render(); show(); } } });
   const reading = mode === 'reading';
@@ -145,20 +155,18 @@ function render() {
       h('button', { text: '‹ Library', onclick: closeReader, title: 'Back to the library (Esc)' }),
       h('div.title', { text: p.meta.title }),
       h('div.segmented', {}, seg('reading', 'Reading', p.has_epub), seg('pdf', 'PDF', p.has_pdf)),
+      // figures · find · highlighter · highlights and notes · Aa (text size, theme, layout, figures)
       h('div.tools', {},
+        reading ? h('button.icon#figures-btn', { text: '🖼', hidden: !figures.length, onclick: () => openFigureGrid() }) : null,
+        h('button.icon#find-btn', { text: '🔍', title: 'Find in paper (Ctrl+F)', 'aria-label': 'Find in paper', onclick: () => startFind() }),
         modeBtn,
         reading ? h('button.icon.hl-more', { text: '▾', title: 'Highlight colour, and highlight the selection now', onclick: (e: MouseEvent) => {
           const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); highlightMenu(r.left, r.bottom + 4);
         } }) : null,
         hlBtn,
-        reading ? h('button.icon#theme-btn', { text: '◐', title: `Theme: ${themeName(theme)}`, onclick: (e: MouseEvent) => {
-          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          menu(r.left, r.bottom + 4, THEMES.map((t) => ({ label: themeName(t), checked: t === theme, action: () => setTheme(t) })));
-        } }) : null,
-        reading ? h('button.icon#figures-btn', { text: '🖼', hidden: !figures.length, onclick: () => openFigureGrid() }) : null,
-        reading ? h('button.icon#paged-btn' + (paged ? '.on' : ''), { text: '📖', title: paged ? 'Scroll instead of turning pages' : 'Turn pages (arrow keys, space or swipe)', onclick: (e: Event) => togglePaged(e) }) : null,
-        h('button.icon', { text: 'A−', title: 'Smaller text', onclick: () => (reading ? scale(-0.1) : pdfZoom(1 / 1.15)) }),
-        h('button.icon', { text: 'A+', title: 'Larger text', onclick: () => (reading ? scale(0.1) : pdfZoom(1.15)) }))),
+        reading ? h('button.icon#appearance-btn', { text: 'Aa', title: 'Text size, theme and layout', 'aria-label': 'Text and theme', onclick: (e: MouseEvent) => toggleAppearance(e.currentTarget as HTMLElement) }) : null,
+        reading ? null : h('button.icon', { text: '−', title: 'Zoom out (Ctrl+−)', onclick: () => pdfZoom(1 / 1.15) }),
+        reading ? null : h('button.icon', { text: '+', title: 'Zoom in (Ctrl+=)', onclick: () => pdfZoom(1.15) }))),
     h('div.reader-body', {},
       reading ? h('nav#toc') : null,
       h('div#page'),
@@ -182,9 +190,6 @@ function setTheme(t: string) {
   localStorage.setItem('readerTheme', t);
   if (mode === 'reading') run(`window.luntaSetTheme && luntaSetTheme('${t}')`);
   $('#reader').dataset.theme = mode === 'reading' ? t : 'automatic';
-  const b = document.querySelector<HTMLElement>('#theme-btn');
-  if (b) b.title = `Theme: ${themeName(t)}`;
-  frame?.contentWindow?.focus();
 }
 
 /** Is the reader shown dark (the theme's appearance, or the system's)? */
@@ -287,14 +292,118 @@ function scale(d: number) {
   run(`luntaSetTextScale(${fontScale})`);
 }
 
-function togglePaged(e?: Event) {
-  paged = !paged;
+/** Scroll or turn pages (the page is told; re-attaching the iframe would reload it and lose the place). */
+function setPaged(on: boolean) {
+  if (paged === on) return;
+  paged = on;
   localStorage.setItem('readerPaged', paged ? '1' : '0');
   run(pagedCall());
-  // only the button changes: re-attaching the iframe would reload the page and lose the place
-  const b = (e?.currentTarget as HTMLElement) || document.querySelector('#paged-btn');
-  if (b) { b.classList.toggle('on', paged); b.title = paged ? 'Scroll instead of turning pages' : 'Turn pages (arrow keys, space or swipe)'; }
-  frame?.contentWindow?.focus();
+}
+
+function setFigureCards(on: boolean) {
+  figureCards = on;
+  localStorage.setItem('readerFigureCards', on ? '1' : '0');
+  run(`window.luntaFigureCards && luntaFigureCards(${on})`);
+}
+
+// ---- Text & Theme (the iPhone's ReaderAppearanceSheet): everything about how the paper looks ----
+
+function closeAppearance(): boolean {
+  const p = document.querySelector('#appearance');
+  if (!p) return false;
+  p.remove();
+  document.removeEventListener('mousedown', outsideAppearance, true);
+  document.querySelector('#appearance-btn')?.classList.remove('on');
+  return true;
+}
+function outsideAppearance(e: MouseEvent) {
+  if (!(e.target as HTMLElement).closest('#appearance, #appearance-btn')) closeAppearance();
+}
+
+function toggleAppearance(anchor: HTMLElement) {
+  if (closeAppearance()) return;
+  const pct = h('span.ap-pct');
+  const smaller = h('button', { text: 'A−', title: 'Smaller text (Ctrl+−)', 'aria-label': 'Smaller text', onclick: () => { scale(-0.1); sync(); } }) as HTMLButtonElement;
+  const larger = h('button.ap-larger', { text: 'A+', title: 'Larger text (Ctrl+=)', 'aria-label': 'Larger text', onclick: () => { scale(0.1); sync(); } }) as HTMLButtonElement;
+  const themes = h('div.ap-themes', {}, THEMES.map((t) => h('button.ap-theme', { 'data-theme': t, title: themeName(t), onclick: () => { setTheme(t); sync(); } },
+    h('span.ap-swatch', { text: 'Aa' }), h('span.ap-name', { text: themeName(t) }))));
+  const seg = (a: [string, () => void], b: [string, () => void]) => h('div.segmented', {},
+    h('button', { text: a[0], onclick: () => { a[1](); sync(); } }), h('button', { text: b[0], onclick: () => { b[1](); sync(); } }));
+  const layout = seg(['Scroll', () => setPaged(false)], ['Turn Pages', () => setPaged(true)]);
+  const figs = seg(['As Cards', () => setFigureCards(true)], ['In Full', () => setFigureCards(false)]);
+  function sync() {
+    pct.textContent = `${Math.round(fontScale * 100)}%`;
+    smaller.disabled = fontScale <= 0.7 + 1e-6;
+    larger.disabled = fontScale >= 1.8 - 1e-6;
+    themes.querySelectorAll<HTMLElement>('.ap-theme').forEach((b) => { b.classList.toggle('on', b.dataset.theme === theme); b.setAttribute('aria-pressed', String(b.dataset.theme === theme)); });
+    const [s1, s2] = layout.querySelectorAll('button'); s1.classList.toggle('on', !paged); s2.classList.toggle('on', paged);
+    const [f1, f2] = figs.querySelectorAll('button'); f1.classList.toggle('on', figureCards); f2.classList.toggle('on', !figureCards);
+  }
+  const panel = h('div#appearance', { role: 'dialog', 'aria-label': 'Text and theme' },
+    h('h4', { text: 'Text Size' }), h('div.ap-size', {}, smaller, pct, larger),
+    h('h4', { text: 'Theme' }), themes,
+    h('h4', { text: 'Layout' }), layout,
+    h('h4', { text: 'Figures in the Text' }), figs);
+  panel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAppearance(); frame?.contentWindow?.focus(); } });
+  sync();
+  document.body.append(panel);
+  const r = anchor.getBoundingClientRect();
+  panel.style.top = `${r.bottom + 6}px`;
+  panel.style.left = `${Math.max(8, Math.min(r.right - panel.offsetWidth, innerWidth - panel.offsetWidth - 8))}px`;
+  anchor.classList.add('on');
+  setTimeout(() => document.addEventListener('mousedown', outsideAppearance, true), 0);
+}
+
+// ---- find in paper ----
+
+/** The reading view's page script (generated/find.js). */
+const pageFind: FindTarget = {
+  find: (q) => run<FindResult>(`window.luntaFind ? luntaFind(${JSON.stringify(q)}, false) : null`),
+  step: (forward) => run<FindResult>(forward ? 'window.luntaFindNext ? luntaFindNext() : null' : 'window.luntaFindPrev ? luntaFindPrev() : null'),
+  clear: () => { run('window.luntaFindClear && luntaFindClear()'); },
+};
+/** PDF.js's find controller (its answers come as it searches the pages). */
+const pdfFinder: FindTarget = {
+  find: async (q) => { pdfFind(q, findUpdate); return null; },
+  step: async (forward) => { pdfFindStep(forward); return null; },
+  clear: () => pdfFindClear(),
+};
+
+/** Opens the find bar (Ctrl+F, the toolbar). Closing it after going to a match offers the way back. */
+async function startFind() {
+  if (!paper || !$('#reader') || document.querySelector('.modal-back, #figure, #figures')) return;
+  closeAppearance();
+  if (findOpen()) { openFind($('#reader'), pageFind, () => {}); return; }   // focuses it
+  const reading = mode === 'reading';
+  if (reading && !frame) return;
+  const origin = reading ? await run<number>('luntaReadingOffset()') : null;
+  if (findOpen()) return;
+  document.querySelector('#findback')?.remove();
+  openFind($('#reader'), reading ? pageFind : pdfFinder, (moved) => {
+    if (reading && frame) frame.contentWindow?.focus();
+    if (!moved || !reading || typeof origin !== 'number' || !paper) return;
+    const back = h('button#findback', { text: '↩ Back to where you were', onclick: () => { back.remove(); run(`luntaScrollToOffset(${Math.floor(origin)})`); frame?.contentWindow?.focus(); } });
+    $('#reader')?.append(back);
+    setTimeout(() => back.remove(), 6000);
+  });
+}
+
+// ---- citation cards ----
+
+/** "Add to Lunta" on a citation card (lunta://cite?doi=… or ?arxiv=…): the paper is found in the
+ *  library or added, and the card says which (ExternalLinks.swift). */
+async function citeFromPage(link: string) {
+  let doi = '', arxiv = '';
+  try { const u = new URL(link); doi = u.searchParams.get('doi') || ''; arxiv = u.searchParams.get('arxiv') || ''; } catch { /* not a link */ }
+  const forPaper = paper?.id;
+  let label = 'Couldn’t add it';
+  try {
+    const r = await api.citePaper(doi, arxiv);
+    label = r.label;
+    if (r.label === 'Added to your library') status('Added to your library');
+  } catch (e) { status(String(e), 'error'); }
+  if (paper?.id !== forPaper || mode !== 'reading') return;
+  run(`window.luntaCiteDone && luntaCiteDone(${JSON.stringify(label)})`);
 }
 
 // keys for the reader when the page doesn't have the keyboard
@@ -302,7 +411,9 @@ document.addEventListener('keydown', (e) => {
   if (!paper || $('#reader').hidden || (e.target as HTMLElement).closest?.('input, textarea')) return;
   if (document.querySelector('.modal-back, #figure, #figures')) { if (e.key === 'Escape') closeOverlay(); return; }
   const mod = e.metaKey || e.ctrlKey;
-  if (e.key === 'Escape') { closeReader(); return; }
+  if (e.key === 'Escape') { if (!closeAppearance() && !closeFind()) closeReader(); return; }
+  if (mod && !e.shiftKey && !e.altKey && e.code === 'KeyF') { e.preventDefault(); startFind(); return; }
+  if (e.key === 'F3' || (mod && !e.altKey && e.code === 'KeyG')) { e.preventDefault(); if (findOpen()) findStep(!e.shiftKey); else startFind(); return; }
   if (mode === 'reading' && e.ctrlKey && e.altKey && !e.shiftKey && e.code === 'KeyH') { e.preventDefault(); setHighlightMode(!hlMode); return; }
   if (mod && e.shiftKey && !e.altKey && e.code === 'KeyH') { e.preventDefault(); highlight(hlColor); return; }
   if (mode === 'reading' && mod && e.shiftKey && !e.altKey && e.code === 'KeyF') { e.preventDefault(); openFigureGrid(); return; }
@@ -541,11 +652,8 @@ function openFigureGrid() {
   if (mode !== 'reading' || !figures.length) return;
   showFigureGrid(figures, {
     cards: figureCards,
-    setCards: (on) => {
-      figureCards = on;
-      localStorage.setItem('readerFigureCards', on ? '1' : '0');
-      run(`window.luntaFigureCards && luntaFigureCards(${on})`);
-    },
+    setCards: setFigureCards,
+    theme,
     open: async (i) => {
       // as the page shows it now (with the highlights in its caption), else as it was listed
       const json = await run<string>(`window.luntaFigures ? luntaFigures.data(${i}) : ''`);

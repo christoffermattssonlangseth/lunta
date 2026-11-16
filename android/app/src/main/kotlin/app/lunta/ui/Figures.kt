@@ -1,6 +1,10 @@
 package app.lunta.ui
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.RectF
+import com.caverock.androidsvg.SVG
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -127,9 +131,11 @@ fun figureFile(bookDir: File, src: String): File? {
     return f.takeIf { it.path.startsWith(bookDir.canonicalPath + File.separator) && it.isFile }
 }
 
-/** An image, made smaller than [maxSide] pixels on its longest side (off the main thread). */
+/** An image, made smaller than [maxSide] pixels on its longest side (off the main thread). SVG
+ *  figures (which BitmapFactory can't read) are drawn with AndroidSVG at that size. */
 private suspend fun decodeImage(f: File?, maxSide: Int): ImageBitmap? = if (f == null) null else withContext(Dispatchers.IO) {
     runCatching {
+        if (isSvg(f)) return@runCatching renderSvg(f, maxSide)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(f.path, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
@@ -137,6 +143,35 @@ private suspend fun decodeImage(f: File?, maxSide: Int): ImageBitmap? = if (f ==
         while (max(bounds.outWidth, bounds.outHeight) / sample > maxSide) sample *= 2
         BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
     }.getOrNull()
+}
+
+private fun isSvg(f: File): Boolean {
+    val ext = f.extension.lowercase()
+    if (ext == "svg") return true
+    if (ext in setOf("png", "jpg", "jpeg", "gif", "webp", "bmp")) return false
+    // no telling extension: look at the start of the file
+    val head = runCatching { f.inputStream().use { i -> ByteArray(512).let { b -> String(b, 0, maxOf(0, i.read(b)), Charsets.UTF_8) } } }.getOrDefault("")
+    return head.contains("<svg")
+}
+
+/** An SVG drawn into a bitmap [maxSide] pixels on its longer side (at most 2400: it is sharp at any size). */
+private fun renderSvg(f: File, maxSide: Int): ImageBitmap? {
+    val svg = f.inputStream().use { SVG.getFromInputStream(it) }
+    val vb = svg.documentViewBox
+    var w = svg.documentWidth
+    var h = svg.documentHeight
+    if ((w <= 0f || h <= 0f) && vb != null) { w = vb.width(); h = vb.height() }
+    if (w <= 0f || h <= 0f) { w = 1000f; h = 750f }
+    if (vb == null) svg.setDocumentViewBox(0f, 0f, w, h)
+    val side = min(maxSide, 2400).toFloat()
+    val k = side / max(w, h)
+    val bw = (w * k).toInt().coerceAtLeast(1)
+    val bh = (h * k).toInt().coerceAtLeast(1)
+    svg.setDocumentWidth("100%")
+    svg.setDocumentHeight("100%")
+    val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+    svg.renderToCanvas(Canvas(bmp), RectF(0f, 0f, bw.toFloat(), bh.toFloat()))
+    return bmp.asImageBitmap()
 }
 
 private val Paper = Color(0xFFFFFDF8)

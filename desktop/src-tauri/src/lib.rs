@@ -408,6 +408,46 @@ async fn add_paper(app: AppHandle, state: State<'_, AppState>, input: String) ->
         .map_err(err)?
 }
 
+#[derive(Serialize)]
+struct CiteResult {
+    /// the paper in the library (found or just added)
+    id: Option<String>,
+    /// what the citation card's button says now
+    label: String,
+}
+
+/// The citation card's "Add to Lunta" (lunta://cite?doi=…|arxiv=…): the paper if it is already in
+/// the library, else it is added like "Add a Paper…" does (LibraryModel.paperForCitation in
+/// apple/Shared/ExternalLinks.swift).
+#[tauri::command]
+async fn cite_paper(app: AppHandle, state: State<'_, AppState>, doi: String, arxiv: String) -> R<CiteResult> {
+    let lib = state.lib()?;
+    let log = logger(&app);
+    tauri::async_runtime::spawn_blocking(move || {
+        let (doi, arxiv) = (doi.trim().to_string(), arxiv.trim().to_string());
+        let done = |id: Option<String>, label: &str| CiteResult { id, label: label.to_string() };
+        if doi.is_empty() && arxiv.is_empty() {
+            return done(None, "Nothing to add");
+        }
+        let key = if doi.is_empty() { format!("10.48550/arXiv.{arxiv}") } else { doi.clone() };
+        if let Some(p) = lib.find_by_doi(key) {
+            return done(Some(p.id), "In your library");
+        }
+        if !arxiv.is_empty() {
+            if let Some(p) = lib.papers(PaperFilter::default(), SortKey::Added).into_iter().find(|p| p.meta.arxiv.starts_with(&arxiv)) {
+                return done(Some(p.id), "In your library");
+            }
+        }
+        let input = if doi.is_empty() { format!("arXiv:{arxiv}") } else { doi };
+        match add::add(&lib, &input, &log) {
+            Ok(a) => done(Some(a.paper.id), "Added to your library"),
+            Err(_) => done(None, "Couldn\u{2019}t add it"),
+        }
+    })
+    .await
+    .map_err(err)
+}
+
 #[tauri::command]
 async fn attach_pdf(app: AppHandle, state: State<'_, AppState>, id: String, path: String) -> R<Option<String>> {
     let lib = state.lib()?;
@@ -544,13 +584,14 @@ async fn position_save(state: State<'_, AppState>, id: String, offset: i64) -> R
 // ---- the lunta:// scheme ----
 
 const BRIDGE: &str = include_str!("../../src/reader/bridge.js");
-const READER: [(&str, &str); 7] = [
+const READER: [(&str, &str); 8] = [
     ("style.js", include_str!("../../src/reader/generated/style.js")),
     ("tracking.js", include_str!("../../src/reader/generated/tracking.js")),
     ("narration.js", include_str!("../../src/reader/generated/narration.js")),
     ("annotation.js", include_str!("../../src/reader/generated/annotation.js")),
     ("position.js", include_str!("../../src/reader/generated/position.js")),
     ("paged.js", include_str!("../../src/reader/generated/paged.js")),
+    ("find.js", include_str!("../../src/reader/generated/find.js")),
     ("reader.css", include_str!("../../src/reader/generated/reader.css")),
 ];
 
@@ -743,6 +784,7 @@ pub fn run() {
             delete_paper,
             cite,
             add_paper,
+            cite_paper,
             attach_pdf,
             make_reading_view,
             find_pdf,

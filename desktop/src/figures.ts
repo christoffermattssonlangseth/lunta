@@ -199,13 +199,15 @@ export function showFigureViewer(o: FigOpen, done: () => void, dark = matchMedia
 /** All the paper's figures as a grid; `open(i)` shows figure i (over the grid). */
 export function showFigureGrid(list: Fig[], opts: {
   open: (i: number) => void; cards: boolean; setCards: (on: boolean) => void; done: () => void;
+  /** the reader's theme: the grid is drawn in its colours (Automatic: the system's) */
+  theme?: string;
 }) {
   document.querySelector('#figures')?.remove();
   const setting = h('select', { title: 'Show figures in the text as cards or in full' },
     h('option', { value: '1', text: 'As cards' }), h('option', { value: '0', text: 'In full' })) as HTMLSelectElement;
   setting.value = opts.cards ? '1' : '0';
   setting.addEventListener('change', () => opts.setCards(setting.value === '1'));
-  const back = h('div#figures.modal-back', { tabindex: -1, onmousedown: (e: MouseEvent) => { if (e.target === back) close(); } },
+  const back = h(`div#figures.modal-back.theme-${opts.theme || 'automatic'}`, { tabindex: -1, onmousedown: (e: MouseEvent) => { if (e.target === back) close(); } },
     h('div.modal.figure-grid', {},
       h('div.fg-head', {},
         h('h3', { text: `Figures (${list.length})` }), h('div.spacer'),

@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -29,6 +30,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.contentDescription
@@ -75,6 +83,17 @@ private data class TocItem(val title: String, val level: Int, val anchor: String
 /** The highlight just made in highlight mode (AutoHighlighter in Highlights.swift). */
 private data class AutoMark(val id: String, val start: Int, val end: Int, val at: Long)
 
+/** What find in paper found: [count] matches (more if [capped]), the [index]th shown (-1: none). */
+private data class FindResult(val count: Int, val index: Int, val capped: Boolean)
+
+private fun findResult(json: String?): FindResult? =
+    json?.takeIf { it != "null" }?.let { runCatching { JSONObject(it) }.getOrNull() }
+        ?.let { FindResult(it.optInt("count"), it.optInt("index", -1), it.optBoolean("capped")) }
+
+/** Text size steps, as on the iPhone (ReaderAppearanceSheet). */
+private const val MIN_SCALE = 0.7f
+private const val MAX_SCALE = 2.2f
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun EpubReader(model: AppModel, paper: Paper) {
@@ -88,7 +107,7 @@ private fun EpubReader(model: AppModel, paper: Paper) {
     var hasSelection by remember { mutableStateOf(false) }
     var showToc by remember { mutableStateOf(false) }
     var showList by remember { mutableStateOf(false) }
-    var showText by remember { mutableStateOf(false) }
+    var showAppearance by remember { mutableStateOf(false) }
     var overflow by remember { mutableStateOf(false) }
     var scale by remember { mutableFloatStateOf(model.settings.readerScale) }
     var paged by remember { mutableStateOf(model.settings.readerPaged) }
@@ -105,6 +124,14 @@ private fun EpubReader(model: AppModel, paper: Paper) {
     val lastAuto = remember { arrayOfNulls<AutoMark>(1) }
     val autoLock = remember { Mutex() }
     var resumeNote by remember { mutableStateOf<String?>(null) }
+    // find in paper
+    var findOn by remember { mutableStateOf(false) }
+    var findQuery by remember { mutableStateOf("") }
+    var found by remember { mutableStateOf<FindResult?>(null) }
+    var searched by remember { mutableStateOf("") }
+    var findOrigin by remember { mutableStateOf<Int?>(null) }
+    var findMoved by remember { mutableStateOf(false) }
+    var findBack by remember { mutableStateOf<Int?>(null) }
     var restored by remember { mutableStateOf(false) }
     val lib = model.library!!
 
@@ -228,6 +255,75 @@ private fun EpubReader(model: AppModel, paper: Paper) {
         }
     }
 
+    fun setScale(v: Float) {
+        scale = (Math.round(v.coerceIn(MIN_SCALE, MAX_SCALE) * 10f) / 10f)
+        model.settings.readerScale = scale
+        scope.launch { js("luntaSetTextScale($scale)") }
+    }
+    fun setPaged(on: Boolean) {
+        paged = on
+        model.settings.readerPaged = on
+        scope.launch { js("luntaSetPaged($on, 30, 40, false)") }
+    }
+
+    // Find in paper (FindInPage.swift): the page script finds and marks; this is the bar. Searches as
+    // you type (two characters or more, after a short pause); "3 of 17"; up and down step through.
+    suspend fun runFind(q: String) {
+        searched = q
+        if (q.length < 2) { found = null; js("window.luntaFind && luntaFind('', false)"); return }
+        val r = findResult(js("window.luntaFind ? luntaFind(${JSONObject.quote(q)}, false) : null"))
+        if (q != findQuery.trim() || !findOn) return
+        found = r
+        if ((r?.index ?: -1) >= 0) findMoved = true
+    }
+    suspend fun findStep(forward: Boolean) {
+        val q = findQuery.trim()
+        if (q != searched) { runFind(q); return }
+        if ((found?.count ?: 0) == 0) return
+        findResult(js(if (forward) "window.luntaFindNext ? luntaFindNext() : null" else "window.luntaFindPrev ? luntaFindPrev() : null"))?.let {
+            found = it
+            if (it.index >= 0) findMoved = true
+        }
+    }
+    fun openFind() {
+        if (findOn) return
+        findMoved = false; findBack = null; found = null; searched = ""
+        findOn = true
+        scope.launch { findOrigin = js("luntaReadingOffset()")?.toDoubleOrNull()?.toInt() }
+    }
+    /** Closes the bar; after going to a match, "Back to where you were" for a few seconds. */
+    fun closeFind() {
+        if (!findOn) return
+        findOn = false
+        found = null; searched = ""
+        scope.launch { js("window.luntaFindClear && luntaFindClear()") }
+        val o = findOrigin
+        if (findMoved && o != null) {
+            findBack = o
+            scope.launch { delay(6000); if (findBack == o) findBack = null }
+        }
+    }
+
+    // The citation card's "Add to Lunta" (lunta://cite?doi=…|arxiv=…): the paper if it is already in
+    // the library, else added like "Add paper" does; the card says which (ExternalLinks.swift).
+    fun cite(link: String) {
+        val u = runCatching { Uri.parse(link) }.getOrNull()
+        val doi = u?.getQueryParameter("doi")?.trim().orEmpty()
+        val arxiv = u?.getQueryParameter("arxiv")?.trim().orEmpty()
+        scope.launch {
+            val label = withContext(Dispatchers.IO) {
+                if (doi.isEmpty() && arxiv.isEmpty()) return@withContext "Nothing to add"
+                val key = doi.ifEmpty { "10.48550/arXiv.$arxiv" }
+                if (lib.findByDoi(key) != null) return@withContext "In your library"
+                if (arxiv.isNotEmpty() && lib.papers(PaperFilter(null, null, false, false, false), SortKey.ADDED).any { it.meta.arxiv.startsWith(arxiv) })
+                    return@withContext "In your library"
+                runCatching { lib.addFromInput(doi.ifEmpty { "arXiv:$arxiv" }, null) }.fold({ "Added to your library" }, { "Couldn’t add it" })
+            }
+            if (label == "Added to your library") model.reload()
+            js("window.luntaCiteDone && luntaCiteDone(${JSONObject.quote(label)})")
+        }
+    }
+
     val bridge = remember {
         LuntaBridge { name, body ->
             val v: Any? = runCatching { JSONTokener(body).nextValue() }.getOrNull()
@@ -243,12 +339,23 @@ private fun EpubReader(model: AppModel, paper: Paper) {
                 "__selection" -> hasSelection = v == true
                 "__chrome" -> chrome = !chrome
                 "__link" -> (v as? String)?.let { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
+                "__cite" -> (v as? String)?.let { cite(it) }
             }
         }
     }
 
     fun close() { scope.launch { savePosition(); model.pop() } }
-    BackHandler { if (showToc || showList || showText || showFigures) { showToc = false; showList = false; showText = false; showFigures = false } else close() }
+    BackHandler {
+        if (showToc || showList || showAppearance || showFigures) { showToc = false; showList = false; showAppearance = false; showFigures = false }
+        else if (findOn) closeFind()
+        else close()
+    }
+    LaunchedEffect(findQuery, findOn) {
+        if (!findOn) return@LaunchedEffect
+        val q = findQuery.trim()
+        if (q.length >= 2) delay(220)
+        runFind(q)
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { scope.launch { savePosition() } }
     LaunchedEffect(restored) { while (restored) { delay(6000); savePosition() } }
 
@@ -296,12 +403,15 @@ private fun EpubReader(model: AppModel, paper: Paper) {
             CircularProgressIndicator(Modifier.align(Alignment.Center))
         }
 
-        AnimatedVisibility(chrome, Modifier.align(Alignment.TopCenter), enter = fadeIn(), exit = fadeOut()) {
+        // the toolbar: Figures · Find · Highlighter · ⋯ (every ⋯ item works with one tap; how the
+        // paper looks is in Text & Theme), as on the iPhone
+        AnimatedVisibility(chrome && !findOn, Modifier.align(Alignment.TopCenter), enter = fadeIn(), exit = fadeOut()) {
             Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = .96f), shadowElevation = 3.dp) {
                 Row(Modifier.statusBarsPadding().height(56.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     IconButton({ close() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                     Text(paper.meta.title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    IconButton({ showToc = true }) { Icon(Icons.AutoMirrored.Filled.FormatListBulleted, "Contents") }
+                    if (figures.isNotEmpty()) IconButton({ showFigures = true }) { Icon(Icons.Outlined.PhotoLibrary, "Figures (${figures.size})") }
+                    if (book != null) IconButton({ openFind() }) { Icon(Icons.Filled.Search, "Find in paper") }
                     // highlight mode: tap to turn on or off (filled with the colour while on); hold for the colour
                     Box {
                         val c = HighlightColors.getValue(hlColor)
@@ -330,24 +440,49 @@ private fun EpubReader(model: AppModel, paper: Paper) {
                             }
                         }
                     }
-                    IconButton({ showList = true; scope.launch { refreshHighlights() } }) {
-                        BadgedBox({ if (annotations.isNotEmpty()) Badge { Text(annotations.size.toString()) } }) { Icon(Icons.AutoMirrored.Outlined.Notes, "Highlights and notes") }
-                    }
-                    if (figures.isNotEmpty()) IconButton({ showFigures = true }) { Icon(Icons.Outlined.PhotoLibrary, "Figures (${figures.size})") }
-                    IconButton({ showText = true }) { Icon(Icons.Filled.TextFields, "Text size and layout") }
                     Box {
                         IconButton({ overflow = true }) { Icon(Icons.Filled.MoreVert, "More") }
                         DropdownMenu(overflow, { overflow = false }) {
-                            DropdownMenuItem({ Text("Paper info") }, { overflow = false; close() })
+                            if (toc.isNotEmpty()) DropdownMenuItem({ Text("Contents") }, { overflow = false; showToc = true },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.FormatListBulleted, null) })
+                            DropdownMenuItem({ Text("Text & Theme…") }, { overflow = false; showAppearance = true },
+                                leadingIcon = { Icon(Icons.Filled.FormatSize, null) })
+                            DropdownMenuItem({ Text(if (annotations.isEmpty()) "Highlights & Notes" else "Highlights & Notes (${annotations.size})") },
+                                { overflow = false; showList = true; scope.launch { refreshHighlights() } },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Notes, null) })
+                            HorizontalDivider()
                             if (paper.hasPdf || model.librarySync?.paperFiles(id)?.any { it.name == "paper.pdf" } == true) {
                                 DropdownMenuItem({ Text("Open the PDF") }, {
                                     overflow = false
                                     scope.launch { savePosition(); model.ensureFiles(id, FileKind.PDF); model.pop(); model.push(Screen.Reader(id, true)) }
-                                })
+                                }, leadingIcon = { Icon(Icons.Outlined.PictureAsPdf, null) })
                             }
-                            DropdownMenuItem({ Text(if (paper.read) "Mark as unread" else "Mark as read") }, { overflow = false; model.toggleRead(paper) })
+                            DropdownMenuItem({ Text("Paper info") }, { overflow = false; close() }, leadingIcon = { Icon(Icons.Outlined.Info, null) })
+                            DropdownMenuItem({ Text(if (paper.read) "Mark as unread" else "Mark as read") }, { overflow = false; model.toggleRead(paper) },
+                                leadingIcon = { Icon(if (paper.read) Icons.Outlined.MarkEmailUnread else Icons.Outlined.DoneAll, null) })
                         }
                     }
+                }
+            }
+        }
+
+        // find in paper: the bar over the toolbar while it's open
+        if (findOn) {
+            Surface(Modifier.align(Alignment.TopCenter), color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
+                FindBar(
+                    findQuery, { findQuery = it }, found, searched == findQuery.trim(),
+                    onStep = { f -> scope.launch { findStep(f) } }, onDone = { closeFind() },
+                )
+            }
+        }
+
+        findBack?.let { o ->
+            Surface(
+                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(24.dp),
+                shape = CircleShape, tonalElevation = 6.dp, shadowElevation = 3.dp,
+            ) {
+                TextButton({ findBack = null; scope.launch { js("luntaScrollToOffset($o)") } }) {
+                    Icon(Icons.AutoMirrored.Filled.Undo, null); Spacer(Modifier.width(6.dp)); Text("Back to where you were")
                 }
             }
         }
@@ -423,74 +558,58 @@ private fun EpubReader(model: AppModel, paper: Paper) {
         }
     }
 
-    // text size and layout
-    if (showText) ModalBottomSheet({ showText = false }) {
+    // Text & Theme (ReaderAppearanceSheet on the iPhone): how the paper looks, in one sheet, live
+    if (showAppearance) ModalBottomSheet({ showAppearance = false }) {
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
-            Text("Text & Layout", style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Text & Theme", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                TextButton({ showAppearance = false }) { Text("Done") }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("Text Size", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                FilledTonalButton({ setScale(scale - 0.1f) }, Modifier.weight(1f), enabled = scale > MIN_SCALE + 0.01f) {
+                    Icon(Icons.Filled.TextDecrease, "Smaller text")
+                }
+                Text("${Math.round(scale * 100)}%", Modifier.widthIn(min = 52.dp), style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                FilledTonalButton({ setScale(scale + 0.1f) }, Modifier.weight(1f), enabled = scale < MAX_SCALE - 0.01f) {
+                    Icon(Icons.Filled.TextIncrease, "Larger text")
+                }
+            }
+            Spacer(Modifier.height(18.dp))
             Text("Theme", style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 for (t in THEMES) {
+                    val on = t.key == themeKey
                     Column(
                         Modifier.clip(MaterialTheme.shapes.small).clickable { setTheme(t.key) }.padding(4.dp)
-                            .semantics { contentDescription = "Theme: ${t.name}" },
+                            .semantics { contentDescription = "Theme: ${t.name}" + if (on) ", selected" else "" },
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Box(
                             Modifier.size(width = 48.dp, height = 34.dp).clip(MaterialTheme.shapes.small)
                                 .background(t.page ?: Color.Gray)
-                                .border(if (t.key == themeKey) 3.dp else 1.dp, if (t.key == themeKey) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small),
+                                .then(if (t.page == null) Modifier.background(androidx.compose.ui.graphics.Brush.linearGradient(
+                                    0f to Color.White, .5f to Color.White, .5f to Color(0xFF1C1C1F), 1f to Color(0xFF1C1C1F))) else Modifier)
+                                .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small),
                             contentAlignment = Alignment.Center,
-                        ) { Text("Aa", color = if (t.page == null) Color.White else t.text, style = MaterialTheme.typography.titleSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)) }
-                        Text(t.name, style = MaterialTheme.typography.labelSmall)
+                        ) { Text("Aa", color = if (t.page == null) Color.Gray else t.text, style = MaterialTheme.typography.titleSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Serif)) }
+                        Text(t.name, style = MaterialTheme.typography.labelSmall, color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
-            Spacer(Modifier.height(16.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("A", style = MaterialTheme.typography.bodySmall)
-                Slider(
-                    scale, {
-                        scale = (Math.round(it * 20f) / 20f)
-                    }, Modifier.weight(1f).padding(horizontal = 12.dp), valueRange = 0.7f..1.8f,
-                    onValueChangeFinished = {
-                        model.settings.readerScale = scale
-                        scope.launch { js("luntaSetTextScale($scale)") }
-                    },
-                )
-                Text("A", style = MaterialTheme.typography.headlineSmall)
-            }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(18.dp))
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                SegmentedButton(!paged, { paged = false; model.settings.readerPaged = false; scope.launch { js("luntaSetPaged(false, 30, 40, false)") } }, SegmentedButtonDefaults.itemShape(0, 2)) { Text("Scroll") }
-                SegmentedButton(paged, { paged = true; model.settings.readerPaged = true; scope.launch { js("luntaSetPaged(true, 30, 40, false)") } }, SegmentedButtonDefaults.itemShape(1, 2)) { Text("Pages") }
+                SegmentedButton(!paged, { setPaged(false) }, SegmentedButtonDefaults.itemShape(0, 2)) { Text("Scroll") }
+                SegmentedButton(paged, { setPaged(true) }, SegmentedButtonDefaults.itemShape(1, 2)) { Text("Turn Pages") }
             }
-            Text("In page mode, swipe or tap the edges of the screen to turn pages.", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(16.dp))
-            Text("Figures in the text", style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(10.dp))
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                SegmentedButton(figureCards, { setFigureCards(true) }, SegmentedButtonDefaults.itemShape(0, 2)) { Text("As cards") }
-                SegmentedButton(!figureCards, { setFigureCards(false) }, SegmentedButtonDefaults.itemShape(1, 2)) { Text("In full") }
-            }
-            Spacer(Modifier.height(16.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Highlight mode", style = MaterialTheme.typography.titleSmall)
-                    Text("Every selection is highlighted at once", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Switch(hlMode, { setHighlightMode(it) })
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                for (k in COLORS) {
-                    Box(
-                        Modifier.size(36.dp).clip(CircleShape).background(HighlightColors.getValue(k))
-                            .border(if (k == hlColor) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
-                            .clickable { setHighlightColor(k) }.semantics { contentDescription = "Highlight mode colour: $k" },
-                    )
-                }
+                SegmentedButton(figureCards, { setFigureCards(true) }, SegmentedButtonDefaults.itemShape(0, 2)) { Text("Figures as Cards") }
+                SegmentedButton(!figureCards, { setFigureCards(false) }, SegmentedButtonDefaults.itemShape(1, 2)) { Text("Figures in Full") }
             }
         }
     }
@@ -511,6 +630,48 @@ private fun EpubReader(model: AppModel, paper: Paper) {
     val bookDir = book?.let { File(it.dir) }
     if (showFigures && bookDir != null) FigureGrid(figures, bookDir, onOpen = { openFigure(it) }) { showFigures = false }
     figure?.let { f -> if (bookDir != null) FigureViewer(f, bookDir, readerDark) { figure = null } }
+}
+
+/** The find bar: the search field, "3 of 17" or "No matches", previous / next, Done. */
+@Composable
+private fun FindBar(query: String, onQuery: (String) -> Unit, result: FindResult?, current: Boolean, onStep: (Boolean) -> Unit, onDone: () -> Unit) {
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    val q = query.trim()
+    val label = when {
+        q.length < 2 || !current || result == null -> ""
+        result.count == 0 -> "No matches"
+        else -> "${result.index + 1} of ${result.count}${if (result.capped) "+" else ""}"
+    }
+    val canStep = q.length >= 2 && (result?.count ?: 0) > 0
+    Row(Modifier.statusBarsPadding().height(56.dp).fillMaxWidth().padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (query.isEmpty()) Text("Find in paper", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            androidx.compose.foundation.text.BasicTextField(
+                query, onQuery,
+                Modifier.fillMaxWidth().focusRequester(focus).onPreviewKeyEvent { e ->
+                    // a keyboard's Enter: next match, Shift+Enter: previous
+                    if (e.type == KeyEventType.KeyDown && (e.key == Key.Enter || e.key == Key.NumPadEnter)) { onStep(!e.isShiftPressed); true }
+                    else if (e.type == KeyEventType.KeyDown && e.key == Key.Escape) { onDone(); true }
+                    else false
+                },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { onStep(true) }),
+            )
+        }
+        if (label.isNotEmpty()) Text(
+            label, Modifier.padding(horizontal = 6.dp), style = MaterialTheme.typography.labelMedium,
+            color = if (result?.count == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        IconButton({ onStep(false) }, enabled = canStep) { Icon(Icons.Filled.KeyboardArrowUp, "Previous match") }
+        IconButton({ onStep(true) }, enabled = canStep) { Icon(Icons.Filled.KeyboardArrowDown, "Next match") }
+        TextButton(onDone) { Text("Done") }
+    }
 }
 
 @Composable

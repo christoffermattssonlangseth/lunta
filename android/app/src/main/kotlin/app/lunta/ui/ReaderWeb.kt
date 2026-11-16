@@ -22,7 +22,7 @@ const val READER_HOST = "lunta.local"
  */
 @SuppressLint("SetJavaScriptEnabled", "ViewConstructor")
 class LuntaWebView(context: Context, private val bookDir: File, bridge: LuntaBridge) : WebView(context) {
-    private val readerScripts = listOf("style.js", "tracking.js", "narration.js", "annotation.js", "position.js", "paged.js")
+    private val readerScripts = listOf("style.js", "tracking.js", "narration.js", "annotation.js", "position.js", "paged.js", "find.js")
 
     init {
         settings.javaScriptEnabled = true
@@ -38,7 +38,20 @@ class LuntaWebView(context: Context, private val bookDir: File, bridge: LuntaBri
                 if (request.url.host != READER_HOST) return notFoundIfLocal(request)
                 return serve(request.url.path ?: "")
             }
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = request.url.host != READER_HOST
+            // The page never leaves the paper. bridge.js already sends taps on web links and on the
+            // citation card's "Add to Lunta" to the app; anything that still navigates ends up here:
+            // lunta://cite?… goes to the app, a web link the reader tapped opens in the browser.
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val u = request.url
+                if (u.host == READER_HOST && u.scheme == "https") return false
+                val scheme = u.scheme?.lowercase()
+                when {
+                    scheme == "lunta" && u.host == "cite" -> bridge.post("__cite", org.json.JSONObject.quote(u.toString()))
+                    (scheme == "http" || scheme == "https" || scheme == "mailto") && request.hasGesture() ->
+                        bridge.post("__link", org.json.JSONObject.quote(u.toString()))
+                }
+                return true
+            }
         }
     }
 

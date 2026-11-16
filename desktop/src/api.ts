@@ -44,6 +44,7 @@ export const api = {
   deletePaper: (id: string) => invoke<void>('delete_paper', { id }),
   cite: (ids: string[], style: CiteStyle) => invoke<string>('cite', { ids, style }),
   addPaper: (input: string) => invoke<{ paper: Paper; note: string | null }>('add_paper', { input }),
+  citePaper: (doi: string, arxiv: string) => invoke<{ id: string | null; label: string }>('cite_paper', { doi, arxiv }),
   attachPdf: (id: string, path: string) => invoke<string | null>('attach_pdf', { id, path }),
   makeReadingView: (id: string) => invoke<void>('make_reading_view', { id }),
   findPdf: (id: string) => invoke<string | null>('find_pdf', { id }),

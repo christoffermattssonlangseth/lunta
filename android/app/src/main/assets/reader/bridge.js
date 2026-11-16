@@ -111,12 +111,15 @@
     }
   }, { passive: true });
 
-  // taps: links out of the paper open in the browser; page edges turn pages; elsewhere show/hide the bars
+  // taps: links out of the paper open in the browser (the citation card's "Add to Lunta",
+  // lunta://cite?doi=…|arxiv=…, goes to the app, which answers with luntaCiteDone); page edges
+  // turn pages; elsewhere show/hide the bars
   document.addEventListener('click', function(e){
     var a = e.target.closest && e.target.closest('a[href]');
     if (a) {
       var h = a.getAttribute('href') || '';
       if (/^(https?:|mailto:)/i.test(h)) { e.preventDefault(); send('__link', a.href); }
+      else if (/^lunta:\/\/cite\b/i.test(h)) { e.preventDefault(); send('__cite', h); }
       return;
     }
     if (e.defaultPrevented) return;

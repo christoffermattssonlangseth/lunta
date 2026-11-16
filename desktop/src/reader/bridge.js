@@ -114,14 +114,18 @@
     if (e.ctrlKey && e.altKey && !e.shiftKey && e.code === 'KeyH') { send('__key', 'hlmode'); e.preventDefault(); }
     else if (mod && e.shiftKey && !e.altKey && e.code === 'KeyH') { send('__key', 'highlight'); e.preventDefault(); }
     else if (mod && e.shiftKey && !e.altKey && e.code === 'KeyF') { send('__key', 'figures'); e.preventDefault(); }
+    else if (mod && !e.shiftKey && !e.altKey && e.code === 'KeyF') { send('__key', 'find'); e.preventDefault(); }
+    else if (e.key === 'F3' || (mod && !e.altKey && e.code === 'KeyG')) { send('__key', e.shiftKey ? 'findprev' : 'findnext'); e.preventDefault(); }
     else if (e.key === 'Escape') send('__key', 'escape');
     else if (mod && (e.key === '=' || e.key === '+')) { send('__key', 'larger'); e.preventDefault(); }
     else if (mod && e.key === '-') { send('__key', 'smaller'); e.preventDefault(); }
   });
-  // links out of the paper open in the browser, not inside the reader
+  // links out of the paper open in the browser, not inside the reader; the citation card's
+  // "Add to Lunta" (lunta://cite?doi=…|arxiv=…) goes to the app, which answers with luntaCiteDone
   document.addEventListener('click', function(e){
     var a = e.target.closest && e.target.closest('a[href]'); if (!a) return;
     var h = a.getAttribute('href') || '';
     if (/^(https?:|mailto:)/i.test(h)) { e.preventDefault(); send('__link', a.href); }
+    else if (/^lunta:\/\/cite\b/i.test(h)) { e.preventDefault(); send('__cite', h); }
   });
 })();

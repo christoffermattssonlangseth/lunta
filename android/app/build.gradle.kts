@@ -103,5 +103,7 @@ dependencies {
     implementation(libs.webkit)
     implementation(libs.work.runtime)
     implementation(libs.coroutines.android)
+    // SVG figures in the figure viewer and grid (BitmapFactory reads only raster images)
+    implementation(libs.androidsvg)
     implementation("${libs.jna.get()}@aar")
 }
