@@ -28,7 +28,7 @@ pub(crate) use re;
 /// A figure image (or a linked page, e.g. a table's own page) the browser fetched with the
 /// reader's access. `urls`: every address the page uses for it (the high-resolution link, the
 /// `src` in the page, …), so the reader finds it whichever one it looks at.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct PageImage {
     pub urls: Vec<String>,
     pub data: Vec<u8>,

@@ -18,8 +18,12 @@ use crate::{highlight, Library};
 use std::path::{Path, PathBuf};
 
 /// What the browser sent.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, uniffi::Record)]
 pub struct PageSubmission {
+    /// The paper the page is for (Android: the page was opened from it). When set, the page is
+    /// used for this paper (refused if its DOI is another article's); otherwise the paper is
+    /// found by DOI or title, or added.
+    pub paper_id: Option<String>,
     /// The page as the server sent it.
     pub html: String,
     /// The page as the browser shows it (after scripts ran), tried when `html` can't be converted.
@@ -30,10 +34,10 @@ pub struct PageSubmission {
     /// Figure images (and linked table pages) the browser fetched with the reader's access.
     pub images: Vec<PageImage>,
     /// Figures the browser couldn't send (too large, refused).
-    pub images_skipped: usize,
+    pub images_skipped: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum PageOutcomeKind {
     Added,
     Attached,
@@ -112,6 +116,17 @@ pub fn find_paper(lib: &Library, doi: &str, title: &str) -> Option<Paper> {
     let norm = |s: &str| s.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect::<String>();
     let t = norm(title);
     lib.papers(PaperFilter::default(), SortKey::Added).into_iter().find(|p| norm(&p.meta.title) == t)
+}
+
+/// DOIs compared as DOIs: case-insensitive, with or without a doi.org / "doi:" prefix.
+fn same_doi(a: &str, b: &str) -> bool {
+    let norm = |d: &str| {
+        let d = d.trim().to_lowercase();
+        let d = d.trim_start_matches("https://").trim_start_matches("http://");
+        let d = d.trim_start_matches("dx.doi.org/").trim_start_matches("doi.org/").trim_start_matches("doi:");
+        d.trim().to_string()
+    };
+    norm(a) == norm(b)
 }
 
 /// The text of a reading view as the reader sees it (the continuous document's body).
@@ -202,10 +217,19 @@ fn run(lib: &Library, s: &PageSubmission, backups: &Path, dry_run: bool, opts: &
     let figures = plural(result.images, "figure");
     let words = result.words;
 
-    // 2. the paper
+    // 2. the paper: the one the page was opened from, else by DOI or title
     let doi = if result.meta.doi.is_empty() { s.doi.clone() } else { result.meta.doi.clone() };
     let title = if result.meta.title.is_empty() { &s.title } else { &result.meta.title };
-    let Some(paper) = find_paper(lib, &doi, title) else {
+    let chosen = s.paper_id.as_ref().and_then(|id| lib.paper(id.clone()));
+    if let Some(p) = &chosen {
+        if !doi.is_empty() && !p.meta.doi.is_empty() && !same_doi(&doi, &p.meta.doi) {
+            return Err(format!(
+                "This page is another article (doi:{doi}), not this paper (doi:{}). Open the paper's own page and try again.",
+                p.meta.doi
+            ));
+        }
+    }
+    let Some(paper) = chosen.or_else(|| find_paper(lib, &doi, title)) else {
         out.kind = PageOutcomeKind::Added;
         if dry_run {
             out.message = format!("Dry run: would add this paper with the page's full text ({words} words, {figures}).");
@@ -420,6 +444,30 @@ mod tests {
         // a page that isn't the full text: an error, nothing changes
         let e = use_page_full_text(&lib, &sub("<html><body><p>Sign in</p></body></html>".into()), &backups, false, &opts).unwrap_err();
         assert!(e.starts_with("This page doesn't look like the article's full text"), "{e}");
+    }
+
+    #[test]
+    fn a_page_for_a_given_paper() {
+        let dir = tempfile::tempdir().unwrap();
+        let lib = library(dir.path());
+        let backups = dir.path().join("backups");
+        let opts = Options { offline: true, ..Default::default() };
+        let meta = |title: &str, doi: &str| PaperMeta { title: title.into(), doi: doi.into(), ..Default::default() };
+
+        // the paper the page was opened from (its DOI written differently): attached to it
+        let p = lib.add_paper(meta("Some paper", "https://doi.org/10.1016/J.CELL.2026.01.001"), None, None, None).unwrap();
+        let s = PageSubmission { paper_id: Some(p.id.clone()), ..sub(page("We thank the test suite.")) };
+        let o = use_page_full_text(&lib, &s, &backups, false, &opts).unwrap();
+        assert_eq!((o.kind, o.paper_id.as_deref()), (PageOutcomeKind::Attached, Some(p.id.as_str())), "{}", o.message);
+        assert!(lib.paper(p.id.clone()).unwrap().has_epub);
+
+        // another article's page: refused, nothing changes
+        let q = lib.add_paper(meta("Another paper", "10.1000/other"), None, None, None).unwrap();
+        let s = PageSubmission { paper_id: Some(q.id.clone()), ..sub(page("We thank the test suite.")) };
+        let e = use_page_full_text(&lib, &s, &backups, false, &opts).unwrap_err();
+        assert!(e.starts_with("This page is another article (doi:10.1016/j.cell.2026.01.001), not this paper (doi:10.1000/other)."), "{e}");
+        assert!(!lib.paper(q.id).unwrap().has_epub);
+        assert_eq!(lib.papers(PaperFilter::default(), SortKey::Added).len(), 2);
     }
 
     #[test]

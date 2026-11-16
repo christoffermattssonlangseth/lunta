@@ -357,13 +357,14 @@ pub(crate) fn submission(body: &[u8]) -> Option<(PageSubmission, bool)> {
         images.push(PageImage { urls, data });
     }
     let sub = PageSubmission {
+        paper_id: None,
         html,
         live_html: s("liveHtml"),
         url: s("url").unwrap_or_default(),
         doi: s("doi").unwrap_or_default(),
         title: s("title").unwrap_or_default(),
         images,
-        images_skipped: j.get("imagesSkipped").and_then(Value::as_u64).unwrap_or(0) as usize,
+        images_skipped: j.get("imagesSkipped").and_then(Value::as_u64).unwrap_or(0) as u32,
     };
     Some((sub, j.get("dryRun").and_then(Value::as_bool).unwrap_or(false)))
 }

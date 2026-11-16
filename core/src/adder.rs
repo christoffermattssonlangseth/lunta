@@ -1,9 +1,10 @@
 //! Adding papers and making reading views with the Rust converter (feature "convert"), exported
 //! to UniFFI for the Android app. Mirrors LibraryModel.add / makeReadingView / attachPDF in
-//! apple/Shared and desktop/src-tauri/src/add.rs. Everything here blocks (network), so call it
-//! off the main thread.
+//! apple/Shared and desktop/src-tauri/src/add.rs, and "Use this page's full text" (pagetext) for
+//! the app's journal page. Everything here blocks (network), so call it off the main thread.
 
 use crate::convert::{self, ConversionResult, Options};
+use crate::pagetext::{self, PageOutcome, PageOutcomeKind, PageSubmission};
 use crate::model::{CoreError, FileKind, Paper, PaperMeta, Result};
 use crate::{Library, ProgressListener};
 use std::path::{Path, PathBuf};
@@ -14,6 +15,48 @@ pub struct AddOutcome {
     pub paper: Paper,
     /// Set when the paper was added but no reading view could be made (the converter's reason).
     pub note: Option<String>,
+}
+
+/// What "Use this page's full text" did (pagetext's [`PageOutcome`], for UniFFI).
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct PageFullText {
+    pub kind: PageOutcomeKind,
+    pub paper_id: Option<String>,
+    /// The core's own sentence (it names the backup folder).
+    pub message: String,
+    pub words: u32,
+    pub images: u32,
+    pub notes: Vec<String>,
+    /// e.g. "Full text from cell.com"
+    pub source: String,
+    /// the reader used, e.g. "Atypon"
+    pub reader: String,
+    /// highlights in the reading view that was there
+    pub highlights: u32,
+    /// quotes of those the page's text wouldn't have (kept: the reading view stayed)
+    pub unmatched: Vec<String>,
+    /// the folder the previous reading view (or, when kept, the page's version) was saved in
+    pub backup: Option<String>,
+    pub dry_run: bool,
+}
+
+impl From<PageOutcome> for PageFullText {
+    fn from(o: PageOutcome) -> Self {
+        PageFullText {
+            kind: o.kind,
+            paper_id: o.paper_id,
+            message: o.message,
+            words: o.words as u32,
+            images: o.images as u32,
+            notes: o.notes,
+            source: o.source,
+            reader: o.reader,
+            highlights: o.highlights as u32,
+            unmatched: o.unmatched,
+            backup: o.backup,
+            dry_run: o.dry_run,
+        }
+    }
 }
 
 /// Where the PDFium library can be found (feature "pdf"); call once at start-up with the app's
@@ -227,5 +270,33 @@ impl Library {
             }
         }
         Ok(None)
+    }
+
+    /// "Use this page's full text": the journal page the reader has open in the app (with their
+    /// access), with the figure images it fetched, becomes the paper's reading view: added,
+    /// attached, or replaced after backing up the current one (book.epub and its text) into
+    /// `backups_dir`, but kept when a highlight wouldn't be found in the page's text. `dry_run`
+    /// converts and checks but changes nothing. A page that isn't the full text (only the
+    /// abstract, a sign-in page) is an error with the converter's message.
+    pub fn use_page_full_text(
+        &self,
+        page: PageSubmission,
+        backups_dir: String,
+        dry_run: bool,
+        progress: Option<Arc<dyn ProgressListener>>,
+    ) -> Result<PageFullText> {
+        let say = Say(progress);
+        say.say("Making the reading view…");
+        let s = say.clone();
+        let opts = Options { log: Some(Box::new(move |m: &str| s.say(m))), offline: false };
+        let o = pagetext::use_page_full_text(self, &page, Path::new(&backups_dir), dry_run, &opts).map_err(inv)?;
+        if !dry_run && matches!(o.kind, PageOutcomeKind::Attached | PageOutcomeKind::Replaced) {
+            // the unpacked book of the reading view that was there (open_epub's cache)
+            if let Some(id) = &o.paper_id {
+                let dir = self.inner.lock().unwrap().cache.join("epub").join(id);
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        }
+        Ok(o.into())
     }
 }
