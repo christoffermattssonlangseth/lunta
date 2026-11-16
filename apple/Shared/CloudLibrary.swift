@@ -161,6 +161,22 @@ enum ReaderAssets {
     /* dark: true black (off on an OLED screen), with slightly softened text so it doesn't glare */
     @media (prefers-color-scheme: dark) { html, body { background: #000; } body { color: #d8d5ce; } a { color: #9ec9d8; } img { opacity: .9; }
                                           table, th, td { border-color: #333 !important; } .box { background: #111 !important; border-color: #333 !important; } }
+    /* themes (the app sets <html data-theme> and forces light or dark underneath): Light is plain
+       white; Paper is warm sepia on a light base; Quiet is soft grey on a dark base; Black is the dark default */
+    html[data-theme="light"], html[data-theme="light"] body { background: #ffffff; }
+    html[data-theme="paper"], html[data-theme="paper"] body { background: #f5ecd9; }
+    html[data-theme="paper"] body { color: #3b3025; }
+    html[data-theme="paper"] a { color: #8a4a1c; }
+    html[data-theme="paper"] table, html[data-theme="paper"] th, html[data-theme="paper"] td { border-color: #d9c9a8 !important; }
+    html[data-theme="paper"] .box { background: #efe2c6 !important; border-color: #d9c9a8 !important; }
+    html[data-theme="quiet"], html[data-theme="quiet"] body { background: #2a2927; }
+    html[data-theme="quiet"] body { color: #c9c4b9; }
+    html[data-theme="quiet"] a { color: #a9c7cf; }
+    html[data-theme="quiet"] img { opacity: .85; }
+    html[data-theme="quiet"] table, html[data-theme="quiet"] th, html[data-theme="quiet"] td { border-color: #45433f !important; }
+    html[data-theme="quiet"] .box { background: #33322f !important; border-color: #45433f !important; }
+    html[data-theme="paper"] .m-figcard { background: #efe4cc; border-color: #d9c9a8; } html[data-theme="paper"] .m-fc-label { color: #8a4a1c; }
+    html[data-theme="quiet"] .m-figcard { background: #33322f; border-color: #45433f; }
     h1, h2, h3 { font-family: -apple-system, "Helvetica Neue", sans-serif; scroll-margin-top: 1em; }
     h1 { margin-top: 2.4em; padding-top: 1.2em; border-top: 1px solid rgba(127,127,127,.25); }
     .titlepage h1 { border-top: none; padding-top: 0; margin-top: .6em; }

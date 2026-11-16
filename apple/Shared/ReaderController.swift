@@ -16,7 +16,7 @@ final class ReaderController: ObservableObject {
     /// Called when the page has loaded (to draw highlights).
     var onPageReady: (() -> Void)?
     /// Highlight mode: the user finished a selection.
-    var onSelectionDone: (() -> Void)?
+    var onSelectionDone: ((PageSelection?) -> Void)?
     /// Called from the text selection menu.
     var onMenu: ((ReaderMenuAction) -> Void)?
 

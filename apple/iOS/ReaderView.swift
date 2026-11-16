@@ -17,6 +17,8 @@ struct ReaderView: View {
     @State private var showInfo = false
     @AppStorage("readerFontScale") private var fontScale = 1.0
     @AppStorage("readerPaged") private var paged = false
+    @AppStorage("readerTheme") private var themeRaw = ReaderTheme.automatic.rawValue
+    private var theme: ReaderTheme { ReaderTheme(rawValue: themeRaw) ?? .automatic }
     @AppStorage("highlightMode") private var highlightMode = false
     @AppStorage("highlightModeColor") private var highlightModeColor = HighlightColor.yellow.rawValue
     @State private var autoHighlighter = AutoHighlighter()
@@ -53,7 +55,7 @@ struct ReaderView: View {
                 ProgressView(message ?? "Opening…")
             } else if mode == .reading, let book {
                 EpubWebViewIOS(url: URL(fileURLWithPath: book.combined), readAccess: URL(fileURLWithPath: book.dir),
-                               fontScale: fontScale, paged: paged, scrollRequest: scrollRequest, controller: controller,
+                               fontScale: fontScale, theme: theme, paged: paged, scrollRequest: scrollRequest, controller: controller,
                                onPinch: { step in fontScale = min(2.2, max(0.7, ((fontScale + step * 0.1) * 10).rounded() / 10)) },
                                onToggleChrome: {
                                    withAnimation(.easeInOut(duration: 0.22)) { chromeHidden.toggle() }
@@ -88,9 +90,8 @@ struct ReaderView: View {
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if mode == .reading, book != nil {
-                    Button { listening ? stopListening() : startListening() } label: {
-                        Image(systemName: listening ? "headphones.circle.fill" : "headphones")
-                    }
+                    // figures up front; listening is in the … menu (the narration bar has its stop button)
+                    FiguresButton(controller: controller) { showFigures = true }
                     // highlight mode: tap to turn on/off; hold for the colour
                     Menu {
                         Toggle(isOn: $highlightMode) { Label("Highlight Mode", systemImage: "highlighter") }
@@ -107,11 +108,13 @@ struct ReaderView: View {
                     } primaryAction: { highlightMode.toggle() }
                     .accessibilityLabel(highlightMode ? "Highlight mode on" : "Highlight mode off")
                     Button { asking = true } label: { Image(systemName: "sparkles") }
-                    FiguresButton(controller: controller) { showFigures = true }
                     Button { showContents = true } label: { Image(systemName: "list.bullet") }
                 }
                 Menu {
                     if mode == .reading, book != nil {
+                        Button { listening ? stopListening() : startListening() } label: {
+                            Label(listening ? "Stop Listening" : "Listen", systemImage: listening ? "stop.circle" : "headphones")
+                        }
                         ControlGroup {
                             Button { fontScale = max(0.7, fontScale - 0.1) } label: { Label("Smaller", systemImage: "textformat.size.smaller") }
                             Button { fontScale = min(2.2, fontScale + 0.1) } label: { Label("Larger", systemImage: "textformat.size.larger") }
@@ -122,6 +125,10 @@ struct ReaderView: View {
                         } label: { Label("Layout", systemImage: paged ? "book" : "scroll") }
                         .pickerStyle(.menu)
                         FigureSettingPicker()
+                        Picker(selection: $themeRaw) {
+                            ForEach(ReaderTheme.allCases) { t in Text(t.name).tag(t.rawValue) }
+                        } label: { Label("Theme", systemImage: "circle.lefthalf.filled") }
+                        .pickerStyle(.menu)
                         Picker(selection: Binding(get: { PhoneVoice.shared.voice }, set: { PhoneVoice.shared.voice = $0 })) {
                             ForEach(PhoneVoice.voices, id: \.id) { Text($0.name).tag($0.id) }
                         } label: { Label("Natural Voice", systemImage: "waveform") }
@@ -139,6 +146,8 @@ struct ReaderView: View {
             }
         }
         .environment(\.highlightUndo, undoManager)
+        // the theme's light/dark (reading view only; the PDF keeps the system's)
+        .preferredColorScheme(mode == .reading ? theme.scheme : nil)
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidUndoChange)) { _ in refreshHighlights() }
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidRedoChange)) { _ in refreshHighlights() }
         .sheet(item: $editingAnnotation) { a in AnnotationEditor(annotation: a) { refreshHighlights() }.environmentObject(model) }
@@ -179,20 +188,22 @@ struct ReaderView: View {
             ScrollView { SharePanel(ids: [paperID]) }.environmentObject(model).presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showInfo) { NavigationStack { PaperInfoView(paperID: paperID, embedded: false) } }
-        .onChange(of: highlightMode) { _, on in controller.setHighlightMode(on) }
+        .onChange(of: highlightMode) { _, on in controller.setHighlightMode(on, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow) }
+        .onChange(of: highlightModeColor) { controller.setHighlightMode(highlightMode, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow) }
         .onChange(of: mode) { _, m in if m == .pdf, pdfURL == nil { Task { await loadPDF() } } }
         .task {
             controller.onFigure = { figure = $0 }
             controller.onPageReady = {
-                controller.setHighlightMode(highlightMode)
+                controller.setHighlightMode(highlightMode, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow)
                 refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
             }
-            controller.onSelectionDone = {
+            controller.onSelectionDone = { pageSel in
                 guard highlightMode, mode == .reading else { return }
                 Task {
-                    guard let sel = await controller.pageSelection() else { return }
-                    autoHighlighter.apply(sel, paper: paperID, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow,
-                                          model: model, undo: undoManager)
+                    var sel = pageSel
+                    if sel == nil { sel = await controller.pageSelection() }
+                    guard let sel else { refreshHighlights(); return }
+                    autoHighlighter.apply(sel, paper: paperID, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow, model: model, undo: undoManager)
                     controller.clearSelection()
                     refreshHighlights()
                 }
@@ -378,6 +389,7 @@ struct EpubWebViewIOS: UIViewRepresentable {
     let url: URL
     let readAccess: URL
     let fontScale: Double
+    var theme: ReaderTheme = .automatic
     var paged = false
     let scrollRequest: ScrollRequest
     let controller: ReaderController
@@ -398,6 +410,8 @@ struct EpubWebViewIOS: UIViewRepresentable {
         let fig = FigureMessageHandler()
         fig.controller = controller
         cfg.userContentController.add(fig, name: "fig")
+        cfg.userContentController.addUserScript(WKUserScript(source: theme.js, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        context.coordinator.theme = theme
         cfg.addAnnotations(controller)
         // text size: the font scales, the page itself is never zoomed
         cfg.userContentController.addUserScript(WKUserScript(source: "document.documentElement.style.setProperty('--m-scale', '\(fontScale)');", injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -444,6 +458,10 @@ struct EpubWebViewIOS: UIViewRepresentable {
     }
 
     func updateUIView(_ v: WKWebView, context: Context) {
+        if context.coordinator.theme != theme {
+            context.coordinator.theme = theme
+            v.evaluateJavaScript(theme.js)
+        }
         context.coordinator.onPosition = onPosition
         context.coordinator.onChrome = onChrome
         context.coordinator.paged = paged
@@ -474,6 +492,7 @@ struct EpubWebViewIOS: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(onPosition: onPosition) }
 
     final class Coordinator: NSObject, WKScriptMessageHandler, UIGestureRecognizerDelegate {
+        var theme: ReaderTheme = .automatic
         var loaded: URL?
         var lastScroll = ScrollRequest()
         var onPosition: (String) -> Void

@@ -13,6 +13,8 @@ struct ReaderWindow: View {
     @State private var scrollRequest = ScrollRequest()
     @AppStorage("readerFontScale") private var fontScale = 1.0
     @AppStorage("readerPagedMac") private var paged = false
+    @AppStorage("readerTheme") private var themeRaw = ReaderTheme.automatic.rawValue
+    private var theme: ReaderTheme { ReaderTheme(rawValue: themeRaw) ?? .automatic }
     @AppStorage("highlightMode") private var highlightMode = false
     @AppStorage("highlightModeColor") private var highlightModeColor = HighlightColor.yellow.rawValue
     @State private var autoHighlighter = AutoHighlighter()
@@ -76,7 +78,7 @@ struct ReaderWindow: View {
                 case .reading:
                     if let book {
                         EpubWebView(url: URL(fileURLWithPath: book.combined), readAccess: URL(fileURLWithPath: book.dir),
-                                    fontScale: fontScale, paged: paged, scrollRequest: scrollRequest, controller: controller) { id in current = id }
+                                    fontScale: fontScale, theme: theme, paged: paged, scrollRequest: scrollRequest, controller: controller) { id in current = id }
                             .safeAreaInset(edge: .bottom) {
                                 if listening { NarrationBar(narrator: narrator) { stopListening() } }
                             }
@@ -160,6 +162,13 @@ struct ReaderWindow: View {
                             .help(paged ? "Scroll instead of turning pages" : "Turn pages (arrow keys, space or swipe)")
                             .keyboardShortcut("p", modifiers: [.command, .option])
                             .disabled(book == nil)
+                        Menu {
+                            Picker("Theme", selection: $themeRaw) {
+                                ForEach(ReaderTheme.allCases) { t in Text(t.name).tag(t.rawValue) }
+                            }
+                            .pickerStyle(.inline)
+                        } label: { Image(systemName: "circle.lefthalf.filled") }
+                        .help("Theme: \(theme.name)")
                         Button { fontScale = max(0.7, fontScale - 0.1) } label: { Image(systemName: "textformat.size.smaller") }
                             .help("Smaller text")
                         Button { fontScale = min(1.8, fontScale + 0.1) } label: { Image(systemName: "textformat.size.larger") }
@@ -178,7 +187,8 @@ struct ReaderWindow: View {
         .readerFigures(controller, browsing: $showFigures)
         .sheet(item: $editingAnnotation) { a in AnnotationEditor(annotation: a) { refreshHighlights() } }
         .onChange(of: paper?.annotationCount) { refreshHighlights() }
-        .onChange(of: highlightMode) { _, on in controller.setHighlightMode(on) }
+        .onChange(of: highlightMode) { _, on in controller.setHighlightMode(on, color: hlColor) }
+        .onChange(of: highlightModeColor) { controller.setHighlightMode(highlightMode, color: hlColor) }
         .onDisappear { position.stop(paperID, model: model, controller: controller) }
         .onReceive(NotificationCenter.default.publisher(for: .luntaReaderMode)) { n in
             if n.object as? String == paperID, let m = Self.requestedMode.removeValue(forKey: paperID) { mode = m }
@@ -192,13 +202,15 @@ struct ReaderWindow: View {
         .task {
             controller.onFigure = { figure = $0 }
             controller.onPageReady = {
-                controller.setHighlightMode(highlightMode)
+                controller.setHighlightMode(highlightMode, color: hlColor)
                 refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
             }
-            controller.onSelectionDone = {
+            controller.onSelectionDone = { pageSel in
                 guard highlightMode, mode == .reading else { return }
                 Task {
-                    guard let sel = await controller.pageSelection() else { return }
+                    var sel = pageSel
+                    if sel == nil { sel = await controller.pageSelection() }
+                    guard let sel else { refreshHighlights(); return }
                     autoHighlighter.apply(sel, paper: paperID, color: hlColor, model: model, undo: undo)
                     controller.clearSelection()
                     refreshHighlights()
@@ -317,6 +329,7 @@ struct EpubWebView: NSViewRepresentable {
     let url: URL
     let readAccess: URL
     let fontScale: Double
+    var theme: ReaderTheme = .automatic
     var paged = false
     let scrollRequest: ScrollRequest
     let controller: ReaderController
@@ -339,6 +352,8 @@ struct EpubWebView: NSViewRepresentable {
         let fig = FigureMessageHandler()
         fig.controller = controller
         cfg.userContentController.add(fig, name: "fig")
+        cfg.userContentController.addUserScript(WKUserScript(source: theme.js, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        context.coordinator.theme = theme
         cfg.addAnnotations(controller)
         let state = pagedState(fontScale)
         context.coordinator.paging = cfg.addPaging(state)
@@ -346,13 +361,23 @@ struct EpubWebView: NSViewRepresentable {
         let v = ReaderWebView(frame: .zero, configuration: cfg)
         v.controller = controller
         v.setValue(false, forKey: "drawsBackground")
+        v.appearance = Self.appearance(theme)   // only the page: the window keeps the system's look
         controller.webView = v
         v.loadFileURL(url, allowingReadAccessTo: readAccess)
         context.coordinator.loaded = url
         return v
     }
 
+    static func appearance(_ t: ReaderTheme) -> NSAppearance? {
+        t.scheme.map { NSAppearance(named: $0 == .dark ? .darkAqua : .aqua) } ?? nil
+    }
+
     func updateNSView(_ v: WKWebView, context: Context) {
+        if context.coordinator.theme != theme {
+            context.coordinator.theme = theme
+            v.evaluateJavaScript(theme.js)
+            v.appearance = Self.appearance(theme)
+        }
         context.coordinator.onPosition = onPosition
         v.pageZoom = fontScale
         let state = pagedState(fontScale)
@@ -376,6 +401,7 @@ struct EpubWebView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(onPosition: onPosition) }
 
     final class Coordinator: NSObject, WKScriptMessageHandler {
+        var theme: ReaderTheme = .automatic
         var loaded: URL?
         var lastScroll = ScrollRequest()
         var onPosition: (String) -> Void

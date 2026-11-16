@@ -37,6 +37,10 @@ extension ReaderAssets {
     mark.m-blue { background: rgba(122,184,242,.42); }
     mark.m-pink { background: rgba(245,143,179,.42); }
     mark.m-note { border-bottom: 2px dotted rgba(200,120,40,.9); }
+    html.m-hlmode[data-hlcolor="yellow"] ::selection { background: rgba(250,212,77,.55); }
+    html.m-hlmode[data-hlcolor="green"] ::selection { background: rgba(140,209,122,.55); }
+    html.m-hlmode[data-hlcolor="blue"] ::selection { background: rgba(122,184,242,.5); }
+    html.m-hlmode[data-hlcolor="pink"] ::selection { background: rgba(245,143,179,.5); }
     mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
     @media (prefers-color-scheme: dark) {
       mark.m-yellow { background: rgba(250,212,77,.30); } mark.m-green { background: rgba(140,209,122,.30); }
@@ -200,15 +204,22 @@ extension ReaderAssets {
       function hlFire(){
         if (!window.luntaHLMode || document.body.classList.contains('listening')) return;
         var s = window.getSelection(); if (!s || s.isCollapsed || s.toString().trim().length < 2) return;
-        try { window.webkit.messageHandlers.ann.postMessage('__hl__'); } catch (x) {}
+        var j = window.luntaSelection(); if (!j) return;
+        // coloured here and now; the app saves it and redraws (which replaces this mark with the real one)
+        try {
+          var o = JSON.parse(j);
+          if (o.start >= 0) wrap(textNodes(), o.start, o.start + o.quote.length, { id: '__pending', color: window.luntaHLColor || 'yellow' });
+        } catch (x) {}
+        s.removeAllRanges();
+        try { window.webkit.messageHandlers.ann.postMessage('__hl__:' + j); } catch (x) {}
       }
       if ('ontouchstart' in window) {
         document.addEventListener('selectionchange', function(){
           if (!window.luntaHLMode) return;
-          clearTimeout(hlTimer); hlTimer = setTimeout(hlFire, 900);
+          clearTimeout(hlTimer); hlTimer = setTimeout(hlFire, 500);
         });
       } else {
-        document.addEventListener('mouseup', function(){ if (window.luntaHLMode) setTimeout(hlFire, 30); });
+        document.addEventListener('mouseup', function(){ if (window.luntaHLMode) setTimeout(hlFire, 0); });
       }
       try { window.webkit.messageHandlers.ann.postMessage('__ready__'); } catch (x) {}
     })();
@@ -222,7 +233,10 @@ final class AnnotationMessageHandler: NSObject, WKScriptMessageHandler {
         guard let id = m.body as? String else { return }
         Task { @MainActor in
             if id == "__ready__" { self.controller?.onPageReady?() }
-            else if id == "__hl__" { self.controller?.onSelectionDone?() }
+            else if id.hasPrefix("__hl__:"), let d = id.dropFirst(7).data(using: .utf8) {
+                // highlight mode: the page already coloured the passage; this is what to save
+                self.controller?.onSelectionDone?(try? JSONDecoder().decode(PageSelection.self, from: d))
+            }
             else { self.controller?.onAnnotation?(id) }
         }
     }
@@ -255,8 +269,12 @@ extension ReaderController {
     }
 
     /// Highlight mode on or off in the page (call again after the page reloads).
-    func setHighlightMode(_ on: Bool) {
-        webView?.evaluateJavaScript("window.luntaHLMode = \(on)")
+    func setHighlightMode(_ on: Bool, color: HighlightColor = .yellow) {
+        webView?.evaluateJavaScript("""
+            window.luntaHLMode = \(on); window.luntaHLColor = '\(color.rawValue)';
+            document.documentElement.classList.toggle('m-hlmode', \(on));
+            document.documentElement.setAttribute('data-hlcolor', '\(color.rawValue)');
+            """)
     }
 
     func clearSelection() {
