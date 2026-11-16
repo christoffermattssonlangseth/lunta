@@ -272,7 +272,7 @@ function renderToc() {
     text: t.title, 'data-anchor': t.anchor, style: `padding-left:${10 + Math.max(0, t.level - 1) * 12}px`,
     onclick: () => {
       const safe = t.anchor.replace(/\\/g, '').replace(/'/g, "\\'");     // ReaderAssets.scrollJS
-      run(`var e=document.getElementById('${safe}'); if(e) e.scrollIntoView({behavior:'smooth', block:'start'});`);
+      run(`var e=document.getElementById('${safe}'); if(e){ if(window.luntaMarkJump) luntaMarkJump(); e.scrollIntoView({behavior:'smooth', block:'start'}); }`);
       markToc(t.anchor);
       frame?.contentWindow?.focus();
     },

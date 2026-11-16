@@ -184,6 +184,7 @@ extension ReaderAssets {
       };
       window.luntaShowAnnotation = function(id){
         var m = document.querySelector('mark[data-ann="' + id + '"]'); if (!m) return false;
+        if (window.luntaMarkJump) window.luntaMarkJump();
         m.scrollIntoView({ behavior: 'smooth', block: 'center' });
         document.querySelectorAll('mark[data-ann="' + id + '"]').forEach(function(x){
           x.classList.add('m-flash'); setTimeout(function(){ x.classList.remove('m-flash'); }, 1800); });

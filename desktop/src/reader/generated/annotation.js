@@ -148,6 +148,7 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
   };
   window.luntaShowAnnotation = function(id){
     var m = document.querySelector('mark[data-ann="' + id + '"]'); if (!m) return false;
+    if (window.luntaMarkJump) window.luntaMarkJump();
     m.scrollIntoView({ behavior: 'smooth', block: 'center' });
     document.querySelectorAll('mark[data-ann="' + id + '"]').forEach(function(x){
       x.classList.add('m-flash'); setTimeout(function(){ x.classList.remove('m-flash'); }, 1800); });

@@ -515,7 +515,7 @@ private fun EpubReader(model: AppModel, paper: Paper) {
                     t.title, Modifier.fillMaxWidth().clickable {
                         showToc = false; chrome = false
                         val safe = t.anchor.replace("\\", "").replace("'", "\\'")
-                        scope.launch { js("var e=document.getElementById('$safe'); if(e) e.scrollIntoView({behavior:'smooth', block:'start'});") }
+                        scope.launch { js("var e=document.getElementById('$safe'); if(e){ if(window.luntaMarkJump) luntaMarkJump(); e.scrollIntoView({behavior:'smooth', block:'start'}); }") }
                     }.padding(start = 24.dp + 16.dp * (t.level - 1).coerceAtLeast(0), end = 24.dp, top = 10.dp, bottom = 10.dp),
                     style = if (t.level <= 1) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
                 )
