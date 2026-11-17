@@ -379,20 +379,8 @@ struct PaperTable: View {
             }
             .width(18)
             TableColumn("Title") { p in
-                VStack(alignment: .leading, spacing: 3) {
-                    // every row has the same height from the start (two title lines, then the journal,
-                    // or a search's snippet): a new paper's details arrive after its row is measured,
-                    // and the table doesn't measure a row again, which left new rows squashed
-                    Text(p.meta.title.isEmpty ? "Untitled" : p.meta.title)
-                        .font(.body.weight(p.read ? .regular : .semibold))
-                        .lineLimit(2, reservesSpace: true)
-                    if !model.query.isEmpty {
-                        SnippetText(snippet: model.snippets[p.id] ?? "")
-                    } else {
-                        Text(p.meta.journal.isEmpty ? " " : p.meta.journal).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                }
-                .padding(.vertical, 5)
+                PaperTitleCell(title: p.meta.title.isEmpty ? "Untitled" : p.meta.title, bold: !p.read,
+                               searching: !model.query.isEmpty, snippet: model.snippets[p.id] ?? "", journal: p.meta.journal)
             }
             .width(min: 240, ideal: 380)
             TableColumn("Authors") { p in Text(p.meta.authorLine).lineLimit(1).foregroundStyle(.secondary) }
@@ -416,7 +404,7 @@ struct PaperTable: View {
         // drag papers onto sidebar folders and tags (AppKit; see PaperDrag.swift). Dragging a
         // selected paper drags the whole selection, as the table drags all selected rows.
         .background(PaperDragSource { [papers = model.papers] row in row < papers.count ? papers[row].id : nil })
-        .background(TableRowHeights(ids: model.papers.map(\.id), content: rowContentKey))
+        .background(TableRowHeights(ids: model.papers.map(\.id), content: rowContentKey, searching: !model.query.isEmpty))
         .contextMenu(forSelectionType: String.self) { ids in
             PaperMenu(ids: Array(ids))
         } primaryAction: { ids in
@@ -435,6 +423,29 @@ struct PaperTable: View {
         }
         .navigationTitle(model.sourceTitle)
         .navigationSubtitle("\(model.papers.count) papers")
+    }
+}
+
+/// A paper's title cell. Every row has the same height (two title lines, then the journal, or a
+/// search's snippet): TableRowHeights gives the table that one height, measured from this view.
+struct PaperTitleCell: View {
+    let title: String
+    let bold: Bool
+    let searching: Bool
+    let snippet: String
+    let journal: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.body.weight(bold ? .semibold : .regular))
+                .lineLimit(2, reservesSpace: true)
+            if searching {
+                SnippetText(snippet: snippet)
+            } else {
+                Text(journal.isEmpty ? " " : journal).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .padding(.vertical, 5)
     }
 }
 

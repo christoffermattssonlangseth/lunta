@@ -204,52 +204,50 @@ private var anchorKey: UInt8 = 0
 /// and overlapped. When the list of ids changes, every row's height is asked for again.
 struct TableRowHeights: NSViewRepresentable {
     let ids: [String]
-    /// Changes when what the rows show changes (a paper added, or its details filled in later):
-    /// the heights are measured again then, not only when papers come and go.
+    /// Changes when what the rows show changes (a paper added, or its details filled in later).
     var content: Int = 0
+    /// Search results show a two-line snippet instead of the journal: taller rows.
+    var searching = false
 
     func makeNSView(context: Context) -> Probe { Probe() }
 
     func updateNSView(_ v: Probe, context: Context) {
-        guard v.ids != ids || v.content != content else { return }
-        v.ids = ids; v.content = content
-        // after SwiftUI has applied the rows, and again once they have drawn (also the first time:
-        // that sets the fixed row height)
-        DispatchQueue.main.async { v.remeasure() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { v.remeasure() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { v.remeasure() }
+        v.ids = ids; v.searching = searching
+        // after SwiftUI has applied the rows, and again a little later (SwiftUI may reset the
+        // table while it swaps rows, e.g. going from Starred back to All Papers)
+        DispatchQueue.main.async { v.apply() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { v.apply() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { v.apply() }
     }
 
     final class Probe: NSView {
         var ids: [String] = []
-        var content = 0
+        var searching = false
+        private var heights: [Bool: CGFloat] = [:]
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-        /// Every row has the same height (LibraryWindow reserves two title lines and a journal or
-        /// snippet line), so the table gets one fixed row height, taken from a row's content, instead
-        /// of measuring rows: it measured a new paper's row before its details arrived and never
-        /// again, which left the row squashed.
-        func remeasure() {
+        /// The rows' one height, measured off screen from the title cell itself (two title lines
+        /// and the journal or snippet line), so it never depends on what the table has drawn yet:
+        /// measuring rows on screen got a new paper's row (and every row after switching from
+        /// Starred to All Papers) too short.
+        private func rowHeight() -> CGFloat {
+            if let h = heights[searching] { return h }
+            let sample = PaperTitleCell(title: "Wg", bold: true, searching: searching, snippet: "Wg", journal: "Wg")
+            let h = ceil(NSHostingView(rootView: sample).fittingSize.height) + 2
+            heights[searching] = h
+            return h
+        }
+
+        func apply() {
             guard let table = findTable() else { return }
-            let n = table.numberOfRows
-            guard n > 0 else { return }
-            var h: CGFloat = 0
-            let visible = table.rows(in: table.visibleRect)
-            let rows = visible.length > 0 ? Array(visible.location..<min(n, visible.location + visible.length)) : [0]
-            for r in rows.prefix(12) {
-                for c in 0..<table.numberOfColumns {
-                    if let v = table.view(atColumn: c, row: r, makeIfNecessary: false) { h = max(h, v.fittingSize.height) }
-                }
-            }
+            let h = rowHeight()
             guard h > 24 else { return }
-            let height = ceil(h)
-            if table.usesAutomaticRowHeights || abs(table.rowHeight - height) > 0.5 {
-                NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0
-                    table.usesAutomaticRowHeights = false
-                    table.rowHeight = height
-                    table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<n))
-                }
+            guard table.usesAutomaticRowHeights || abs(table.rowHeight - h) > 0.5 else { return }
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0
+                table.usesAutomaticRowHeights = false
+                table.rowHeight = h
+                if table.numberOfRows > 0 { table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<table.numberOfRows)) }
             }
         }
 
