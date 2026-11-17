@@ -110,6 +110,17 @@ enum SpringerNature {
                 bodyWords += sec.all(where: { $0.name == "p" }).reduce(0) { $0 + GenericPage.words($1.plain) }
             }
         }
+        // pieces without section headings (Comments, Primers, News & Views): their text sits in the
+        // body outside any titled section; it counts too (else the page looked abstract-only)
+        for p in body.all(where: { $0.name == "p" }) where p.parent != nil {
+            var a = p.parent, titled = false
+            while let n = a, n !== body {
+                if n.name == "section", n.attr("data-title") != nil { titled = true; break }
+                if n.name == "figure" || n.hasClass("c-article-section__figure") { titled = true; break }
+                a = n.parent
+            }
+            if !titled { bodyWords += GenericPage.words(p.plain) }
+        }
         // one list of supplementary files ("Supplementary information", "Source data")
         let supps = body.all(where: { $0.name == "section" && suppTitles.contains(($0.attr("data-title") ?? "").lowercased()) })
         if let first = supps.first, let ul = first.first(where: { $0.name == "ul" }) {

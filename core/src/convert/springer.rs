@@ -153,6 +153,20 @@ fn prepare(doc: &mut Doc, table_pages: &HashMap<String, String>) -> usize {
             body_words += s.all(|x| x.name() == "p").iter().map(|p| words(&p.plain())).sum::<usize>();
         }
     }
+    // pieces without section headings (Comments, Primers, News & Views): their text sits in the
+    // body outside any titled section; it counts too (else the page looked abstract-only)
+    for p in all(doc, &|x| x.name() == "p") {
+        if !alive(doc, p) {
+            continue;
+        }
+        let n = doc.node(p);
+        let titled = n.ancestors().into_iter().take_while(|a| a.id != body).any(|a| {
+            (a.name() == "section" && a.attr("data-title").is_some()) || a.name() == "figure" || a.has_class("c-article-section__figure")
+        });
+        if !titled {
+            body_words += words(&n.plain());
+        }
+    }
     // one list of supplementary files ("Supplementary information", "Source data")
     let supps = all(doc, &|x| {
         x.name() == "section" && SUPP_TITLES.contains(&x.attr("data-title").unwrap_or("").to_lowercase().as_str())
