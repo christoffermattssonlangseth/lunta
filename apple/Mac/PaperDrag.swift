@@ -212,12 +212,12 @@ struct TableRowHeights: NSViewRepresentable {
 
     func updateNSView(_ v: Probe, context: Context) {
         guard v.ids != ids || v.content != content else { return }
-        let first = v.ids.isEmpty
         v.ids = ids; v.content = content
-        if first { return }
-        // after SwiftUI has applied the new rows, and again once they have drawn
+        // after SwiftUI has applied the rows, and again once they have drawn (also the first time:
+        // that sets the fixed row height)
         DispatchQueue.main.async { v.remeasure() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { v.remeasure() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { v.remeasure() }
     }
 
     final class Probe: NSView {
@@ -225,13 +225,31 @@ struct TableRowHeights: NSViewRepresentable {
         var content = 0
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+        /// Every row has the same height (LibraryWindow reserves two title lines and a journal or
+        /// snippet line), so the table gets one fixed row height, taken from a row's content, instead
+        /// of measuring rows: it measured a new paper's row before its details arrived and never
+        /// again, which left the row squashed.
         func remeasure() {
             guard let table = findTable() else { return }
             let n = table.numberOfRows
             guard n > 0 else { return }
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0
-                table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<n))
+            var h: CGFloat = 0
+            let visible = table.rows(in: table.visibleRect)
+            let rows = visible.length > 0 ? Array(visible.location..<min(n, visible.location + visible.length)) : [0]
+            for r in rows.prefix(12) {
+                for c in 0..<table.numberOfColumns {
+                    if let v = table.view(atColumn: c, row: r, makeIfNecessary: false) { h = max(h, v.fittingSize.height) }
+                }
+            }
+            guard h > 24 else { return }
+            let height = ceil(h)
+            if table.usesAutomaticRowHeights || abs(table.rowHeight - height) > 0.5 {
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0
+                    table.usesAutomaticRowHeights = false
+                    table.rowHeight = height
+                    table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<n))
+                }
             }
         }
 
