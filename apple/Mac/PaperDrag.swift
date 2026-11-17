@@ -175,7 +175,7 @@ struct PaperDragSource: NSViewRepresentable {
     /// Gives the table a subclass (made at run time) whose `mouseDown:` asks the anchor first.
     static func install(on table: NSTableView) {
         let base: AnyClass = object_getClass(table)!
-        if NSStringFromClass(base).hasPrefix("LuntaDrag_") { return }
+        if NSStringFromClass(base).contains("LuntaDrag_") { return }
         let name = "LuntaDrag_" + NSStringFromClass(base)
         var sub: AnyClass? = NSClassFromString(name)
         if sub == nil, let made = objc_allocateClassPair(base, name, 0) {
@@ -196,6 +196,51 @@ struct PaperDragSource: NSViewRepresentable {
 }
 
 private var anchorKey: UInt8 = 0
+private var fixedHeightKey: UInt8 = 0
+
+/// Locks the paper table's row height. SwiftUI's Table (an NSOutlineView on macOS 26) sets the
+/// row height back to its default (24 points) whenever the selection changes, which squashed every
+/// row as soon as you clicked a paper. The table gets a subclass (made at run time, as for dragging)
+/// whose row-height setters keep Lunta's height while one is set.
+enum FixedRowHeight {
+    static func install(on table: NSTableView, height: CGFloat) {
+        objc_setAssociatedObject(table, &fixedHeightKey, NSNumber(value: Double(height)), .OBJC_ASSOCIATION_RETAIN)
+        let base: AnyClass = object_getClass(table)!
+        if !NSStringFromClass(base).contains("LuntaRows_") {
+            let name = "LuntaRows_" + NSStringFromClass(base)
+            var sub: AnyClass? = NSClassFromString(name)
+            if sub == nil, let made = objc_allocateClassPair(base, name, 0) {
+                typealias SetHeight = @convention(c) (AnyObject, Selector, CGFloat) -> Void
+                let selH = #selector(setter: NSTableView.rowHeight)
+                let superH = unsafeBitCast(class_getMethodImplementation(base, selH), to: SetHeight.self)
+                let setH: @convention(block) (NSTableView, CGFloat) -> Void = { t, h in
+                    let fixed = (objc_getAssociatedObject(t, &fixedHeightKey) as? NSNumber).map { CGFloat($0.doubleValue) }
+                    superH(t, selH, fixed ?? h)
+                }
+                class_addMethod(made, selH, imp_implementationWithBlock(setH), "v@:d")
+                typealias SetAuto = @convention(c) (AnyObject, Selector, Bool) -> Void
+                let selA = #selector(setter: NSTableView.usesAutomaticRowHeights)
+                let superA = unsafeBitCast(class_getMethodImplementation(base, selA), to: SetAuto.self)
+                let setA: @convention(block) (NSTableView, Bool) -> Void = { t, on in
+                    superA(t, selA, objc_getAssociatedObject(t, &fixedHeightKey) != nil ? false : on)
+                }
+                class_addMethod(made, selA, imp_implementationWithBlock(setA), "v@:B")
+                objc_registerClassPair(made)
+                sub = made
+            }
+            if let sub { object_setClass(table, sub) }
+        }
+        let changed = table.usesAutomaticRowHeights || abs(table.rowHeight - height) > 0.5
+        table.usesAutomaticRowHeights = false
+        table.rowHeight = height
+        if changed, table.numberOfRows > 0 {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0
+                table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<table.numberOfRows))
+            }
+        }
+    }
+}
 
 /// Makes the paper table measure its rows again when papers come or go.
 ///
@@ -233,26 +278,31 @@ struct TableRowHeights: NSViewRepresentable {
         private func rowHeight() -> CGFloat {
             if let h = heights[searching] { return h }
             let sample = PaperTitleCell(title: "Wg", bold: true, searching: searching, snippet: "Wg", journal: "Wg")
-            let h = ceil(NSHostingView(rootView: sample).fittingSize.height) + 2
+            let h = ceil(NSHostingView(rootView: sample).fittingSize.height) + 8   // the cell's insets (as the table measured rows itself)
             heights[searching] = h
             return h
         }
 
+        private var retries = 0
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil { retries = 0; apply() }
+        }
+
         func apply() {
-            guard let table = findTable() else { return }
+            guard let table = findTable() else {
+                // not there yet (the window is still being set up): try again shortly
+                if retries < 20 { retries += 1; DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.apply() } }
+                return
+            }
+            retries = 0
             let h = rowHeight()
             guard h > 24 else { return }
-            guard table.usesAutomaticRowHeights || abs(table.rowHeight - h) > 0.5 else { return }
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0
-                table.usesAutomaticRowHeights = false
-                table.rowHeight = h
-                if table.numberOfRows > 0 { table.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<table.numberOfRows)) }
-            }
+            FixedRowHeight.install(on: table, height: h)
         }
 
         /// The table this probe sits behind: the nearest table among its ancestors' subviews with
-        /// one row per paper (not the sidebar's outline view).
+        /// one row per paper and several columns (not the sidebar).
         private func findTable() -> NSTableView? {
             var v: NSView? = superview
             while let cur = v {
@@ -263,7 +313,9 @@ struct TableRowHeights: NSViewRepresentable {
         }
 
         private static func table(in v: NSView, rows: Int) -> NSTableView? {
-            if let t = v as? NSTableView, !(t is NSOutlineView), t.numberOfRows == rows { return t }
+            // SwiftUI's Table on macOS 26 is an NSOutlineView too; the sidebar is the one with a
+            // single column
+            if let t = v as? NSTableView, t.numberOfColumns >= 3, t.numberOfRows == rows { return t }
             for s in v.subviews { if let t = table(in: s, rows: rows) { return t } }
             return nil
         }
