@@ -5,22 +5,21 @@ import LuntaCore
 
 /// HTTPS server on https://localhost:47481 for the citation add-ins (Word desktop + web, Google Docs).
 ///
-/// Serves the add-in pages from the app bundle (`citations/…`) and a small JSON API:
-///   GET  /api/search?q=…               → [{id,title,authors,year,journal,doi}]
-///   POST /api/bibliography {style,ids}  → {entries:[…]}   (Markdown-style *italic* / **bold**)
-///   GET  /api/status                    → {ok:true,papers:n}
-///   GET  /api/styles?q=…               → journal styles in the CSL catalogue [{id,title,format}]
-///   POST /api/render {style,citations}  → a journal style: {title, citations:[{text,superscript}], bibliography:[{id,text}]}
-///
-/// Pages served from this origin can call the API directly, and so can the hosted copy of the Word
-/// panel (GitHub Pages, used by the Microsoft store listing). The Google Docs sidebar (served by
-/// Google from *.googleusercontent.com) must also send the pairing token shown in Lunta.
+/// Serves the add-in pages from the app bundle (`citations/…`) and the JSON API in `CitationAPI`
+/// (LuntaCore), which decides who may ask and what to answer; this class owns the socket, TLS
+/// and the certificates (`CitationCertificates`, renewed before they run out).
 @MainActor
 final class CitationServer {
-    static let port: UInt16 = 47481
+    static let port = CitationAPI.port
     private var listener: NWListener?
     private weak var model: LibraryModel?
+    private var api: CitationAPI?
+    private var renewal: Timer?
+    private var restarts = 0
     let token: String
+
+    /// Why the add-ins can't connect, for the Citations window (nil when serving).
+    static var problem: String?
 
     nonisolated static var tlsDir: URL {
         CloudLibrary.localURL.deletingLastPathComponent().appendingPathComponent("tls", isDirectory: true)
@@ -40,248 +39,144 @@ final class CitationServer {
     }
 
     func start() {
-        guard let identity = Self.loadIdentity() else {
+        guard let model else { return }
+        api = CitationAPI(library: model.lib, cacheDir: Self.cslCache, token: token)
+        listen()
+        // the certificate is renewed a month before it runs out; the app may run that long
+        renewal = Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.renewIfNeeded() }
+        }
+    }
+
+    private func renewIfNeeded() {
+        switch CitationCertificates.ensure(in: Self.tlsDir) {
+        case .current: break
+        case .renewed, .newAuthority:
+            listener?.cancel()
+            listener = nil
+            listen()
+        case .failed(let e):
+            NSLog("Lunta: renewing the citation certificate failed: \(e)")
+        }
+    }
+
+    private func listen() {
+        if case .failed(let e) = CitationCertificates.ensure(in: Self.tlsDir) {
+            Self.problem = "Couldn’t make the certificate for the add-ins (\(e))."
+            NSLog("Lunta: \(Self.problem!)")
+        }
+        guard let identity = CitationCertificates.identity(in: Self.tlsDir), let secIdentity = sec_identity_create(identity) else {
+            Self.problem = Self.problem ?? "The add-ins’ certificate couldn’t be read."
             NSLog("Lunta: no TLS identity; citation add-ins unavailable")
             return
         }
         let tls = NWProtocolTLS.Options()
-        sec_protocol_options_set_local_identity(tls.securityProtocolOptions, sec_identity_create(identity)!)
+        sec_protocol_options_set_local_identity(tls.securityProtocolOptions, secIdentity)
         sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)
         let params = NWParameters(tls: tls)
         params.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: Self.port)!)
         params.allowLocalEndpointReuse = true
-        guard let l = try? NWListener(using: params) else { return }
+        let l: NWListener
+        do { l = try NWListener(using: params) } catch {
+            Self.problem = "Couldn’t listen on port \(Self.port): \(error.localizedDescription)"
+            NSLog("Lunta: \(Self.problem!)")
+            return
+        }
         l.newConnectionHandler = { [weak self] c in Task { @MainActor in self?.accept(c) } }
+        l.stateUpdateHandler = { [weak self] state in
+            Task { @MainActor in self?.listenerChanged(state) }
+        }
         l.start(queue: .main)
         listener = l
     }
 
-    // MARK: - Certificate (local CA + localhost certificate, made with the system's openssl)
-
-    /// Creates the local certificate authority and the localhost certificate on first use.
-    nonisolated static func ensureCertificates() -> Bool {
-        let dir = tlsDir
-        let fm = FileManager.default
-        if fm.fileExists(atPath: dir.appendingPathComponent("server.p12").path) { return true }
-        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        let ext = """
-        basicConstraints=CA:FALSE
-        keyUsage=digitalSignature,keyEncipherment
-        extendedKeyUsage=serverAuth
-        subjectAltName=DNS:localhost,IP:127.0.0.1
-        """
-        try? ext.write(to: dir.appendingPathComponent("server.ext"), atomically: true, encoding: .utf8)
-        let steps: [[String]] = [
-            ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "3650", "-keyout", "ca.key", "-out", "ca.pem",
-             "-subj", "/CN=Margins Local CA (this Mac only)"],
-            ["req", "-newkey", "rsa:2048", "-nodes", "-keyout", "server.key", "-out", "server.csr", "-subj", "/CN=localhost"],
-            ["x509", "-req", "-in", "server.csr", "-CA", "ca.pem", "-CAkey", "ca.key", "-CAcreateserial",
-             "-out", "server.pem", "-days", "820", "-sha256", "-extfile", "server.ext"],
-            ["pkcs12", "-export", "-in", "server.pem", "-inkey", "server.key", "-out", "server.p12", "-passout", "pass:margins"],
-        ]
-        for args in steps {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
-            p.arguments = args
-            p.currentDirectoryURL = dir
-            p.standardOutput = FileHandle.nullDevice
-            p.standardError = FileHandle.nullDevice
-            do { try p.run(); p.waitUntilExit() } catch { return false }
-            if p.terminationStatus != 0 { return false }
+    private func listenerChanged(_ state: NWListener.State) {
+        switch state {
+        case .ready:
+            Self.problem = nil
+            restarts = 0
+        case .failed(let error):
+            // the port taken (another copy of Lunta?), or the network stack reset after sleep: try again
+            Self.problem = "The add-ins can’t connect: port \(Self.port) is unavailable (\(error.localizedDescription)). Is another copy of Lunta running?"
+            NSLog("Lunta: citation server failed: \(error)")
+            listener?.cancel()
+            listener = nil
+            guard restarts < 20 else { return }
+            restarts += 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(min(restarts * 3, 60))) { [weak self] in
+                if self?.listener == nil { self?.listen() }
+            }
+        default:
+            break
         }
-        try? fm.removeItem(at: dir.appendingPathComponent("ca.key"))   // the CA can sign nothing else
-        return true
-    }
-
-    private static func loadIdentity() -> SecIdentity? {
-        guard ensureCertificates(), let data = try? Data(contentsOf: tlsDir.appendingPathComponent("server.p12")) else { return nil }
-        var items: CFArray?
-        let status = SecPKCS12Import(data as CFData, [kSecImportExportPassphrase as String: "margins"] as CFDictionary, &items)
-        guard status == errSecSuccess, let arr = items as? [[String: Any]], let first = arr.first,
-              let id = first[kSecImportItemIdentity as String] else { return nil }
-        return (id as! SecIdentity)
     }
 
     // MARK: - HTTP
 
-    private struct Request {
-        var method = "", path = ""
-        var query: [String: String] = [:]
-        var headers: [String: String] = [:]
-        var body = Data()
-    }
-
     private func accept(_ c: NWConnection) {
         c.start(queue: .main)
+        // a connection that never sends a whole request is closed after a while
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
+            if c.state != .cancelled { c.cancel() }
+        }
         read(c, Data())
     }
 
     private func read(_ c: NWConnection, _ buffer: Data) {
         c.receive(minimumIncompleteLength: 1, maximumLength: 1 << 20) { [weak self] data, _, done, error in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self else { c.cancel(); return }
                 var buf = buffer
                 if let data { buf.append(data) }
-                if let req = Self.parse(buf) {
+                switch CitationHTTP.parse(buf) {
+                case .request(let req):
                     self.respond(c, req)
-                } else if done || error != nil || buf.count > 10 << 20 {
-                    c.cancel()
-                } else {
-                    self.read(c, buf)
+                case .bad(let status):
+                    self.send(c, .error(status, status == 413 ? "Too large." : "Bad request."))
+                case .incomplete:
+                    if done || error != nil { c.cancel() } else { self.read(c, buf) }
                 }
             }
         }
     }
 
-    private static func parse(_ d: Data) -> Request? {
-        guard let end = d.range(of: Data("\r\n\r\n".utf8)) else { return nil }
-        var lines = String(decoding: d[..<end.lowerBound], as: UTF8.self).components(separatedBy: "\r\n")
-        let first = lines.removeFirst().split(separator: " ")
-        guard first.count >= 2 else { return nil }
-        var r = Request()
-        r.method = String(first[0])
-        let comps = URLComponents(string: "https://x\(first[1])")
-        r.path = comps?.path ?? "/"
-        for q in comps?.queryItems ?? [] { r.query[q.name] = q.value ?? "" }
-        for l in lines {
-            if let i = l.firstIndex(of: ":") { r.headers[l[..<i].lowercased()] = l[l.index(after: i)...].trimmingCharacters(in: .whitespaces) }
-        }
-        let len = Int(r.headers["content-length"] ?? "0") ?? 0
-        guard d.count - end.upperBound >= len else { return nil }
-        r.body = d.subdata(in: end.upperBound..<(end.upperBound + len))
-        return r
+    private func send(_ c: NWConnection, _ r: CitationResponse) {
+        c.send(content: r.encoded(), completion: .contentProcessed { _ in c.cancel() })
     }
 
-    private func send(_ c: NWConnection, _ status: Int, _ body: Data, type: String, origin: String?) {
-        var h = "HTTP/1.1 \(status) \(status == 200 ? "OK" : "Error")\r\nContent-Type: \(type)\r\n"
-        h += "Content-Length: \(body.count)\r\nConnection: close\r\nCache-Control: no-store\r\n"
-        if let origin, Self.isGoogleSidebar(origin) || origin == Self.hostedPanelOrigin {
-            h += "Access-Control-Allow-Origin: \(origin)\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-            h += "Access-Control-Allow-Headers: Content-Type, X-Margins-Token\r\nAccess-Control-Allow-Private-Network: true\r\n"
-        }
-        h += "\r\n"
-        var out = Data(h.utf8)
-        out.append(body)
-        c.send(content: out, completion: .contentProcessed { _ in c.cancel() })
-    }
-
-    private func json(_ c: NWConnection, _ status: Int, _ obj: Any, origin: String?) {
-        send(c, status, (try? JSONSerialization.data(withJSONObject: obj)) ?? Data(), type: "application/json", origin: origin)
-    }
-
-    /// Where the hosted Word panel lives (see .github/workflows/pages.yml).
-    static let hostedPanelOrigin = "https://christoffermattssonlangseth.github.io"
-
-    static func isGoogleSidebar(_ origin: String) -> Bool {
-        guard let host = URL(string: origin)?.host else { return false }
-        return origin.hasPrefix("https://") && host.hasSuffix(".googleusercontent.com")
-    }
-
-    private func respond(_ c: NWConnection, _ r: Request) {
-        let origin = r.headers["origin"]
-        if r.method == "OPTIONS" { send(c, 200, Data(), type: "text/plain", origin: origin); return }
+    private func respond(_ c: NWConnection, _ r: CitationRequest) {
+        guard let api else { send(c, .error(503, "Lunta is starting.")); return }
         if r.path.hasPrefix("/api/") {
-            // same-origin add-in pages send no Origin (or ours); the Google sidebar must present the token
-            if let origin, origin != "https://localhost:\(Self.port)", origin != Self.hostedPanelOrigin {
-                guard Self.isGoogleSidebar(origin), r.headers["x-margins-token"] == token else {
-                    json(c, 403, ["error": "Not paired. Copy Sidebar.html again from Lunta › Citations in Word & Google Docs."], origin: origin)
-                    return
-                }
+            // off the main thread: the first use of a journal style downloads it
+            let count = model?.counts.all ?? 0
+            Task.detached {
+                let out = api.respond(r, paperCount: count)
+                await MainActor.run { self.send(c, out) }
             }
-            api(c, r, origin: origin)
             return
         }
-        serveFile(c, r.path, origin: origin)
-    }
-
-    private func api(_ c: NWConnection, _ r: Request, origin: String?) {
-        guard let model else { json(c, 503, ["error": "library not open"], origin: origin); return }
-        switch (r.method, r.path) {
-        case ("GET", "/api/status"):
-            json(c, 200, ["ok": true, "papers": model.counts.all], origin: origin)
-        case ("GET", "/api/search"):
-            let q = (r.query["q"] ?? "").trimmingCharacters(in: .whitespaces)
-            let papers: [Paper] = q.isEmpty ? [] : ((try? model.lib.search(query: q, limit: 30)) ?? []).map(\.paper)
-            json(c, 200, papers.map(Self.item), origin: origin)
-        case ("POST", "/api/bibliography"):
-            guard let j = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any], let ids = j["ids"] as? [String] else {
-                json(c, 400, ["error": "expected {style, ids}"], origin: origin); return
-            }
-            let style = citationStyle(key: (j["style"] as? String) ?? "apa")
-            let items = ids.map { id -> [String: Any] in
-                var d = model.paper(id).map(Self.item) ?? ["id": id, "missing": true]
-                d["entry"] = model.citation(id, style)
-                return d
-            }
-            json(c, 200, ["entries": items], origin: origin)
-        case ("GET", "/api/styles"):
-            // journal styles (CSL catalogue); the catalogue is downloaded the first time
-            let q = r.query["q"] ?? ""
-            let dir = Self.cslCache
-            Task.detached {
-                let result = Result { try cslSearch(cacheDir: dir, query: q, limit: 40) }
-                await MainActor.run {
-                    switch result {
-                    case .success(let hits):
-                        self.json(c, 200, hits.map { ["id": $0.id, "title": $0.title, "format": $0.format] }, origin: origin)
-                    case .failure(let e):
-                        self.json(c, 502, ["error": "Couldn't load the journal styles: \(e.readable)"], origin: origin)
-                    }
-                }
-            }
-        case ("POST", "/api/render"):
-            // citations and reference list in a journal style: {style: "nature-neuroscience", citations: [[ids]]}
-            guard let j = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any],
-                  let style = j["style"] as? String, let cites = j["citations"] as? [[String]] else {
-                json(c, 400, ["error": "expected {style, citations}"], origin: origin); return
-            }
-            let lib = model.lib, dir = Self.cslCache
-            Task.detached {
-                let result = Result { try lib.citeCsl(cacheDir: dir, styleId: style, citations: cites) }
-                await MainActor.run {
-                    switch result {
-                    case .success(let out):
-                        self.json(c, 200, [
-                            "title": out.styleTitle,
-                            "citations": out.citations.map { ["text": $0.text, "superscript": $0.superscript] },
-                            "bibliography": out.bibliography.map { ["id": $0.id, "text": $0.text] },
-                        ], origin: origin)
-                    case .failure(let e):
-                        self.json(c, 502, ["error": "Couldn't format in this style: \(e.readable)"], origin: origin)
-                    }
-                }
-            }
-        default:
-            json(c, 404, ["error": "not found"], origin: origin)
-        }
+        if let no = api.refusal(r) { send(c, no); return }
+        serveFile(c, r.path)
     }
 
     /// Where journal styles are kept (next to the TLS files, on this Mac only).
     nonisolated static var cslCache: String { tlsDir.deletingLastPathComponent().path }
 
-    static func item(_ p: Paper) -> [String: Any] {
-        let fams = p.meta.authors.map { a -> String in
-            if let comma = a.firstIndex(of: ",") { return String(a[..<comma]) }
-            return a.split(separator: " ").last.map(String.init) ?? a
-        }
-        return ["id": p.id, "title": p.meta.title, "authors": p.meta.authors, "families": fams, "year": p.meta.year,
-                "journal": p.meta.journal, "doi": p.meta.doi]
-    }
-
     // MARK: - Static add-in files
 
-    private func serveFile(_ c: NWConnection, _ path: String, origin: String?) {
+    private func serveFile(_ c: NWConnection, _ path: String) {
         guard let root = Bundle.main.resourceURL?.appendingPathComponent("citations") else {
-            send(c, 404, Data(), type: "text/plain", origin: origin); return
+            send(c, .error(404, "Not found.")); return
         }
         var rel = path.removingPercentEncoding ?? path
         if rel.hasSuffix("/") { rel += "index.html" }
         let url = root.appendingPathComponent(rel).standardizedFileURL
-        guard url.path.hasPrefix(root.standardizedFileURL.path), let data = try? Data(contentsOf: url) else {
-            send(c, 404, Data("not found".utf8), type: "text/plain", origin: origin); return
+        let base = root.standardizedFileURL.path + "/"
+        guard url.path.hasPrefix(base), let data = try? Data(contentsOf: url) else {
+            send(c, .error(404, "Not found.")); return
         }
-        let types = ["html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8", "css": "text/css",
+        let types = ["html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8",
                      "png": "image/png", "xml": "application/xml", "json": "application/json"]
-        send(c, 200, data, type: types[url.pathExtension.lowercased()] ?? "application/octet-stream", origin: origin)
+        send(c, CitationResponse(status: 200, body: data, contentType: types[url.pathExtension.lowercased()] ?? "application/octet-stream"))
     }
 }

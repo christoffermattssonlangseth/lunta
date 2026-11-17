@@ -12,7 +12,7 @@ struct CitationsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Cite papers from your Lunta library while you write. Citations update when you change style, and the reference list is built for you (APA, Vancouver or Nature).")
+                Text("Cite papers from your Lunta library while you write. Citations update when you change style, and the reference list is built for you (APA, Vancouver, Nature and nine more styles, or any of ~10,000 journal styles).")
                     .foregroundStyle(.secondary)
 
                 GroupBox {
@@ -26,7 +26,7 @@ struct CitationsView: View {
                             Button(wordInstalled ? "Reinstall" : "Install in Word") { installWord() }
                         }
                         step(3, "Quit and reopen Word. Click **Cite** on the Home tab (or Insert › Add-ins › My Add-ins › Lunta Citations). Search, pick papers, Insert Citation. Insert Bibliography where the references go.", done: false) { EmptyView() }
-                        Text("Lunta has to be open while you cite.").font(.caption).foregroundStyle(.secondary)
+                        Text("Lunta has to be open to search and cite. Citations already in a document stay as they are without it, and Update All works from the copy of the cited papers each document keeps.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(6)
                 }
@@ -42,8 +42,19 @@ struct CitationsView: View {
                             Button(copied == "html" ? "Copied" : "Copy Sidebar.html") { copy(CitationsSetup.googleSidebar(), "html") }
                         }
                         step(4, "Save, reload the document, then use the new **Lunta › Cite…** menu. Allow the script when Google asks; if Chrome asks to let the page reach devices on your network, allow it.", done: false) { EmptyView() }
+                        HStack(spacing: 8) {
+                            Text("Pairing key:").foregroundStyle(.secondary)
+                            Text(CitationServer.token).font(.body.monospaced()).textSelection(.enabled)
+                            Button(copied == "key" ? "Copied" : "Copy") { copy(CitationServer.token, "key") }
+                        }
+                        Text("A co-author with Lunta on their own Mac enters their key when the sidebar asks for it. After updating Lunta, copy both files again if Lunta’s release notes say the add-in changed.")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(6)
+                }
+
+                if let problem = CitationServer.problem {
+                    Label(problem, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                 }
 
                 if let message { Text(message).font(.callout).foregroundStyle(.secondary) }
@@ -108,20 +119,15 @@ enum CitationsSetup {
         try FileManager.default.copyItem(at: resources.appendingPathComponent("word/manifest.xml"), to: dest)
     }
 
-    /// True when this Mac trusts the localhost certificate Lunta serves.
+    /// True when this Mac trusts the localhost certificate Lunta serves (also false once it has
+    /// run out, or after Lunta had to make a new certificate authority).
     static func isTrusted() -> Bool {
-        guard CitationServer.ensureCertificates(),
-              let pem = try? String(contentsOf: CitationServer.tlsDir.appendingPathComponent("server.pem"), encoding: .utf8),
-              let der = Data(base64Encoded: pem.components(separatedBy: "\n").filter { !$0.hasPrefix("-----") }.joined()),
-              let cert = SecCertificateCreateWithData(nil, der as CFData) else { return false }
-        var trust: SecTrust?
-        guard SecTrustCreateWithCertificates(cert, SecPolicyCreateSSL(true, "localhost" as CFString), &trust) == errSecSuccess, let trust else { return false }
-        return SecTrustEvaluateWithError(trust, nil)
+        CitationCertificates.evaluate(in: CitationServer.tlsDir)   // made and renewed by CitationServer
     }
 
     /// Adds Lunta' local CA to the login keychain as trusted for SSL (macOS asks for the password).
     static func trustCertificate() async -> Bool {
-        guard CitationServer.ensureCertificates() else { return false }
+        guard FileManager.default.fileExists(atPath: caURL.path) else { return false }
         return await Task.detached {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
