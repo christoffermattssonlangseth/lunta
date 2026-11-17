@@ -238,8 +238,50 @@
 
   // ---- Edit Citation: the papers of one citation, to remove some or add more ----
 
-  /** The citation to edit: the one selected in the text, else the reader picks one from a list. */
+  // The cursor in a citation: Google Docs shows the link under the cursor in a bubble, which is
+  // part of the page (not the drawn canvas), so the citation's papers can be read from it.
+  const CITE_PREFIX = "https://margins.local/cite?ids=";
+  function citeLinkUnderCursor() {
+    for (const a of document.querySelectorAll('a[href^="' + CITE_PREFIX + '"]')) {
+      if (host.contains(a)) continue;
+      const shown = a.checkVisibility ? a.checkVisibility({ visibilityProperty: true, opacityProperty: true })
+                                      : a.getClientRects().length > 0;
+      if (!shown) continue;
+      const r = a.getBoundingClientRect();
+      if (r.width === 0 || r.right < 0 || r.left > innerWidth) continue;
+      return a.getAttribute("href");
+    }
+    return null;
+  }
+
+  let lastLink = null, autoBusy = false;
+  setInterval(async () => {
+    if (!ready || busy || autoBusy || !$(".card").classList.contains("open")) return;
+    const href = citeLinkUnderCursor();
+    if (href === lastLink) return;
+    lastLink = href;
+    const ids = href && LuntaCite.parseLink(href);
+    if (!ids || !ids.length) return;
+    if (current && current.ids.join(",") === ids.join(",")) return;
+    autoBusy = true;
+    try { await openByIds(ids); } catch (e) { status(String(e.message || e), true); }
+    autoBusy = false;
+  }, 400);
+
+  /** Opens the citation with these papers; when several citations have the same ones, asks which. */
+  async function openByIds(ids) {
+    const st = check(await send({ op: "state", docId: docId() }));
+    const texts = st.texts || [], lists = st.citations || [], key = ids.join(",");
+    const same = lists.map((l, k) => (l.join(",") === key ? k : -1)).filter((k) => k >= 0);
+    if (same.length === 1) { await openCitation(same[0], lists[same[0]], texts[same[0]]); return true; }
+    if (same.length > 1) { chooseCitation(lists, texts, same, "These papers are cited in " + same.length + " places; which one?"); return true; }
+    return false;
+  }
+
+  /** The citation to edit: the one under the cursor or selected in the text, else the reader picks one from a list. */
   async function editCitation() {
+    const href = citeLinkUnderCursor(), ids = href && LuntaCite.parseLink(href);
+    if (ids && ids.length && await openByIds(ids)) return;
     status("Reading the document’s citations…");
     const st = check(await send({ op: "state", docId: docId() }));
     const texts = st.texts || [], lists = st.citations || [];
@@ -259,15 +301,21 @@
     }
     status("");
     if (i >= 0) { openCitation(i, lists[i], texts[i]); return; }
-    // choose from the list
+    chooseCitation(lists, texts, lists.map((_, k) => k),
+      sel ? "The selected text isn’t one citation; pick it here." : "Tip: click a citation in the text while this panel is open, and it opens here by itself.");
+  }
+
+  /** A list of citations (indexes `which`) to pick the one to edit. */
+  function chooseCitation(lists, texts, which, hint) {
     current = null; setButtons();
     $(".cbox").hidden = false;
     $(".ctitle").textContent = "Which citation?";
     $(".cadd-row").hidden = true;
-    $(".chint").textContent = sel ? "The selected text isn’t one citation; pick it here." : "Tip: select a citation in the text first (double-click it), then Edit Citation.";
+    $(".chint").textContent = hint;
     const list = $(".clist");
     list.innerHTML = "";
-    lists.forEach((ids, k) => {
+    which.forEach((k) => {
+      const ids = lists[k];
       const row = document.createElement("div");
       row.className = "crow pick";
       row.innerHTML = '<div class="ct"><div class="t"></div><div class="m"></div></div>';
