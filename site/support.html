@@ -4,11 +4,14 @@
 <body>
 <img class="logo" src="icons/icon-128.png" alt="">
 <h1>Lunta Citations for Word</h1>
-<p class="muted">Cite papers from your Lunta library and build the reference list in APA, Vancouver or Nature style.</p>
+<p class="muted">Cite papers from your Lunta library and build the reference list in APA, Vancouver, Nature and nine more styles, or any of about 10,000 journal styles.</p>
 
 <h2>What you need</h2>
-<p>The Lunta app, open on the same computer as Word. The add-in reads your library from the app; it has no
-library of its own.</p>
+<p>The Lunta app, open on the same computer as Word, to search and cite. The add-in reads your library from the
+app; it has no library of its own. Citations already in a document stay as they are without Lunta, and the
+document keeps a copy of the details of the papers it cites, so <strong>Update All</strong> still renumbers and
+rebuilds the reference list when Lunta is closed, on another computer, or for a paper since removed from your
+library.</p>
 
 <h2>Setup (once)</h2>
 <ol>
@@ -24,7 +27,9 @@ library of its own.</p>
       <strong>Insert Citation</strong>.</li>
   <li>Put the cursor where the references go and click <strong>Insert Bibliography Here</strong>.</li>
   <li>After editing, or after changing the style, click <strong>Update All</strong>: citations renumber and the
-      reference list is rebuilt.</li>
+      reference list is rebuilt. Running it again changes nothing. The style is saved in the document.</li>
+  <li>To add papers to a citation already in the text, click inside it, pick the papers and click
+      <strong>Insert Citation</strong>. To remove a citation, delete its text.</li>
   <li>Styles: APA, Harvard, Chicago, Cell, MLA, Vancouver, IEEE, AMA, Nature, Science, PNAS and ACS are built
       in. For a specific journal, choose <strong>Find journal style…</strong> in the style menu and search its name:
       about 10,000 journal styles from the <a href="https://citationstyles.org">Citation Style Language</a>
@@ -33,8 +38,17 @@ library of its own.</p>
 
 <h2>Troubleshooting</h2>
 <ul>
-  <li><strong>“Can’t reach Lunta”</strong>: open the Lunta app. If it is open, do setup step 1 again.</li>
+  <li><strong>“Can’t reach Lunta”</strong>: open the Lunta app. If it is open, do setup step 1 again: the
+      certificate is renewed by Lunta every two years without asking, but if Lunta had to make a new one, it must
+      be trusted again (the Citations window shows step 1 as not done).</li>
   <li><strong>Citations look out of date</strong>: click <strong>Update All</strong>.</li>
+  <li><strong>“Cited papers aren’t in your Lunta library”</strong>: the selected citation cites a paper Lunta
+      doesn’t have and the document has no copy of (for example a document from before this was kept, written with
+      another library). Nothing was changed. Add the paper to Lunta, or delete the citation and cite it again.</li>
+  <li><strong>“This document’s citation style wasn’t saved with it”</strong>: the document was made with another
+      copy of the add-in. Choose its style in the menu; the add-in won’t rewrite citations until you do.</li>
+  <li><strong>A citation in the reference list you deleted from the text</strong>: with Track Changes on, a deleted
+      citation counts until the deletion is accepted.</li>
 </ul>
 
 <h2>Contact</h2>

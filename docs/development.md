@@ -113,7 +113,37 @@ or unavailable. Pick the model in the panel's ⋯ menu.
 - **Google Docs:** Extensions › Apps Script; paste `Code.gs` and an HTML file `Sidebar` (both copied from
   the Lunta window; the sidebar carries a pairing key), reload, then **Lunta › Cite…**.
 
-Styles: APA 7, Harvard, Chicago (author-date), Cell, MLA 9, Vancouver, IEEE, AMA, Nature, Science, PNAS and ACS, and in Word any of the ~10,000 journal styles of the [Citation Style Language](https://citationstyles.org) catalogue (*Find journal style…*: fetched once from zotero.org/styles, formatted in the core with [hayagriva](https://github.com/typst/hayagriva)). Lunta must be open while you cite.
+Styles: APA 7, Harvard, Chicago (author-date), Cell, MLA 9, Vancouver, IEEE, AMA, Nature, Science, PNAS and ACS, and any of the ~10,000 journal styles of the [Citation Style Language](https://citationstyles.org) catalogue (*Find journal style…*: fetched once from zotero.org/styles, formatted in the core with [hayagriva](https://github.com/typst/hayagriva)). Lunta must be open to search and cite.
+
+How it fits together:
+
+- `apple/citations/common.js` does the numbering and formatting for both add-ins (numbers by first
+  citation, ranges, a/b for the same authors and year, the reference list exactly the cited papers);
+  `word/app.js` and `gdocs/Code.gs` + `Sidebar.html` only read and write documents.
+- `CitationAPI` (in `apple/LuntaCore/Sources/LuntaCore`, next to the generated bindings so the package
+  tests reach it) answers the add-ins and decides who may ask: pages from Lunta itself, the hosted Word
+  panel, and the Google sidebar with the pairing key; requests from other web pages are refused, also
+  those a browser sends without an Origin (`Sec-Fetch-Site`), and so is any other `Host` (DNS rebinding).
+  `CitationCertificates` makes the certificate authority (name-constrained to localhost and 127.0.0.1, so
+  its key can be kept) and renews the localhost certificate a month before its 820 days run out, without
+  trusting anything again. `apple/Mac/CitationServer.swift` is the socket and TLS around them.
+- **Documents carry their papers.** Word keeps the style and a copy of each cited paper's details (and
+  its entry in the current style) in a custom XML part (`https://lunta.app/ns/word-citations/1`; add-in
+  settings would be per add-in id, and the sideloaded and store manifests differ); Google Docs keeps them
+  gzipped in document properties (`lunta.store.*`). Lunta formats a paper it doesn't have from these
+  details, or finds it again by DOI or title (a merged duplicate, another library); with Lunta closed,
+  Update All works from the saved entries. A cited paper with nothing to go on stops Update All with the
+  citation selected; nothing is written.
+- Update All writes only what changed (so twice changes nothing, and Track Changes shows only real
+  changes). Google Docs checks the document still has the citations the update was worked out for and
+  starts over if someone typed meanwhile, finds citations in footnotes and in every tab, and keeps the
+  bibliography's paragraph formatting. Older `Sidebar.html` copies keep working with the new `Code.gs`
+  (`applyAll`); a new sidebar asks for both files to be copied again when `Code.gs` is older.
+
+Tests: `node --test apple/citations-tests/` (the shared formatting, and `Code.gs` against a stand-in for
+Apps Script's DocumentApp), `swift test --filter CitationAPITests` in `apple/LuntaCore` (the API on a
+scratch library, the access rules, certificates), and the citation tests in `core` (`cargo test cit`).
+What only Word and Google Docs can show is in [citations-testing.md](citations-testing.md).
 
 ## Releases
 
