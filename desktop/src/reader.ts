@@ -7,6 +7,7 @@
 // turns those into postMessage to this window); `run()` is the apps' evaluateJavaScript.
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { ask } from '@tauri-apps/plugin-dialog';
 import { api, type Annotation, type Paper, type PageSelection, type TocItem } from './api';
 import { fill, h, $, status, copy, menu, type MenuItem } from './ui';
 import { showPdf, closePdf, pdfZoom, pdfFind, pdfFindStep, pdfFindClear } from './pdf';
@@ -25,6 +26,7 @@ let paged = localStorage.getItem('readerPaged') === '1';
 let restored = false;
 let saver: number | undefined;
 let showingList = false;
+let showingRefs = false;
 // highlight mode (Highlights.swift): every finished selection is highlighted at once in this colour
 let hlMode = localStorage.getItem('highlightMode') === '1';
 let hlColor = COLORS.includes(localStorage.getItem('highlightModeColor') as any) ? localStorage.getItem('highlightModeColor')! : 'yellow';
@@ -165,13 +167,15 @@ function render() {
           const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); highlightMenu(r.left, r.bottom + 4);
         } }) : null,
         hlBtn,
+        reading ? h('button.icon#refs-btn' + (showingRefs ? '.on' : ''), { text: '❝', title: 'References', 'aria-label': 'References', onclick: () => toggleRefs() }) : null,
         reading ? h('button.icon#appearance-btn', { text: 'Aa', title: 'Text size, theme and layout', 'aria-label': 'Text and theme', onclick: (e: MouseEvent) => toggleAppearance(e.currentTarget as HTMLElement) }) : null,
         reading ? null : h('button.icon', { text: '−', title: 'Zoom out (Ctrl+−)', onclick: () => pdfZoom(1 / 1.15) }),
         reading ? null : h('button.icon', { text: '+', title: 'Zoom in (Ctrl+=)', onclick: () => pdfZoom(1.15) }))),
     h('div.reader-body', {},
       reading ? h('nav#toc') : null,
       h('div#page'),
-      h('aside#hl-list', { hidden: !showingList })),
+      h('aside#hl-list', { hidden: !showingList }),
+      reading ? h('aside#refs-list', { hidden: !showingRefs }) : null),
     h('div#resume', { hidden: true }),
     h('div#selbar', { hidden: true }, COLORS.map((c) => h(`button.swatch.c-${c}`, { title: `Highlight ${c}`, onmousedown: (e: Event) => { e.preventDefault(); highlight(c); } })),
       h('button', { text: 'Note…', onmousedown: (e: Event) => { e.preventDefault(); noteOnSelection(); } })),
@@ -236,6 +240,7 @@ async function show() {
 /** The page loaded: draw the highlights, then go to where the reader stopped (on any device). */
 async function pageReady() {
   run(hlModeJS());
+  if (showingRefs) loadRefs();
   await refreshHighlights();
   if (restored || !paper) return;
   restored = true;
@@ -560,6 +565,152 @@ function renderList(all: Annotation[]) {
         a.location === 'pdf' ? h('div.where', { text: 'in the PDF' }) : null),
       h('button.icon.edit', { text: '…', title: 'Edit', onclick: (e: Event) => { e.stopPropagation(); openEditor(a); } }))),
     list.length ? h('button', { text: 'Copy All as Markdown', onclick: () => copy(md(), 'highlights as Markdown') }) : null,
+  );
+}
+
+// ---- references (ReferencesPanel.swift): the paper's reference list, In library or Add ----
+
+interface Ref { index: number; label: string; text: string; doi: string; arxiv: string; pmid: string; pmcid: string; anchor: string; cited: number; }
+let refs: Ref[] = [];
+let refsFor = '';
+let refsInLib = new Map<number, string>();     // reference index -> paper id
+const refsAdding = new Set<number>();
+const refsFailed = new Set<number>();
+let refsQuery = '';
+let refsBulk: { done: number; total: number; cancelled: boolean } | null = null;
+
+const refInput = (r: Ref) => r.doi || (r.arxiv ? `arXiv:${r.arxiv}` : '') || r.pmcid || r.pmid || null;
+const doiKey = (d: string) => d.trim().toLowerCase().replace(/^(https?:\/\/(dx\.)?doi\.org\/|doi:)/, '');
+const arxivKey = (a: string) => a.trim().toLowerCase().replace(/^arxiv:/, '').replace(/v\d+$/, '');
+const refsMissing = () => refs.filter((r) => refInput(r) && !refsInLib.has(r.index));
+
+function toggleRefs() {
+  showingRefs = !showingRefs;
+  const l = $('#refs-list');
+  if (l) l.hidden = !showingRefs;
+  document.querySelector('#refs-btn')?.classList.toggle('on', showingRefs);
+  if (showingRefs) loadRefs();
+}
+
+/** Reads the list from the page (once per paper), then which are in the library. */
+async function loadRefs() {
+  if (!paper || mode !== 'reading') return;
+  if (refsFor !== paper.id) {
+    const id = paper.id;
+    const json = await run<string>('window.luntaReferences ? luntaReferences() : null');
+    if (typeof json !== 'string' || paper?.id !== id) { renderRefs(); return; }
+    try { refs = JSON.parse(json); } catch { refs = []; }
+    refsFor = id;
+    refsInLib = new Map();
+    refsAdding.clear(); refsFailed.clear();
+  }
+  await refreshRefStatus();
+}
+
+/** Which references are in the library: by DOI, arXiv, PubMed and PMC ids (no network). */
+async function refreshRefStatus() {
+  const rows = await api.list({ kind: 'all' }, '', 'added').catch(() => [] as { paper: Paper }[]);
+  const index = new Map<string, string>();
+  for (const { paper: p } of rows) {
+    const m = p.meta;
+    if (m.doi) {
+      const d = doiKey(m.doi);
+      index.set(`doi:${d}`, p.id);
+      if (d.startsWith('10.48550/arxiv.')) index.set(`arxiv:${arxivKey(d.slice(15))}`, p.id);
+    }
+    if (m.arxiv) index.set(`arxiv:${arxivKey(m.arxiv)}`, p.id);
+    if (m.pmid) index.set(`pmid:${m.pmid.trim()}`, p.id);
+    if (m.pmcid) index.set(`pmcid:${m.pmcid.trim().toUpperCase()}`, p.id);
+  }
+  refsInLib = new Map();
+  for (const r of refs) {
+    const keys = [r.doi && `doi:${doiKey(r.doi)}`, r.arxiv && `arxiv:${arxivKey(r.arxiv)}`, r.pmid && `pmid:${r.pmid}`, r.pmcid && `pmcid:${r.pmcid.toUpperCase()}`];
+    const id = keys.map((k) => k && index.get(k)).find(Boolean);
+    if (id) refsInLib.set(r.index, id);
+  }
+  renderRefs();
+}
+
+async function addRef(r: Ref) {
+  const input = refInput(r);
+  if (!input || refsInLib.has(r.index) || refsAdding.has(r.index)) return;
+  const forPaper = refsFor;
+  refsAdding.add(r.index); refsFailed.delete(r.index);
+  renderRefs();
+  try {
+    const a = await api.addPaper(input);
+    if (refsFor === forPaper) refsInLib.set(r.index, a.paper.id);
+  } catch {
+    if (refsFor === forPaper) refsFailed.add(r.index);
+  }
+  refsAdding.delete(r.index);
+  renderRefs();
+}
+
+/** Add All Missing: three at a time, until done or cancelled. */
+async function addAllRefs() {
+  const todo = refsMissing();
+  if (!todo.length || refsBulk) return;
+  const skipped = refs.filter((r) => !refInput(r)).length;
+  const ok = await ask(skipped ? `${skipped} without a DOI, arXiv or PubMed id are skipped.` : 'They are added a few at a time.',
+    { title: `Add ${todo.length} ${todo.length === 1 ? 'reference' : 'references'} to your library?`, kind: 'info', okLabel: `Add ${todo.length}` });
+  if (!ok || refsBulk) return;
+  const bulk = { done: 0, total: todo.length, cancelled: false };
+  refsBulk = bulk;
+  renderRefs();
+  for (let i = 0; i < todo.length && !bulk.cancelled; i += 3) {
+    await Promise.all(todo.slice(i, i + 3).map((r) => addRef(r)));
+    bulk.done = Math.min(todo.length, i + 3);
+    renderRefs();
+  }
+  refsBulk = null;
+  await refreshRefStatus();
+}
+
+/** Opens a paper from the list (the reader shows it instead of this one). */
+async function openRef(id: string) {
+  const p = await api.paper(id).catch(() => null);
+  if (!p) return;
+  const back = onClose;
+  await closeReader();
+  if (!back) return;
+  $('#library').hidden = true;
+  await openReader(p, 'reading', back);
+}
+
+function renderRefs() {
+  const box = $('#refs-list');
+  if (!box || !showingRefs) return;
+  if (refsFor !== paper?.id) { fill(box, h('h4', { text: 'References' }), h('p.hint', { text: 'Loading…' })); return; }
+  if (!refs.length) { fill(box, h('h4', { text: 'References' }), h('p.hint', { text: 'This reading view has no reference list Lunta can read.' })); return; }
+  const q = refsQuery.trim().toLowerCase();
+  const shown = q ? refs.filter((r) => r.text.toLowerCase().includes(q) || r.label === q || r.doi.toLowerCase().includes(q)) : refs;
+  const missing = refsMissing().length;
+  const filter = h('input.refs-filter', { type: 'search', placeholder: 'Filter', value: refsQuery }) as HTMLInputElement;
+  filter.addEventListener('input', () => { refsQuery = filter.value; renderRefs(); const f = $('#refs-list .refs-filter') as HTMLInputElement | null; f?.focus(); f?.setSelectionRange(f.value.length, f.value.length); });
+  const bulk = refsBulk;
+  fill(box,
+    h('h4', { text: 'References' }),
+    h('p.hint', { text: `${refs.length} ${refs.length === 1 ? 'reference' : 'references'} · ${refsInLib.size} in your library` }),
+    bulk ? h('div.refs-bulk', {}, h('progress', { max: String(bulk.total), value: String(bulk.done) }), h('span', { text: `${bulk.done} of ${bulk.total}` }),
+      h('button', { text: 'Cancel', disabled: bulk.cancelled, onclick: () => { bulk.cancelled = true; renderRefs(); } }))
+      : missing ? h('button', { text: 'Add All Missing', onclick: () => addAllRefs() }) : null,
+    filter,
+    ...shown.map((r) => {
+      const inLib = refsInLib.get(r.index);
+      const input = refInput(r);
+      const state = inLib ? h('button.ref-in', { text: '✓ In library', title: 'In your library. Open it', onclick: () => openRef(inLib) })
+        : refsAdding.has(r.index) ? h('span.ref-adding', { text: 'Adding…' })
+        : input ? h('span', {}, refsFailed.has(r.index) ? h('span.ref-failed', { text: 'Couldn’t add ' }) : null,
+            h('button.ref-add', { text: '+ Add', title: 'Add to your library', onclick: () => addRef(r) }))
+        : h('button.ref-search', { text: 'Search', title: 'No DOI, arXiv or PubMed id: search Google Scholar',
+            onclick: () => openUrl('https://scholar.google.com/scholar?q=' + encodeURIComponent(r.text.slice(0, 200))) });
+      return h('div.ref-item' + (input || inLib ? '' : '.no-id'), {},
+        h('span.ref-n', { text: r.label || '•' }),
+        h('div', {},
+          h('div.ref-text', { text: r.text, title: 'Show in the paper', onclick: () => { run(`window.luntaShowReference && luntaShowReference(${r.index})`); frame?.contentWindow?.focus(); } }),
+          h('div.ref-row', {}, r.cited ? h('span.ref-cited', { text: `Cited ${r.cited}×` }) : h('span'), state)));
+    }),
   );
 }
 
