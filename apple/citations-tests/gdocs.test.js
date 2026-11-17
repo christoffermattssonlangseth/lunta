@@ -40,7 +40,7 @@ test('citations in document order, footnotes where their marks are, runs split b
   const body = Body(P(t1, c1), P('More ', note, cite('[2]', ['b'])), P(split));
   const gs = load(makeDocument({ body }));
   assert.deepEqual(gs.call('getState').citations, [['a'], ['n'], ['b'], ['b', 'c']]);
-  assert.equal(gs.call('version'), 2);
+  assert.equal(gs.call('version'), 3);
 });
 
 test('Update All writes each citation; twice changes nothing', () => {
@@ -196,4 +196,41 @@ test('selecting the citation of a missing paper', () => {
   assert.equal(gs.call('selectCitation', 'z'), true);
   assert.equal(doc.selected.els[0].el.getText(), '(Z)');
   assert.equal(gs.call('selectCitation', 'nope'), false);
+});
+
+test('the style and papers are also kept in named ranges (shared with the browser extension)', () => {
+  const body = Body(P('x ', cite('(A)', ['a'])), bibPara('Refs'));
+  const doc = makeDocument({ body });
+  const gs = load(doc);
+  const papers = { a: { m: { title: 'Alpha', authors: ['Ada Lee'], date: '2020' }, f: ['Lee'], y: '2020', t: 'Alpha', e: { 'csl:nature': 'Lee, A. Alpha.' } } };
+  gs.call('applyPlan', Object.assign(plan(gs, ['(Lee, 2020)'], { bib: ['Lee (2020).'], style: 'csl:nature' }), { papers, styleTitle: 'Nature' }));
+  const names = doc.named.map((n) => n.getName());
+  assert.ok(names.length >= 1 && names.every((n) => /^lunta:[a-z0-9]+:\d+:\d+:[A-Za-z0-9_\-=]*$/.test(n) && n.length <= 256), names.join('\n'));
+  // the script's own properties gone (another script, or the extension): read from the named ranges
+  Object.keys(gs.docProps.data).forEach((k) => delete gs.docProps.data[k]);
+  const st = gs.call('getState');
+  assert.equal(st.style, 'csl:nature');
+  assert.equal(st.styleTitle, 'Nature');
+  assert.deepEqual(st.papers, papers);
+  // Update All again with nothing new: the ranges are left alone
+  const before = names.join();
+  gs.call('applyPlan', Object.assign(plan(gs, ['(Lee, 2020)'], { bib: ['Lee (2020).'], style: 'csl:nature' }), { papers, styleTitle: 'Nature' }));
+  assert.equal(doc.named.map((n) => n.getName()).join(), before);
+  // a style change: one generation replaces the other
+  gs.call('setStyle', 'vancouver', '');
+  assert.equal(gs.call('getState').style, 'vancouver');
+  const gens = new Set(doc.named.map((n) => n.getName().split(':')[1]));
+  assert.equal(gens.size, 1);
+});
+
+test('the shared store: a half-written generation is ignored, the newest complete one counts', () => {
+  const body = Body(P('x ', cite('(A)', ['a'])));
+  const doc = makeDocument({ body });
+  const gs = load(doc);
+  gs.call('applyPlan', Object.assign(plan(gs, ['(A)'], { style: 'harvard' }), { papers: {} }));
+  const good = doc.named.map((n) => n.getName());
+  // an interrupted write elsewhere: part 0 of 3 only
+  doc.addNamedRange('lunta:zzzz:0:3:H4sIAAAA', doc.newRange().build());
+  assert.equal(gs.call('getState').style, 'harvard');
+  assert.ok(good.length >= 1);
 });

@@ -101,9 +101,30 @@ const P = (...kids) => new Container(ElementType.PARAGRAPH, kids.map((k) => type
 const LI = (...kids) => new Container(ElementType.LIST_ITEM, kids.map((k) => typeof k === 'string' ? new Text(k) : k));
 const Body = (...paras) => new Container(ElementType.BODY_SECTION, paras);
 
+/** Named ranges, as Apps Script keeps them per tab: names of 1–256 characters. */
+function namedRanges(list) {
+  return {
+    getNamedRanges: () => list.slice(),
+    addNamedRange: (name, range) => {
+      if (!name || name.length > 256) throw new Error('Invalid argument: name');
+      const nr = { name, range, getName: () => name, getRange: () => range, remove: () => { const i = list.indexOf(nr); if (i >= 0) list.splice(i, 1); } };
+      list.push(nr);
+      return nr;
+    },
+    newRange: () => {
+      const r = { els: [] };
+      r.addElement = (el, s, e) => { r.els.push({ el, s, e }); return r; };
+      r.addElementsBetween = (a, b) => { r.els.push({ el: a }, { el: b }); return r; };
+      r.build = () => r;
+      return r;
+    }
+  };
+}
+
 /** A document: body (or tabs: [{body}]), the cursor {text, offset} and what scripts store. */
 function makeDocument(opts) {
   const tabs = opts.tabs || [{ body: opts.body }];
+  tabs.forEach((t) => { t.named = t.named || []; });
   const footnotesOf = (body) => { const out = []; (function walk(el) { if (el instanceof Footnote) out.push(el); else (el.children || []).forEach(walk); })(body); return out; };
   const doc = {
     cursor: opts.cursor || null, selection: null,
@@ -117,13 +138,15 @@ function makeDocument(opts) {
     getSelection: () => doc.selection,
     setCursor: () => {},
     newPosition: (el, off) => ({ el, off }),
-    newRange: () => { const r = { els: [] }; r.addElement = (el, s, e) => { r.els.push({ el, s, e }); return r; }; r.build = () => r; return r; },
-    setSelection: (r) => { doc.selected = r; }
+    setSelection: (r) => { doc.selected = r; },
+    named: tabs[0].named
   };
+  // before tabs, Document had the named ranges (of its only tab)
+  Object.assign(doc, namedRanges(tabs[0].named));
   if (opts.tabs) {
     doc.getTabs = () => tabs.map((t) => ({
       getType: () => 'DOCUMENT_TAB', getChildTabs: () => [],
-      asDocumentTab: () => ({ getBody: () => t.body, getFootnotes: () => footnotesOf(t.body) })
+      asDocumentTab: () => Object.assign({ getBody: () => t.body, getFootnotes: () => footnotesOf(t.body) }, namedRanges(t.named))
     }));
   }
   return doc;
@@ -155,7 +178,9 @@ const Utilities = {
   gzip: (b) => blob(zlib.gzipSync(b.raw)),
   ungzip: (b) => blob(zlib.gunzipSync(b.raw)),
   base64Encode: (bytes) => Buffer.from(bytes.map((x) => x & 255)).toString('base64'),
-  base64Decode: (s) => [...Buffer.from(s, 'base64')].map((x) => (x > 127 ? x - 256 : x))
+  base64Decode: (s) => [...Buffer.from(s, 'base64')].map((x) => (x > 127 ? x - 256 : x)),
+  base64EncodeWebSafe: (bytes) => Buffer.from(bytes.map((x) => x & 255)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
+  base64DecodeWebSafe: (s) => [...Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64')].map((x) => (x > 127 ? x - 256 : x))
 };
 
 /** Code.gs loaded against a document. */

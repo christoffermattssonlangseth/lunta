@@ -2,12 +2,18 @@
 // Citations are text linked to https://margins.local/cite?ids=…; bibliography paragraphs are
 // linked to https://margins.local/bib. The sidebar talks to the Lunta app on your Mac; this script
 // only reads and writes the document. Paste this file and Sidebar.html again when Lunta says so.
-var CODE_VERSION = 2;
+// The Lunta browser extension edits the same documents through the Google Docs API: same links,
+// and the same style and papers, kept in the document's named ranges (see "the document's store").
+var CODE_VERSION = 3;
 var CITE = 'https://margins.local/cite?ids=';
 var BIB = 'https://margins.local/bib';
 // What the document keeps of the papers it cites (so a co-author, another library or a deleted
 // paper doesn't break it), gzipped in chunks: document properties hold 9 KB per value.
 var STORE = 'lunta.store.', CHUNK = 8000;
+// The same, readable by the browser extension too (document properties belong to this script):
+// named ranges "lunta:<generation>:<i>:<n>:<base64url of gzipped JSON>" over the first tab's text,
+// {v, at, style, styleTitle, bibStyle, papers}. The newest complete generation counts.
+var NR = 'lunta:', NR_CHUNK = 220, NR_MAX = 400;
 
 function onOpen() {
   DocumentApp.getUi().createMenu('Lunta').addItem('Cite…', 'showSidebar').addToUi();
@@ -117,12 +123,13 @@ function getState() {
   var props = PropertiesService.getDocumentProperties().getProperties();
   var key = '';
   try { key = PropertiesService.getUserProperties().getProperty('luntaPairingKey') || ''; } catch (e) {}
+  var ds = readDocStore_(doc);
   return {
     version: CODE_VERSION,
     citations: citations_(doc).map(function (r) { return r.ids; }),
-    style: props.luntaStyle || '',
-    styleTitle: props.luntaStyleTitle || '',
-    papers: readStore_(props),
+    style: (ds && ds.style) || props.luntaStyle || '',
+    styleTitle: ds && ds.style ? (ds.styleTitle || '') : (props.luntaStyleTitle || ''),
+    papers: ds && ds.papers ? ds.papers : readStore_(props),
     hasBibliography: bibParagraphs_(doc).length > 0,
     key: key
   };
@@ -132,10 +139,88 @@ function setStyle(s, title) {
   var p = PropertiesService.getDocumentProperties();
   p.setProperty('luntaStyle', s);
   if (title) p.setProperty('luntaStyleTitle', title); else p.deleteProperty('luntaStyleTitle');
+  var doc = DocumentApp.getActiveDocument(), ds = readDocStore_(doc);
+  if (ds) { ds.style = s; ds.styleTitle = title || ''; writeDocStore_(doc, ds); }
 }
 
 function getStyle() {
-  return PropertiesService.getDocumentProperties().getProperty('luntaStyle') || 'apa';
+  var ds = readDocStore_(DocumentApp.getActiveDocument());
+  return (ds && ds.style) || PropertiesService.getDocumentProperties().getProperty('luntaStyle') || 'apa';
+}
+
+// ---- the document's store (shared with the browser extension) ----
+
+/** The first tab (named ranges live per tab), or the document itself before tabs. */
+function storeHost_(doc) {
+  var tabs = typeof doc.getTabs === 'function' ? doc.getTabs() : null;
+  return tabs && tabs.length ? tabs[0].asDocumentTab() : doc;
+}
+
+/** {gen, i, n, data} of a store range's name, or null. */
+function storePart_(name) {
+  var m = /^lunta:([a-z0-9]+):(\d+):(\d+):([A-Za-z0-9_\-=]*)$/.exec(String(name || ''));
+  return m ? { gen: m[1], i: +m[2], n: +m[3], data: m[4] } : null;
+}
+
+/** The newest complete store in the document's named ranges, or null. */
+function readDocStore_(doc) {
+  var list;
+  try { list = storeHost_(doc).getNamedRanges(); } catch (e) { return null; }
+  var gens = {};
+  (list || []).forEach(function (nr) {
+    var p = storePart_(nr.getName());
+    if (!p) return;
+    var g = gens[p.gen] = gens[p.gen] || { n: p.n, parts: {} };
+    if (p.n === g.n && p.i < p.n) g.parts[p.i] = p.data;
+  });
+  var best = null;
+  Object.keys(gens).forEach(function (k) {
+    var g = gens[k], b64 = '';
+    for (var i = 0; i < g.n; i++) { if (g.parts[i] === undefined) return; b64 += g.parts[i]; }
+    try {
+      var blob = Utilities.newBlob(Utilities.base64DecodeWebSafe(b64), 'application/x-gzip');
+      var j = JSON.parse(Utilities.ungzip(blob).getDataAsString());
+      if (j && typeof j === 'object' && (!best || (j.at || 0) > (best.at || 0))) best = j;
+    } catch (e) {}
+  });
+  return best;
+}
+
+function sameStore_(a, b) {
+  if (!a || !b) return false;
+  var strip = function (x) { var c = {}; Object.keys(x).forEach(function (k) { if (k !== 'at') c[k] = x[k]; }); return JSON.stringify(c); };
+  return strip(a) === strip(b);
+}
+
+/** Writes {style, styleTitle, bibStyle, papers} as named ranges; false when it doesn't fit. Unchanged: nothing written. */
+function writeDocStore_(doc, store) {
+  var host = storeHost_(doc);
+  var old;
+  try { old = host.getNamedRanges(); } catch (e) { return false; }
+  var cur = readDocStore_(doc);
+  var next = { v: 1, at: Date.now(), style: store.style || '', styleTitle: store.styleTitle || '', bibStyle: store.bibStyle || '', papers: store.papers || {} };
+  if (sameStore_(cur, next)) return true;
+  var encode = function (x) {
+    return Utilities.base64EncodeWebSafe(Utilities.gzip(Utilities.newBlob(JSON.stringify(x), 'application/json')).getBytes());
+  };
+  var b64 = encode(next);
+  if (Math.ceil(b64.length / NR_CHUNK) > NR_MAX) {
+    // too large: without the saved entries (Lunta formats the papers from their details)
+    var lean = {};
+    Object.keys(next.papers).forEach(function (id) { var r = next.papers[id]; lean[id] = { m: r.m, f: r.f, y: r.y, t: r.t, e: {} }; });
+    next.papers = lean;
+    b64 = encode(next);
+    if (Math.ceil(b64.length / NR_CHUNK) > NR_MAX) return false;
+  }
+  var body = host.getBody(), count = body.getNumChildren();
+  if (!count) return false;
+  var range = host.newRange().addElementsBetween(body.getChild(0), body.getChild(count - 1)).build();
+  var gen = (Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36)).slice(-10);
+  var n = Math.max(1, Math.ceil(b64.length / NR_CHUNK));
+  for (var i = 0; i < n; i++) host.addNamedRange(NR + gen + ':' + i + ':' + n + ':' + b64.slice(i * NR_CHUNK, (i + 1) * NR_CHUNK), range);
+  // the old generations once the new one is complete
+  (old || []).forEach(function (nr) { var p = storePart_(nr.getName()); if (p && p.gen !== gen) nr.remove(); });
+  return true;
 }
 
 /** The pairing key for this user (each Mac running Lunta has its own). */
@@ -271,13 +356,20 @@ function applyPlan(plan) {
       updated++;
     }
     var props = PropertiesService.getDocumentProperties();
+    var ds = readDocStore_(doc);
+    var bibStyle = (ds && ds.bibStyle) || props.getProperty('luntaBibStyle');
     var bibChanged = false;
-    if (plan.bibliography) bibChanged = writeBibliography_(doc, plan.bibliography, false, props.getProperty('luntaBibStyle') !== plan.style);
+    if (plan.bibliography) bibChanged = writeBibliography_(doc, plan.bibliography, false, bibStyle !== plan.style);
     props.setProperty('luntaStyle', plan.style);
     props.setProperty('luntaBibStyle', plan.style);
     if (plan.styleTitle) props.setProperty('luntaStyleTitle', plan.styleTitle);
     var saved = plan.papers ? writeStore_(plan.papers) : true;
-    return { changed: false, count: runs.length, updated: updated, bibliography: bibChanged, saved: saved };
+    var shared = writeDocStore_(doc, {
+      style: plan.style, styleTitle: plan.styleTitle || (ds && ds.style === plan.style ? ds.styleTitle : '') || '',
+      bibStyle: plan.style,
+      papers: plan.papers || (ds && ds.papers) || readStore_(props.getProperties())
+    });
+    return { changed: false, count: runs.length, updated: updated, bibliography: bibChanged, saved: saved && shared };
   } finally {
     lock.releaseLock();
   }
