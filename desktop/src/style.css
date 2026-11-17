@@ -80,6 +80,8 @@ h4 { margin: 14px 0 6px; font-size: 11px; text-transform: uppercase; letter-spac
 .detail .authors { margin: 4px 0; }
 .detail .venue { color: var(--dim); margin: 4px 0; font-style: italic; }
 .detail .ids a { color: var(--accent); text-decoration: none; font-size: 12px; }
+.detail .ids .citekey { font: 12px ui-monospace, Menlo, Consolas, monospace; width: 16em; }
+.detail .ids button { font-size: 12px; }
 .detail .abstract { line-height: 1.55; font-family: "Iowan Old Style", Georgia, serif; font-size: 14px; }
 .folders { display: flex; flex-direction: column; gap: 3px; }
 label.check { display: flex; gap: 6px; align-items: center; }

@@ -12,6 +12,9 @@ pub struct Settings {
     pub library: Option<String>,
     #[serde(default)]
     pub device_id: String,
+    /// .bib files kept up to date: "*" (all papers) or a folder id -> file path (bibfiles.rs).
+    #[serde(default)]
+    pub bib_files: std::collections::BTreeMap<String, String>,
 }
 
 fn file(config_dir: &Path) -> PathBuf {

@@ -8,6 +8,7 @@
 //! on 127.0.0.1:47480 (`extension`).
 
 mod add;
+mod bibfiles;
 mod citeapi;
 #[cfg(all(debug_assertions, target_os = "macos"))]
 mod devsnap;
@@ -94,6 +95,7 @@ struct PaperDto {
     collections: Vec<String>,
     tags: Vec<String>,
     annotation_count: u32,
+    cite_key: String,
 }
 
 impl From<Paper> for PaperDto {
@@ -111,6 +113,7 @@ impl From<Paper> for PaperDto {
             collections: p.collections,
             tags: p.tags,
             annotation_count: p.annotation_count,
+            cite_key: p.cite_key,
         }
     }
 }
@@ -375,16 +378,59 @@ async fn delete_paper(state: State<'_, AppState>, id: String) -> R<()> {
     state.lib()?.delete_paper(id).map_err(err)
 }
 
-/// Reference text in a citation style (CitationStyle keys: apa, harvard, …), or BibTeX / RIS.
+/// Reference text in a citation style (CitationStyle keys: apa, harvard, …), or BibTeX / RIS, or
+/// `\cite{key1,key2}` ("latex").
 #[tauri::command]
 async fn cite(state: State<'_, AppState>, ids: Vec<String>, style: String) -> R<String> {
     let lib = state.lib()?;
     let one = |s: CitationStyle| ids.iter().filter_map(|i| lib.citation(i.clone(), s)).collect::<Vec<_>>().join("\n\n");
     Ok(match style.as_str() {
         "bibtex" => lib.export_bibtex(ids),
+        "latex" => lib.latex_cite(ids),
         "ris" => lib.export_ris(ids),
         other => one(CitationStyle::from_key(other).ok_or(format!("unknown style {other}"))?),
     })
+}
+
+/// The .bib files kept up to date on this device: "*" (all papers) or folder id -> path.
+#[tauri::command]
+async fn bib_files(state: State<'_, AppState>) -> R<std::collections::BTreeMap<String, String>> {
+    Ok(state.settings.lock().unwrap().bib_files.clone())
+}
+
+/// Keeps a .bib file for a folder ("*": all papers) up to date at `path`, or stops (no path);
+/// with a path, writes it now.
+#[tauri::command]
+async fn set_bib_file(state: State<'_, AppState>, source: String, path: Option<String>) -> R<()> {
+    {
+        let mut s = state.settings.lock().unwrap();
+        match &path {
+            Some(p) => s.bib_files.insert(source.clone(), p.clone()),
+            None => s.bib_files.remove(&source),
+        };
+        settings::save(&state.config_dir, &s).map_err(err)?;
+    }
+    if path.is_some() {
+        update_bib_files(state).await?;
+    }
+    Ok(())
+}
+
+/// Rewrites the linked .bib files whose text changed; returns problems (source -> message).
+#[tauri::command]
+async fn update_bib_files(state: State<'_, AppState>) -> R<std::collections::BTreeMap<String, String>> {
+    let links = state.settings.lock().unwrap().bib_files.clone();
+    if links.is_empty() {
+        return Ok(Default::default());
+    }
+    let lib = state.lib()?;
+    Ok(bibfiles::update_all(&lib, &links))
+}
+
+/// Changes a paper's citation key (checked: BibTeX-safe characters, unique); returns it as stored.
+#[tauri::command]
+async fn set_cite_key(state: State<'_, AppState>, id: String, key: String) -> R<String> {
+    state.lib()?.set_cite_key(id, key).map_err(err)
 }
 
 // ---- adding papers and files ----
@@ -764,6 +810,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            set_cite_key,
+            bib_files,
+            set_bib_file,
+            update_bib_files,
             app_info,
             choose_library,
             refresh,

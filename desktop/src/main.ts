@@ -1,6 +1,6 @@
 // The library window: sidebar (places, folders, smart folders, tags), paper list with search and
 // sort, and the selected paper's details. Layout and wording follow apple/Mac/LibraryWindow.swift.
-import { open as openDialog, ask } from '@tauri-apps/plugin-dialog';
+import { open as openDialog, save as saveDialog, ask } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -53,8 +53,48 @@ async function showLibrary() {
 
 async function reload() {
   side = await api.sidebar();
+  bibFiles = await api.bibFiles().catch(() => ({}));
   renderSidebar();
   await reloadList();
+  scheduleBibUpdate();
+}
+
+// ---- .bib files kept up to date (Keep BibTeX File Updated…) ----
+
+let bibFiles: Record<string, string> = {};
+let bibProblems: Record<string, string> = {};
+let bibTimer = 0;
+
+/** Rewrites the linked .bib files a moment after the library changed (only those whose text changed). */
+function scheduleBibUpdate() {
+  if (!Object.keys(bibFiles).length) return;
+  clearTimeout(bibTimer);
+  bibTimer = window.setTimeout(async () => {
+    const before = JSON.stringify(bibProblems);
+    bibProblems = await api.updateBibFiles().catch((e) => ({ '*': String(e) }));
+    if (JSON.stringify(bibProblems) !== before) renderSidebar();
+  }, 1500);
+}
+
+function bibItems(source: string, name: string): MenuItem[] {
+  const path = bibFiles[source];
+  const choose = async () => {
+    const p = await saveDialog({ title: 'Keep BibTeX File Updated', defaultPath: path || `${name.replace(/[\\/:]/g, '-')}.bib`, filters: [{ name: 'BibTeX', extensions: ['bib'] }] });
+    if (!p) return;
+    try { await api.setBibFile(source, p); status(`Lunta keeps ${p} updated`); } catch (e) { status(String(e), 'error'); }
+    await reload();
+  };
+  if (!path) return [{ label: 'Keep BibTeX File Updated…', action: choose }];
+  return [
+    { label: `BibTeX file: ${path.split(/[\\/]/).pop()}`, disabled: true, action: () => {} },
+    { label: 'Save BibTeX File Elsewhere…', action: choose },
+    { label: 'Stop Updating BibTeX File', action: () => after(api.setBibFile(source, null)) },
+  ];
+}
+
+/** A sidebar name with a mark when a .bib file is kept for it. */
+function bibLabel(name: string, source: string): string {
+  return bibFiles[source] ? `${name} ${bibProblems[source] ? '⚠' : '·bib'}` : name;
 }
 
 let listSerial = 0;
@@ -102,12 +142,12 @@ function renderSidebar() {
   }
   const tree = (parent: string | null, depth: number): HTMLElement[] =>
     (kids.get(parent) || []).flatMap((f) => [
-      place(f.name, { kind: 'folder', id: f.id }, f.paper_count, '▸', { depth, onmenu: (e) => folderMenu(e, f) }),
+      place(bibLabel(f.name, f.id), { kind: 'folder', id: f.id }, f.paper_count, '▸', { depth, onmenu: (e) => folderMenu(e, f) }),
       ...tree(f.id, depth + 1),
     ]);
   fill($('#sidebar'),
     h('h4', { text: 'Library' }),
-    place('All Papers', { kind: 'all' }, s.all, '📚'),
+    place(bibLabel('All Papers', '*'), { kind: 'all' }, s.all, '📚', { onmenu: (e) => menu(e.clientX, e.clientY, bibItems('*', 'All Papers')) }),
     place('Starred', { kind: 'starred' }, s.starred, '★'),
     place('Must Read', { kind: 'must_read' }, s.must_read, '🔖'),
     place('Unread', { kind: 'unread' }, s.unread, '●'),
@@ -153,6 +193,7 @@ function folderMenu(e: MouseEvent, f: Folder) {
     { label: 'Rename…', action: async () => { const n = await prompt('Rename folder', f.name, '', 'Rename'); if (n) after(api.renameFolder(f.id, n)); } },
   ];
   if (f.parent) items.push({ label: 'Move to Top Level', action: () => after(api.moveFolder(f.id, null)) });
+  items.push('-', ...bibItems(f.id, f.name));
   const others = side!.folders.filter((x) => x.id !== f.id && x.id !== f.parent);
   if (others.length) items.push('-', ...others.map((o) => ({ label: `Move into “${o.name}”`, action: () => after(api.moveFolder(f.id, o.id)) })));
   items.push('-', {
@@ -283,7 +324,23 @@ function citeItems(ids: string[]): MenuItem[] {
   const c = (style: CiteStyle, label: string) => ({ label: `Copy ${label}`, action: async () => copy(await api.cite(ids, style), `${label} citation`) });
   return [c('apa', 'APA'), c('harvard', 'Harvard'), c('chicago', 'Chicago'), c('cell', 'Cell'), c('mla', 'MLA'),
     c('vancouver', 'Vancouver'), c('ieee', 'IEEE'), c('ama', 'AMA'), c('nature', 'Nature'), c('science', 'Science'),
-    c('pnas', 'PNAS'), c('acs', 'ACS'), c('bibtex', 'BibTeX'), c('ris', 'RIS')];
+    c('pnas', 'PNAS'), c('acs', 'ACS'), c('bibtex', 'BibTeX'), c('ris', 'RIS'),
+    { label: 'Copy \\cite{…}', action: async () => copy(await api.cite(ids, 'latex'), '\\cite') }];
+}
+
+/** The paper's citation key, editable (Enter or leaving the field saves it). */
+function citeKeyField(p: Paper): HTMLElement {
+  const input = h('input.citekey', { type: 'text', value: p.cite_key, spellcheck: 'false', title: 'Citation key for LaTeX: \\cite{key}' }) as HTMLInputElement;
+  const save = async () => {
+    const k = input.value.trim();
+    if (k === p.cite_key) return;
+    try { p.cite_key = await api.setCiteKey(p.id, k); status(`Citation key: ${p.cite_key}`); await reload(); }
+    catch (e) { status(String(e), 'error'); input.value = p.cite_key; }
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { input.value = p.cite_key; input.blur(); } });
+  input.addEventListener('blur', save);
+  return h('p.ids', {}, 'Cite key ', input, ' ',
+    h('button', { text: 'Copy \\cite', title: `Copy \\cite{${p.cite_key}}`, onclick: async () => copy(await api.cite([p.id], 'latex'), '\\cite') }));
 }
 
 // ---- details ----
@@ -332,6 +389,7 @@ function renderDetail() {
     h('p.authors', { text: m.authors.join(', ') }),
     h('p.venue', { text: [m.journal, [m.volume, m.issue && `(${m.issue})`].filter(Boolean).join(''), m.pages, m.date || p.year].filter(Boolean).join(' · ') }),
     ids.length ? h('p.ids', {}, link ? h('a', { href: '#', text: ids.join(' · '), onclick: (e: Event) => { e.preventDefault(); openUrl(link); } }) : ids.join(' · ')) : null,
+    citeKeyField(p),
     h('h4', { text: 'Folders' }),
     folders.length
       ? h('div.folders', {}, folders.map((f) => h('label.check', {},

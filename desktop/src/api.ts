@@ -9,6 +9,8 @@ export interface PaperMeta {
 export interface Paper {
   id: string; meta: PaperMeta; year: string; added: number; has_pdf: boolean; has_epub: boolean;
   read: boolean; starred: boolean; must_read: boolean; collections: string[]; tags: string[]; annotation_count: number;
+  /** Citation key for LaTeX: fixed, unique, the same on every device. */
+  cite_key: string;
 }
 export interface Row { paper: Paper; snippet: string; }
 export interface Folder { id: string; name: string; parent: string | null; paper_count: number; }
@@ -22,7 +24,7 @@ export interface Annotation {
   position: string; quote: string; prefix: string; suffix: string; note: string; created: number; modified: number;
 }
 export interface PageSelection { quote: string; prefix: string; suffix: string; start: number; }
-export type CiteStyle = 'apa' | 'harvard' | 'chicago' | 'cell' | 'mla' | 'vancouver' | 'ieee' | 'ama' | 'nature' | 'science' | 'pnas' | 'acs' | 'bibtex' | 'ris';
+export type CiteStyle = 'apa' | 'harvard' | 'chicago' | 'cell' | 'mla' | 'vancouver' | 'ieee' | 'ama' | 'nature' | 'science' | 'pnas' | 'acs' | 'bibtex' | 'latex' | 'ris';
 
 export const api = {
   info: () => invoke<Info>('app_info'),
@@ -43,6 +45,11 @@ export const api = {
   deleteFolder: (id: string) => invoke<void>('delete_folder', { id }),
   deletePaper: (id: string) => invoke<void>('delete_paper', { id }),
   cite: (ids: string[], style: CiteStyle) => invoke<string>('cite', { ids, style }),
+  setCiteKey: (id: string, key: string) => invoke<string>('set_cite_key', { id, key }),
+  /** .bib files kept up to date on this device: '*' (all papers) or folder id -> path. */
+  bibFiles: () => invoke<Record<string, string>>('bib_files'),
+  setBibFile: (source: string, path: string | null) => invoke<void>('set_bib_file', { source, path }),
+  updateBibFiles: () => invoke<Record<string, string>>('update_bib_files'),
   addPaper: (input: string) => invoke<{ paper: Paper; note: string | null }>('add_paper', { input }),
   citePaper: (doi: string, arxiv: string) => invoke<{ id: string | null; label: string }>('cite_paper', { doi, arxiv }),
   attachPdf: (id: string, path: string) => invoke<string | null>('attach_pdf', { id, path }),
