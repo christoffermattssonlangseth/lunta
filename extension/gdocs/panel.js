@@ -250,26 +250,38 @@
     const s = sel.value;
     exclusive(() => update(s, ""));
   };
-  let jt;
-  $(".jq").addEventListener("input", (e) => {
-    clearTimeout(jt);
-    const q = e.target.value;
-    jt = setTimeout(async () => {
-      const box = $(".jresults");
-      if (!q.trim()) { box.innerHTML = ""; return; }
-      box.innerHTML = '<p class="note">Searching…</p>';
-      const r = await send({ op: "styles", q });
-      if (r.error) { box.innerHTML = ""; status(r.error, true); return; }
-      LuntaCite.showJournals(box, r.hits, (s, title) => {
-        $(".journal").hidden = true; $(".jq").value = ""; box.innerHTML = "";
-        exclusive(() => update(s, title));
-      });
-    }, 300);
-  });
+  async function findJournal(q) {
+    const box = $(".jresults");
+    if (!q.trim()) { box.innerHTML = ""; return; }
+    box.innerHTML = '<p class="note">Searching…</p>';
+    const r = await send({ op: "styles", q });
+    if (r.error) { box.innerHTML = ""; status(r.error, true); return; }
+    LuntaCite.showJournals(box, r.hits, (s, title) => {
+      $(".journal").hidden = true; $(".jq").value = ""; box.innerHTML = "";
+      exclusive(() => update(s, title));
+    });
+  }
   $(".jclose").onclick = () => { $(".journal").hidden = true; $(".jq").value = ""; $(".jresults").innerHTML = ""; };
 
-  let qt;
-  $(".q").addEventListener("input", (e) => { clearTimeout(qt); qt = setTimeout(() => search(e.target.value), 250); });
+  // Typing in the boxes: Google Docs catches keyboard and input events for its editor before they
+  // reach this panel, so the boxes are also watched directly while the panel is open (a search when
+  // the text has changed and stayed put a moment), and Enter searches at once.
+  function watchBox(sel, run) {
+    const el = $(sel);
+    let last = "", seen = "", since = 0;
+    const go = () => { last = el.value; run(el.value); };
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
+    el.addEventListener("input", () => { seen = el.value; since = Date.now(); });
+    setInterval(() => {
+      if (!el.offsetParent) return;   // the panel (or this box) is closed
+      const v = el.value;
+      if (v === last) return;
+      if (v !== seen) { seen = v; since = Date.now(); return; }
+      if (Date.now() - since >= 200) go();
+    }, 120);
+  }
+  watchBox(".q", search);
+  watchBox(".jq", findJournal);
   $(".insert").onclick = () => exclusive(() => insert(picked.map((p) => p.id)));
   $(".bib").onclick = () => exclusive(() => insert(null));
   $(".refresh").onclick = () => exclusive(() => update());
