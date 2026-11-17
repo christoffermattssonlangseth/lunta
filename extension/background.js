@@ -3,6 +3,12 @@
 // handler instead, which leaves them for the Lunta app (see "Safari on iPhone and iPad" below).
 const API = "http://127.0.0.1:47480";
 
+// Google Docs citing (gdocs/): Chrome and Safari load it here; Firefox from the manifest's list
+/* global importScripts, handleGDocs */
+if (typeof importScripts === "function") {
+  importScripts("gdocs/config.js", "gdocs/citations-common.js", "gdocs/docs-model.js", "gdocs/flow.js", "gdocs/background-gdocs.js");
+}
+
 async function api(path, options = {}) {
   let r;
   try {
@@ -195,6 +201,7 @@ async function sendFullText(msg, tabId) {
 }
 
 async function handle(msg, sender) {
+  if (msg.type === "gdocs") return handleGDocs(msg);
   if (msg.type !== "fullText" && (await useNative())) return handleNative(msg);
   switch (msg.type) {
     case "status": {

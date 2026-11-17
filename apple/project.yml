@@ -202,6 +202,12 @@ targets:
           - $(SRCROOT)/../extension/manifest.json
           - $(SRCROOT)/../extension/background.js
           - $(SRCROOT)/../extension/content.js
+          - $(SRCROOT)/../extension/gdocs/config.js
+          - $(SRCROOT)/../extension/gdocs/citations-common.js
+          - $(SRCROOT)/../extension/gdocs/docs-model.js
+          - $(SRCROOT)/../extension/gdocs/flow.js
+          - $(SRCROOT)/../extension/gdocs/background-gdocs.js
+          - $(SRCROOT)/../extension/gdocs/panel.js
           - $(SRCROOT)/../extension/icons/icon-16.png
           - $(SRCROOT)/../extension/icons/icon-32.png
           - $(SRCROOT)/../extension/icons/icon-48.png
@@ -210,6 +216,12 @@ targets:
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/manifest.json
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/background.js
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/content.js
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/config.js
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/citations-common.js
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/docs-model.js
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/flow.js
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/background-gdocs.js
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/panel.js
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/icons/icon-16.png
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/icons/icon-32.png
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/icons/icon-48.png

@@ -441,7 +441,10 @@ var LuntaCite = (function () {
   function isJournal(s) { return String(s).indexOf('csl:') === 0; }
   function isStyle(s) { return !!STYLES[s] || (isJournal(s) && /^csl:[a-z0-9._-]+$/i.test(s)); }
 
-  function storage() { try { return window.localStorage; } catch (e) { return null; } }
+  var customStorage = null;
+  function storage() { if (customStorage) return customStorage; try { return window.localStorage; } catch (e) { return null; } }
+  /** Where journal styles used before are remembered, {getItem, setItem} (the browser extension's own storage); default the page's localStorage. */
+  function useStorage(s) { customStorage = s || null; }
 
   /** Journal styles used before on this computer, most recent first: [{id, title}]. */
   function recentJournals() {
@@ -517,7 +520,7 @@ var LuntaCite = (function () {
     detailsFor: detailsFor, format: format, formatJournal: formatJournal, unknownMessage: unknownMessage, summary: summary,
     request: request, describe: describe,
     isJournal: isJournal, isStyle: isStyle, styleName: styleName, fillStyles: fillStyles, showJournals: showJournals,
-    rememberJournal: rememberJournal, hitMeta: hitMeta, pickedLabel: pickedLabel
+    rememberJournal: rememberJournal, hitMeta: hitMeta, pickedLabel: pickedLabel, useStorage: useStorage
   };
 })();
 if (typeof module !== 'undefined') module.exports = LuntaCite;
