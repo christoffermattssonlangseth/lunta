@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lunta Citations</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="../common.js?v=9"></script>
-<link rel="stylesheet" href="../panel.css?v=9">
+<script src="../common.js?v=10"></script>
+<link rel="stylesheet" href="../panel.css?v=10">
 </head>
 <body>
 <header>
@@ -16,6 +16,11 @@
 <div id="journal" class="journal" hidden>
   <div class="jrow"><input id="jq" type="search" placeholder="Journal name, e.g. Neuron, eLife, PLOS ONE" autocomplete="off"><button id="jclose" title="Close">✕</button></div>
   <div id="jresults"></div>
+</div>
+<div id="current" class="current" hidden>
+  <div class="current-h">This citation</div>
+  <div id="citelist"></div>
+  <p class="hint">Search below to add papers to it; ✕ removes one.</p>
 </div>
 <input id="q" type="search" placeholder="Search your library: title, author, words…" autocomplete="off">
 <div id="results"></div>
@@ -29,6 +34,6 @@
   <button id="refresh">Update All</button>
 </div>
 <p id="status" class="status"></p>
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

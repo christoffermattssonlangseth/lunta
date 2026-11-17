@@ -7,13 +7,14 @@
 // Microsoft store listing): either way the library comes from the Lunta app on this computer.
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
-var VERSION = '9';   // bump with the ?v= in index.html, so Word loads the new files
+var VERSION = '10';   // bump with the ?v= in index.html, so Word loads the new files
 var NS = 'https://lunta.app/ns/word-citations/1';
 var picked = [];          // [{id, title, ...}]
 var style = 'apa';
 var state = { papers: {} };   // what the document keeps: {style, styleTitle, bibStyle, papers}
 var styleUnknown = false;     // citations in the document, but no saved style: ask before updating
 var busy = false, ready = false, lastSearch = 0;
+var current = null;           // the citation the cursor is in: {id (content control), ids}
 
 function $(id) { return document.getElementById(id); }
 function status(msg, err) { var s = $('status'); s.textContent = msg || ''; s.className = 'status' + (err ? ' err' : ''); }
@@ -32,6 +33,7 @@ function getJSON(path, body, timeout) {
 
 function setButtons() {
   $('insert').disabled = busy || !ready || picked.length === 0;
+  $('insert').textContent = current ? 'Add to This Citation' : 'Insert Citation';
   $('bib').disabled = $('refresh').disabled = busy || !ready;
   $('style').disabled = busy || !ready;
 }
@@ -167,6 +169,7 @@ var insertCitation = exclusive(function () {
     });
   }).then(function () {
     picked = []; renderPicked();
+    if (current) { current.ids = LuntaCite.unique(current.ids.concat(ids)); lastShown = ''; showCurrent(); }
     return update().catch(function (e) {
       var err = new Error(LuntaCite.describe(e, 'word') + ' The citation is in the document as “(…)”; Update All fills it in.');
       throw err;
@@ -191,6 +194,80 @@ var insertBibliography = exclusive(function () {
     if (existed) status('This document already has a bibliography (selected); it was updated. ' + $('status').textContent);
   });
 });
+
+// ---- the citation under the cursor: its papers, to remove some or add more ----
+
+var selTimer = null, lastShown = '';
+function onSelection() {
+  clearTimeout(selTimer);
+  selTimer = setTimeout(function () {
+    if (busy || !ready) return;
+    Word.run(function (ctx) {
+      var cc = ctx.document.getSelection().parentContentControlOrNullObject;
+      cc.load('isNullObject,id,tag');
+      return ctx.sync().then(function () {
+        var ids = cc.isNullObject ? null : LuntaCite.parseTag(cc.tag);
+        current = ids && ids.length ? { id: cc.id, ids: ids } : null;
+        showCurrent();
+      });
+    }).catch(function () {});
+  }, 200);
+}
+
+/** One line per paper of the current citation: from Lunta, or from the document's copy. */
+function showCurrent() {
+  var box = $('current');
+  setButtons();
+  if (!current) { box.hidden = true; lastShown = ''; return; }
+  var key = current.id + ':' + current.ids.join(',');
+  box.hidden = false;
+  if (key === lastShown) return;
+  lastShown = key;
+  var list = $('citelist');
+  list.innerHTML = '';
+  var rows = {};
+  current.ids.forEach(function (id) {
+    var row = document.createElement('div');
+    row.className = 'cite-row';
+    row.innerHTML = '<div class="cite-text"><div class="t"></div><div class="m"></div></div><button class="cite-x" title="Remove from this citation">✕</button>';
+    var rec = state.papers[id];
+    row.querySelector('.t').textContent = rec ? (rec.t || 'Untitled') : '…';
+    row.querySelector('.m').textContent = rec ? [(rec.f || []).slice(0, 3).join(', ') + ((rec.f || []).length > 3 ? ' et al.' : ''), rec.y].filter(Boolean).join(' · ') : '';
+    row.querySelector('.cite-x').onclick = function () { removeFromCitation(id); };
+    rows[id] = row;
+    list.appendChild(row);
+  });
+  // fresh details from Lunta (also for papers cited before the document kept their copy)
+  var st = LuntaCite.isJournal(style) ? 'apa' : style;
+  getJSON('/bibliography', { style: st, ids: current.ids, papers: LuntaCite.detailsFor(state.papers, current.ids) }).then(function (res) {
+    if (lastShown !== key) return;
+    (res.entries || []).forEach(function (e) {
+      var row = rows[e.id]; if (!row) return;
+      if (e.missing) { row.querySelector('.t').textContent = 'Not in your library'; row.querySelector('.m').textContent = 'Remove it, or add the paper to Lunta and click Update All.'; return; }
+      row.querySelector('.t').textContent = e.title || 'Untitled';
+      row.querySelector('.m').textContent = LuntaCite.hitMeta(e);
+    });
+  }).catch(function () {});
+}
+
+var removeFromCitation = function (id) {
+  if (!current) return;
+  var target = current;
+  return exclusive(function () {
+    var left = target.ids.filter(function (x) { return x !== id; });
+    return Word.run(function (ctx) {
+      var cc = ctx.document.contentControls.getById(target.id);
+      if (left.length) cc.tag = LuntaCite.makeTag(left);
+      else cc.delete(false);   // its last paper: the citation goes, text and all
+      return ctx.sync();
+    }).then(function () {
+      current = left.length ? { id: target.id, ids: left } : null;
+      lastShown = '';
+      showCurrent();
+      return update();
+    });
+  })();
+};
 
 // ---- updating ----
 
@@ -350,6 +427,10 @@ Office.onReady(function () {
   $('insert').onclick = insertCitation;
   $('bib').onclick = insertBibliography;
   $('refresh').onclick = updateAll;
+  // clicking a citation in the text shows its papers here
+  try {
+    Office.context.document.addHandlerAsync(Office.EventType.DocumentSelectionChanged, onSelection, function () {});
+  } catch (e) {}
   status('Loading…');
   // the document's style before anything may be updated
   loadState().then(function (st) {

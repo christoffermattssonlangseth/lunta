@@ -30,7 +30,8 @@ function makeWord(doc) {
       contentControls: { items: [], load() {} },
       insertText(t) { calls.insertText++; c.text = t; return { font: c.font }; },
       insertHtml(html) { calls.insertHtml++; c.html = html; c.text = html.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"'); },
-      select() { calls.selected = c; }
+      select() { calls.selected = c; },
+      delete() { doc.ccs.splice(doc.ccs.indexOf(c), 1); }
     };
     return c;
   }
@@ -42,7 +43,8 @@ function makeWord(doc) {
         sync: () => Promise.resolve(),
         document: {
           contentControls: Object.assign(collection(doc.ccs), {
-            getByTag: (t) => collection(doc.ccs.filter((c) => c.tag === t))
+            getByTag: (t) => collection(doc.ccs.filter((c) => c.tag === t)),
+            getById: (id) => doc.ccs.find((c) => c.id === id)
           }),
           getSelection() {
             const inside = doc.cursorIn || null;
@@ -231,4 +233,32 @@ test('a document whose style wasn’t saved with it isn’t rewritten in another
   const again = await panel({ parts: p.store.parts.map((x) => x.xml), ccs: [['margins:a', '[1]']] });
   assert.equal(again.ctx.style, 'vancouver');
   assert.doesNotMatch(again.status(), /wasn’t saved/);
+});
+
+test('clicking a citation shows its papers; ✕ removes one; the last one removes the citation', async () => {
+  const p = await panel({ settings: { luntaStyle: 'vancouver' }, ccs: [['margins:a,b', '(…)'], ['margins:c', '(…)'], ['margins-bib', 'x']] });
+  await p.ctx.updateAll();
+  assert.deepEqual(texts(p).slice(0, 2), ['[1,2]', '[3]']);
+  // the cursor in the first citation
+  p.doc.cursorIn = p.doc.ccs[0];
+  p.ctx.onSelection();
+  await new Promise((r) => setTimeout(r, 260));
+  assert.equal(p.els.current.hidden, false, 'the citation box shows');
+  assert.equal(p.els.citelist.children.length, 2, 'one line per paper');
+  assert.equal(p.els.insert.textContent, 'Add to This Citation');
+  // remove Smith 2020 (a): the citation keeps b, numbers follow
+  await p.ctx.removeFromCitation('a');
+  assert.equal(p.doc.ccs[0].tag, 'margins:b');
+  assert.deepEqual(texts(p).slice(0, 2), ['[1]', '[2]']);
+  // remove its last paper: the citation goes
+  p.doc.cursorIn = p.doc.ccs[0];
+  await p.ctx.removeFromCitation('b');
+  assert.equal(p.doc.ccs.length, 2);
+  assert.deepEqual(texts(p).slice(0, 1), ['[1]']);
+  assert.equal(p.els.current.hidden, true, 'nothing to show any more');
+  // the cursor outside citations: the box goes, the button is Insert Citation again
+  p.doc.cursorIn = null;
+  p.ctx.onSelection();
+  await new Promise((r) => setTimeout(r, 260));
+  assert.equal(p.els.insert.textContent, 'Insert Citation');
 });
