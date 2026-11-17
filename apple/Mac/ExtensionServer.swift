@@ -145,6 +145,11 @@ final class ExtensionServer {
             // no PDF link on the page (PubMed): look for a free copy while saving
             if let p, !p.hasPdf, j["findPdf"] as? Bool == true { _ = await model.findPDF(p.id); return (200, status(of: model.paper(p.id))) }
             return (p == nil ? 500 : 200, status(of: p))
+        case ("POST", "/open"):
+            // the panel's Open: no lunta:// link, which Safari asks about on every site
+            guard let id = r.query["id"], model.paper(id) != nil else { return (404, ["error": "unknown paper"]) }
+            NotificationCenter.default.post(name: .luntaOpenPaper, object: id)
+            return (200, ["ok": true])
         case ("POST", "/findpdf"):
             guard let id = r.query["id"], model.paper(id) != nil else { return (404, ["error": "unknown paper"]) }
             if model.paper(id)?.hasPdf == false { _ = await model.findPDF(id) }

@@ -433,6 +433,14 @@ async function read(p: Paper, mode: 'reading' | 'pdf') {
 listen<string>('status', (e) => { if (busy) status(e.payload, 'busy'); });
 // the browser extension saved a paper, a PDF or a page's full text: show it
 listen<string>('extension', (e) => { if (e.payload) status(e.payload); if (!$('#library').hidden) reload(); });
+// the extension's "Open": the paper's reading view (or its PDF)
+listen<string>('open', async (e) => {
+  const p = e.payload ? await api.paper(e.payload) : null;
+  if (!p) return;
+  if (readerPaper() === p.id) return;
+  if (readerPaper()) await closeReader();
+  read(p, p.has_epub ? 'reading' : 'pdf');
+});
 
 $('#add').onclick = addPaper;
 $<HTMLSelectElement>('#sort').onchange = (e) => { sort = (e.target as HTMLSelectElement).value; localStorage.setItem('sort', sort); reloadList(); };

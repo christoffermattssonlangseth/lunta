@@ -13,6 +13,16 @@ struct LibraryWindow: View {
     @State private var editing: EditTarget?
     @StateObject private var ask = AskEngine(scope: .library)
 
+    /// The browser extension's Open: the paper selected in the library and opened in its window.
+    private func openFromExtension(_ id: String) {
+        guard model.paper(id) != nil else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        model.query = ""
+        model.source = .all
+        selection = [id]
+        openWindow(value: id)
+    }
+
     var body: some View {
         NavigationSplitView {
             Sidebar()
@@ -119,12 +129,11 @@ struct LibraryWindow: View {
         .onOpenURL { url in
             // lunta://open?id=<paper id>  (from the browser extension)
             if url.host == "open", let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "id" })?.value, model.paper(id) != nil {
-                model.query = ""
-                model.source = .all
-                selection = [id]
-                openWindow(value: id)
-            }
+                .queryItems?.first(where: { $0.name == "id" })?.value { openFromExtension(id) }
+        }
+        // the extension's Open, through Lunta's local endpoint (no lunta:// link for Safari to ask about)
+        .onReceive(NotificationCenter.default.publisher(for: .luntaOpenPaper)) { n in
+            if let id = n.object as? String { openFromExtension(id) }
         }
         .onDrop(of: [.pdf, .fileURL], isTargeted: $dropping) { providers in
             let privately = NSEvent.modifierFlags.contains(.option)
@@ -882,6 +891,8 @@ extension Notification.Name {
     static let luntaAskFolder = Notification.Name("luntaAskFolder")
     static let luntaNewFolder = Notification.Name("luntaNewFolder")
     static let luntaNewTag = Notification.Name("luntaNewTag")
+    /// the browser extension's Open (object: the paper id)
+    static let luntaOpenPaper = Notification.Name("luntaOpenPaper")
 }
 
 /// Shown while PDFs are dragged over the library window.

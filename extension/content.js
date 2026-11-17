@@ -171,6 +171,14 @@
       a.className = "open";
       a.href = "lunta://open?id=" + encodeURIComponent(state.id);
       a.textContent = "✓ In library · Open";
+      // Mac, Windows, Linux: Lunta opens the paper itself (a lunta:// link makes the browser ask
+      // on every site); iPhone and iPad: the link
+      a.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        const r = await send({ type: "open", id: state.id });
+        if (r && r.link) location.href = a.href;
+        else if (r && r.error) showError(r.error);
+      });
       lib.className = "lib";
       lib.appendChild(a);
     } else if (state.pendingSave || state.pendingFullText) {

@@ -209,6 +209,8 @@ async function handle(msg, sender) {
       const q = new URLSearchParams({ id: msg.id || "", name: msg.name || "paper.pdf" });
       return api("/pdf?" + q, { method: "POST", headers: { "Content-Type": "application/pdf" }, body: bytes });
     }
+    case "open":
+      return api("/open?" + new URLSearchParams({ id: msg.id || "" }), { method: "POST" });
     case "findPdf":
       return api("/findpdf?" + new URLSearchParams({ id: msg.id || "" }), { method: "POST" });
     case "fullText":
@@ -230,6 +232,8 @@ async function handleNative(msg) {
       return nativeSubmit({ kind: "pdf", pdf: "paper.pdf", paperId: msg.id || "", name: msg.name || "paper.pdf", meta: msg.meta || {} },
         [{ name: "paper.pdf", base64 }]);
     }
+    case "open":
+      return { link: true };
     case "findPdf":
       return nativeSubmit({ kind: "findpdf", paperId: msg.id || "", meta: msg.meta || {} });
     default:

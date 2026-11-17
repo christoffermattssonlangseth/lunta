@@ -77,6 +77,14 @@ fn app_context(app: &AppHandle) -> Ctx {
         lib: state.lib().ok(),
         backups: app.path().app_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("Lunta")).join("backups"),
         notify: Arc::new(move |event: &str, payload: &str| {
+            // the extension's "Open": bring the window to the front too
+            if event == "open" {
+                if let Some(w) = a.get_webview_window("main") {
+                    let _ = w.unminimize();
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
             let _ = a.emit(event, payload.to_string());
         }),
         forget_book: Arc::new(move |id: &str| {
@@ -229,6 +237,15 @@ fn route(cx: &Ctx, r: &Request) -> (u16, Value) {
                 changed(cx, "Saved from the browser.");
             }
             (if p.is_none() { 500 } else { 200 }, status(p.as_ref()))
+        }
+        // the extension's "Open" (no lunta:// link, which browsers ask about on every site)
+        ("POST", "/open") => {
+            let id = q("id");
+            if lib.paper(id.clone()).is_none() {
+                return (404, json!({"error": "unknown paper"}));
+            }
+            (cx.notify)("open", &id);
+            (200, json!({"ok": true}))
         }
         ("POST", "/findpdf") => {
             let id = q("id");
