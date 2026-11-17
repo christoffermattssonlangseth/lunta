@@ -18,8 +18,8 @@ Google Drive: no account, no server, nothing collected.
 ## Download
 
 **[Latest release](https://github.com/christoffermattssonlangseth/lunta/releases/latest)** for Mac, Windows,
-Linux and Android (the release page says which file you need). iPhone and iPad: TestFlight for now, App Store
-soon.
+Linux and Android (the release page says which file you need), plus the browser extension. iPhone and iPad:
+in App Store review now; TestFlight until then.
 
 **New to Lunta?** Start with **[Getting started](https://christoffermattssonlangseth.github.io/lunta/getting-started.html)**:
 which setup fits your devices, and how to move your library from Zotero, Mendeley, ReadCube or EndNote
@@ -39,7 +39,7 @@ which setup fits your devices, and how to move your library from Zotero, Mendele
   iD and it also learns from your own papers and shows new papers citing them.
 - **Listen and ask:** papers read aloud in a natural voice, and an assistant that answers questions about a
   paper or your library, both running on your device.
-- **Cite:** 12 citation styles, BibTeX and RIS, add-ins for Word and Google Docs, and for LaTeX fixed
+- **Cite:** 12 citation styles and ~10,000 journal styles, BibTeX and RIS, citing in Word and Google Docs, and for LaTeX fixed
   citation keys and a .bib file that keeps itself up to date.
 - **Agents:** an [MCP server](docs/development.md#ai-agents-mcp) so Claude and other AI agents can search,
   read, cite and highlight in your library.
@@ -83,18 +83,24 @@ The extension comes with the Lunta app, so there's nothing to download:
 **Android:** there are no extensions in Chrome for Android. Instead, open a paper's **Journal page** in Lunta,
 sign in there if needed, and tap **Use this page's full text**.
 
-### Word and Google Docs (Mac)
+### Word and Google Docs
 
-Cite from your library while you write: citations in 12 styles (or any of ~10,000 journal styles in Word), a
-reference list that updates itself, and renumbering after edits. On the Mac, choose **Lunta › Citations in
-Word & Google Docs…** and follow the two steps there:
+Cite from your library while you write: citations in 12 styles or any of ~10,000 journal styles, several papers
+in one citation, a reference list that updates itself, and renumbering after edits. **Click a citation** to see
+its papers, remove one or add more. Documents keep a copy of the papers they cite, so co-authors without your
+library (and you, with Lunta closed) can still update them.
 
-- **Word:** click **Trust Certificate** (your Mac asks for your password once), then **Install in Word** and
-  restart Word. **Cite** appears on the Home tab.
-- **Google Docs:** in your document, **Extensions › Apps Script**; paste the two files Lunta gives you
-  (`Code.gs` and `Sidebar`), save, and reload the document. **Lunta › Cite…** appears in the menu.
+- **Word (Mac):** in Lunta, **Lunta › Citations in Word & Google Docs…** › **Trust Certificate** (your Mac asks
+  for your password once) › **Install in Word**. Restart Word and open **Home › Add-ins › Lunta Citations** once;
+  from then on **Cite** is on the Home tab. Lunta for Mac must be open while you cite.
+- **Google Docs (Chrome, Edge, Firefox; with Lunta for Mac, Windows or Linux):** with the
+  [browser extension](#browser-extension-chrome-edge-firefox-mac-windows-linux) installed, every Google Docs
+  document has a **Lunta** button at the bottom right. Click it, **Connect Google account** (once), click in your
+  text, search, **Insert Citation**. Google is still reviewing Lunta's access to Google Docs; until then it shows
+  an "unverified app" warning: click **Continue**. The older Apps Script route (**Extensions › Apps Script**, the
+  two files from Lunta's Citations window) keeps working, also in Safari.
 
-Lunta for Mac must be open while you cite. More: [Lunta Citations](https://christoffermattssonlangseth.github.io/lunta/support.html).
+More: [Lunta Citations](https://christoffermattssonlangseth.github.io/lunta/support.html).
 
 ### LaTeX and Overleaf
 
