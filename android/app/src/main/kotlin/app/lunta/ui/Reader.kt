@@ -107,6 +107,7 @@ private fun EpubReader(model: AppModel, paper: Paper) {
     var hasSelection by remember { mutableStateOf(false) }
     var showToc by remember { mutableStateOf(false) }
     var showList by remember { mutableStateOf(false) }
+    var showRefs by remember { mutableStateOf(false) }
     var showAppearance by remember { mutableStateOf(false) }
     var overflow by remember { mutableStateOf(false) }
     var scale by remember { mutableFloatStateOf(model.settings.readerScale) }
@@ -134,6 +135,7 @@ private fun EpubReader(model: AppModel, paper: Paper) {
     var findBack by remember { mutableStateOf<Int?>(null) }
     var restored by remember { mutableStateOf(false) }
     val lib = model.library!!
+    val refsState = remember(id) { ReferencesState(scope, lib, model) }
 
     LaunchedEffect(id) {
         try {
@@ -346,7 +348,7 @@ private fun EpubReader(model: AppModel, paper: Paper) {
 
     fun close() { scope.launch { savePosition(); model.pop() } }
     BackHandler {
-        if (showToc || showList || showAppearance || showFigures) { showToc = false; showList = false; showAppearance = false; showFigures = false }
+        if (showToc || showList || showRefs || showAppearance || showFigures) { showToc = false; showList = false; showRefs = false; showAppearance = false; showFigures = false }
         else if (findOn) closeFind()
         else close()
     }
@@ -445,6 +447,13 @@ private fun EpubReader(model: AppModel, paper: Paper) {
                         DropdownMenu(overflow, { overflow = false }) {
                             if (toc.isNotEmpty()) DropdownMenuItem({ Text("Contents") }, { overflow = false; showToc = true },
                                 leadingIcon = { Icon(Icons.AutoMirrored.Filled.FormatListBulleted, null) })
+                            DropdownMenuItem({ Text("References") }, {
+                                overflow = false; showRefs = true
+                                scope.launch {
+                                    if (refsState.refs == null) refsState.refs = parseRefs(jsString("window.luntaReferences ? luntaReferences() : null")())
+                                    refsState.refresh()
+                                }
+                            }, leadingIcon = { Icon(Icons.Outlined.FormatQuote, null) })
                             DropdownMenuItem({ Text("Go to page…") }, { overflow = false; chrome = false; scope.launch { js("window.luntaShowGoTo && luntaShowGoTo()") } },
                                 leadingIcon = { Icon(Icons.Outlined.Pages, null) })
                             DropdownMenuItem({ Text("Text & Theme…") }, { overflow = false; showAppearance = true },
@@ -528,6 +537,17 @@ private fun EpubReader(model: AppModel, paper: Paper) {
             }
         }
     }
+
+    // the reference list
+    if (showRefs) ReferencesSheet(
+        refsState, onDismiss = { showRefs = false },
+        onShow = { r -> showRefs = false; chrome = false; scope.launch { js("window.luntaShowReference && luntaShowReference(${r.index})") } },
+        onOpen = { pid -> showRefs = false; scope.launch { savePosition(); model.push(Screen.Reader(pid)) } },
+        onSearch = { r ->
+            val u = Uri.parse("https://scholar.google.com/scholar?q=" + Uri.encode(r.text.take(200)))
+            runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        },
+    )
 
     // highlights and notes
     if (showList) ModalBottomSheet({ showList = false }) {
