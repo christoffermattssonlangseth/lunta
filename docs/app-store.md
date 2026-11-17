@@ -33,10 +33,10 @@ HIGHLIGHT AND NOTE
 Highlight in four colours, add notes, in the reading view or the PDF. Highlight mode marks every selection at once. On iPad, highlight with Apple Pencil and draw on PDFs. All highlights are searchable across your library.
 
 YOUR LIBRARY
-Add papers by DOI, PubMed ID, arXiv link or PDF, or straight from Safari with the Lunta extension. Lunta finds legal open-access PDFs for you, and never swaps a published paper for its preprint. Folders, tags, Smart Folders, stars and a Must Read queue. Full-text search across everything. Import from ReadCube Papers, BibTeX and RIS.
+Add papers by DOI, PubMed ID, arXiv link or PDF, or straight from Safari with the Lunta extension. Lunta finds legal open-access PDFs for you, and never swaps a published paper for its preprint. Folders, tags, Smart Folders, stars and a Must Read queue. Full-text search across everything. Moving from Zotero, Mendeley, ReadCube or EndNote? Import once in Lunta for Mac (free) and your library syncs to your iPhone and iPad.
 
 NEW FOR YOU
-Each morning Lunta picks new papers that match your interests, the authors and topics you follow, and your journals, with a short summary and a notification.
+Each morning Lunta picks new papers that match your interests, the authors and topics you follow, and your journals, with a short summary and a notification. Add your ORCID iD and it also learns from your own papers and shows you new papers citing them.
 
 LISTEN
 Papers read aloud in a natural voice, with the sentence being read highlighted. Great for the commute.
