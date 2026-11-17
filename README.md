@@ -43,7 +43,7 @@ which setup fits your devices, and how to move your library from Zotero, Mendele
 
 ## Browser extension and add-ins
 
-### Chrome extension (Mac, Windows, Linux)
+### Browser extension: Chrome, Edge, Firefox (Mac, Windows, Linux)
 
 Saves the paper you're looking at to Lunta, with its PDF, using the access your browser already has (your
 institution's subscription, for example). On a journal's article page, **Use this page's full text** turns
@@ -56,6 +56,9 @@ Chromium browsers.
 2. Open **`chrome://extensions`** (Edge: `edge://extensions`) and turn on **Developer mode** (top right).
 3. Click **Load unpacked** and choose the unzipped folder.
 4. Pin it: click the puzzle piece in the toolbar, then the pin next to **Lunta**.
+
+**Firefox:** the same zip. Until Lunta is in Firefox Add-ons, open `about:debugging` › **This Firefox** ›
+**Load Temporary Add-on…** and choose the zip (Firefox removes it when it restarts).
 
 Lunta must be open on the same computer: the extension talks only to the app, never to a server. To update,
 unzip the new version over the old folder and click ↻ on the extension in `chrome://extensions`.

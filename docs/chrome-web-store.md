@@ -1,4 +1,4 @@
-# Lunta in the Chrome Web Store (and Edge Add-ons)
+# Lunta in the Chrome Web Store, Firefox Add-ons and Edge Add-ons
 
 Everything the Chrome Web Store Developer Dashboard asks for, ready to paste. The images are in
 `appstore/chrome/`. The package is the release's `Lunta-<version>-Chrome-Extension.zip` (the
@@ -113,3 +113,23 @@ the Lunta tab at the right edge of the page.
 https://partner.microsoft.com/dashboard/microsoftedge: register (free), **Create new extension**, upload
 the same zip, and reuse the texts and images above (Edge asks for the same privacy answers). Review takes
 up to a week.
+
+## Firefox Add-ons (free)
+
+The same zip is a Firefox add-on (the manifest carries Firefox's id, `lunta@cmlangseth.margins`, and
+declares that it collects no data). Firefox only installs add-ons that Mozilla has signed, so this is also
+the only way Firefox users can keep it installed.
+
+1. https://addons.mozilla.org/developers/: sign in with a Firefox account (free), accept the agreement.
+2. **Submit a New Add-on** › **On this site** (listed in the store) › upload the release's extension zip.
+   Mozilla's validator runs; it warns that `background.service_worker` isn't supported, which is expected
+   (that line is for Chrome; Firefox uses `background.scripts`).
+3. **Source code:** answer **No** (the code isn't minified or generated; reviewers read it as is).
+4. Listing: reuse the name, summary and description above; category **Search Tools**, or **Other**;
+   license **MIT**; the same screenshots; support site and homepage as above; the same privacy policy URL.
+5. Notes to reviewer: the same as the Chrome review notes (install Lunta, open an article page, click the
+   Lunta tab), plus: "Requests go only to the user's own Lunta app on 127.0.0.1:47480; page requests use
+   `content.fetch` so the user's own access applies."
+
+Review: automatic signing within minutes; a human review can follow later. Each new version: **Upload New
+Version** with the new zip (higher version in the manifest).
