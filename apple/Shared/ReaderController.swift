@@ -9,6 +9,9 @@ final class ReaderController: ObservableObject {
     var onFigure: ((ReaderFigure) -> Void)?
     /// The paper's figures (label, title, thumbnail), sent by the page when it loads.
     @Published var figures: [ReaderFigure] = []
+    /// Highlights the reading view couldn't find in its text (e.g. after it was rebuilt from
+    /// another source): shown as such in the highlights list instead of silently disappearing.
+    @Published var missingAnnotations: Set<String> = []
     /// Called when the user taps a paragraph while listening.
     var onTapParagraph: ((String) -> Void)?
     /// Called when the user taps a highlight (its annotation id).

@@ -175,7 +175,7 @@ struct ReaderView: View {
         .sheet(item: $editingAnnotation) { a in AnnotationEditor(annotation: a) { refreshHighlights() }.environmentObject(model) }
         .sheet(isPresented: $showHighlights) {
             NavigationStack {
-                AnnotationsList(paperID: paperID, onShow: { a in
+                AnnotationsList(paperID: paperID, missing: mode == .reading ? controller.missingAnnotations : [], onShow: { a in
                     showHighlights = false
                     Task {
                         try? await Task.sleep(for: .milliseconds(350))

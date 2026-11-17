@@ -152,7 +152,7 @@ struct ReaderWindow: View {
                         .help("Highlights and notes")
                         .disabled(book == nil && mode != .pdf)
                         .popover(isPresented: $showHighlights, arrowEdge: .bottom) {
-                            AnnotationsList(paperID: paperID, onShow: { a in
+                            AnnotationsList(paperID: paperID, missing: mode == .reading ? controller.missingAnnotations : [], onShow: { a in
                                                 if mode == .pdf { pdfHighlights.show(a) } else { controller.showAnnotation(a.id) } },
                                             onEdit: { a in showHighlights = false; editingAnnotation = a })
                                 .frame(width: 380, height: 460)

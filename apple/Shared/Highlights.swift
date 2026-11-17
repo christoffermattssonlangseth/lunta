@@ -366,7 +366,15 @@ extension ReaderController {
         guard let data = try? JSONSerialization.data(withJSONObject: items), let json = String(data: data, encoding: .utf8) else { return }
         let arg = json.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
             .replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\u{2028}", with: "\\u2028").replacingOccurrences(of: "\u{2029}", with: "\\u2029")
-        webView?.evaluateJavaScript("luntaApplyAnnotations('\(arg)')")
+        // the page answers with the ids it couldn't place in this text
+        webView?.evaluateJavaScript("luntaApplyAnnotations('\(arg)')") { [weak self] result, _ in
+            guard let self else { return }
+            var missing = Set<String>()
+            if let s = result as? String, let d = s.data(using: .utf8), let ids = try? JSONDecoder().decode([String].self, from: d) {
+                missing = Set(ids)
+            }
+            if missing != self.missingAnnotations { self.missingAnnotations = missing }
+        }
     }
 
     func showAnnotation(_ id: String) {
@@ -565,15 +573,24 @@ struct AnnotationsList: View {
     @EnvironmentObject var model: LibraryModel
     @Environment(\.highlightUndo) private var undo
     let paperID: String
+    /// Highlights the reading view couldn't find in its current text (ReaderController.missingAnnotations).
+    var missing: Set<String> = []
     var onShow: (Annotation) -> Void
     var onEdit: (Annotation) -> Void
 
     var body: some View {
         let list = model.annotations(paperID).sorted { (Int($0.position) ?? 0) < (Int($1.position) ?? 0) }
+        let lost = list.filter { missing.contains($0.id) }.count
         List {
             if list.isEmpty {
                 ContentUnavailableView("No highlights yet", systemImage: "highlighter",
                                        description: Text("Select text in the reading view, then choose Highlight or Add Note."))
+            }
+            if lost > 0 {
+                Label(lost == 1 ? "1 highlight isn’t in this version of the reading view. It is kept, with its quote and note."
+                                : "\(lost) highlights aren’t in this version of the reading view. They are kept, with their quotes and notes.",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
             ForEach(list) { a in
                 Button { onShow(a) } label: {
@@ -583,6 +600,10 @@ struct AnnotationsList: View {
                             Text(a.quote.trimmingCharacters(in: .whitespacesAndNewlines)).font(.callout).lineLimit(4)
                             if !a.note.isEmpty {
                                 Label(a.note, systemImage: "note.text").font(.footnote).foregroundStyle(.secondary)
+                            }
+                            if missing.contains(a.id) {
+                                Label("Not found in this reading view", systemImage: "eye.slash")
+                                    .font(.caption).foregroundStyle(.orange)
                             }
                         }
                     }
