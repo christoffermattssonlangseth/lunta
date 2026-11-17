@@ -151,6 +151,10 @@
       a.textContent = "✓ In library · Open";
       lib.className = "lib";
       lib.appendChild(a);
+    } else if (state.pendingSave || state.pendingFullText) {
+      // Safari on iPhone and iPad: sent, and the Lunta app adds it when it's opened
+      lib.className = "lib";
+      lib.appendChild(openLunta("✓ Sent · Open Lunta"));
     } else {
       const b = document.createElement("button");
       b.className = "btn";
@@ -164,6 +168,9 @@
     if (state.hasPdf) {
       pdf.className = "pdf ok";
       pdf.textContent = "✓ Saved";
+    } else if (state.pendingPdf) {
+      pdf.className = "pdf ok";
+      pdf.textContent = "✓ Sent";
     } else if (pdfUrl) {
       const b = document.createElement("button");
       b.className = "btn alt";
@@ -184,6 +191,15 @@
     b.disabled = ftBusy;
     b.onclick = useFullText;
     ft.appendChild(b);
+  }
+
+  // Safari on iPhone and iPad: the work is done in the Lunta app, which this opens
+  function openLunta(text) {
+    const a = document.createElement("a");
+    a.className = "open";
+    a.href = "lunta://safari";
+    a.textContent = text;
+    return a;
   }
 
   function showError(e) {
@@ -218,12 +234,12 @@
   async function savePdf() {
     const b = $(".pdf button");
     if (b) { b.disabled = true; b.textContent = "Downloading…"; }
-    if (!state.inLibrary) {
+    if (!state.inLibrary && !state.pendingSave) {
       const s = await send({ type: "save", meta: info });
       if (s.error) { showError(s.error); render(); return; }
       state = s;
     }
-    let msg = { type: "savePdf", id: state.id, pdfUrl, name: (title || "paper").slice(0, 80) + ".pdf" };
+    let msg = { type: "savePdf", id: state.id, pdfUrl, name: (title || "paper").slice(0, 80) + ".pdf", meta: info };
     try {
       // fetch from the page first: same-origin requests carry the site's login cookies
       const r = await pageFetch(pdfUrl, { credentials: "include" });
@@ -362,7 +378,8 @@
         const head = { added: "Added to Lunta.", attached: "Reading view made.", replaced: "Reading view updated.",
                        kept: "Reading view not changed.", unchanged: "Reading view already up to date." }[r.outcome] || "";
         ftMessage(`${head} ${r.message || ""}`.trim(), kind);
-        if (r.inLibrary) { state = r; }
+        if (r.queued) { $(".ftmsg").append(" ", openLunta("Open Lunta")); }
+        if (r.inLibrary || r.queued) { state = r; }
       }
     } catch (e) {
       ftMessage("");

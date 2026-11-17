@@ -24,10 +24,11 @@ apple/Paper2EpubKit/   Swift converter: paper (link, DOI, PDF, JATS XML) → ref
 apple/Mac/             macOS app (SwiftUI): library, reader, browser-extension and citation endpoints
 apple/iOS/             iPhone app
 apple/ShareExtension/  iPhone share extension (PDFs, links, DOIs → the app via an App Group inbox)
+apple/SafariExtension/ Safari extension targets (Mac, iPhone/iPad): extension/ as is, plus the native handler
 apple/Shared/          code shared by the Mac and iPhone apps (reader, Ask, highlights, folders, …)
 apple/citations/       Word add-in, Google Docs Apps Script and the formatting code they share
 tts/                   Kokoro narration helper for the Mac (mlx-audio)
-extension/             Chrome extension: save papers and PDFs from article pages
+extension/             browser extension (Chrome, Firefox, Safari): save papers and PDFs from article pages
 converter/             the original Python paper2epub tool (pandoc-based) and its Claude skill
 design/                logo (SVG + 1024 px PNG) and its dark / tinted variants; Mac icon = Icon Composer bundle apple/Lunta.icon (macOS 26 light/dark/tinted), iPhone icon has dark + tinted appearances
 scripts/build-core.sh  builds the Rust core for iOS, the simulator and macOS → XCFramework
@@ -192,6 +193,35 @@ with the page readers ported to `core/src/convert/webpage.rs` and friends; backu
 reading views in the app's data folder, `backups/`). A debug desktop build takes another port from
 `LUNTA_EXTENSION_PORT`; on macOS, where the port is Lunta for Mac's, the desktop app opens the
 endpoint only then.
+
+**Safari.** The same files are the Safari extension: `LuntaSafariMac` (embedded in LuntaMac) and
+`LuntaSafari` (embedded in LuntaiOS) copy `extension/` into the extension's bundle at build time
+(`apple/SafariExtension/copy-extension.sh`; only the manifest is adjusted: the app's version, the
+service worker only, no Firefox settings, and `nativeMessaging` on iPhone and iPad). Turn it on in
+Safari › Settings › Extensions (Mac; a development build needs Develop › Allow Unsigned Extensions,
+the Developer ID–signed release doesn't), or Settings › Apps › Safari › Extensions › Lunta on the
+iPhone and iPad (allow it on all websites).
+
+- **Mac:** exactly like Chrome: 127.0.0.1:47480, Origin `safari-web-extension://`.
+  `SafariWebExtensionHandler` is unused there.
+- **iPhone and iPad:** there is no server on the device. `background.js` asks the native handler
+  (`browser.runtime.sendNativeMessage`, `{op: "ping"}` → `{platform: "ios"}`) and then sends the same
+  requests to it instead: the handler only writes files (an extension has little memory): each
+  request goes into the App Group, `SafariInbox/.staging/<token>/` in pieces of ≤ 512 K characters,
+  then is moved to `SafariInbox/<ms>-<token>/` (`request.json` + the page, its figures, the PDF) in
+  one step; "status" is answered from `SafariInbox/index.json`, which the app writes whenever the
+  library changes, plus the requests still waiting ("✓ Sent · Open Lunta" in the panel). The app
+  does them when it becomes active or is opened with `lunta://safari`
+  (`apple/Shared/SafariInboxImport.swift`: save → add the paper, pdf → attach it,
+  fulltext → `usePageFullText` in `apple/Shared/PageFullText.swift`, the same as on the Mac, with
+  the highlight check and the backup in the app's own Application Support/Lunta/backups). Figures
+  are capped lower than on the Mac (40, 6 MB each, 30 MB in all). The format is in
+  `apple/Shared/SafariInbox.swift`.
+- **Testing the hand-off without a device:** a Debug Mac build plays recorded messages through the
+  same handler code and import into a scratch library:
+  `Lunta -testLibrary <dir> -extensionPort 47498 -testSafariInbox <script.jsonl>` (answers in
+  `<script.jsonl>.out`; the line format is described at `runSafariInboxScript`). The messages can be
+  recorded from the real `background.js` in node with a stand-in for `browser.runtime.sendNativeMessage`.
 
 ## Google Drive sync
 

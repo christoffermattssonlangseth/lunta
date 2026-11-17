@@ -28,6 +28,9 @@ struct LuntaiOSApp: App {
             }
             .tint(.luntaTeal)
             .preferredColorScheme((AppAppearance(rawValue: appearance) ?? .system).scheme)
+            // lunta://safari (the Safari extension's "Open Lunta"), lunta://open?id=…: do what
+            // Safari sent (also done whenever the app becomes active)
+            .onOpenURL { _ in if let m = holder.model { Task { await m.importShared() } } }
         }
         .onChange(of: phase) { _, p in
             if p == .active, let m = holder.model { m.refresh(); m.freshenReadingViews(); Task { await m.importShared() } }
@@ -97,11 +100,15 @@ final class ModelHolder: ObservableObject {
 
 extension LibraryModel {
     /// Adds what was shared to Lunta from other apps (PDFs and links waiting in the share inbox).
+    /// Also does what was sent from Safari (SafariInbox: save, PDF, "Use this page's full text").
     func importShared() async {
-        let items = ShareInbox.pending()
-        guard !items.isEmpty, !importingShared else { return }
+        guard !importingShared else { return }
         importingShared = true
         defer { importingShared = false }
+        let safari = await importSafari()
+        if safari.show { errorMessage = safari.lines.joined(separator: "\n\n") }
+        let items = ShareInbox.pending()
+        guard !items.isEmpty else { return }
         var pdfs: [(URL, ShareInbox.Item)] = []
         for item in items {
             switch item.kind {

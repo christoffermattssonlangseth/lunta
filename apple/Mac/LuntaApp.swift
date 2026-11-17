@@ -84,6 +84,13 @@ final class ModelHolder: ObservableObject {
             // scratch library (test hook): only the extension endpoint
             server = ExtensionServer(model: model)
             server?.start()
+            #if DEBUG
+            // the Safari extension's iPhone hand-off, played on the Mac (SafariInboxImport)
+            let a = ProcessInfo.processInfo.arguments
+            if let i = a.firstIndex(of: "-testSafariInbox"), i + 1 < a.count {
+                Task { await model.runSafariInboxScript(URL(fileURLWithPath: a[i + 1])) }
+            }
+            #endif
             return
         }
         if let model {

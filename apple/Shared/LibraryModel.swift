@@ -137,6 +137,9 @@ final class LibraryModel: ObservableObject {
         loadSmartFolders()
         let every = lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
         counts = (every.count, every.filter(\.starred).count, every.filter(\.mustRead).count, every.filter { !$0.read }.count)
+        #if os(iOS)
+        publishSafariIndex()   // what the Safari extension answers "in your library?" from
+        #endif
     }
 
     /// Typing in the search field: wait for a short pause, then search off the main thread.

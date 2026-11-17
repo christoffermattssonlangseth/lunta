@@ -109,6 +109,7 @@ targets:
     sources: [iOS, Shared, Assets.xcassets, ShareExtension/ShareInbox.swift]
     dependencies:
       - target: LuntaShare
+      - target: LuntaSafari
       - package: LuntaCore
         product: LuntaCore
       - package: Paper2EpubKit
@@ -131,6 +132,9 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: Lunta
+        CFBundleURLTypes:
+          - CFBundleURLName: com.cmlangseth.margins.ios
+            CFBundleURLSchemes: [lunta]   # lunta://safari from the Safari extension's panel
         UILaunchScreen: {}
         ITSAppUsesNonExemptEncryption: false
         UIBackgroundModes: [audio, fetch]
@@ -215,3 +219,38 @@ targets:
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         SKIP_INSTALL: YES
         ARCHS: arm64
+
+  # Safari Web Extension (iPhone, iPad): the same extension files; with no Lunta server on the
+  # device, background.js sends its requests to SafariWebExtensionHandler, which leaves them in the
+  # App Group (SafariInbox) for the app. Embedded in LuntaiOS.
+  LuntaSafari:
+    type: app-extension
+    platform: iOS
+    sources:
+      - SafariExtension/SafariWebExtensionHandler.swift
+      - SafariExtension/PrivacyInfo.xcprivacy
+      - Shared/SafariInbox.swift
+    preBuildScripts:
+      - name: Browser extension files (extension/)
+        basedOnDependencyAnalysis: false
+        script: "\"$SRCROOT/SafariExtension/copy-extension.sh\""
+    info:
+      path: SafariExtension/iOS-Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDisplayName: Lunta
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.Safari.web-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler
+    entitlements:
+      path: SafariExtension/LuntaSafari.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.cmlangseth.margins]
+    settings:
+      base:
+        PRODUCT_NAME: LuntaSafari
+        PRODUCT_BUNDLE_IDENTIFIER: com.cmlangseth.margins.ios.safari
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        SKIP_INSTALL: YES
