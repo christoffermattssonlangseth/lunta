@@ -40,6 +40,8 @@ final class Para {
     var level = 0
     var asset: BookImage?
     var region: R?
+    /// The framed or shaded box (sidebar) the paragraph sits in, numbered per document.
+    var boxed: Int?
 
     init(_ lines: [PLine], page: Int, kind: Kind = .text, region: R? = nil) {
         self.lines = lines; self.page = page; self.kind = kind; self.region = region
@@ -112,6 +114,10 @@ final class PDFAnalyzer {
         + #"data and code availability|supplementary (?:information|material|figures?|tables?)|supporting information|"#
         + #"appendix|keywords|significance|highlights|limitations|related work|experiments?|"#
         + #"figure legends|figures|tables|abbreviations|ethics statement|resource availability)\s*[:.]?$"#, .caseInsensitive)
+    /// A DOI on its own: "https://doi.org/10.1038/…", "doi: 10.…".
+    static func isDOILine(_ s: String) -> Bool {
+        s.trimmingCharacters(in: .whitespaces).matches(#"^(https?://(dx\.)?doi\.org/|doi:?\s*)10\.\d{4,9}/\S+$"#, .caseInsensitive)
+    }
     static let captionRE = re(
         // the label must be followed by punctuation, a capitalised word or nothing: running text that
         // wraps onto a line starting "Figure S2G). Top genes…" or "Fig. 1a and …" is not a caption
@@ -350,7 +356,7 @@ final class PDFAnalyzer {
 
     private func findRunning() {
         let n = doc.pageCount
-        guard n >= 3 else { return }
+        guard n >= 2 else { return }
         var c: [String: Int] = [:]
         for (pno, lines) in pagesLines.enumerated() {
             let h = boxes[pno].height
@@ -370,6 +376,7 @@ final class PDFAnalyzer {
         if t.matches(#"^(bioRxiv|medRxiv) preprint doi"#, .caseInsensitive) || t.contains("copyright holder for this preprint") { return true }
         if inMargin && t.matches(#"^(downloaded from|arxiv:\d{4}\.\d+)"#, .caseInsensitive) { return true }
         if t.allSatisfy({ $0 == "\u{FFFC}" || $0.isWhitespace }) { return true }   // logo placeholder
+        if t.matches(#"^check for updates$"#, .caseInsensitive) { return true }   // Crossmark badge
         if t.matches(#"^\((figure )?legend (continued )?on (the )?(next|previous|following) page\)$"#, .caseInsensitive) { return true }
         // publisher footer: "Cell 190, 1–19 … © 2026 Elsevier Inc." / "All rights are reserved, …"
         if l.bbox.y0 > 0.86 * h && l.size <= bodySize + 0.5 && t.count < 200
@@ -472,7 +479,14 @@ final class PDFAnalyzer {
             }
             regions[gi].rect = r
         }
-        return regions
+        // a piece that has grown inside another (by its labels) is part of it
+        let all = regions
+        return all.indices.filter { i in
+            !all.indices.contains { j in
+                j != i && all[j].kind == all[i].kind && all[j].rect.contains(all[i].rect, tol: 2)
+                    && (!all[i].rect.contains(all[j].rect, tol: 2) || j < i)
+            }
+        }.map { all[$0] }
     }
 
     private func mergeClusters(_ cs: inout [Cluster], _ shouldMerge: (R, R) -> Bool) {
@@ -607,47 +621,64 @@ final class PDFAnalyzer {
             p.asset = g.image
             units.append(p)
         }
-        let (ordered, gutter) = order(pno, units)
+        let (ordered, cols) = order(pno, units)
         units = ordered
-        let txt = units.filter { $0.kind == .text }.map { $0.lines[0] }
-        func rightEdge(_ l: PLine) -> CGFloat {
-            // the column's right edge: full-width lines (legends, summary) across the gutter do not count
-            let sameColumn = txt.filter { o in gutter.map { g in !(o.bbox.x0 < g - 3 && o.bbox.x1 > g + 3) } ?? true }
-            let ov = sameColumn.filter { min($0.bbox.x1, l.bbox.x1) - max($0.bbox.x0, l.bbox.x0) > 0.3 * l.bbox.w }.map(\.bbox.x1)
+        let txt = zip(units, cols).filter { $0.0.kind == .text }.map { ($0.0.lines[0].bbox, $0.1) }
+        func rightEdge(_ l: PLine, _ col: (CGFloat, CGFloat)) -> CGFloat {
+            // the column's right edge: lines of other columns (full-width legends, summary) do not count
+            let sameColumn = txt.filter { $0.1 == col }.map(\.0)
+            let ov = sameColumn.filter { min($0.x1, l.bbox.x1) - max($0.x0, l.bbox.x0) > 0.3 * l.bbox.w }.map(\.x1)
             return ov.max() ?? l.bbox.x1
         }
         let abbrev = re(#"(\b(e\.g|i\.e|et al|cf|Fig|Figs|Eq|Eqs|vs|approx|ca|resp|Ref|Refs|No|Dr|Prof|al)\.|\b[A-Z]\.)$"#)
         let W = boxes[pno].width
         var paras: [Para] = []
         var cur: [PLine] = []
-        func flush() { if !cur.isEmpty { paras.append(Para(cur, page: pno)); cur = [] } }
-        for u in units {
+        var curCol: (CGFloat, CGFloat) = (0, 0)
+        var curBox: Int?
+        // where the paragraph's lines in the current column start (after a column continuation)
+        var seg = 0
+        func flush() {
+            if !cur.isEmpty { let p = Para(cur, page: pno); p.boxed = curBox; paras.append(p); cur = [] }
+        }
+        for (u, col) in zip(units, cols) {
             if u.kind != .text { flush(); paras.append(u); continue }
+            if u.boxed != curBox {
+                // a box's text never runs on into the page's or the other way round
+                flush()
+                curBox = u.boxed
+            }
             let l = u.lines[0]
-            guard let a = cur.last else { cur.append(l); continue }
-            let left = cur.map(\.bbox.x0).min()!
+            let aCol = curCol
+            curCol = col
+            guard let a = cur.last else { seg = 0; cur.append(l); continue }
+            let left = cur[seg...].map(\.bbox.x0).min()!
             let gap = l.bbox.y0 - a.bbox.y1
             let jumped = l.bbox.y0 < a.bbox.y0 - 2 || abs(l.bbox.x0 - left) > 0.3 * W
-            let reA = rightEdge(a)
+            let reA = rightEdge(a, aCol)
             let width = max(1, reA - left)
             let at = a.text.trimmingCharacters(in: .whitespaces)
             let endsSentence = at.hasSuffix(".") || at.hasSuffix(":") || at.hasSuffix("?") || at.hasSuffix("!")
             let shortA = (reA - a.bbox.x1) > 0.18 * width && endsSentence && !abbrev.test(at)
             // (not the hanging indent of a numbered reference: "4. Satija, R., … (2015)." / "Spatial …")
             let numberedItem = cur[0].text.trimmingCharacters(in: .whitespaces).matches(#"^(\[\d+\]|\d+\.)\s"#)
-            let indent = l.bbox.x0 - left > 8 && cur.dropFirst().allSatisfy { abs($0.bbox.x0 - left) < 3 } && endsSentence
+            let indent = l.bbox.x0 - left > 8 && cur[max(seg, 1)...].allSatisfy { abs($0.bbox.x0 - left) < 3 } && endsSentence
                 && !abbrev.test(at) && !numberedItem
-            let hanging = cur.count >= 2 && l.bbox.x0 < a.bbox.x0 - 6 && cur[0].bbox.x0 < a.bbox.x0 - 6
+            // (a drop cap is not a hanging first line)
+            let dropCap = cur[0].bbox.h > 2.5 * cur[0].size
+            let hanging = cur.count >= 2 && l.bbox.x0 < a.bbox.x0 - 6 && cur[0].bbox.x0 < a.bbox.x0 - 6 && !dropCap
             let sizeChange = abs(l.size - a.size) >= 1.0
             let styleBreak = (a.bold > 0.9) != (l.bold > 0.9) && (at.count < 120 || l.text.count < 120)
             let cap = Self.captionRE.test(l.text.trimmingCharacters(in: .whitespaces))
             if jumped || gap > 0.75 * max(l.size, a.size) || shortA || indent || hanging || sizeChange || styleBreak || cap
                 || (cur.count == 1 && l.bbox.x0 > a.bbox.x0 + 8 && gap > 0.3 * l.size && !numberedItem) {
                 if jumped && !(gap > 0.75 * l.size) && !shortA && !sizeChange && !cap
-                    && l.text.trimmingCharacters(in: .whitespaces).first?.isLowercase == true {
+                    && l.text.trimmingCharacters(in: .whitespaces).first?.isLowercase == true && !Self.isDOILine(l.text) {
+                    seg = cur.count
                     cur.append(l); continue   // column continuation
                 }
                 flush()
+                seg = 0
             }
             cur.append(l)
         }
@@ -655,65 +686,204 @@ final class PDFAnalyzer {
         return paras
     }
 
-    /// Reading order of a page's lines and blocks; also returns the column gutter's x on two-column pages.
-    func order(_ pno: Int, _ paras: [Para]) -> ([Para], CGFloat?) {
-        let W = boxes[pno].width
-        // The column gutter: the gap that most often separates two lines side by side on the same row
-        // (text left of it and text right of it). Decided row by row, so full-width blocks (summary,
-        // figure legends) or a shifted abstract do not hide the columns however much text they hold.
-        let textual = paras.filter { $0.kind == .text && $0.bbox.w >= 0.15 * W }
-        var gaps: [(CGFloat, CGFloat)] = []
-        for a in textual {
-            let rightOf = textual.filter { b in
-                b !== a && b.bbox.x0 >= a.bbox.x1 + 3 && b.bbox.x0 - a.bbox.x1 < 0.4 * W
-                    && min(a.bbox.y1, b.bbox.y1) - max(a.bbox.y0, b.bbox.y0) > 0.5 * min(a.bbox.h, b.bbox.h)
+    /// A block for the reading order: one line or region, or a box of them (`items`: their indices).
+    private struct Node { var r: R; var n: Int; var text: Bool; var items: [Int] }
+
+    /// Reading order of a page's lines and blocks, with the column each was read in: the x-interval
+    /// between the gutters on either side of it (lines of one column share it).
+    ///
+    /// Recursive: a gutter splits the page into columns, and blocks across it (titles, full-width
+    /// figures and legends) cut it into bands that are ordered the same way. So three columns, a
+    /// two-column legend under a full-width figure, or columns of different widths above and below a
+    /// figure each come out column by column. A framed or shaded box is read as one block.
+    func order(_ pno: Int, _ paras: [Para]) -> ([Para], [(CGFloat, CGFloat)]) {
+        let singles = paras.enumerated().map { Node(r: $1.bbox, n: $1.text.count, text: $1.kind == .text, items: [$0]) }
+        let panels = self.panels(pno, singles)
+        let inPanel = Set(panels.joined())
+        var nodes = singles.filter { !inPanel.contains($0.items[0]) }
+        for (k, m) in panels.enumerated() {
+            for i in m { paras[i].boxed = pno * 64 + k }
+            nodes.append(Node(r: R.union(m.map { singles[$0].r }), n: m.reduce(0) { $0 + singles[$1].n }, text: true, items: m))
+        }
+        nodes.sort { $0.items[0] < $1.items[0] }
+        var out: [(Int, (CGFloat, CGFloat))] = []
+        orderRec(pno, singles, nodes, depth: 0, inherited: nil, key: (-.infinity, .infinity), &out)
+        return (out.map { paras[$0.0] }, out.map(\.1))
+    }
+
+    /// Framed or shaded boxes (a drawn rectangle around several lines of text that no line crosses,
+    /// holding part of the page's text): the members of each, outermost boxes only.
+    private func panels(_ pno: Int, _ nodes: [Node]) -> [[Int]] {
+        let W = boxes[pno].width, H = boxes[pno].height
+        let allN = nodes.filter(\.text).reduce(0) { $0 + $1.n }
+        let rects = graphics[pno].drawings.filter { $0.w >= 0.2 * W && $0.h >= 3 * bodySize && $0.area < 0.9 * W * H }
+            .sorted { $0.area > $1.area }
+        var out: [[Int]] = []
+        for r in rects {
+            var members: [Int] = []
+            var ok = true
+            for (i, n) in nodes.enumerated() {
+                if r.contains(n.r, tol: 2) {
+                    if !n.text { ok = false; break }   // a figure inside: left to the figure detection
+                    members.append(i)
+                } else if n.r.area > 0 && r.intersects(n.r) && r.intersection(n.r).area > 0.3 * n.r.area {
+                    ok = false; break   // text across the frame: not a box
+                }
             }
-            if let b = rightOf.min(by: { $0.bbox.x0 < $1.bbox.x0 }) { gaps.append((a.bbox.x1, b.bbox.x0)) }
+            let n = members.reduce(0) { $0 + nodes[$1].n }
+            if !ok || members.count < 3 || n < 100 || Double(n) > 0.6 * Double(allN) { continue }
+            if out.contains(where: { m in members.contains { m.contains($0) } }) { continue }   // inside a box already found
+            out.append(members)
+        }
+        return out
+    }
+
+    /// The best column gutter among `nodes`: the x that most often separates two lines side by side on
+    /// the same row, decided row by row so that full-width blocks do not hide the columns. Of several
+    /// gutters (three columns) the one fewest blocks cross. Also returns how many rows it separates.
+    private func findGutter(_ pno: Int, _ nodes: [Node], depth: Int) -> (CGFloat, Int) {
+        let W = boxes[pno].width
+        let textual = nodes.filter { $0.text && $0.r.w >= 0.15 * W }
+        var gaps: [(CGFloat, CGFloat)] = []
+        for (ai, a) in textual.enumerated() {
+            var rightOf: CGFloat?
+            for (bi, b) in textual.enumerated() where bi != ai && b.r.x0 >= a.r.x1 + 3 && b.r.x0 - a.r.x1 < 0.4 * W
+                && min(a.r.y1, b.r.y1) - max(a.r.y0, b.r.y0) > 0.5 * min(a.r.h, b.r.h) {
+                rightOf = min(rightOf ?? b.r.x0, b.r.x0)
+            }
+            if let rightOf { gaps.append((a.r.x1, rightOf)) }
+        }
+        var lo = 0.25 * W, hi = 0.75 * W
+        if depth > 0, let x0 = nodes.map(\.r.x0).min(), let x1 = nodes.map(\.r.x1).max() {
+            lo = x0 + 0.25 * (x1 - x0); hi = x1 - 0.25 * (x1 - x0)
         }
         var cover: [(x: CGFloat, n: Int)] = []
-        for x in stride(from: 0.25 * W, through: 0.75 * W, by: 1) {
+        var x = lo
+        while x <= hi {
             cover.append((x, gaps.filter { $0.0 < x && x < $0.1 }.count))
+            x += 1
         }
-        let maxN = cover.map(\.n).max() ?? 0
-        var bestRun: (lo: Int, hi: Int)?
+        guard let maxN = cover.map(\.n).max() else { return (0.5 * W, 0) }
+        // stretches covered nearly as often as the best one; in each, the middle of its longest most-covered run
+        let thr = maxN == 0 ? 0 : max(1, Int((0.7 * Double(maxN)).rounded(.up)))
+        var best: (crossing: Int, peak: Int, run: Int, x: CGFloat)?
         var i = 0
         while i < cover.count {
-            guard cover[i].n == maxN else { i += 1; continue }
+            guard cover[i].n >= thr else { i += 1; continue }
             var j = i
-            while j + 1 < cover.count && cover[j + 1].n == maxN { j += 1 }
-            if bestRun.map({ j - i > $0.hi - $0.lo }) ?? true { bestRun = (i, j) }
+            while j + 1 < cover.count && cover[j + 1].n >= thr { j += 1 }
+            let peak = cover[i...j].map(\.n).max() ?? 0
+            var run: (lo: Int, hi: Int)?
+            var k = i
+            while k <= j {
+                guard cover[k].n == peak else { k += 1; continue }
+                var m = k
+                while m < j && cover[m + 1].n == peak { m += 1 }
+                if run.map({ m - k > $0.hi - $0.lo }) ?? true { run = (k, m) }
+                k = m + 1
+            }
+            let (a, b) = run ?? (i, j)
+            let g = (cover[a].x + cover[b].x) / 2
+            let crossing = nodes.filter { crosses(pno, $0, g) }.count
+            if best.map({ (crossing, -peak, -(b - a)) < ($0.crossing, -$0.peak, -$0.run) }) ?? true {
+                best = (crossing, peak, b - a, g)
+            }
             i = j + 1
         }
-        let gutter = bestRun.map { (cover[$0.lo].x + cover[$0.hi].x) / 2 } ?? W / 2
-        // pages with little text (end matter): fall back on "most text sits in one half or the other"
-        let narrow = paras.filter { $0.kind == .text && $0.bbox.w < 0.55 * W }
-        let leftN = narrow.filter { $0.bbox.x1 <= gutter }.reduce(0) { $0 + $1.text.count }
-        let rightN = narrow.filter { $0.bbox.x0 >= gutter }.reduce(0) { $0 + $1.text.count }
-        let allN = max(1, paras.filter { $0.kind == .text }.reduce(0) { $0 + $1.text.count })
-        let halves = Double(leftN + rightN) > 0.5 * Double(allN) && Double(min(leftN, rightN)) > 0.2 * Double(leftN + rightN)
-        let twoCol = maxN >= 4 || halves
-        if !twoCol {
-            return (paras.sorted { (($0.bbox.y0 / 4).rounded(), $0.bbox.x0) < (($1.bbox.y0 / 4).rounded(), $1.bbox.x0) }, nil)
+        return best.map { ($0.x, $0.peak) } ?? (0.5 * W, 0)
+    }
+
+    /// A block across the gutter at `g` (text never crosses it unless it spans the columns; a figure's
+    /// box, grown by its labels, may stick out of its column a little).
+    private func crosses(_ pno: Int, _ n: Node, _ g: CGFloat) -> Bool {
+        let W = boxes[pno].width
+        let m: CGFloat = n.text ? 3 : 0.05 * W
+        return (n.r.x0 < g - m && n.r.x1 > g + m) || (!n.text && n.r.w >= 0.55 * W)
+    }
+
+    private func orderRec(_ pno: Int, _ singles: [Node], _ nodes: [Node], depth: Int, inherited: CGFloat?,
+                          key: (CGFloat, CGFloat), _ out: inout [(Int, (CGFloat, CGFloat))]) {
+        func leaf(_ nodes: [Node], _ out: inout [(Int, (CGFloat, CGFloat))]) {
+            let sorted = depth == 0
+                ? nodes.sorted { (($0.r.y0 / 4).rounded(), $0.r.x0) < (($1.r.y0 / 4).rounded(), $1.r.x0) }
+                : nodes.sorted { $0.r.y0 < $1.r.y0 }
+            for n in sorted {
+                if n.items.count == 1 { out.append((n.items[0], key)); continue }
+                // a box: its own lines in their own order
+                orderRec(pno, singles, n.items.map { singles[$0] }, depth: depth + 1, inherited: nil, key: (n.r.x0, n.r.x1), &out)
+            }
         }
-        // full-width blocks cut the page into bands; each band is read left column, then right column
-        // (text never crosses the gutter unless it spans both columns; a figure's box, grown by its labels,
-        // may stick out of its column a little)
-        func isWide(_ p: Para) -> Bool {
-            let m: CGFloat = p.kind == .text ? 3 : 0.05 * W
-            return (p.bbox.x0 < gutter - m && p.bbox.x1 > gutter + m) || (p.kind != .text && p.bbox.w >= 0.55 * W)
+        if nodes.count <= 1 || depth > 12 { leaf(nodes, &out); return }
+        let W = boxes[pno].width
+        let found = findGutter(pno, nodes, depth: depth)
+        var gutter = found.0
+        let maxN = found.1
+        let columns: Bool
+        if depth == 0 {
+            // pages with little text (end matter): fall back on "most text sits in one half or the other"
+            let narrow = nodes.filter { $0.text && $0.r.w < 0.55 * W }
+            let leftN = narrow.filter { $0.r.x1 <= gutter }.reduce(0) { $0 + $1.n }
+            let rightN = narrow.filter { $0.r.x0 >= gutter }.reduce(0) { $0 + $1.n }
+            let allN = max(1, nodes.filter(\.text).reduce(0) { $0 + $1.n })
+            let halves = Double(leftN + rightN) > 0.5 * Double(allN) && Double(min(leftN, rightN)) > 0.2 * Double(leftN + rightN)
+            columns = maxN >= 4 || halves
+        } else if maxN >= 4 {
+            columns = true
+        } else if let g = inherited, !nodes.contains(where: { crosses(pno, $0, g) }) {
+            // a band too short to show its columns: the page's
+            gutter = g
+            columns = nodes.contains { $0.r.cx < g } && nodes.contains { $0.r.cx >= g }
+        } else {
+            columns = false
         }
-        let wide = paras.filter(isWide).sorted { $0.bbox.y0 < $1.bbox.y0 }
-        let rest = paras.filter { !isWide($0) }
-        var out: [Para] = []
-        var prevY: CGFloat = -.greatestFiniteMagnitude
-        for wp in wide.map(Optional.some) + [nil] {
-            let y = wp?.bbox.y0 ?? .greatestFiniteMagnitude
-            let band = rest.filter { prevY <= $0.bbox.y0 && $0.bbox.y0 < y }
-            out += band.filter { $0.bbox.cx < gutter }.sorted { $0.bbox.y0 < $1.bbox.y0 }
-            out += band.filter { $0.bbox.cx >= gutter }.sorted { $0.bbox.y0 < $1.bbox.y0 }
-            if let wp { out.append(wp); prevY = wp.bbox.y0 }
+        guard columns else { leaf(nodes, &out); return }
+        let g = gutter
+        let wide = nodes.filter { crosses(pno, $0, g) }.sorted { $0.r.y0 < $1.r.y0 }
+        let rest = nodes.filter { !crosses(pno, $0, g) }
+        if wide.isEmpty {
+            let left = rest.filter { $0.r.cx < g }, right = rest.filter { $0.r.cx >= g }
+            if left.isEmpty || right.isEmpty { leaf(left + right, &out); return }
+            orderRec(pno, singles, left, depth: depth + 1, inherited: nil, key: (key.0, g), &out)
+            orderRec(pno, singles, right, depth: depth + 1, inherited: nil, key: (g, key.1), &out)
+            return
         }
-        return (out, gutter)
+        // blocks across the gutter, one after the other, form full-width zones; text beside their lines
+        // (the other half of a two-column legend) belongs to the zone
+        let tol = 0.8 * bodySize
+        func lineLike(_ n: Node) -> Bool { n.text && n.r.h <= 3 * bodySize }
+        var zones: [(y0: CGFloat, y1: CGFloat, lines: (CGFloat, CGFloat)?, members: [Node])] = []
+        for n in wide {
+            let lines: (CGFloat, CGFloat)? = lineLike(n) ? (n.r.y0, n.r.y1) : nil
+            if let z = zones.last, n.r.y0 <= z.y1 + tol {
+                zones[zones.count - 1].y1 = max(z.y1, n.r.y1)
+                if let (a, b) = lines {
+                    zones[zones.count - 1].lines = z.lines.map { (min($0.0, a), max($0.1, b)) } ?? (a, b)
+                }
+                zones[zones.count - 1].members.append(n)
+            } else {
+                zones.append((n.r.y0, n.r.y1, lines, [n]))
+            }
+        }
+        var bandNodes: [Node] = []
+        for n in rest {
+            let c = (n.r.y0 + n.r.y1) / 2
+            if lineLike(n), let zi = zones.firstIndex(where: { z in z.lines.map { $0.0 < c && c < $0.1 } ?? false }) {
+                zones[zi].members.append(n)
+            } else {
+                bandNodes.append(n)
+            }
+        }
+        if bandNodes.isEmpty && zones.count == 1 { leaf(zones[0].members, &out); return }
+        var prev = -CGFloat.infinity
+        for z in zones {
+            let inBand = { (n: Node) in prev <= n.r.y0 && n.r.y0 < z.y0 }
+            let band = bandNodes.filter(inBand)
+            bandNodes = bandNodes.filter { !inBand($0) }
+            orderRec(pno, singles, band, depth: depth + 1, inherited: g, key: key, &out)
+            orderRec(pno, singles, z.members, depth: depth + 1, inherited: nil, key: key, &out)
+            prev = z.y0
+        }
+        orderRec(pno, singles, bandNodes, depth: depth + 1, inherited: g, key: key, &out)
     }
 
     func classify(_ input: [Para]) -> [Para] {
@@ -721,20 +891,21 @@ final class PDFAnalyzer {
         // glue wrapped large-font lines (titles, long headings)
         var paras: [Para] = []
         for p in input {
-            if let q = paras.last, p.kind == .text, q.kind == .text, p.page == q.page, p.size == q.size,
+            if let q = paras.last, p.kind == .text, q.kind == .text, p.page == q.page, p.boxed == q.boxed, p.size == q.size,
                p.size >= body + 1, p.bbox.y0 - q.bbox.y1 >= 0, p.bbox.y0 - q.bbox.y1 < 0.9 * p.size,
                q.text.count + p.text.count < 400 {
-                paras[paras.count - 1] = Para(q.lines + p.lines, page: q.page)
+                q.lines += p.lines
             } else {
                 paras.append(p)
             }
         }
-        if let big = paras.filter({ $0.page == 0 && $0.kind == .text }).max(by: { $0.size < $1.size }),
+        if let big = paras.filter({ $0.page == 0 && $0.kind == .text && $0.boxed == nil }).max(by: { $0.size < $1.size }),
            big.size >= body + 2, big.text.count < 400 {
             big.kind = .title
         }
         var headingSizes = Set<CGFloat>()
-        for p in paras where p.kind == .text {
+        // (a box's own headings and labels stay in the box: plain text)
+        for p in paras where p.kind == .text && p.boxed == nil {
             let t = p.text.trimmingCharacters(in: .whitespaces)
             if Self.captionRE.test(t) { p.kind = .caption; continue }
             let n = t.count
@@ -778,10 +949,18 @@ final class PDFAnalyzer {
             if p.kind == .heading && t.matches(#"^(highlights|graphical abstract|in brief)$"#, .caseInsensitive) { continue }
             if p.kind == .heading && (Self.knownSections.test(t) || t.matches(#"^\d+\.?\s+[A-Z]"#)) { boundary = k; break }
         }
-        let bnd = boundary ?? (paras.firstIndex { $0.page > 1 || ($0.page == 1 && $0.kind == .heading) } ?? paras.count)
+        var bnd = boundary ?? (paras.firstIndex { $0.page > 1 || ($0.page == 1 && $0.kind == .heading) } ?? paras.count)
+        // a piece without section headings (the first one is "References"): the body starts at its first
+        // paragraph in body type, not after a guessed abstract
+        if let b = boundary, paras[b].text.trimmingCharacters(in: .whitespaces).matches(
+            #"^(references|bibliography|acknowledge?ments?|funding|author contributions?|competing interests?|declaration of interests?|conflicts? of interest|data availability|code availability)\s*[:.]?$"#,
+            .caseInsensitive),
+           let k = paras[..<b].firstIndex(where: { $0.kind == .text && abs($0.size - body) < 0.6 && $0.text.count >= 150 }) {
+            bnd = k
+        }
         var abstractStarted = false
         for p in paras[0..<bnd] {
-            if [.title, .figure, .table, .caption, .equation].contains(p.kind) { continue }
+            if [.title, .figure, .table, .caption, .equation].contains(p.kind) || p.boxed != nil { continue }
             let affil = p.text.components(separatedBy: .whitespaces).filter {
                 $0.matches(#"(?i)universit|institut|department|centre|center|hospital|laborator|faculty"#)
             }.count
@@ -793,8 +972,10 @@ final class PDFAnalyzer {
                 p.kind = .front
             }
         }
-        // affiliation / correspondence footnotes on the first page belong to the front matter
-        for p in paras where p.page == 0 && p.kind == .text {
+        // affiliation / correspondence footnotes on the first page belong to the front matter, and so does a
+        // DOI on a line of its own
+        for p in paras where p.page <= 1 && p.kind == .text && p.boxed == nil && Self.isDOILine(p.text) { p.kind = .front }
+        for p in paras where p.page == 0 && p.kind == .text && p.boxed == nil {
             let affil = p.text.matches(#"(?i)universit|institut|department|hospital|laborator|faculty"#)
             if affil && (p.text.matches(#"(?i)e-?mail:|correspond"#) || p.text.matches(#"^\d\s?[A-Z]"#)) { p.kind = .front }
         }
@@ -818,16 +999,16 @@ final class PDFAnalyzer {
         }
         var out: [Para] = []
         for p in paras {
-            if p.kind == .text, !p.lines.isEmpty {
+            if p.kind == .text, !p.lines.isEmpty, p.boxed == nil {
                 let (mf, n) = mathFrac(p)
                 if mf > 0.3 && n < 400 { p.kind = .equation }
             }
-            if let prev = out.last, prev.page == p.page, (p.kind == .equation || p.kind == .text), prev.kind == .equation,
+            if let prev = out.last, prev.page == p.page, (p.kind == .equation || (p.kind == .text && p.boxed == nil)), prev.kind == .equation,
                p.bbox.y0 - prev.bbox.y1 < 1.6 * body, p.kind == .equation || p.text.count < 30 {
                 out[out.count - 1] = Para(prev.lines + p.lines, page: p.page, kind: .equation)
                 continue
             }
-            if let prev = out.last, prev.page == p.page, p.kind == .equation, prev.kind == .text, prev.text.count < 30,
+            if let prev = out.last, prev.page == p.page, p.kind == .equation, prev.kind == .text, prev.boxed == nil, prev.text.count < 30,
                p.bbox.y0 - prev.bbox.y1 < body, !prev.text.matches("[a-z]{4}") {
                 out[out.count - 1] = Para(prev.lines + p.lines, page: p.page, kind: .equation)
                 continue
@@ -945,12 +1126,13 @@ enum PDFBook {
         // merge paragraphs split across columns/pages
         var merged: [Para] = []
         for p in paras {
+            // (past figures, legends, front matter and boxes set between the columns)
             if p.kind == .text, p.text.first?.isLowercase == true,
-               let j = merged.lastIndex(where: { ![.figure, .table, .caption].contains($0.kind) }),
-               merged[j].kind == .text, merged.count - j <= 4 {
+               let j = merged.lastIndex(where: { ![.figure, .table, .caption, .front].contains($0.kind) && $0.boxed == p.boxed }),
+               merged[j].kind == .text, merged[(j + 1)...].filter({ $0.boxed == p.boxed }).count <= 3 {
                 let q = merged[j]
                 if !(q.text.hasSuffix(".") || q.text.hasSuffix("?") || q.text.hasSuffix("!") || q.text.hasSuffix(":")) {
-                    merged[j] = Para(q.lines + p.lines, page: q.page)
+                    q.lines += p.lines
                     continue
                 }
             }
@@ -961,7 +1143,7 @@ enum PDFBook {
         for p in merged {
             let t = p.text.trimmingCharacters(in: .whitespaces)
             let legendLike = t.matches(#"^\([A-Z][A-Za-z]{0,3}\)\s|^See also Figure|^Scale bars?"#)
-            if p.kind == .text, p.size < an.bodySize - 0.4,
+            if p.kind == .text, p.boxed == nil, p.size < an.bodySize - 0.4,
                // a legend's "(D) …" panels continue after the page's body text when it runs onto the next page
                let j = folded.lastIndex(where: { $0.kind == .caption }), folded.count - j <= 8 || legendLike,
                abs(folded[j].page - p.page) <= 1, abs(p.size - folded[j].size) < 0.8,
@@ -1031,7 +1213,14 @@ enum PDFBook {
         var abstractDone = false, introDone = false
         var lastKind: Para.Kind?
         let missingTitle = meta.title.isEmpty
+        var openBox: Int?
         for (i, p) in merged.enumerated() {
+            // a box's paragraphs, kept together
+            if p.boxed != openBox {
+                if openBox != nil { append("</div>") }
+                if p.boxed != nil { append("<div class=\"box\">") }
+                openBox = p.boxed
+            }
             switch p.kind {
             case .figure, .table:
                 let cap = capOf[i].map { an.styled(merged[$0]) } ?? ""
@@ -1070,12 +1259,13 @@ enum PDFBook {
             case .caption:
                 append("<p class=\"caption\">\(an.styled(p))</p>")
             default:
-                if abstractDone && !introDone && lastKind == .abstract && !hasIntro { open("Introduction") }
+                if abstractDone && !introDone && lastKind == .abstract && !hasIntro && p.boxed == nil { open("Introduction") }
                 introDone = introDone || lastKind == .heading
                 append("<p>\(an.styled(p))</p>")
             }
             if p.kind != .front { lastKind = p.kind }
         }
+        if openBox != nil { cur?.html += "</div>" }
         close()
         _ = hasAbstractHeading
         if !front.isEmpty && meta.affiliationsHTML.isEmpty { meta.affiliationsHTML = front }
