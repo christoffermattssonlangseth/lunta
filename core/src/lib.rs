@@ -520,14 +520,39 @@ impl Library {
     /// style from the CSL catalogue (`style_id` as `csl_search` gives it). Styles are fetched once
     /// into `cache_dir` (blocking: call off the main thread the first time a style is used).
     pub fn cite_csl(&self, cache_dir: String, style_id: String, citations: Vec<Vec<String>>) -> Result<csl::CslRendered> {
+        self.cite_csl_with(cache_dir, style_id, citations, vec![])
+    }
+
+    /// `cite_csl`, with papers that aren't in the library given by the document (`extra`: the
+    /// details a Word or Google document keeps of the papers it cites). Ids in neither are left out.
+    pub fn cite_csl_with(
+        &self,
+        cache_dir: String,
+        style_id: String,
+        citations: Vec<Vec<String>>,
+        extra: Vec<CitedPaper>,
+    ) -> Result<csl::CslRendered> {
         let mut ids: Vec<String> = Vec::new();
         for id in citations.iter().flatten() {
             if !ids.contains(id) {
                 ids.push(id.clone());
             }
         }
-        let papers: Vec<Paper> = ids.into_iter().filter_map(|id| self.paper(id)).collect();
+        let papers: Vec<Paper> = ids
+            .into_iter()
+            .filter_map(|id| {
+                self.paper(id.clone())
+                    .or_else(|| extra.iter().find(|e| e.id == id).map(|e| cited_paper(&e.id, e.meta.clone())))
+            })
+            .collect();
         csl::render(&cache_dir, &style_id, &papers, &citations)
+    }
+
+    /// The library's copy of a paper a document cites under an id the library doesn't have (it
+    /// was merged into another, or the document was written with another library): same DOI, or
+    /// else the same title.
+    pub fn find_cited(&self, doi: String, title: String) -> Option<Paper> {
+        self.find_by_doi(doi).or_else(|| self.find_by_title(&title))
     }
 
     // ---- discovering new papers ----
@@ -721,6 +746,39 @@ fn merge_meta(m: &mut PaperMeta, o: &PaperMeta) {
 #[uniffi::export]
 pub fn csl_search(cache_dir: String, query: String, limit: u32) -> Result<Vec<csl::CslStyleHit>> {
     csl::search(&cache_dir, &query, limit as usize)
+}
+
+/// A reference-list entry for a paper given by its details alone (not in the library), in one of
+/// the built-in styles: Markdown *italic* and **bold**, as `Library::citation`.
+#[uniffi::export]
+pub fn format_citation(meta: PaperMeta, style: model::CitationStyle) -> String {
+    export::citation(&cited_paper("", meta), style)
+}
+
+/// The family name in an author's name as the citation styles read it: "Ludwig van Beethoven" →
+/// "van Beethoven", "Langseth, Christoffer M." → "Langseth".
+#[uniffi::export]
+pub fn family_name(name: String) -> String {
+    export::split_name(&name).0
+}
+
+/// A paper that exists only as details (cited in a document, not in the library).
+fn cited_paper(id: &str, meta: PaperMeta) -> Paper {
+    Paper {
+        id: id.to_string(),
+        meta,
+        added: 0,
+        modified: 0,
+        has_pdf: false,
+        has_epub: false,
+        has_audio: false,
+        read: false,
+        starred: false,
+        must_read: false,
+        collections: vec![],
+        tags: vec![],
+        annotation_count: 0,
+    }
 }
 
 /// The citation styles, in menu order.

@@ -168,15 +168,30 @@ fn locales() -> &'static [Locale] {
     L.get_or_init(hayagriva::archive::locales)
 }
 
+// The engine writes field text into its HTML as is, so a title with "<" or "&" would read as
+// markup ("Signals <10 Hz" lost everything after "Signals"). Fields go in with these characters
+// swapped for private-use stand-ins (case changes leave them alone) and come back out after the
+// markup is read.
+const STAND_INS: [(char, char); 3] = [('<', '\u{E000}'), ('>', '\u{E001}'), ('&', '\u{E002}')];
+
+fn guard(s: &str) -> String {
+    s.chars().map(|c| STAND_INS.iter().find(|(a, _)| *a == c).map(|(_, b)| *b).unwrap_or(c)).collect()
+}
+
+fn unguard(s: &str) -> String {
+    s.chars().map(|c| STAND_INS.iter().find(|(_, b)| *b == c).map(|(a, _)| *a).unwrap_or(c)).collect()
+}
+
 /// A paper as CSL-JSON.
 fn item(p: &Paper) -> Item {
     let m = &p.meta;
-    let mut j = serde_json::json!({ "id": p.id, "type": "article-journal", "title": m.title });
+    let mut j = serde_json::json!({ "id": p.id, "type": "article-journal", "title": guard(&m.title) });
     let authors: Vec<serde_json::Value> = m
         .authors
         .iter()
         .map(|a| {
-            let (family, given) = split_name(a);
+            let a = guard(a);
+            let (family, given) = split_name(&a);
             if given.is_empty() { serde_json::json!({ "family": family }) } else { serde_json::json!({ "family": family, "given": given }) }
         })
         .collect();
@@ -199,7 +214,7 @@ fn item(p: &Paper) -> Item {
         ("publisher", &m.publisher),
     ] {
         if !v.trim().is_empty() {
-            j[k] = v.trim().into();
+            j[k] = guard(v.trim()).into();
         }
     }
     serde_json::from_value(j).expect("CSL-JSON item")
@@ -224,7 +239,7 @@ pub fn render(cache_dir: &str, style_id: &str, papers: &[Paper], citations: &[Ve
             let mut html = String::new();
             let _ = c.citation.write_buf(&mut html, BufWriteFormat::Html);
             let t = html.trim();
-            CslCitation { text: tidy(&strip_tags(t)), superscript: all_superscript(t) }
+            CslCitation { text: unguard(&tidy(&strip_tags(t))), superscript: all_superscript(t) }
         })
         .collect();
     let bibliography = out
@@ -239,7 +254,7 @@ pub fn render(cache_dir: &str, style_id: &str, papers: &[Paper], citations: &[Ve
                         html.push(' ');
                     }
                     let _ = i.content.write_buf(&mut html, BufWriteFormat::Html);
-                    CslEntry { id: i.key.clone(), text: tidy(&html_to_markdown(html.trim())) }
+                    CslEntry { id: i.key.clone(), text: unguard(&tidy(&html_to_markdown(html.trim()))) }
                 })
                 .collect()
         })
@@ -281,6 +296,12 @@ fn strip_tags(html: &str) -> String {
 /// The engine's HTML as Markdown *italic* / **bold** (what the apps and add-ins format).
 fn html_to_markdown(html: &str) -> String {
     let mut s = html.to_string();
+    // a style's prefix can land inside the italics ("<i>. Cell</i>"): spaces and punctuation at
+    // the edges go outside, so *…* hugs words (as the add-ins read it)
+    let lead = regex::Regex::new(r#"(<(?:i|em|b|strong|span style="[^"]*")>)([\s.,;:]+)"#).unwrap();
+    s = lead.replace_all(&s, "$2$1").into_owned();
+    let trail = regex::Regex::new(r#"(\s+)(</(?:i|em|b|strong|span)>)"#).unwrap();
+    s = trail.replace_all(&s, "$2$1").into_owned();
     for (tags, md) in [(["<i>", "</i>"], "*"), (["<em>", "</em>"], "*"), (["<b>", "</b>"], "**"), (["<strong>", "</strong>"], "**")] {
         s = s.replace(tags[0], md).replace(tags[1], md);
     }

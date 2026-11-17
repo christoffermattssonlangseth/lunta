@@ -630,3 +630,150 @@ fn orcid_profile_online() {
     }
     assert!(!p.openalex_id.is_empty());
 }
+
+// ---- citations for Word and Google Docs ----
+
+/// A small author–date CSL style, written into the style cache so tests stay offline.
+const TEST_AUTHOR_DATE: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" default-locale="en-US">
+  <info><title>Test Author Date</title><id>http://www.zotero.org/styles/test-author-date</id><updated>2024-01-01T00:00:00+00:00</updated></info>
+  <macro name="author"><names variable="author"><name form="short" and="symbol" et-al-min="3" et-al-use-first="1"/></names></macro>
+  <macro name="year"><date variable="issued"><date-part name="year"/></date></macro>
+  <citation disambiguate-add-year-suffix="true">
+    <sort><key macro="author"/><key macro="year"/></sort>
+    <layout prefix="(" suffix=")" delimiter="; "><text macro="author"/><text prefix=", " macro="year"/></layout>
+  </citation>
+  <bibliography>
+    <sort><key macro="author"/><key macro="year"/></sort>
+    <layout suffix="."><names variable="author"><name name-as-sort-order="all" initialize-with=". "/></names><text prefix=" (" suffix=")" macro="year"/><text prefix=". " variable="title"/><text prefix=". " variable="container-title" font-style="italic"/></layout>
+  </bibliography>
+</style>"#;
+
+/// A small numbered CSL style (citation-number, superscript).
+const TEST_NUMERIC: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" default-locale="en-US">
+  <info><title>Test Numeric</title><id>http://www.zotero.org/styles/test-numeric</id><updated>2024-01-01T00:00:00+00:00</updated></info>
+  <citation collapse="citation-number">
+    <sort><key variable="citation-number"/></sort>
+    <layout vertical-align="sup" delimiter=","><text variable="citation-number"/></layout>
+  </citation>
+  <bibliography second-field-align="flush">
+    <layout suffix="."><text variable="citation-number" suffix=". "/><names variable="author"><name initialize-with=""/></names><text prefix=" " variable="title"/></layout>
+  </bibliography>
+</style>"#;
+
+fn csl_cache_with_test_styles() -> PathBuf {
+    let dir = tmp();
+    std::fs::create_dir_all(dir.join("csl")).unwrap();
+    std::fs::write(dir.join("csl/test-author-date.csl"), TEST_AUTHOR_DATE).unwrap();
+    std::fs::write(dir.join("csl/test-numeric.csl"), TEST_NUMERIC).unwrap();
+    dir
+}
+
+fn paper_with(id: &str, title: &str, authors: &[&str], date: &str) -> Paper {
+    let mut m = sample();
+    m.title = title.into();
+    m.authors = authors.iter().map(|a| a.to_string()).collect();
+    m.date = date.into();
+    m.doi = String::new();
+    Paper {
+        id: id.into(),
+        meta: m,
+        added: 0,
+        modified: 0,
+        has_pdf: false,
+        has_epub: false,
+        has_audio: false,
+        read: false,
+        starred: false,
+        must_read: false,
+        collections: vec![],
+        tags: vec![],
+        annotation_count: 0,
+    }
+}
+
+#[test]
+fn csl_titles_with_markup_characters_and_other_scripts() {
+    let dir = csl_cache_with_test_styles();
+    let cache = dir.to_str().unwrap();
+    let titles = [
+        "Signals <10 Hz & the \"quiet\" cortex: 'A' < B",
+        "单细胞转录组 of the mouse brain",
+        "Ωmega-3 and β-cells in Αθήνα",
+        "Solving $x^2 + y^2 = z^2$ with A* search",
+        "Tags like <i>not italic</i> stay text",
+    ];
+    let papers: Vec<Paper> = titles.iter().enumerate().map(|(i, t)| paper_with(&format!("p{i}"), t, &["Ada Lee"], &format!("20{:02}", 10 + i))).collect();
+    let cites: Vec<Vec<String>> = papers.iter().map(|p| vec![p.id.clone()]).collect();
+    let r = csl::render(cache, "test-author-date", &papers, &cites).unwrap();
+    assert_eq!(r.style_title, "Test Author Date");
+    assert_eq!(r.citations.len(), 5);
+    assert_eq!(r.citations[0].text, "(Lee, 2010)");
+    assert_eq!(r.bibliography.len(), 5);
+    let all = r.bibliography.iter().map(|e| e.text.clone()).collect::<Vec<_>>().join("\n");
+    for t in &titles {
+        assert!(all.contains(t), "{t} missing in\n{all}");
+    }
+    // the journal in italics, the prefix's ". " outside them
+    assert!(all.contains("brain. *Cell*."), "{all}");
+    assert!(!all.contains("&amp;") && !all.contains("&lt;") && !all.contains("&quot;"), "entities left in\n{all}");
+}
+
+#[test]
+fn csl_year_suffixes_numbers_and_empty_citations() {
+    let dir = csl_cache_with_test_styles();
+    let cache = dir.to_str().unwrap();
+    let a = paper_with("a", "Alpha paper on cells", &["Jane Smith"], "2020");
+    let b = paper_with("b", "Beta paper on cells", &["Jane Smith"], "2020");
+    let c = paper_with("c", "Gamma paper", &["Ola Nordmann", "Kari Nordmann", "Per Hansen"], "2019");
+    let papers = [a.clone(), b.clone(), c.clone()];
+    let r = csl::render(cache, "test-author-date", &papers, &[vec!["a".into()], vec!["b".into()], vec!["c".into()]]).unwrap();
+    assert_eq!(r.citations[0].text, "(Smith, 2020a)", "{:?}", r.citations);
+    assert_eq!(r.citations[1].text, "(Smith, 2020b)");
+    assert_eq!(r.citations[2].text, "(Nordmann et al., 2019)");
+    // numbered: by first citation, repeated papers keep their number, a citation of nobody is empty
+    let cites = vec![vec!["c".into(), "a".into()], vec!["b".into()], vec!["a".into()], vec!["gone".into()], vec!["a".into(), "b".into(), "c".into()]];
+    let r = csl::render(cache, "test-numeric", &papers, &cites).unwrap();
+    let texts: Vec<&str> = r.citations.iter().map(|c| c.text.as_str()).collect();
+    assert_eq!(texts, ["1,2", "3", "2", "", "1–3"], "{:?}", r.citations);
+    assert!(r.citations[0].superscript);
+    assert_eq!(r.bibliography.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["c", "a", "b"]);
+}
+
+#[test]
+fn documents_cite_papers_the_library_lacks() {
+    let root = tmp().join("lib");
+    let lib = open(&root, "mac");
+    let dir = csl_cache_with_test_styles();
+    let mut m = sample();
+    m.doi = "10.1000/Kept".into();
+    let kept = lib.add_paper(m.clone(), None, None, None).unwrap();
+    // a merged duplicate (old id), found by DOI or by title
+    assert_eq!(lib.find_cited("https://doi.org/10.1000/kept".into(), String::new()).map(|p| p.id), Some(kept.id.clone()));
+    assert_eq!(lib.find_cited(String::new(), m.title.to_uppercase()).map(|p| p.id), Some(kept.id.clone()));
+    assert!(lib.find_cited(String::new(), "Short".into()).is_none());
+    assert!(lib.find_cited("10.1/none".into(), "Some other long title that nobody has".into()).is_none());
+    // a paper only the document knows: formatted from its details
+    let mut gone = sample();
+    gone.title = "Deleted & <gone>".into();
+    gone.authors = vec!["Ludwig van Beethoven".into()];
+    gone.date = "1808".into();
+    let apa = format_citation(gone.clone(), CitationStyle::Apa);
+    assert!(apa.starts_with("van Beethoven, L. (1808). Deleted & <gone>."), "{apa}");
+    assert_eq!(family_name("Ludwig van Beethoven".into()), "van Beethoven");
+    assert_eq!(family_name("Langseth, Christoffer M.".into()), "Langseth");
+    assert_eq!(family_name("WHO".into()), "WHO");
+    let r = lib
+        .cite_csl_with(
+            dir.to_string_lossy().into(),
+            "test-numeric".into(),
+            vec![vec!["old-id".into(), kept.id.clone()], vec!["unknown".into()]],
+            vec![CitedPaper { id: "old-id".into(), meta: gone }],
+        )
+        .unwrap();
+    assert_eq!(r.citations[0].text, "1,2");
+    assert_eq!(r.citations[1].text, "");
+    assert_eq!(r.bibliography.len(), 2);
+    assert!(r.bibliography[0].text.contains("Deleted & <gone>"), "{:?}", r.bibliography);
+}

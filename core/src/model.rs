@@ -29,6 +29,13 @@ impl PaperMeta {
     }
 }
 
+/// A paper a document cites, as the document keeps it: its id there and its details.
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct CitedPaper {
+    pub id: String,
+    pub meta: PaperMeta,
+}
+
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct Paper {
     pub id: String,
