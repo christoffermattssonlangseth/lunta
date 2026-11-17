@@ -193,9 +193,27 @@ targets:
     platform: macOS
     sources: [SafariExtension/SafariWebExtensionHandler.swift]
     preBuildScripts:
-      - name: Browser extension files (extension/)
-        basedOnDependencyAnalysis: false
+      # runs only when extension/ changes, so an unchanged extension keeps its signature
+      - &safariExtensionFiles
+        name: Browser extension files (extension/)
         script: "\"$SRCROOT/SafariExtension/copy-extension.sh\""
+        inputFiles:
+          - $(SRCROOT)/SafariExtension/copy-extension.sh
+          - $(SRCROOT)/../extension/manifest.json
+          - $(SRCROOT)/../extension/background.js
+          - $(SRCROOT)/../extension/content.js
+          - $(SRCROOT)/../extension/icons/icon-16.png
+          - $(SRCROOT)/../extension/icons/icon-32.png
+          - $(SRCROOT)/../extension/icons/icon-48.png
+          - $(SRCROOT)/../extension/icons/icon-128.png
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/manifest.json
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/background.js
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/content.js
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/icons/icon-16.png
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/icons/icon-32.png
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/icons/icon-48.png
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/icons/icon-128.png
     info:
       path: SafariExtension/Mac-Info.plist
       properties:
@@ -231,9 +249,7 @@ targets:
       - SafariExtension/PrivacyInfo.xcprivacy
       - Shared/SafariInbox.swift
     preBuildScripts:
-      - name: Browser extension files (extension/)
-        basedOnDependencyAnalysis: false
-        script: "\"$SRCROOT/SafariExtension/copy-extension.sh\""
+      - *safariExtensionFiles
     info:
       path: SafariExtension/iOS-Info.plist
       properties:
