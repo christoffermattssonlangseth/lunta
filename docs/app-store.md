@@ -33,7 +33,7 @@ HIGHLIGHT AND NOTE
 Highlight in four colours, add notes, in the reading view or the PDF. Highlight mode marks every selection at once. On iPad, highlight with Apple Pencil and draw on PDFs. All highlights are searchable across your library.
 
 YOUR LIBRARY
-Add papers by DOI, PubMed ID, arXiv link or PDF, or share them from Safari. Lunta finds legal open-access PDFs for you, and never swaps a published paper for its preprint. Folders, tags, Smart Folders, stars and a Must Read queue. Full-text search across everything. Import from ReadCube Papers, BibTeX and RIS.
+Add papers by DOI, PubMed ID, arXiv link or PDF, or straight from Safari with the Lunta extension. Lunta finds legal open-access PDFs for you, and never swaps a published paper for its preprint. Folders, tags, Smart Folders, stars and a Must Read queue. Full-text search across everything. Import from ReadCube Papers, BibTeX and RIS.
 
 NEW FOR YOU
 Each morning Lunta picks new papers that match your interests, the authors and topics you follow, and your journals, with a short summary and a notification.
@@ -73,6 +73,7 @@ To try it: tap + and paste the DOI 10.1038/s41586-023-06139-9 (an open-access Na
 - Background fetch: a daily background refresh reads the "New for You" list the user's own devices prepared (stored in their iCloud) and shows one morning notification (notifications can be turned off in iOS Settings).
 - On-device model: if Apple Intelligence isn't available, the "Ask" assistant offers an optional one-time download of an open model (Qwen3 4B, about 2.3 GB) that then runs entirely on the device. Nothing is sent to a server.
 - Papers and PDFs come from public, legal open-access sources (PubMed Central, Europe PMC, arXiv, publishers' open-access copies).
+- Safari extension (included): saves the article open in Safari to Lunta. To try it: Settings › Apps › Safari › Extensions › Lunta, turn it on and allow All Websites; in Safari open https://doi.org/10.1038/s41586-023-06139-9, tap the extensions menu (aA / puzzle piece) › Lunta, then Save to Lunta, and tap Open Lunta. It needs access to all websites because papers are published on thousands of journal and preprint sites; it reads the page's citation details (and, on request, the article text and figures) and hands them only to the Lunta app on the same device through the app group. It sends nothing to any server and collects no data.
 - iCloud: the library is kept in the user's iCloud Drive so it syncs with their other devices; without iCloud it is kept on the device.
 
 ## Screenshots needed
