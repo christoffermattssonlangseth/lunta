@@ -209,6 +209,8 @@ async function handle(msg, sender) {
       const q = new URLSearchParams({ id: msg.id || "", name: msg.name || "paper.pdf" });
       return api("/pdf?" + q, { method: "POST", headers: { "Content-Type": "application/pdf" }, body: bytes });
     }
+    case "findPdf":
+      return api("/findpdf?" + new URLSearchParams({ id: msg.id || "" }), { method: "POST" });
     case "fullText":
       return sendFullText(msg, sender && sender.tab ? sender.tab.id : null);
     default:
@@ -228,6 +230,8 @@ async function handleNative(msg) {
       return nativeSubmit({ kind: "pdf", pdf: "paper.pdf", paperId: msg.id || "", name: msg.name || "paper.pdf", meta: msg.meta || {} },
         [{ name: "paper.pdf", base64 }]);
     }
+    case "findPdf":
+      return nativeSubmit({ kind: "findpdf", paperId: msg.id || "", meta: msg.meta || {} });
     default:
       throw new Error("unknown request");
   }

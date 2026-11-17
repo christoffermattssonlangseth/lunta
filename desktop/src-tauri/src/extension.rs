@@ -220,11 +220,24 @@ fn route(cx: &Ctx, r: &Request) -> (u16, Value) {
             let Ok(Value::Object(j)) = serde_json::from_slice::<Value>(&r.body) else {
                 return (400, json!({"error": "bad JSON"}));
             };
-            let p = save(cx, &lib, &j);
+            let mut p = save(cx, &lib, &j);
+            // no PDF link on the page (PubMed): look for a free copy while saving
+            if let Some(q) = p.as_ref().filter(|q| !q.has_pdf && j.get("findPdf").and_then(Value::as_bool) == Some(true)) {
+                p = find_pdf(cx, &lib, &q.id).or(p);
+            }
             if p.is_some() {
                 changed(cx, "Saved from the browser.");
             }
             (if p.is_none() { 500 } else { 200 }, status(p.as_ref()))
+        }
+        ("POST", "/findpdf") => {
+            let id = q("id");
+            let Some(p) = lib.paper(id.clone()) else { return (404, json!({"error": "unknown paper"})) };
+            let p = if p.has_pdf { Some(p) } else { find_pdf(cx, &lib, &id) };
+            if p.as_ref().is_some_and(|p| p.has_pdf) {
+                changed(cx, "Found a free PDF.");
+            }
+            (200, status(p.as_ref()))
         }
         ("POST", "/pdf") => {
             if !r.body.starts_with(b"%PDF") {
@@ -296,6 +309,17 @@ fn save(cx: &Ctx, lib: &Library, j: &Map<String, Value>) -> Option<Paper> {
             return Some(p);
         }
     }
+    // no DOI: the PubMed or PMC id (PubMed's pages), so the paper gets its details and can find a PDF
+    let (pmid, pmcid) = (s("pmid"), s("pmcid"));
+    if !cx.offline {
+        for input in [&pmcid, &pmid] {
+            if !input.is_empty() {
+                if let Ok(a) = add::add(lib, input, &logger(cx)) {
+                    return Some(a.paper);
+                }
+            }
+        }
+    }
     // no DOI (or lookup failed): save what the page told us
     let meta = PaperMeta {
         title,
@@ -307,6 +331,8 @@ fn save(cx: &Ctx, lib: &Library, j: &Map<String, Value>) -> Option<Paper> {
         journal: s("journal"),
         date: s("date"),
         doi,
+        pmid,
+        pmcid,
         url: s("url"),
         abstract_text: s("abstract"),
         ..Default::default()
@@ -315,6 +341,20 @@ fn save(cx: &Ctx, lib: &Library, j: &Map<String, Value>) -> Option<Paper> {
         return None;
     }
     lib.add_paper(meta, None, None, None).ok()
+}
+
+/// Looks for a free, legal PDF of a paper (as File › Find PDF does) and makes its reading view if it
+/// has none; the paper as it is afterwards.
+fn find_pdf(cx: &Ctx, lib: &Library, id: &str) -> Option<Paper> {
+    if !cx.offline {
+        if let Ok(Some(_)) = lib.find_pdf(id.to_string()) {
+            if lib.paper(id.to_string()).is_some_and(|p| !p.has_epub) {
+                let _ = add::make_reading_view(lib, id, &logger(cx));
+            }
+            (cx.forget_book)(id);
+        }
+    }
+    lib.paper(id.to_string())
 }
 
 /// A PDF on its own: matched to a paper by its DOI, else added (the converter reads it).

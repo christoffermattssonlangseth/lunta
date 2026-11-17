@@ -79,12 +79,19 @@ extension LibraryModel {
             await add(doi)
             if let p = lib.findByDoi(doi: doi) { return p }
         }
+        // no DOI: the PubMed or PMC id (PubMed's pages), so the paper gets its details and can find a PDF
+        let pmid = (j["pmid"] as? String) ?? "", pmcid = (j["pmcid"] as? String) ?? ""
+        for input in [pmcid, pmid] where !input.isEmpty {
+            if let id = await add(input), let p = paper(id) { return p }
+        }
         var m = PaperMeta.empty
         m.title = title
         m.authors = (j["authors"] as? [String]) ?? []
         m.journal = (j["journal"] as? String) ?? ""
         m.date = (j["date"] as? String) ?? ""
         m.doi = doi
+        m.pmid = pmid
+        m.pmcid = pmcid
         m.url = (j["url"] as? String) ?? ""
         m.abstractText = (j["abstract"] as? String) ?? ""
         guard !m.title.isEmpty else { return nil }

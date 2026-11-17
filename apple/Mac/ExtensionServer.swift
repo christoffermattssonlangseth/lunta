@@ -6,7 +6,8 @@ import Paper2EpubKit
 /// Local endpoint for the Lunta browser extension, on 127.0.0.1:47480 only.
 ///
 ///   GET  /status?doi=…&title=…   → {"inLibrary":bool,"id":…,"hasPdf":bool,"hasReadingView":bool,"title":…}
-///   POST /save   {doi,title,authors,journal,date,url,abstract}  → status JSON of the saved paper
+///   POST /save   {doi,pmid,pmcid,title,authors,journal,date,url,abstract,findPdf?}  → status JSON of the saved paper
+///   POST /findpdf?id=…  → looks for a free, legal PDF of the paper; status JSON
 ///   POST /pdf?id=…   (body: PDF bytes)                          → status JSON
 ///   POST /pdf?name=… (no id: add / match a standalone PDF)        → status JSON
 ///   POST /fulltext[?dryRun=1]  {url, html, liveHtml?, doi?, title?, images:[{urls:[…], base64}],
@@ -141,7 +142,13 @@ final class ExtensionServer {
         case ("POST", "/save"):
             guard let j = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any] else { return (400, ["error": "bad JSON"]) }
             let p = await model.saveFromPage(j)
+            // no PDF link on the page (PubMed): look for a free copy while saving
+            if let p, !p.hasPdf, j["findPdf"] as? Bool == true { _ = await model.findPDF(p.id); return (200, status(of: model.paper(p.id))) }
             return (p == nil ? 500 : 200, status(of: p))
+        case ("POST", "/findpdf"):
+            guard let id = r.query["id"], model.paper(id) != nil else { return (404, ["error": "unknown paper"]) }
+            if model.paper(id)?.hasPdf == false { _ = await model.findPDF(id) }
+            return (200, status(of: model.paper(id)))
         case ("POST", "/pdf"):
             guard r.body.starts(with: Data("%PDF".utf8)) else { return (400, ["error": "not a PDF"]) }
             guard let id = r.query["id"], !id.isEmpty else {

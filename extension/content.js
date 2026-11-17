@@ -64,8 +64,30 @@
   const title = meta("citation_title", "dc.title", "og:title") || "";
   if (!doi && !meta("citation_title") && !knownArticle) return; // not an article page
 
+  // PubMed and PMC: the article's ids (PubMed has no PDF of its own; Lunta finds a free one from these)
+  // and the journal's page from PubMed's "Full text links" (for papers that aren't free)
+  const onPubMed = /(^|\.)pubmed\.ncbi\.nlm\.nih\.gov$/i.test(location.hostname);
+  const pmid = meta("citation_pmid") || (onPubMed && (location.pathname.match(/^\/(\d{1,9})\/?$/) || [])[1]) || "";
+  const pmcid = (() => {
+    const m = meta("citation_pmcid");
+    if (m) return /^PMC/i.test(m) ? m.toUpperCase() : "PMC" + m;
+    const here = location.href.match(/\/(?:pmc\/)?articles\/(PMC\d+)/i);
+    if (here) return here[1].toUpperCase();
+    if (!onPubMed) return "";
+    const a = [...document.querySelectorAll("a[href]")].map((x) => x.href.match(/ncbi\.nlm\.nih\.gov\/(?:pmc\/)?articles\/(PMC\d+)/i)).find(Boolean);
+    return a ? a[1].toUpperCase() : "";
+  })();
+  const journalUrl = (() => {
+    if (!onPubMed) return "";
+    const a = [...document.querySelectorAll(".full-text-links-list a[href], .full-text-links a[href]")]
+      .find((x) => /^https?:/i.test(x.href) && !/ncbi\.nlm\.nih\.gov/i.test(x.href));
+    return a ? a.href : (doi ? "https://doi.org/" + doi : "");
+  })();
+
   const info = {
     doi,
+    pmid,
+    pmcid,
     title,
     authors: metas("citation_author"),
     journal: meta("citation_journal_title", "prism.publicationName"),
@@ -178,9 +200,25 @@
       b.onclick = savePdf;
       pdf.className = "pdf";
       pdf.appendChild(b);
-    } else {
+    } else if (state.pdfSearched) {
+      // no free copy: the journal's page, where the PDF comes with the reader's own access
       pdf.className = "pdf muted";
-      pdf.textContent = "No PDF link on this page";
+      pdf.textContent = "No free PDF";
+      if (journalUrl) {
+        const a = document.createElement("a");
+        a.className = "open"; a.href = journalUrl; a.target = "_blank"; a.rel = "noopener";
+        a.textContent = "Journal ↗"; a.title = "Open the article at the journal; the PDF can be saved from there with your access";
+        pdf.append(" · ", a);
+      }
+    } else {
+      // no PDF link here (PubMed never has one): Lunta looks for a legal open-access copy
+      const b = document.createElement("button");
+      b.className = "btn alt";
+      b.textContent = "Find PDF";
+      b.title = "Look for a free, legal copy (PubMed Central, Europe PMC, the publisher's open-access version)";
+      b.onclick = findPdf;
+      pdf.className = "pdf";
+      pdf.appendChild(b);
     }
     const ft = $(".ft");
     ft.innerHTML = "";
@@ -217,11 +255,24 @@
   async function save() {
     const b = $(".lib button");
     if (b) { b.disabled = true; b.textContent = "Saving…"; }
-    const r = await send({ type: "save", meta: info });
+    // without a PDF link on the page, Lunta looks for a free copy as it saves
+    const r = await send({ type: "save", meta: pdfUrl ? info : { ...info, findPdf: true } });
     if (r.error) { showError(r.error); render(); return; }
-    state = r;
+    state = { ...r, pdfSearched: !pdfUrl && !r.hasPdf && !r.queued };
     render();
     if (!state.hasPdf && pdfUrl) savePdf(); // grab the PDF too while we have access
+  }
+
+  async function findPdf() {
+    const b = $(".pdf button");
+    if (b) { b.disabled = true; b.textContent = "Looking…"; }
+    const r = state.inLibrary && state.id
+      ? await send({ type: "findPdf", id: state.id, meta: info })
+      : await send({ type: "save", meta: { ...info, findPdf: true } });
+    if (r.error) { showError(r.error); render(); return; }
+    state = { ...r, pdfSearched: !r.hasPdf && !r.queued };
+    showError("");
+    render();
   }
 
   function toBase64(buf) {

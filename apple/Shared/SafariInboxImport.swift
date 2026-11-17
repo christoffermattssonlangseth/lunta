@@ -47,7 +47,19 @@ extension LibraryModel {
             guard let p = await saveFromPage(meta) else {
                 return ("Couldn't add “\(title.isEmpty ? doi : title)” from Safari.", true)
             }
-            return (before == nil ? "Added “\(p.meta.title)”." : "“\(p.meta.title)” is already in your library.", false)
+            var found = ""
+            if !p.hasPdf, meta["findPdf"] as? Bool == true {
+                found = await findPDF(p.id) != nil ? " Found a free PDF." : " No free PDF found."
+            }
+            return ((before == nil ? "Added “\(p.meta.title)”." : "“\(p.meta.title)” is already in your library.") + found, false)
+
+        case "findpdf":
+            guard let p = (req["paperId"] as? String).flatMap({ $0.isEmpty ? nil : self.paper($0) }) ?? findPaper(doi: doi, title: title) else {
+                return ("Couldn't find “\(title.isEmpty ? doi : title)” in your library.", true)
+            }
+            if p.hasPdf { return ("“\(p.meta.title)” already has its PDF.", false) }
+            return await findPDF(p.id) != nil ? ("Found a free PDF of “\(p.meta.title)”.", false)
+                                              : ("No free PDF of “\(p.meta.title)” found. Open the article at the journal to save it with your access.", false)
 
         case "pdf":
             guard let file = SafariInbox.file(req["pdf"], in: dir), let data = try? Data(contentsOf: file),
