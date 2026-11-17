@@ -137,11 +137,16 @@ struct ReaderView: View {
                             .background(highlightMode ? (HighlightColor(rawValue: highlightModeColor) ?? .yellow).color.opacity(0.22) : .clear, in: Circle())
                     } primaryAction: { highlightMode.toggle() }
                     .accessibilityLabel(highlightMode ? "Highlight mode on" : "Highlight mode off")
-                    Button { asking = true } label: { Image(systemName: "sparkles") }
+                    // iPad: Ask in the bar; iPhone: in the ⋯ menu (iOS fits four buttons; a fifth went into
+                    // its own overflow menu, and the ⋯ menu took two taps)
+                    if sizeClass == .regular { Button { asking = true } label: { Image(systemName: "sparkles") } }
                 }
                 Menu {
                     // every item works with one tap (appearance settings are in Text & Theme)
                     if canSwitchView && sizeClass != .regular { ViewSwitchButton(mode: $mode) }
+                    if mode == .reading, book != nil, sizeClass != .regular {
+                        Button { asking = true } label: { Label("Ask about this Paper", systemImage: "sparkles") }
+                    }
                     if mode == .reading, book != nil {
                         Button { showContents = true } label: { Label("Contents", systemImage: "list.bullet") }
                         Button { showAppearance = true } label: { Label("Text & Theme…", systemImage: "textformat.size") }
@@ -158,7 +163,7 @@ struct ReaderView: View {
                     Button { editing = true } label: { Label("Edit Details…", systemImage: "pencil") }
                     Button { sharing = true } label: { Label("Share…", systemImage: "square.and.arrow.up") }
                     Button { showInfo = true } label: { Label("Paper Info", systemImage: "info.circle") }
-                } label: { Image(systemName: "ellipsis.circle") }
+                } label: { Label("More", systemImage: "ellipsis.circle").labelStyle(.iconOnly) }
             }
         }
         .environment(\.highlightUndo, undoManager)
