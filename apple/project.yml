@@ -48,6 +48,7 @@ targets:
         type: folder
         buildPhase: resources
     dependencies:
+      - target: LuntaSafariMac
       - package: LuntaCore
         product: LuntaCore
       - package: Paper2EpubKit
@@ -180,3 +181,37 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.cmlangseth.margins.ios.share
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
+
+  # Safari Web Extension (Mac): the browser extension in extension/, as is; it talks to Lunta for
+  # Mac on 127.0.0.1:47480 like Chrome and Firefox. Embedded in LuntaMac.
+  LuntaSafariMac:
+    type: app-extension
+    platform: macOS
+    sources: [SafariExtension/SafariWebExtensionHandler.swift]
+    preBuildScripts:
+      - name: Browser extension files (extension/)
+        basedOnDependencyAnalysis: false
+        script: "\"$SRCROOT/SafariExtension/copy-extension.sh\""
+    info:
+      path: SafariExtension/Mac-Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDisplayName: Lunta
+        NSHumanReadableCopyright: ""
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.Safari.web-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SafariWebExtensionHandler
+    entitlements:
+      path: SafariExtension/LuntaSafariMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+    settings:
+      base:
+        PRODUCT_NAME: LuntaSafari
+        PRODUCT_BUNDLE_IDENTIFIER: com.cmlangseth.margins.safari
+        ENABLE_APP_SANDBOX: YES
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        SKIP_INSTALL: YES
+        ARCHS: arm64
