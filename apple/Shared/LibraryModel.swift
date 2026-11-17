@@ -142,6 +142,8 @@ final class LibraryModel: ObservableObject {
         counts = (every.count, every.filter(\.starred).count, every.filter(\.mustRead).count, every.filter { !$0.read }.count)
         #if os(iOS)
         publishSafariIndex()   // what the Safari extension answers "in your library?" from
+        #else
+        BibFiles.shared.libraryChanged(self)   // .bib files kept updated (BibFiles.swift)
         #endif
     }
 

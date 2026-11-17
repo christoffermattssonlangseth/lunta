@@ -207,7 +207,9 @@ struct Sidebar: View {
     var body: some View {
         List(selection: Binding(get: { model.source }, set: { model.source = $0 ?? .all })) {
             Section("Library") {
-                Label("All Papers", systemImage: "books.vertical").badge(model.counts.all).tag(SidebarItem.all)
+                Label { BibLinkedName(name: "All Papers", source: BibFiles.allPapers) } icon: { Image(systemName: "books.vertical") }
+                    .badge(model.counts.all).tag(SidebarItem.all)
+                    .contextMenu { BibFileMenu(source: BibFiles.allPapers, name: "All Papers") }
                 // drop papers here to star them / put them on the Must Read list
                 Label("Starred", systemImage: "star").badge(model.counts.starred).tag(SidebarItem.starred)
                     .modifier(SidebarDrop.Target { items in model.setStarred(SidebarDrop.paperIDs(items), true) })
@@ -296,7 +298,8 @@ struct Sidebar: View {
     }
 
     private func folderRow(_ c: PaperCollection) -> some View {
-        Label(c.name, systemImage: "folder").badge(Int(c.paperCount)).tag(SidebarItem.collection(c.id))
+        Label { BibLinkedName(name: c.name, source: c.id) } icon: { Image(systemName: "folder") }
+            .badge(Int(c.paperCount)).tag(SidebarItem.collection(c.id))
             .onDrag { NSItemProvider(object: (LibraryModel.folderDragPrefix + c.id) as NSString) }
             .modifier(SidebarDrop.Target { items in
                 for item in items where item.hasPrefix(LibraryModel.folderDragPrefix) {
@@ -316,6 +319,8 @@ struct Sidebar: View {
                 if c.parent != nil {
                     Button("Move to Top Level") { model.moveFolder(c.id, into: nil) }
                 }
+                Divider()
+                BibFileMenu(source: c.id, name: c.name)
                 Divider()
                 Button("Delete Folder…", role: .destructive) { deleting = c }
             }
