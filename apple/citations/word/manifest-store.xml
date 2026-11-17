@@ -12,7 +12,7 @@
   <ProviderName>Lunta</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="Lunta Citations"/>
-  <Description DefaultValue="Cite papers from your Lunta library and build the reference list (APA, Vancouver, Nature). Needs the Lunta app running on your Mac."/>
+  <Description DefaultValue="Cite papers from your Lunta library in 12 citation styles or any of ~10,000 journal styles; numbering and the reference list stay up to date. Requires the free Lunta app running on your Mac."/>
   <IconUrl DefaultValue="https://christoffermattssonlangseth.github.io/lunta/icons/icon-64.png"/>
   <HighResolutionIconUrl DefaultValue="https://christoffermattssonlangseth.github.io/lunta/icons/icon-128.png"/>
   <SupportUrl DefaultValue="https://christoffermattssonlangseth.github.io/lunta/support.html"/>

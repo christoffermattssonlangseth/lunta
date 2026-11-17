@@ -7,7 +7,7 @@
 // Microsoft store listing): either way the library comes from the Lunta app on this computer.
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
-var VERSION = '8';   // bump with the ?v= in index.html, so Word loads the new files
+var VERSION = '9';   // bump with the ?v= in index.html, so Word loads the new files
 var NS = 'https://lunta.app/ns/word-citations/1';
 var picked = [];          // [{id, title, ...}]
 var style = 'apa';

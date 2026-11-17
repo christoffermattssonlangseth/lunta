@@ -393,7 +393,7 @@ var LuntaCite = (function () {
   // ---- talking to Lunta ----
 
   var OFFLINE = {
-    word: 'Can’t reach Lunta. Open the Lunta app on this Mac. If it is open: choose Lunta › Citations in Word & Google Docs… and click Trust Certificate (needed once, and again if Lunta made a new certificate).',
+    word: 'Can’t reach Lunta. Open the Lunta app on this Mac. If it is open: choose Lunta › Citations in Word & Google Docs… and click Trust Certificate (needed once, and again if Lunta made a new certificate). Don’t have Lunta yet? It’s free: github.com/christoffermattssonlangseth/lunta/releases/latest',
     gdocs: 'Can’t reach Lunta. Open the Lunta app on this Mac. If it is open: choose Lunta › Citations in Word & Google Docs… and click Trust Certificate, and allow this page to reach this device if Chrome asks (the lock icon › Site settings › Local network access).'
   };
 
