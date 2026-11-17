@@ -92,35 +92,41 @@ struct CitationsView: View {
         do {
             try CitationsSetup.installWordManifest()
             wordInstalled = CitationsSetup.wordManifestInstalled()
-            message = "Installed. Quit Word (⌘Q) and open it again: Cite is on the Home tab."
+            message = "Installed. Quit Word (⌘Q) and open it again, then Home › Add-ins › Lunta Citations (once): Cite stays on the Home tab."
         } catch {
             // macOS guards other apps' folders (Word's included): copying there needs the user's
-            // say-so. A save panel the user confirms is that say-so, so offer one at the right place.
+            // say-so. Choosing the folder in an open panel is that say-so.
             saveWordManifestWithPanel()
         }
     }
 
+    /// macOS guards Word's folder: the user picks it in an open panel (that choice is the
+    /// permission), then Lunta makes the "wef" folder in it and puts the add-in there.
     private func saveWordManifestWithPanel() {
-        let panel = NSSavePanel()
+        let panel = NSOpenPanel()
         panel.title = "Install Lunta Citations in Word"
-        panel.message = "macOS needs your OK to put the add-in in Word's folder. Click Save (the folder is \"wef\", inside Word's Documents)."
-        panel.prompt = "Save"
-        panel.nameFieldStringValue = "margins-citations.xml"
-        panel.canCreateDirectories = true
-        panel.directoryURL = CitationsSetup.wordWef
-        guard panel.runModal() == .OK, let url = panel.url else {
-            message = "Not installed. Click Install in Word again, and Save in the window that opens."
+        panel.message = "macOS needs your OK to add Lunta to Word. This is Word's folder: just click Install."
+        panel.prompt = "Install"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.directoryURL = CitationsSetup.wordWef.deletingLastPathComponent()   // Word's Documents
+        guard panel.runModal() == .OK, var dir = panel.url else {
+            message = "Not installed. Click Install in Word again, and Install in the window that opens."
             return
         }
+        if dir.lastPathComponent != "wef" { dir = dir.appendingPathComponent("wef", isDirectory: true) }
         do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let data = try Data(contentsOf: CitationsSetup.resources.appendingPathComponent("word/manifest.xml"))
-            try data.write(to: url, options: .atomic)
-            wordInstalled = CitationsSetup.wordManifestInstalled()
-            message = url.deletingLastPathComponent().lastPathComponent == "wef"
-                ? "Installed. Quit Word (⌘Q) and open it again: Cite is on the Home tab."
-                : "Saved, but not in Word's \"wef\" folder, so Word won't find it. Click Install in Word again and save it in \"wef\"."
+            try data.write(to: dir.appendingPathComponent("margins-citations.xml"), options: .atomic)
+            wordInstalled = true
+            message = dir.path.contains("com.microsoft.Word")
+                ? "Installed. Quit Word (⌘Q) and open it again, then Home › Add-ins › Lunta Citations (once): Cite stays on the Home tab."
+                : "Installed into another folder than Word's, so Word won't find it. Click Install in Word again and choose Word's Documents folder."
         } catch {
-            message = "Couldn't save the add-in: \(error.readable)"
+            message = "Couldn't install into Word: \(error.readable)"
         }
     }
 }
