@@ -13,6 +13,7 @@
 //!        to <app data>/backups) → status JSON + {outcome, message, words, images, highlights,
 //!        unmatched, backup?, notes, reader, dryRun}; 422 + {error} if the page can't be made
 //!        into a reading view.
+//!   GET/POST /cite/…   citing in Google Docs from the extension: the citation API (citeapi.rs)
 //!
 //! Only requests from a browser extension are accepted: a request with a web page's Origin is
 //! refused, and the extension's own header (X-Margins-Client), which a web page can't send
@@ -62,6 +63,8 @@ pub fn start(app: AppHandle) {
 pub(crate) struct Ctx {
     pub lib: Option<Arc<Library>>,
     pub backups: PathBuf,
+    /// where journal styles (CSL) are kept, for citing
+    pub csl_cache: PathBuf,
     /// (event, payload) to the window: "status" (progress), "extension" (the library changed)
     pub notify: Arc<dyn Fn(&str, &str) + Send + Sync>,
     /// a paper's reading view changed: forget where it was unpacked
@@ -76,6 +79,7 @@ fn app_context(app: &AppHandle) -> Ctx {
     Ctx {
         lib: state.lib().ok(),
         backups: app.path().app_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("Lunta")).join("backups"),
+        csl_cache: app.path().app_cache_dir().unwrap_or_else(|_| std::env::temp_dir().join("Lunta")).join("citations"),
         notify: Arc::new(move |event: &str, payload: &str| {
             // the extension's "Open": bring the window to the front too
             if event == "open" {
@@ -221,6 +225,9 @@ fn route(cx: &Ctx, r: &Request) -> (u16, Value) {
         return refused;
     }
     let Some(lib) = cx.lib.clone() else { return (503, json!({"error": "library not open"})) };
+    if r.path.starts_with("/cite/") {
+        return crate::citeapi::route(&lib, &cx.csl_cache.to_string_lossy(), &r.method, &r.path, &r.query, &r.body);
+    }
     let q = |k: &str| r.query.get(k).cloned().unwrap_or_default();
     match (r.method.as_str(), r.path.as_str()) {
         ("GET", "/status") => (200, status(pagetext::find_paper(&lib, &q("doi"), &q("title")).as_ref())),
@@ -560,6 +567,7 @@ mod tests {
                 Ctx {
                     lib: Some(l2.clone()),
                     backups: backups.clone(),
+                    csl_cache: backups.join("csl"),
                     notify: Arc::new(move |e: &str, p: &str| ev.lock().unwrap().push(format!("{e}: {p}"))),
                     forget_book: Arc::new(|_: &str| {}),
                     offline: true,
@@ -606,6 +614,10 @@ mod tests {
         assert!(j["error"].as_str().unwrap().contains("full text"), "{j}");
         // a web page may not use it
         assert_eq!(call("GET", "/status?doi=x", "https://evil.example", b"").0, 403);
+        // citing in Google Docs (citeapi.rs): the extension only
+        let (st, j) = call("GET", "/cite/status", ext, b"");
+        assert_eq!((st, j["papers"].clone()), (200, json!(1)));
+        assert_eq!(call("POST", "/cite/bibliography", "https://docs.google.com", br#"{"style":"apa","ids":[]}"#).0, 403);
         // saving by title (no DOI, no network)
         let (st, j) = call("POST", "/save", ext, br#"{"title":"A paper saved from its page","authors":["Ada Lovelace"]}"#);
         assert_eq!((st, j["inLibrary"].clone()), (200, json!(true)));

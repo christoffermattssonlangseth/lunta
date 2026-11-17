@@ -18,6 +18,9 @@ import Paper2EpubKit
 ///        → status JSON + {outcome: added|attached|replaced|kept|unchanged, message, words, images,
 ///          highlights, unmatched:[quotes], backup?, notes, reader, dryRun}; 422 + {error} if the
 ///          page can't be made into a reading view.
+///   GET  /cite/status, /cite/search?q=…, /cite/styles?q=…; POST /cite/bibliography, /cite/render
+///        Citing in Google Docs from the extension: the citation API's answers (CitationAPI, as
+///        the Word and Google Docs add-ins get them on https://localhost:47481/api/…).
 ///
 /// Only requests from a browser extension (Origin chrome-extension://…, safari-web-extension://… or moz-extension://…) are accepted, so ordinary
 /// web pages cannot use it.
@@ -34,6 +37,7 @@ final class ExtensionServer {
     private var listener: NWListener?
     private var pagesInProgress = Set<String>()
     private weak var model: LibraryModel?
+    private var citationAPI: CitationAPI?
 
     init(model: LibraryModel) {
         self.model = model
@@ -136,6 +140,7 @@ final class ExtensionServer {
             return (403, ["error": "only the Lunta browser extension may use this endpoint"])
         }
         guard let model else { return (503, ["error": "library not open"]) }
+        if r.path.hasPrefix("/cite/") { return await cite(model, r) }
         switch (r.method, r.path) {
         case ("GET", "/status"):
             return (200, status(of: model.findPaper(doi: r.query["doi"] ?? "", title: r.query["title"] ?? "")))
@@ -190,6 +195,18 @@ final class ExtensionServer {
         default:
             return (404, ["error": "not found"])
         }
+    }
+
+    /// Citing in Google Docs: /cite/… answered by the citation API as /api/… (off the main thread:
+    /// the first use of a journal style downloads it).
+    private func cite(_ model: LibraryModel, _ r: Request) async -> (Int, Any) {
+        let api = citationAPI ?? CitationAPI(library: model.lib, cacheDir: CitationServer.cslCache, token: "")
+        citationAPI = api
+        let req = CitationRequest(method: r.method, path: "/api/" + r.path.dropFirst("/cite/".count), query: r.query, body: r.body)
+        let count = model.counts.all
+        let out = await Task.detached { api.answerTrusted(req, paperCount: count) }.value
+        let json = (try? JSONSerialization.jsonObject(with: out.body)) ?? ["error": "Lunta’s answer couldn’t be read."]
+        return (out.status, json)
     }
 
     private func fullText(_ model: LibraryModel, _ r: Request) async -> (Int, Any) {

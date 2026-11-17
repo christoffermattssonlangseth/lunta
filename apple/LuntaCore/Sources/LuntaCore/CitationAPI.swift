@@ -17,7 +17,8 @@ import Foundation
 //
 // Who may ask: pages from this server, the hosted Word panel, and the Google Docs sidebar (served
 // from *.googleusercontent.com, so it must also present the pairing key). Requests a web page
-// makes from anywhere else are refused, also the ones a browser sends without an Origin.
+// makes from anywhere else are refused, also the ones a browser sends without an Origin. The
+// browser extension asks through its own endpoint (ExtensionServer, /cite/… → `answerTrusted`).
 
 /// One HTTP request, as read off the connection.
 public struct CitationRequest: Sendable {
@@ -204,6 +205,13 @@ public final class CitationAPI: @unchecked Sendable {
         }
         out.headers += corsHeaders(r)
         return out
+    }
+
+    /// The API's answer for a caller that has already decided who may ask: the browser extension's
+    /// endpoint (127.0.0.1:47480, extension requests only) forwards its `/cite/…` here as `/api/…`,
+    /// so the extension needs neither the certificate nor the pairing key. No CORS headers.
+    public func answerTrusted(_ r: CitationRequest, paperCount: Int) -> CitationResponse {
+        handle(r, paperCount: paperCount)
     }
 
     func handle(_ r: CitationRequest, paperCount: Int) -> CitationResponse {

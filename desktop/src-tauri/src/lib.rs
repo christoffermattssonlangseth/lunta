@@ -8,6 +8,7 @@
 //! on 127.0.0.1:47480 (`extension`).
 
 mod add;
+mod citeapi;
 #[cfg(all(debug_assertions, target_os = "macos"))]
 mod devsnap;
 mod extension;
