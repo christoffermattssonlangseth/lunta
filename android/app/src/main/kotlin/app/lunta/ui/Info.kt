@@ -142,7 +142,7 @@ fun InfoScreen(model: AppModel, id: String) {
 
             Spacer(Modifier.height(20.dp))
             SectionTitle("Cite")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for ((style, label) in listOf(CitationStyle.APA to "APA", CitationStyle.VANCOUVER to "Vancouver", CitationStyle.NATURE to "Nature")) {
                     OutlinedButton({
                         model.cite(p, style)?.let { text ->
@@ -151,7 +151,17 @@ fun InfoScreen(model: AppModel, id: String) {
                         }
                     }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text(label) }
                 }
+                OutlinedButton({
+                    model.latexCite(p)?.let { text ->
+                        copyText(ctx, "\\cite", text)
+                        citation = "\\cite" to text
+                    }
+                }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("\\cite") }
             }
+            if (p.citeKey.isNotEmpty()) Text(
+                "Cite key: ${p.citeKey}", Modifier.padding(top = 6.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             citation?.let { (label, text) ->
                 Card(Modifier.padding(top = 8.dp).fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
                     Column(Modifier.padding(12.dp)) {

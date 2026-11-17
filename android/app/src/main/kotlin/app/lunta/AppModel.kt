@@ -355,6 +355,8 @@ class AppModel(val app: Application) {
     fun deletePaper(id: String) = launchLib { withContext(Dispatchers.IO) { it.deletePaper(id) } }
 
     fun cite(p: Paper, style: CitationStyle): String? = library?.citation(p.id, style)
+    /** \cite{key} for LaTeX (the paper's fixed citation key). */
+    fun latexCite(p: Paper): String? = library?.latexCite(listOf(p.id))?.takeIf { it.isNotEmpty() }
 
     // ---- adding ----
 
