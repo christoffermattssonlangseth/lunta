@@ -597,8 +597,11 @@ final class JATSConverter {
     func refItems(_ rl: XNode) -> String {
         var items = ""
         for ref in rl.children("ref") {
+            // newer PMC XML wraps each reference in <citation-alternatives> (structured and
+            // formatted versions of the same reference): look inside it too
+            let holders = [ref] + ref.children("citation-alternatives")
             guard let cit = ["element-citation", "mixed-citation", "citation", "nlm-citation"]
-                .lazy.compactMap({ ref.child($0) }).first else { continue }
+                .lazy.compactMap({ n in holders.lazy.compactMap { $0.child(n) }.first }).first else { continue }
             let idAttr = ref.attr("id").map { " id=\"\(esc($0))\"" } ?? ""
             items += "<li\(idAttr)>\(citation(cit))</li>"
         }

@@ -841,8 +841,13 @@ impl<'a> JatsConverter<'a> {
     fn ref_items(&mut self, rl: Node<'a>) -> String {
         let mut items = String::new();
         for r in rl.children_named("ref") {
-            let Some(cit) =
-                ["element-citation", "mixed-citation", "citation", "nlm-citation"].iter().find_map(|n| r.child(n))
+            // newer PMC XML wraps each reference in <citation-alternatives> (structured and
+            // formatted versions of the same reference): look inside it too
+            let mut holders = vec![r];
+            holders.extend(r.children_named("citation-alternatives"));
+            let Some(cit) = ["element-citation", "mixed-citation", "citation", "nlm-citation"]
+                .iter()
+                .find_map(|n| holders.iter().find_map(|h| h.child(n)))
             else {
                 continue;
             };
