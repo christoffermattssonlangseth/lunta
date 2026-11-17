@@ -336,12 +336,17 @@ fn split_numbers(cs: Vec<C>) -> Vec<Vec<C>> {
     out
 }
 
-/// Bounding box and average size of a line's visible characters.
+/// Bounding box and average size of a line's visible characters (a drop cap, set in far larger
+/// type than the rest of the line, left out).
 fn extent(cs: &[C]) -> Option<(R, f64, usize)> {
     let vis: Vec<&C> = cs.iter().filter(|c| !is_space(c.ch) && c.bx.w() > 0.0).collect();
     if vis.is_empty() {
         return None;
     }
+    let mut sizes: Vec<f64> = vis.iter().map(|c| c.size).collect();
+    sizes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = sizes[sizes.len() / 2];
+    let vis: Vec<&C> = vis.into_iter().filter(|c| c.size <= 2.5 * median).collect();
     let r = R::union_all(vis.iter().map(|c| &c.bx));
     Some((r, vis.iter().map(|c| c.size).sum::<f64>() / vis.len() as f64, vis.len()))
 }

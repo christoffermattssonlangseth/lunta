@@ -305,12 +305,12 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
     for p in paras {
         let text = p.text();
         if p.kind == Kind::Text && text.chars().next().is_some_and(|c| c.is_lowercase()) {
-            if let Some(j) = merged.iter().rposition(|q| !matches!(q.kind, Kind::Figure | Kind::Table | Kind::Caption)) {
-                if merged[j].kind == Kind::Text && merged.len() - j <= 4 && !ends_sentence(&merged[j].text()) {
-                    let q = &mut merged[j];
-                    let mut lines = std::mem::take(&mut q.lines);
-                    lines.extend(p.lines);
-                    *q = Para::new(lines, q.page, Kind::Text);
+            // (past figures, legends, front matter and boxes set between the columns)
+            let skip = |q: &Para| matches!(q.kind, Kind::Figure | Kind::Table | Kind::Caption | Kind::Front) || q.boxed != p.boxed;
+            if let Some(j) = merged.iter().rposition(|q| !skip(q)) {
+                let between = merged[j + 1..].iter().filter(|q| q.boxed == p.boxed).count();
+                if merged[j].kind == Kind::Text && between <= 3 && !ends_sentence(&merged[j].text()) {
+                    merged[j].lines.extend(p.lines);
                     continue;
                 }
             }
@@ -323,7 +323,7 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
         let text = p.text();
         let t = super::trim_ws(&text);
         let legend_like = re!(r"^\([A-Z][A-Za-z]{0,3}\)\s|^See also Figure|^Scale bars?").is_match(t);
-        if p.kind == Kind::Text && p.size() < body_size - 0.4 {
+        if p.kind == Kind::Text && p.boxed.is_none() && p.size() < body_size - 0.4 {
             if let Some(j) = folded.iter().rposition(|q| q.kind == Kind::Caption) {
                 // a legend's "(D) …" panels continue after the page's body text when it runs onto the next page
                 if (folded.len() - j <= 8 || legend_like)
@@ -431,6 +431,7 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
     let mut intro_done = false;
     let mut last_kind: Option<Kind> = None;
     let missing_title = meta.title.is_empty();
+    let mut open_box: Option<usize> = None;
     for (i, p) in merged.iter().enumerate() {
         // appends to the current chapter, opening "Main text" if there is none
         macro_rules! append {
@@ -442,6 +443,16 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
                 }
                 cur.as_mut().unwrap().html += &h;
             }};
+        }
+        // a box's paragraphs, kept together
+        if p.boxed != open_box {
+            if open_box.is_some() {
+                append!("</div>".to_string());
+            }
+            if p.boxed.is_some() {
+                append!("<div class=\"box\">".to_string());
+            }
+            open_box = p.boxed;
         }
         match p.kind {
             Kind::Figure | Kind::Table => {
@@ -511,7 +522,7 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
                 append!(format!("<p class=\"caption\">{}</p>", styled(p)));
             }
             Kind::Text => {
-                if abstract_done && !intro_done && last_kind == Some(Kind::Abstract) && !has_intro {
+                if abstract_done && !intro_done && last_kind == Some(Kind::Abstract) && !has_intro && p.boxed.is_none() {
                     let id = next_id();
                     open("Introduction", id, &mut cur, &mut chapters);
                 }
@@ -521,6 +532,11 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
         }
         if p.kind != Kind::Front {
             last_kind = Some(p.kind);
+        }
+    }
+    if open_box.is_some() {
+        if let Some(c) = cur.as_mut() {
+            c.html += "</div>";
         }
     }
     close(&mut cur, &mut chapters);

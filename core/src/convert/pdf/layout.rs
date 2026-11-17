@@ -116,11 +116,13 @@ pub struct Para {
     pub level: usize,
     pub asset: Option<BookImage>,
     pub region: Option<R>,
+    /// The framed or shaded box (sidebar) the paragraph sits in, numbered per document.
+    pub boxed: Option<usize>,
 }
 
 impl Para {
     pub fn new(lines: Vec<PLine>, page: usize, kind: Kind) -> Para {
-        Para { lines, page, kind, level: 0, asset: None, region: None }
+        Para { lines, page, kind, level: 0, asset: None, region: None, boxed: None }
     }
     pub fn text(&self) -> String {
         join_lines(self.lines.iter().map(|l| l.text.as_str()))
@@ -244,6 +246,11 @@ pub fn known_sections() -> &'static Regex {
     ))
 }
 
+/// A DOI on its own: "https://doi.org/10.1038/…", "doi: 10.…".
+pub fn doi_line(s: &str) -> bool {
+    re!(r"(?i)^(https?://(dx\.)?doi\.org/|doi:?\s*)10\.\d{4,9}/\S+$").is_match(trim(s))
+}
+
 pub fn caption_re() -> &'static Regex {
     // the label must be followed by punctuation, a capitalised word or nothing: running text that
     // wraps onto a line starting "Figure S2G). Top genes…" or "Fig. 1a and …" is not a caption
@@ -293,6 +300,15 @@ pub struct Region {
     pub image: Option<BookImage>,
 }
 
+/// A block for the reading order: one line or region, or a box of them (`items`: their indices).
+#[derive(Debug, Clone)]
+struct Node {
+    r: R,
+    n: usize,
+    text: bool,
+    items: Vec<usize>,
+}
+
 #[derive(Debug, Clone)]
 struct Cluster {
     rect: R,
@@ -336,7 +352,7 @@ impl<'a> Analyzer<'a> {
     /// Running heads and feet: lines in the top/bottom margin repeated on many pages.
     fn find_running(&mut self) {
         let n = self.pages.len();
-        if n < 3 {
+        if n < 2 {
             return;
         }
         let mut c: HashMap<String, usize> = HashMap::new();
@@ -374,6 +390,9 @@ impl<'a> Analyzer<'a> {
         }
         if t.chars().all(|c| c == '\u{FFFC}' || c.is_whitespace()) {
             return true; // logo placeholder
+        }
+        if re!(r"(?i)^check for updates$").is_match(t) {
+            return true; // Crossmark badge
         }
         if re!(r"(?i)^\((figure )?legend (continued )?on (the )?(next|previous|following) page\)$").is_match(t) {
             return true;
@@ -532,6 +551,16 @@ impl<'a> Analyzer<'a> {
             }
             g.rect = r;
         }
+        // a piece that has grown inside another (by its labels) is part of it
+        let rects: Vec<(R, Kind)> = regions.iter().map(|g| (g.rect, g.kind)).collect();
+        let mut k = 0;
+        regions.retain(|g| {
+            let i = k;
+            k += 1;
+            !rects.iter().enumerate().any(|(j, (o, kind))| {
+                j != i && *kind == g.kind && o.contains(&g.rect, 2.0) && (!g.rect.contains(o, 2.0) || j < i)
+            })
+        });
         regions
     }
 
@@ -702,12 +731,14 @@ impl<'a> Analyzer<'a> {
             p.asset = g.image;
             units.push(p);
         }
-        let (units, gutter) = self.order_with_gutter(pno, units);
-        let txt: Vec<R> = units.iter().filter(|u| u.kind == Kind::Text).map(|u| u.lines[0].bbox).collect();
-        let right_edge = |l: &PLine| -> f64 {
-            // the column's right edge: full-width lines (legends, summary) across the gutter do not count
+        let (units, cols) = self.order_with_columns(pno, units);
+        let txt: Vec<(R, (f64, f64))> =
+            units.iter().zip(&cols).filter(|(u, _)| u.kind == Kind::Text).map(|(u, k)| (u.lines[0].bbox, *k)).collect();
+        let right_edge = |l: &PLine, col: (f64, f64)| -> f64 {
+            // the column's right edge: lines of other columns (full-width legends, summary) do not count
             txt.iter()
-                .filter(|b| gutter.map(|g| !(b.x0 < g - 3.0 && b.x1 > g + 3.0)).unwrap_or(true))
+                .filter(|(_, k)| *k == col)
+                .map(|(b, _)| b)
                 .filter(|b| b.x1.min(l.bbox.x1) - b.x0.max(l.bbox.x0) > 0.3 * l.bbox.w())
                 .map(|b| b.x1)
                 .fold(None, |m: Option<f64>, x| Some(m.map_or(x, |m| m.max(x))))
@@ -717,26 +748,39 @@ impl<'a> Analyzer<'a> {
         let w = self.pages[pno].width;
         let mut paras: Vec<Para> = Vec::new();
         let mut cur: Vec<PLine> = Vec::new();
-        let flush = |cur: &mut Vec<PLine>, paras: &mut Vec<Para>| {
+        let mut cur_col = (0.0, 0.0);
+        let mut cur_box: Option<usize> = None;
+        // where the paragraph's lines in the current column start (after a column continuation)
+        let mut seg = 0;
+        let flush = |cur: &mut Vec<PLine>, paras: &mut Vec<Para>, boxed: Option<usize>| {
             if !cur.is_empty() {
-                paras.push(Para::new(std::mem::take(cur), pno, Kind::Text));
+                let mut p = Para::new(std::mem::take(cur), pno, Kind::Text);
+                p.boxed = boxed;
+                paras.push(p);
             }
         };
-        for u in units {
+        for (u, col) in units.into_iter().zip(cols) {
             if u.kind != Kind::Text {
-                flush(&mut cur, &mut paras);
+                flush(&mut cur, &mut paras, cur_box);
                 paras.push(u);
                 continue;
             }
+            if u.boxed != cur_box {
+                // a box's text never runs on into the page's or the other way round
+                flush(&mut cur, &mut paras, cur_box);
+                cur_box = u.boxed;
+            }
             let l = u.lines.into_iter().next().unwrap();
+            let a_col = std::mem::replace(&mut cur_col, col);
             let Some(a) = cur.last() else {
+                seg = 0;
                 cur.push(l);
                 continue;
             };
-            let left = cur.iter().map(|c| c.bbox.x0).fold(f64::INFINITY, f64::min);
+            let left = cur[seg..].iter().map(|c| c.bbox.x0).fold(f64::INFINITY, f64::min);
             let gap = l.bbox.y0 - a.bbox.y1;
             let jumped = l.bbox.y0 < a.bbox.y0 - 2.0 || (l.bbox.x0 - left).abs() > 0.3 * w;
-            let re_a = right_edge(a);
+            let re_a = right_edge(a, a_col);
             let width = (re_a - left).max(1.0);
             let at = trim(&a.text);
             let ends_sentence = at.ends_with('.') || at.ends_with(':') || at.ends_with('?') || at.ends_with('!');
@@ -744,11 +788,14 @@ impl<'a> Analyzer<'a> {
             // (not the hanging indent of a numbered reference: "4. Satija, R., … (2015)." / "Spatial …")
             let numbered_item = re!(r"^(\[\d+\]|\d+\.)\s").is_match(trim(&cur[0].text));
             let indent = l.bbox.x0 - left > 8.0
-                && cur[1..].iter().all(|c| (c.bbox.x0 - left).abs() < 3.0)
+                && cur[seg.max(1)..].iter().all(|c| (c.bbox.x0 - left).abs() < 3.0)
                 && ends_sentence
                 && !abbrev.is_match(at)
                 && !numbered_item;
-            let hanging = cur.len() >= 2 && l.bbox.x0 < a.bbox.x0 - 6.0 && cur[0].bbox.x0 < a.bbox.x0 - 6.0;
+            // (a drop cap is not a hanging first line)
+            let drop_cap = cur[0].bbox.h() > 2.5 * cur[0].size;
+            let hanging =
+                cur.len() >= 2 && l.bbox.x0 < a.bbox.x0 - 6.0 && cur[0].bbox.x0 < a.bbox.x0 - 6.0 && !drop_cap;
             let size_change = (l.size - a.size).abs() >= 1.0;
             let style_break = (a.bold > 0.9) != (l.bold > 0.9) && (count(at) < 120 || count(&l.text) < 120);
             let cap = caption_re().is_match(trim(&l.text));
@@ -768,130 +815,314 @@ impl<'a> Analyzer<'a> {
                     && !size_change
                     && !cap
                     && first_is_lower(trim(&l.text))
+                    && !doi_line(&l.text)
                 {
+                    seg = cur.len();
                     cur.push(l); // column continuation
                     continue;
                 }
-                flush(&mut cur, &mut paras);
+                flush(&mut cur, &mut paras, cur_box);
+                seg = 0;
             }
             cur.push(l);
         }
-        flush(&mut cur, &mut paras);
+        flush(&mut cur, &mut paras, cur_box);
         paras
     }
 
-    /// Reading order: one column top to bottom, or two columns between full-width blocks.
+    /// Reading order: one column top to bottom, or columns between full-width blocks.
     pub fn order(&self, pno: usize, paras: Vec<Para>) -> Vec<Para> {
-        self.order_with_gutter(pno, paras).0
+        self.order_with_columns(pno, paras).0
     }
 
-    /// Reading order of a page's lines and blocks; also returns the column gutter's x on
-    /// two-column pages.
-    pub fn order_with_gutter(&self, pno: usize, paras: Vec<Para>) -> (Vec<Para>, Option<f64>) {
+    /// Reading order of a page's lines and blocks, with the column each was read in: the
+    /// x-interval between the gutters on either side of it (lines of one column share it).
+    ///
+    /// Recursive: a gutter splits the page into columns, and blocks across it (titles, full-width
+    /// figures and legends) cut it into bands that are ordered the same way. So three columns, a
+    /// two-column legend under a full-width figure, or columns of different widths above and
+    /// below a figure each come out column by column. A framed or shaded box is read as one block.
+    pub fn order_with_columns(&self, pno: usize, paras: Vec<Para>) -> (Vec<Para>, Vec<(f64, f64)>) {
+        let singles: Vec<Node> = paras
+            .iter()
+            .enumerate()
+            .map(|(i, p)| Node { r: p.bbox(), n: count(&p.text()), text: p.kind == Kind::Text, items: vec![i] })
+            .collect();
+        let mut nodes: Vec<Node> = Vec::new();
+        let panels = self.panels(pno, &singles);
+        let in_panel: HashSet<usize> = panels.iter().flatten().copied().collect();
+        nodes.extend(singles.iter().filter(|s| !in_panel.contains(&s.items[0])).cloned());
+        let mut paras = paras;
+        for (k, m) in panels.into_iter().enumerate() {
+            for &i in &m {
+                paras[i].boxed = Some(pno * 64 + k);
+            }
+            let r = R::union_all(m.iter().map(|&i| &singles[i].r));
+            nodes.push(Node { r, n: m.iter().map(|&i| singles[i].n).sum(), text: true, items: m });
+        }
+        nodes.sort_by_key(|n| n.items[0]);
+        let mut out: Vec<(usize, (f64, f64))> = Vec::new();
+        self.order_rec(pno, &singles, nodes, 0, None, (f64::NEG_INFINITY, f64::INFINITY), &mut out);
+        if std::env::var("P2E_DEBUG_ORDER").ok().and_then(|v| v.parse::<usize>().ok()) == Some(pno + 1) {
+            for &(i, k) in &out {
+                let t: String = paras[i].text().chars().take(50).collect();
+                eprintln!("  {:?} col=({:.0},{:.0}) {t}", singles[i].r, k.0, k.1);
+            }
+        }
+        let mut slots: Vec<Option<Para>> = paras.into_iter().map(Some).collect();
+        let keys = out.iter().map(|o| o.1).collect();
+        (out.into_iter().filter_map(|(i, _)| slots[i].take()).collect(), keys)
+    }
+
+    /// Framed or shaded boxes (a drawn rectangle around several lines of text that no line
+    /// crosses, holding part of the page's text): the members of each, outermost boxes only.
+    fn panels(&self, pno: usize, nodes: &[Node]) -> Vec<Vec<usize>> {
+        let page = &self.pages[pno];
+        let (w, h) = (page.width, page.height);
+        let all_n: usize = nodes.iter().filter(|n| n.text).map(|n| n.n).sum();
+        let mut rects: Vec<R> = page
+            .graphics
+            .drawings
+            .iter()
+            .filter(|r| r.w() >= 0.2 * w && r.h() >= 3.0 * self.body_size && r.area() < 0.9 * w * h)
+            .copied()
+            .collect();
+        rects.sort_by(|a, b| b.area().partial_cmp(&a.area()).unwrap_or(std::cmp::Ordering::Equal));
+        let mut out: Vec<Vec<usize>> = Vec::new();
+        for r in rects {
+            let mut members = Vec::new();
+            let mut ok = true;
+            for (i, n) in nodes.iter().enumerate() {
+                if r.contains(&n.r, 2.0) {
+                    if !n.text {
+                        ok = false; // a figure inside: left to the figure detection
+                        break;
+                    }
+                    members.push(i);
+                } else if n.r.area() > 0.0 && r.intersects(&n.r, 0.0) && r.intersection(&n.r).area() > 0.3 * n.r.area() {
+                    ok = false; // text across the frame: not a box
+                    break;
+                }
+            }
+            let n: usize = members.iter().map(|&i| nodes[i].n).sum();
+            if !ok || members.len() < 3 || n < 100 || n as f64 > 0.6 * all_n as f64 {
+                continue;
+            }
+            if out.iter().any(|m| members.iter().any(|i| m.contains(i))) {
+                continue; // inside (or across) a box already found
+            }
+            out.push(members);
+        }
+        out
+    }
+
+    /// The best column gutter among `nodes`: the x that most often separates two lines side by
+    /// side on the same row, decided row by row so that full-width blocks do not hide the columns.
+    /// Of several gutters (three columns) the one fewest blocks cross. Also returns how many rows
+    /// it separates.
+    fn find_gutter(&self, pno: usize, nodes: &[Node], depth: usize) -> (f64, usize) {
         let w = self.pages[pno].width;
-        let info: Vec<(R, usize, bool)> = paras.iter().map(|p| (p.bbox(), count(&p.text()), p.kind == Kind::Text)).collect();
-        // The column gutter: the gap that most often separates two lines side by side on the same
-        // row (text left of it and text right of it). Decided row by row, so full-width blocks
-        // (summary, figure legends) or a shifted abstract do not hide the columns however much
-        // text they hold.
-        let textual: Vec<usize> = (0..info.len()).filter(|&i| info[i].2 && info[i].0.w() >= 0.15 * w).collect();
+        let textual: Vec<&Node> = nodes.iter().filter(|n| n.text && n.r.w() >= 0.15 * w).collect();
         let mut gaps: Vec<(f64, f64)> = Vec::new();
-        for &a in &textual {
-            let ra = info[a].0;
+        for (ai, a) in textual.iter().enumerate() {
+            let ra = a.r;
             let right_of = textual
                 .iter()
-                .filter(|&&b| {
-                    let rb = info[b].0;
-                    b != a
+                .enumerate()
+                .filter(|(bi, b)| {
+                    let rb = b.r;
+                    *bi != ai
                         && rb.x0 >= ra.x1 + 3.0
                         && rb.x0 - ra.x1 < 0.4 * w
                         && ra.y1.min(rb.y1) - ra.y0.max(rb.y0) > 0.5 * ra.h().min(rb.h())
                 })
-                .map(|&b| info[b].0.x0)
+                .map(|(_, b)| b.r.x0)
                 .fold(None, |m: Option<f64>, x| Some(m.map_or(x, |m| m.min(x))));
             if let Some(bx) = right_of {
                 gaps.push((ra.x1, bx));
             }
         }
+        let (lo, hi) = if depth == 0 {
+            (0.25 * w, 0.75 * w)
+        } else {
+            let x0 = nodes.iter().map(|n| n.r.x0).fold(f64::INFINITY, f64::min);
+            let x1 = nodes.iter().map(|n| n.r.x1).fold(f64::NEG_INFINITY, f64::max);
+            (x0 + 0.25 * (x1 - x0), x1 - 0.25 * (x1 - x0))
+        };
         let mut cover: Vec<(f64, usize)> = Vec::new();
-        let mut x = 0.25 * w;
-        while x <= 0.75 * w {
+        let mut x = lo;
+        while x <= hi {
             cover.push((x, gaps.iter().filter(|g| g.0 < x && x < g.1).count()));
             x += 1.0;
         }
         let max_n = cover.iter().map(|c| c.1).max().unwrap_or(0);
-        let mut best_run: Option<(usize, usize)> = None;
+        if cover.is_empty() {
+            return (0.5 * w, 0);
+        }
+        // stretches covered nearly as often as the best one; in each, the middle of its longest
+        // most-covered run
+        let thr = if max_n == 0 { 0 } else { ((0.7 * max_n as f64).ceil() as usize).max(1) };
+        let mut best: Option<(usize, usize, usize, f64)> = None; // (crossing, peak, run, x)
         let mut i = 0;
         while i < cover.len() {
-            if cover[i].1 != max_n {
+            if cover[i].1 < thr {
                 i += 1;
                 continue;
             }
             let mut j = i;
-            while j + 1 < cover.len() && cover[j + 1].1 == max_n {
+            while j + 1 < cover.len() && cover[j + 1].1 >= thr {
                 j += 1;
             }
-            if best_run.map(|b| j - i > b.1 - b.0).unwrap_or(true) {
-                best_run = Some((i, j));
+            let peak = cover[i..=j].iter().map(|c| c.1).max().unwrap_or(0);
+            let mut run: Option<(usize, usize)> = None;
+            let mut k = i;
+            while k <= j {
+                if cover[k].1 != peak {
+                    k += 1;
+                    continue;
+                }
+                let mut m = k;
+                while m < j && cover[m + 1].1 == peak {
+                    m += 1;
+                }
+                if run.map(|b| m - k > b.1 - b.0).unwrap_or(true) {
+                    run = Some((k, m));
+                }
+                k = m + 1;
+            }
+            let (a, b) = run.unwrap_or((i, j));
+            let g = (cover[a].0 + cover[b].0) / 2.0;
+            let crossing = nodes.iter().filter(|n| self.crosses(pno, n, g)).count();
+            let better = match best {
+                None => true,
+                Some((c, p, l, _)) => (crossing, std::cmp::Reverse(peak), std::cmp::Reverse(b - a)) < (c, std::cmp::Reverse(p), std::cmp::Reverse(l)),
+            };
+            if better {
+                best = Some((crossing, peak, b - a, g));
             }
             i = j + 1;
         }
-        let gutter = best_run.map(|b| (cover[b.0].0 + cover[b.1].0) / 2.0).unwrap_or(w / 2.0);
-        // pages with little text (end matter): fall back on "most text sits in one half or the other"
-        let narrow = |i: usize| info[i].2 && info[i].0.w() < 0.55 * w;
-        let left_n: usize = (0..info.len()).filter(|&i| narrow(i) && info[i].0.x1 <= gutter).map(|i| info[i].1).sum();
-        let right_n: usize = (0..info.len()).filter(|&i| narrow(i) && info[i].0.x0 >= gutter).map(|i| info[i].1).sum();
-        let all_n = info.iter().filter(|x| x.2).map(|x| x.1).sum::<usize>().max(1);
-        let halves = (left_n + right_n) as f64 > 0.5 * all_n as f64
-            && left_n.min(right_n) as f64 > 0.2 * (left_n + right_n) as f64;
-        let two_col = max_n >= 4 || halves;
-        if std::env::var("P2E_DEBUG_ORDER").ok().and_then(|v| v.parse::<usize>().ok()) == Some(pno + 1) {
-            eprintln!("ORDER gutter={gutter:.1} max_n={max_n} halves={halves} two_col={two_col} gaps={}", gaps.len());
-        }
-        let mut idx: Vec<usize> = (0..paras.len()).collect();
+        best.map(|b| (b.3, b.1)).unwrap_or((0.5 * w, 0))
+    }
+
+    /// A block across the gutter at `g` (text never crosses it unless it spans the columns; a
+    /// figure's box, grown by its labels, may stick out of its column a little).
+    fn crosses(&self, pno: usize, n: &Node, g: f64) -> bool {
+        let w = self.pages[pno].width;
+        let m = if n.text { 3.0 } else { 0.05 * w };
+        (n.r.x0 < g - m && n.r.x1 > g + m) || (!n.text && n.r.w() >= 0.55 * w)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn order_rec(
+        &self,
+        pno: usize,
+        singles: &[Node],
+        nodes: Vec<Node>,
+        depth: usize,
+        inherited: Option<f64>,
+        key: (f64, f64),
+        out: &mut Vec<(usize, (f64, f64))>,
+    ) {
         let cmp = |a: f64, b: f64| a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal);
-        let mut slots: Vec<Option<Para>> = paras.into_iter().map(Some).collect();
-        if !two_col {
-            idx.sort_by(|&a, &b| {
-                let (ra, rb) = (info[a].0, info[b].0);
-                cmp((ra.y0 / 4.0).round(), (rb.y0 / 4.0).round()).then(cmp(ra.x0, rb.x0))
-            });
-            return (idx.into_iter().filter_map(|i| slots[i].take()).collect(), None);
-        }
-        // full-width blocks cut the page into bands; each band is read left column, then right
-        // column (text never crosses the gutter unless it spans both columns; a figure's box,
-        // grown by its labels, may stick out of its column a little)
-        let is_wide = |i: usize| {
-            let (r, _, text) = info[i];
-            let m = if text { 3.0 } else { 0.05 * w };
-            (r.x0 < gutter - m && r.x1 > gutter + m) || (!text && r.w() >= 0.55 * w)
+        let leaf = |mut nodes: Vec<Node>, out: &mut Vec<(usize, (f64, f64))>| {
+            if depth == 0 {
+                nodes.sort_by(|a, b| cmp((a.r.y0 / 4.0).round(), (b.r.y0 / 4.0).round()).then(cmp(a.r.x0, b.r.x0)));
+            } else {
+                nodes.sort_by(|a, b| cmp(a.r.y0, b.r.y0));
+            }
+            for n in nodes {
+                if n.items.len() == 1 {
+                    out.push((n.items[0], key));
+                } else {
+                    // a box: its own lines in their own order
+                    let inner: Vec<Node> = n.items.iter().map(|&i| singles[i].clone()).collect();
+                    self.order_rec(pno, singles, inner, depth + 1, None, (n.r.x0, n.r.x1), out);
+                }
+            }
         };
-        let mut wide: Vec<usize> = idx.iter().copied().filter(|&i| is_wide(i)).collect();
-        wide.sort_by(|&a, &b| cmp(info[a].0.y0, info[b].0.y0));
-        let rest: Vec<usize> = idx.iter().copied().filter(|&i| !is_wide(i)).collect();
-        let mut out: Vec<usize> = Vec::new();
-        let mut prev_y = f64::MIN;
-        for wp in wide.iter().map(Some).chain(std::iter::once(None)) {
-            let y = wp.map(|&i| info[i].0.y0).unwrap_or(f64::MAX);
-            let band: Vec<usize> = rest.iter().copied().filter(|&i| prev_y <= info[i].0.y0 && info[i].0.y0 < y).collect();
-            for left_side in [true, false] {
-                let mut side: Vec<usize> = band.iter().copied().filter(|&i| (info[i].0.cx() < gutter) == left_side).collect();
-                side.sort_by(|&a, &b| cmp(info[a].0.y0, info[b].0.y0));
-                out.extend(side);
+        if nodes.len() <= 1 || depth > 12 {
+            return leaf(nodes, out);
+        }
+        let w = self.pages[pno].width;
+        let (mut gutter, max_n) = self.find_gutter(pno, &nodes, depth);
+        let columns = if depth == 0 {
+            // pages with little text (end matter): fall back on "most text sits in one half or the other"
+            let narrow = |n: &&Node| n.text && n.r.w() < 0.55 * w;
+            let left_n: usize = nodes.iter().filter(narrow).filter(|n| n.r.x1 <= gutter).map(|n| n.n).sum();
+            let right_n: usize = nodes.iter().filter(narrow).filter(|n| n.r.x0 >= gutter).map(|n| n.n).sum();
+            let all_n = nodes.iter().filter(|n| n.text).map(|n| n.n).sum::<usize>().max(1);
+            let halves = (left_n + right_n) as f64 > 0.5 * all_n as f64
+                && left_n.min(right_n) as f64 > 0.2 * (left_n + right_n) as f64;
+            if std::env::var("P2E_DEBUG_ORDER").ok().and_then(|v| v.parse::<usize>().ok()) == Some(pno + 1) {
+                eprintln!("ORDER gutter={gutter:.1} max_n={max_n} halves={halves}");
             }
-            if let Some(&i) = wp {
-                out.push(i);
-                prev_y = info[i].0.y0;
+            max_n >= 4 || halves
+        } else if max_n >= 4 {
+            true
+        } else if let Some(g) = inherited.filter(|&g| !nodes.iter().any(|n| self.crosses(pno, n, g))) {
+            // a band too short to show its columns: the page's
+            gutter = g;
+            nodes.iter().any(|n| n.r.cx() < g) && nodes.iter().any(|n| n.r.cx() >= g)
+        } else {
+            false
+        };
+        if !columns {
+            return leaf(nodes, out);
+        }
+        let g = gutter;
+        let (wide, rest): (Vec<Node>, Vec<Node>) = nodes.into_iter().partition(|n| self.crosses(pno, n, g));
+        if wide.is_empty() {
+            let (left, right): (Vec<Node>, Vec<Node>) = rest.into_iter().partition(|n| n.r.cx() < g);
+            if left.is_empty() || right.is_empty() {
+                return leaf(left.into_iter().chain(right).collect(), out);
+            }
+            self.order_rec(pno, singles, left, depth + 1, None, (key.0, g), out);
+            self.order_rec(pno, singles, right, depth + 1, None, (g, key.1), out);
+            return;
+        }
+        // blocks across the gutter, one after the other, form full-width zones; text beside their
+        // lines (the other half of a two-column legend) belongs to the zone
+        let mut wide = wide;
+        wide.sort_by(|a, b| cmp(a.r.y0, b.r.y0));
+        let tol = 0.8 * self.body_size;
+        let line_like = |n: &Node| n.text && n.r.h() <= 3.0 * self.body_size;
+        // (top, bottom, extent of its lines, members)
+        type Zone = (f64, f64, Option<(f64, f64)>, Vec<Node>);
+        let mut zones: Vec<Zone> = Vec::new();
+        for n in wide {
+            let lines = if line_like(&n) { Some((n.r.y0, n.r.y1)) } else { None };
+            match zones.last_mut() {
+                Some(z) if n.r.y0 <= z.1 + tol => {
+                    z.1 = z.1.max(n.r.y1);
+                    if let Some((a, b)) = lines {
+                        z.2 = Some(z.2.map_or((a, b), |(c, d)| (c.min(a), d.max(b))));
+                    }
+                    z.3.push(n);
+                }
+                _ => zones.push((n.r.y0, n.r.y1, lines, vec![n])),
             }
         }
-        idx = out;
-        if std::env::var("P2E_DEBUG_ORDER").ok().and_then(|v| v.parse::<usize>().ok()) == Some(pno + 1) {
-            for &i in &idx {
-                let t: String = slots[i].as_ref().map(|p| p.text()).unwrap_or_default().chars().take(40).collect();
-                eprintln!("  {:?} wide={} {t}", info[i].0, is_wide(i));
+        let mut band_nodes: Vec<Node> = Vec::new();
+        for n in rest {
+            let c = (n.r.y0 + n.r.y1) / 2.0;
+            match zones.iter_mut().find(|z| line_like(&n) && z.2.is_some_and(|(a, b)| a < c && c < b)) {
+                Some(z) => z.3.push(n),
+                None => band_nodes.push(n),
             }
         }
-        (idx.into_iter().filter_map(|i| slots[i].take()).collect(), Some(gutter))
+        if band_nodes.is_empty() && zones.len() == 1 {
+            return leaf(zones.pop().unwrap().3, out);
+        }
+        let mut prev = f64::NEG_INFINITY;
+        for (y0, _, _, members) in zones {
+            let (band, later): (Vec<Node>, Vec<Node>) = band_nodes.into_iter().partition(|n| prev <= n.r.y0 && n.r.y0 < y0);
+            band_nodes = later;
+            self.order_rec(pno, singles, band, depth + 1, Some(g), key, out);
+            self.order_rec(pno, singles, members, depth + 1, None, key, out);
+            prev = y0;
+        }
+        self.order_rec(pno, singles, band_nodes, depth + 1, Some(g), key, out);
     }
 
     pub fn classify(&mut self, input: Vec<Para>) -> Vec<Para> {
@@ -905,15 +1136,14 @@ impl<'a> Analyzer<'a> {
                 if p.kind == Kind::Text
                     && q.kind == Kind::Text
                     && p.page == q.page
+                    && p.boxed == q.boxed
                     && ps == qs
                     && ps >= body + 1.0
                     && pb.y0 - qb.y1 >= 0.0
                     && pb.y0 - qb.y1 < 0.9 * ps
                     && count(&q.text()) + count(&p.text()) < 400
                 {
-                    let mut lines = std::mem::take(&mut q.lines);
-                    lines.extend(p.lines);
-                    *q = Para::new(lines, q.page, Kind::Text);
+                    q.lines.extend(p.lines);
                     continue;
                 }
             }
@@ -921,7 +1151,7 @@ impl<'a> Analyzer<'a> {
         }
         {
             let cands: Vec<(usize, f64)> =
-                paras.iter().enumerate().filter(|(_, p)| p.page == 0 && p.kind == Kind::Text).map(|(i, p)| (i, p.size())).collect();
+                paras.iter().enumerate().filter(|(_, p)| p.page == 0 && p.kind == Kind::Text && p.boxed.is_none()).map(|(i, p)| (i, p.size())).collect();
             if let Some(&(bi, bs)) = first_max(&cands, |x| x.1) {
                 if bs >= body + 2.0 && count(&paras[bi].text()) < 400 {
                     paras[bi].kind = Kind::Title;
@@ -929,7 +1159,8 @@ impl<'a> Analyzer<'a> {
             }
         }
         let mut heading_sizes: Vec<f64> = Vec::new();
-        for p in paras.iter_mut().filter(|p| p.kind == Kind::Text) {
+        // (a box's own headings and labels stay in the box: plain text)
+        for p in paras.iter_mut().filter(|p| p.kind == Kind::Text && p.boxed.is_none()) {
             let text = p.text();
             let t = trim(&text);
             if caption_re().is_match(t) {
@@ -1002,12 +1233,26 @@ impl<'a> Analyzer<'a> {
                 break;
             }
         }
-        let bnd = boundary.unwrap_or_else(|| {
+        let mut bnd = boundary.unwrap_or_else(|| {
             paras.iter().position(|p| p.page > 1 || (p.page == 1 && p.kind == Kind::Heading)).unwrap_or(paras.len())
         });
+        // a piece without section headings (the first one is "References"): the body starts at
+        // its first paragraph in body type, not after a guessed abstract
+        if let Some(b) = boundary {
+            if re!(r"(?i)^(references|bibliography|acknowledge?ments?|funding|author contributions?|competing interests?|declaration of interests?|conflicts? of interest|data availability|code availability)\s*[:.]?$")
+                .is_match(trim(&paras[b].text()))
+            {
+                if let Some(k) = paras[..b]
+                    .iter()
+                    .position(|p| p.kind == Kind::Text && (p.size() - body).abs() < 0.6 && count(&p.text()) >= 150)
+                {
+                    bnd = k;
+                }
+            }
+        }
         let mut abstract_started = false;
         for p in &mut paras[..bnd] {
-            if matches!(p.kind, Kind::Title | Kind::Figure | Kind::Table | Kind::Caption | Kind::Equation) {
+            if matches!(p.kind, Kind::Title | Kind::Figure | Kind::Table | Kind::Caption | Kind::Equation) || p.boxed.is_some() {
                 continue;
             }
             let text = p.text();
@@ -1025,8 +1270,14 @@ impl<'a> Analyzer<'a> {
                 p.kind = Kind::Front;
             }
         }
-        // affiliation / correspondence footnotes on the first page belong to the front matter
-        for p in paras.iter_mut().filter(|p| p.page == 0 && p.kind == Kind::Text) {
+        // affiliation / correspondence footnotes on the first page belong to the front matter, and
+        // so does a DOI on a line of its own
+        for p in paras.iter_mut().filter(|p| p.page <= 1 && p.kind == Kind::Text && p.boxed.is_none()) {
+            if doi_line(&p.text()) {
+                p.kind = Kind::Front;
+            }
+        }
+        for p in paras.iter_mut().filter(|p| p.page == 0 && p.kind == Kind::Text && p.boxed.is_none()) {
             let text = p.text();
             let affil = re!(r"(?i)universit|institut|department|hospital|laborator|faculty").is_match(&text);
             if affil && (re!(r"(?i)e-?mail:|correspond").is_match(&text) || re!(r"^\d\s?[A-Z]").is_match(&text)) {
@@ -1061,7 +1312,7 @@ impl<'a> Analyzer<'a> {
         };
         let mut out: Vec<Para> = Vec::new();
         for mut p in paras {
-            if p.kind == Kind::Text && !p.lines.is_empty() {
+            if p.kind == Kind::Text && !p.lines.is_empty() && p.boxed.is_none() {
                 let (mf, n) = math_frac(&p);
                 if mf > 0.3 && n < 400 {
                     p.kind = Kind::Equation;
@@ -1070,7 +1321,7 @@ impl<'a> Analyzer<'a> {
             if let Some(prev) = out.last_mut() {
                 let gap = p.bbox().y0 - prev.bbox().y1;
                 if prev.page == p.page
-                    && (p.kind == Kind::Equation || p.kind == Kind::Text)
+                    && (p.kind == Kind::Equation || (p.kind == Kind::Text && p.boxed.is_none()))
                     && prev.kind == Kind::Equation
                     && gap < 1.6 * body
                     && (p.kind == Kind::Equation || count(&p.text()) < 30)
@@ -1083,6 +1334,7 @@ impl<'a> Analyzer<'a> {
                 if prev.page == p.page
                     && p.kind == Kind::Equation
                     && prev.kind == Kind::Text
+                    && prev.boxed.is_none()
                     && count(&prev.text()) < 30
                     && gap < body
                     && !re!(r"[a-z]{4}").is_match(&prev.text())
