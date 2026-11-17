@@ -5,7 +5,7 @@
 //!   lunta-mcp search <query>      search the library
 //!   lunta-mcp show <id>           details of a paper
 //!   lunta-mcp read <id> [query]   full text (or the passages matching a query)
-//!   lunta-mcp cite <id>… [--style apa|harvard|chicago|cell|mla|vancouver|ieee|ama|nature|science|pnas|acs|bibtex|ris]
+//!   lunta-mcp cite <id>… [--style apa|harvard|chicago|cell|mla|vancouver|ieee|ama|nature|science|pnas|acs|bibtex|latex|ris]
 //!   lunta-mcp path <id> [pdf|epub|text]
 //!
 //! The agent writes through its own change log (ops/agent-….jsonl), exactly like another device,
@@ -72,6 +72,7 @@ fn summary(p: &Paper) -> Value {
         "year": p.meta.year(),
         "journal": p.meta.journal,
         "doi": p.meta.doi,
+        "cite_key": p.cite_key,
         "read": p.read,
         "starred": p.starred,
         "must_read": p.must_read,
@@ -107,6 +108,7 @@ fn details(lib: &Library, p: &Paper) -> Value {
         "doi": p.meta.doi, "pmid": p.meta.pmid, "pmcid": p.meta.pmcid, "arxiv": p.meta.arxiv, "url": p.meta.url,
         "abstract": p.meta.abstract_text,
         "keywords": p.meta.keywords,
+        "cite_key": p.cite_key,
         "tags": p.tags,
         "collections": p.collections.iter().filter_map(|c| cols.get(c).cloned()).collect::<Vec<_>>(),
         "read": p.read, "starred": p.starred, "must_read": p.must_read,
@@ -227,7 +229,7 @@ fn style(s: &str) -> Option<CitationStyle> {
 
 /// "apa, harvard, …, bibtex or ris", for help and errors.
 fn style_keys() -> String {
-    CitationStyle::ALL.iter().map(|s| s.key()).collect::<Vec<_>>().join(", ") + ", bibtex or ris"
+    CitationStyle::ALL.iter().map(|s| s.key()).collect::<Vec<_>>().join(", ") + ", bibtex, latex or ris"
 }
 
 fn cite(lib: &Library, ids: &[String], st: &str) -> Result<String, String> {
@@ -236,7 +238,9 @@ fn cite(lib: &Library, ids: &[String], st: &str) -> Result<String, String> {
         return Err("no such papers".into());
     }
     Ok(match st.to_lowercase().as_str() {
-        "bibtex" | "bib" => export::bibtex(&papers),
+        // the papers' fixed citation keys, as in the apps
+        "bibtex" | "bib" => lib.export_bibtex(papers.iter().map(|p| p.id.clone()).collect()),
+        "latex" | "cite" => lib.latex_cite(papers.iter().map(|p| p.id.clone()).collect()),
         "ris" => export::ris(&papers),
         s => {
             let st = style(s).ok_or(format!("unknown style {s}: use {}", style_keys()))?;
@@ -280,8 +284,8 @@ fn tools() -> Value {
         t("read_paper", "Read a paper's full text. With `query`, returns only the best-matching paragraphs; otherwise pages through the text with offset/max_chars.",
           json!({"id": {"type": "string"}, "query": {"type": "string"}, "offset": {"type": "integer", "default": 0},
                  "max_chars": {"type": "integer", "default": 12000}}), &["id"], true),
-        t("cite", "Formatted citations or a bibliography for papers.",
-          json!({"ids": ids, "style": {"type": "string", "enum": CitationStyle::ALL.iter().map(|s| s.key()).chain(["bibtex", "ris"]).collect::<Vec<_>>(), "default": "apa"}}), &["ids"], true),
+        t("cite", "Formatted citations or a bibliography for papers. `bibtex` uses each paper's citation key (fixed, the same as in the Lunta apps); `latex` gives \\cite{key1,key2} to paste into a LaTeX document.",
+          json!({"ids": ids, "style": {"type": "string", "enum": CitationStyle::ALL.iter().map(|s| s.key()).chain(["bibtex", "latex", "ris"]).collect::<Vec<_>>(), "default": "apa"}}), &["ids"], true),
         t("library_overview", "Size of the library, its tags and collections.", json!({}), &[], true),
         t("find_new_papers", "Search published literature beyond the library (OpenAlex). Marks results already in the library.",
           json!({"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}}), &["query"], true),

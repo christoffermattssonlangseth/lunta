@@ -143,10 +143,11 @@ fn citations_and_exports() {
         collections: vec![],
         tags: vec![],
         annotation_count: 0,
+        cite_key: String::new(),
     };
     let bib = export::bibtex(&[p.clone(), p.clone()]);
     assert!(bib.contains("@article{Kukanja2024cellular,"), "{bib}");
-    assert!(bib.contains("@article{Kukanja2024cellularb,"));
+    assert!(bib.contains("@article{Kukanja2024cellulara,"));
     assert!(bib.contains("author = {Kukanja, Petra and Langseth, Christoffer M. and Castelo-Branco, Gonçalo}"));
     assert!(bib.contains("pages = {1990--2009}"));
     let ris = export::ris(&[p.clone()]);
@@ -398,6 +399,7 @@ fn journal_styles_online() {
         collections: vec![],
         tags: vec![],
         annotation_count: 0,
+        cite_key: String::new(),
     };
     let hits = csl::search(cache, "nature neuroscience", 5).unwrap();
     assert_eq!(hits[0].id, "nature-neuroscience", "{hits:?}");
@@ -690,6 +692,7 @@ fn paper_with(id: &str, title: &str, authors: &[&str], date: &str) -> Paper {
         collections: vec![],
         tags: vec![],
         annotation_count: 0,
+        cite_key: String::new(),
     }
 }
 
@@ -776,4 +779,184 @@ fn documents_cite_papers_the_library_lacks() {
     assert_eq!(r.citations[1].text, "");
     assert_eq!(r.bibliography.len(), 2);
     assert!(r.bibliography[0].text.contains("Deleted & <gone>"), "{:?}", r.bibliography);
+}
+
+// ---- citation keys ----
+
+fn sample_doi(doi: &str) -> PaperMeta {
+    PaperMeta { doi: doi.into(), ..sample() }
+}
+
+fn keys_of(lib: &Library) -> Vec<(String, String)> {
+    lib.papers(PaperFilter::default(), SortKey::Added).into_iter().map(|p| (p.id, p.cite_key)).collect::<std::collections::BTreeMap<_, _>>().into_iter().collect()
+}
+
+#[test]
+fn cite_keys_are_fixed_and_unique() {
+    let root = tmp().join("lib");
+    let mac = open(&root, "mac");
+    let a = mac.add_paper(sample_doi("10.1/a"), None, None, None).unwrap();
+    let b = mac.add_paper(sample_doi("10.1/b"), None, None, None).unwrap();
+    assert_eq!(a.cite_key, "Kukanja2024cellular");
+    assert_eq!(b.cite_key, "Kukanja2024cellulara");
+
+    // the same key in every export, whatever else is in it and in which order
+    assert!(mac.export_bibtex(vec![b.id.clone()]).contains("@article{Kukanja2024cellulara,"));
+    let both = mac.export_bibtex(vec![b.id.clone(), a.id.clone()]);
+    assert!(both.contains("@article{Kukanja2024cellular,") && both.contains("@article{Kukanja2024cellulara,"), "{both}");
+    assert_eq!(mac.latex_cite(vec![a.id.clone(), b.id.clone()]), "\\cite{Kukanja2024cellular,Kukanja2024cellulara}");
+    assert_eq!(mac.latex_cite(vec!["nope".into()]), "");
+
+    // editing the details doesn't change it
+    let mut m = sample_doi("10.1/a");
+    m.title = "A different title".into();
+    m.authors = vec!["Someone Else".into()];
+    mac.update_meta(a.id.clone(), m).unwrap();
+    assert_eq!(mac.paper(a.id.clone()).unwrap().cite_key, "Kukanja2024cellular");
+    // a new paper with that base still gets a free key
+    let c = mac.add_paper(sample_doi("10.1/c"), None, None, None).unwrap();
+    assert_eq!(c.cite_key, "Kukanja2024cellularb");
+    // deleting one doesn't move the others
+    mac.delete_paper(a.id.clone()).unwrap();
+    assert_eq!(mac.paper(b.id.clone()).unwrap().cite_key, "Kukanja2024cellulara");
+    assert_eq!(mac.paper(c.id.clone()).unwrap().cite_key, "Kukanja2024cellularb");
+
+    // the user's own key: checked, unique without case, kept
+    assert!(mac.set_cite_key(b.id.clone(), "has space".into()).is_err());
+    assert!(mac.set_cite_key(b.id.clone(), "x{y}".into()).is_err());
+    assert!(mac.set_cite_key(b.id.clone(), "Müller".into()).is_err());
+    assert!(mac.set_cite_key(b.id.clone(), "".into()).is_err());
+    assert!(mac.set_cite_key(b.id.clone(), "kukanja2024CELLULARB".into()).is_err());
+    assert!(mac.set_cite_key("nope".into(), "free".into()).is_err());
+    assert_eq!(mac.set_cite_key(b.id.clone(), " kukanja:ms-2024 ".into()).unwrap(), "kukanja:ms-2024");
+    assert_eq!(mac.set_cite_key(b.id.clone(), "kukanja:ms-2024".into()).unwrap(), "kukanja:ms-2024");
+    // freeing a key doesn't hand it to another paper
+    assert_eq!(mac.paper(c.id.clone()).unwrap().cite_key, "Kukanja2024cellularb");
+    let again = open(&root, "mac");
+    assert_eq!(again.paper(b.id.clone()).unwrap().cite_key, "kukanja:ms-2024");
+    assert!(again.export_bibtex(vec![b.id.clone()]).contains("@article{kukanja:ms-2024,"));
+
+    // accents are folded, other scripts left out
+    let d = mac
+        .add_paper(PaperMeta { title: "Über die Natur".into(), authors: vec!["José Müller-Lüdenscheidt".into()], date: "1999".into(), ..Default::default() }, None, None, None)
+        .unwrap();
+    assert_eq!(d.cite_key, "MullerLudenscheidt1999uber");
+    let e = mac.add_paper(PaperMeta { title: "神经 networks".into(), authors: vec!["王 伟".into()], date: "2020".into(), ..Default::default() }, None, None, None).unwrap();
+    assert_eq!(e.cite_key, "anon2020networks");
+    for k in [&d.cite_key, &e.cite_key] {
+        assert!(export::check_cite_key(k).is_ok());
+    }
+    assert_eq!((export::key_suffix(1), export::key_suffix(26), export::key_suffix(27)), ("a".into(), "z".into(), "aa".into()));
+}
+
+#[test]
+fn thin_details_get_their_key_once_filled_in() {
+    let root = tmp().join("lib");
+    let mac = open(&root, "mac");
+    let p = mac.add_paper(PaperMeta { title: "Draft from a PDF".into(), ..Default::default() }, None, None, None).unwrap();
+    assert_eq!(p.cite_key, "anondraft");
+    mac.update_meta(p.id.clone(), sample()).unwrap();
+    assert_eq!(mac.paper(p.id.clone()).unwrap().cite_key, "Kukanja2024cellular");
+    // once used, it stays
+    assert_eq!(mac.cite_keys(vec![p.id.clone()]), vec!["Kukanja2024cellular".to_string()]);
+    mac.update_meta(p.id.clone(), PaperMeta { title: "Other".into(), ..Default::default() }).unwrap();
+    assert_eq!(mac.paper(p.id.clone()).unwrap().cite_key, "Kukanja2024cellular");
+}
+
+/// Papers added by a version without citation keys (no `SetCiteKey` in the logs).
+fn legacy_library(root: &PathBuf) -> (String, String) {
+    std::fs::create_dir_all(root.join("ops")).unwrap();
+    let ops: Vec<store::Op> = [("p-old", 1000, "10.1/old"), ("p-new", 2000, "10.1/new")]
+        .into_iter()
+        .map(|(id, at, doi)| store::Op { at, device: "old".into(), kind: OpKind::AddPaper { paper: id.into(), meta: sample_doi(doi) } })
+        .collect();
+    let text: String = ops.iter().map(|o| serde_json::to_string(o).unwrap() + "\n").collect();
+    std::fs::write(root.join("ops/old.jsonl"), text).unwrap();
+    ("p-old".into(), "p-new".into())
+}
+
+fn copy_log(from: &PathBuf, to: &PathBuf, device: &str) {
+    std::fs::copy(from.join(format!("ops/{device}.jsonl")), to.join(format!("ops/{device}.jsonl"))).unwrap();
+}
+
+#[test]
+fn legacy_keys_agree_across_devices() {
+    let root = tmp().join("lib");
+    let (old, new) = legacy_library(&root);
+    // a second device with the same synced logs, kept apart to act at the same time
+    let root2 = tmp().join("lib");
+    std::fs::create_dir_all(root2.join("ops")).unwrap();
+    copy_log(&root, &root2, "old");
+    let mac = open(&root, "mac");
+    let phone = open(&root2, "phone");
+    let want = vec![(new.clone(), "Kukanja2024cellulara".to_string()), (old.clone(), "Kukanja2024cellular".to_string())];
+    assert_eq!(keys_of(&mac), want);
+    assert_eq!(keys_of(&phone), want);
+
+    // both use the keys at the same time (fixing them): they write the same keys
+    mac.export_bibtex(vec![new.clone()]);
+    phone.latex_cite(vec![old.clone(), new.clone()]);
+    copy_log(&root, &root2, "mac");
+    copy_log(&root2, &root, "phone");
+    mac.refresh().unwrap();
+    phone.refresh().unwrap();
+    assert_eq!(keys_of(&mac), want);
+    assert_eq!(keys_of(&phone), want);
+}
+
+#[test]
+fn legacy_keys_stay_through_edits_and_deletes() {
+    let root = tmp().join("lib");
+    let (old, new) = legacy_library(&root);
+    let mac = open(&root, "mac");
+    let phone = open(&root, "phone");
+    // an edit on the phone keeps the old paper's key (and so the newer one's)
+    let mut m = sample_doi("10.1/old");
+    m.authors = vec!["Ada Lovelace".into()];
+    phone.update_meta(old.clone(), m).unwrap();
+    assert_eq!(phone.paper(old.clone()).unwrap().cite_key, "Kukanja2024cellular");
+    mac.refresh().unwrap();
+    assert_eq!(mac.paper(old.clone()).unwrap().cite_key, "Kukanja2024cellular");
+    assert_eq!(mac.paper(new.clone()).unwrap().cite_key, "Kukanja2024cellulara");
+    // deleting the old paper doesn't hand its key to the newer one
+    mac.delete_paper(old.clone()).unwrap();
+    assert_eq!(mac.paper(new.clone()).unwrap().cite_key, "Kukanja2024cellulara");
+    phone.refresh().unwrap();
+    assert_eq!(phone.paper(new.clone()).unwrap().cite_key, "Kukanja2024cellulara");
+
+    // the same when nothing was fixed before the delete
+    let root = tmp().join("lib");
+    let (old, new) = legacy_library(&root);
+    let mac = open(&root, "mac");
+    mac.delete_paper(old).unwrap();
+    assert_eq!(mac.paper(new.clone()).unwrap().cite_key, "Kukanja2024cellulara");
+    assert_eq!(open(&root, "phone").paper(new).unwrap().cite_key, "Kukanja2024cellulara");
+}
+
+#[test]
+fn concurrent_keys_resolve_the_same_everywhere() {
+    // two devices offline add different papers with the same base key
+    let (r1, r2) = (tmp().join("lib"), tmp().join("lib"));
+    let mac = open(&r1, "mac");
+    let phone = open(&r2, "phone");
+    let p = mac.add_paper(sample_doi("10.1/mac"), None, None, None).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let q = phone.add_paper(sample_doi("10.1/phone"), None, None, None).unwrap();
+    assert_eq!((p.cite_key.as_str(), q.cite_key.as_str()), ("Kukanja2024cellular", "Kukanja2024cellular"));
+    copy_log(&r1, &r2, "mac");
+    copy_log(&r2, &r1, "phone");
+    mac.refresh().unwrap();
+    phone.refresh().unwrap();
+    // the earlier claim keeps the key, on both
+    let want = vec![(p.id.clone(), "Kukanja2024cellular".to_string()), (q.id.clone(), "Kukanja2024cellulara".to_string())];
+    let sorted = |mut v: Vec<(String, String)>| { v.sort(); v };
+    assert_eq!(sorted(keys_of(&mac)), sorted(want.clone()));
+    assert_eq!(sorted(keys_of(&phone)), sorted(want));
+
+    // a key the user sets syncs
+    phone.set_cite_key(q.id.clone(), "castelo2024".into()).unwrap();
+    copy_log(&r2, &r1, "phone");
+    mac.refresh().unwrap();
+    assert_eq!(mac.paper(q.id.clone()).unwrap().cite_key, "castelo2024");
+    assert!(mac.set_cite_key(p.id.clone(), "Castelo2024".into()).is_err());
 }

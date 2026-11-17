@@ -28,6 +28,8 @@ pub enum OpKind {
     SetStarred { paper: String, starred: bool },
     /// On the Must Read list (older versions skip this op).
     SetMustRead { paper: String, must_read: bool },
+    /// Fixes the paper's citation key (older versions skip this op; see `State::assign_cite_keys`).
+    SetCiteKey { paper: String, key: String },
     Tag { paper: String, tag: String, present: bool },
     CollectionUpsert { id: String, name: String, parent: Option<String> },
     CollectionDelete { id: String },
@@ -54,6 +56,8 @@ pub struct PaperState {
     pub must_read: bool,
     pub tags: BTreeSet<String>,
     pub collections: BTreeSet<String>,
+    /// The latest `SetCiteKey` for the paper: (key, at, device).
+    pub key_claim: Option<(String, i64, String)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -62,6 +66,11 @@ pub struct State {
     pub collections: BTreeMap<String, (String, Option<String>)>,
     pub annotations: BTreeMap<String, BTreeMap<String, Annotation>>, // paper -> id -> annotation
     pub deleted: BTreeSet<String>,
+    /// Every paper's citation key (unique, compared without case).
+    pub cite_keys: BTreeMap<String, String>,
+    /// Papers whose key is fixed: their own `SetCiteKey`. The others have a key worked out from
+    /// their details until one is written (see `assign_cite_keys`).
+    pub fixed_keys: BTreeSet<String>,
 }
 
 impl State {
@@ -102,6 +111,11 @@ impl State {
             OpKind::SetMustRead { paper, must_read } => {
                 if let Some(p) = self.papers.get_mut(paper) {
                     p.must_read = *must_read;
+                }
+            }
+            OpKind::SetCiteKey { paper, key } => {
+                if let Some(p) = self.papers.get_mut(paper) {
+                    p.key_claim = Some((key.clone(), op.at, op.device.clone()));
                 }
             }
             OpKind::Tag { paper, tag, present } => {
@@ -153,6 +167,51 @@ impl State {
         for p in self.papers.values_mut() {
             p.collections.retain(|c| ids.contains(c));
         }
+        self.assign_cite_keys();
+    }
+
+    /// Works out every paper's citation key from the logs alone, so every device that has the
+    /// same logs gets the same keys, without writing anything:
+    ///
+    /// 1. A paper's own key is its latest `SetCiteKey` (written when it was added, when a key
+    ///    was first exported or copied, before an edit would change it, or by the user).
+    /// 2. Two devices may give the same key to different papers before they have seen each
+    ///    other's logs: the earliest claim (time, device, paper id) keeps it.
+    /// 3. Every other paper (added by an older version, or that lost in 2) gets its base key
+    ///    (the claim it lost, or `export::cite_key` of its details) with the first free suffix,
+    ///    in the order the papers were added (then by id). New claims never take these keys,
+    ///    because a device only writes a key that is free in its own state.
+    fn assign_cite_keys(&mut self) {
+        let mut taken = std::collections::HashSet::new();
+        let mut keys = BTreeMap::new();
+        let mut fixed = BTreeSet::new();
+        let mut claims: Vec<(i64, &str, &str, &str)> = self
+            .papers
+            .iter()
+            .filter_map(|(id, p)| p.key_claim.as_ref().map(|(k, at, dev)| (*at, dev.as_str(), id.as_str(), k.as_str())))
+            .collect();
+        claims.sort();
+        for (_, _, id, key) in claims {
+            if !key.is_empty() && taken.insert(key.to_lowercase()) {
+                keys.insert(id.to_string(), key.to_string());
+                fixed.insert(id.to_string());
+            }
+        }
+        let mut rest: Vec<(i64, &str)> =
+            self.papers.iter().filter(|(id, _)| !fixed.contains(*id)).map(|(id, p)| (p.added, id.as_str())).collect();
+        rest.sort();
+        for (_, id) in rest {
+            let p = &self.papers[id];
+            let base = match &p.key_claim {
+                Some((k, _, _)) if !k.is_empty() => k.clone(),
+                _ => crate::export::cite_key(&p.meta),
+            };
+            let key = crate::export::unique_key(&base, &taken);
+            taken.insert(key.to_lowercase());
+            keys.insert(id.to_string(), key);
+        }
+        self.cite_keys = keys;
+        self.fixed_keys = fixed;
     }
 }
 

@@ -55,6 +55,11 @@ pub struct Paper {
     pub collections: Vec<String>,
     pub tags: Vec<String>,
     pub annotation_count: u32,
+    /// The paper's citation key for LaTeX (`\cite{Kukanja2024cellular}`): unique in the library and
+    /// the same on every device; it stays put when the details are edited (`Library::set_cite_key`
+    /// changes it). Empty for papers that aren't in the library.
+    #[uniffi(default = "")]
+    pub cite_key: String,
 }
 
 #[derive(uniffi::Enum, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]

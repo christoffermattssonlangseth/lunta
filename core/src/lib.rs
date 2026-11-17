@@ -231,16 +231,21 @@ impl Library {
             if let Some(t) = &fulltext {
                 g.store.write_file(&id, FileKind::Fulltext, t.as_bytes())?;
             }
-            let op = if existing.is_some() {
+            if existing.is_some() {
                 // keep the richer metadata
                 let old = g.state.papers[&id].meta.clone();
                 let mut m = old.clone();
                 merge_meta(&mut m, &meta);
-                g.store.append(OpKind::SetMeta { paper: id.clone(), meta: m })?
+                g.write(OpKind::SetMeta { paper: id.clone(), meta: m })?;
             } else {
-                g.store.append(OpKind::AddPaper { paper: id.clone(), meta })?
-            };
-            apply_local(&mut g, &op);
+                // the key is fixed right away, unless the details are too thin for a good one
+                // (no author or year yet): then when they are filled in, or the key is first used
+                let complete = has_key_details(&meta);
+                g.write(OpKind::AddPaper { paper: id.clone(), meta })?;
+                if complete {
+                    g.fix_keys(&[id.clone()])?;
+                }
+            }
         }
         self.reindex()?;
         Ok(self.paper(id.clone()).ok_or(CoreError::NotFound(id))?)
@@ -504,8 +509,43 @@ impl Library {
             .collect())
     }
 
+    /// BibTeX for the papers, with their citation keys (which this fixes, if they weren't yet).
     pub fn export_bibtex(&self, ids: Vec<String>) -> String {
+        let _ = self.inner.lock().unwrap().fix_keys(&ids);
         export::bibtex(&self.collect(ids))
+    }
+
+    /// The papers' citation keys, in order (unknown ids are left out). Fixes them, as they are
+    /// about to be used.
+    pub fn cite_keys(&self, ids: Vec<String>) -> Vec<String> {
+        let mut g = self.inner.lock().unwrap();
+        let _ = g.fix_keys(&ids);
+        ids.iter().filter_map(|id| g.state.cite_keys.get(id).cloned()).collect()
+    }
+
+    /// `\cite{key1,key2}` for the papers, to paste into a LaTeX document ("" if none is known).
+    pub fn latex_cite(&self, ids: Vec<String>) -> String {
+        let keys = self.cite_keys(ids);
+        if keys.is_empty() { String::new() } else { export::latex_cite(&keys) }
+    }
+
+    /// Changes a paper's citation key. It must be unique in the library (ignoring case) and use
+    /// only ASCII letters, digits and `- _ : . + /`. Returns the key as stored (trimmed).
+    pub fn set_cite_key(&self, id: String, key: String) -> Result<String> {
+        let key = export::check_cite_key(&key)?;
+        let mut g = self.inner.lock().unwrap();
+        if !g.state.papers.contains_key(&id) {
+            return Err(CoreError::NotFound(id));
+        }
+        if g.state.cite_keys.get(&id) == Some(&key) && g.state.fixed_keys.contains(&id) {
+            return Ok(key);
+        }
+        let lower = key.to_lowercase();
+        if g.state.cite_keys.iter().any(|(other, k)| *other != id && k.to_lowercase() == lower) {
+            return Err(CoreError::Invalid(format!("Another paper already has the key {key}.")));
+        }
+        g.write(OpKind::SetCiteKey { paper: id, key: key.clone() })?;
+        Ok(key)
     }
 
     pub fn export_ris(&self, ids: Vec<String>) -> String {
@@ -687,15 +727,68 @@ impl Library {
     }
 
     fn op(&self, kind: OpKind) -> Result<()> {
-        let mut g = self.inner.lock().unwrap();
-        let op = g.store.append(kind)?;
-        apply_local(&mut g, &op);
-        Ok(())
+        self.inner.lock().unwrap().write(kind)
     }
 
     fn collect(&self, ids: Vec<String>) -> Vec<Paper> {
         ids.into_iter().filter_map(|i| self.paper(i)).collect()
     }
+}
+
+impl Inner {
+    /// Appends an op and applies it. A citation key that isn't fixed yet is worked out from the
+    /// paper's details and its place among papers with the same base key, so an edit, a deletion
+    /// or a changed key could change it: when this op does, the old key is written as the
+    /// paper's own, and keys stay as they were. (Papers without an author or year are left to
+    /// get a better key once they have one.)
+    fn write(&mut self, kind: OpKind) -> Result<()> {
+        let guard = matches!(kind, OpKind::SetMeta { .. } | OpKind::DeletePaper { .. } | OpKind::SetCiteKey { .. });
+        let before: Vec<(String, String)> = if guard {
+            let st = &self.state;
+            st.cite_keys
+                .iter()
+                .filter(|(id, _)| !st.fixed_keys.contains(*id) && st.papers.get(*id).is_some_and(|p| has_key_details(&p.meta)))
+                .map(|(id, k)| (id.clone(), k.clone()))
+                .collect()
+        } else {
+            vec![]
+        };
+        let op = self.store.append(kind)?;
+        apply_local(self, &op);
+        let mut wrote = None;
+        for (id, old) in before {
+            if self.state.papers.contains_key(&id) && !self.state.fixed_keys.contains(&id) && self.state.cite_keys.get(&id) != Some(&old) {
+                wrote = Some(self.store.append(OpKind::SetCiteKey { paper: id, key: old })?);
+            }
+        }
+        if let Some(op) = wrote {
+            apply_local(self, &op);
+        }
+        Ok(())
+    }
+
+    /// Writes the current key of each of these papers whose key isn't fixed yet as its own (when
+    /// a key is first used: exported, copied, written to a .bib file).
+    fn fix_keys(&mut self, ids: &[String]) -> Result<()> {
+        let mut wrote = None;
+        for id in ids {
+            if self.state.fixed_keys.contains(id) {
+                continue;
+            }
+            if let Some(key) = self.state.cite_keys.get(id).cloned() {
+                wrote = Some(self.store.append(OpKind::SetCiteKey { paper: id.clone(), key })?);
+            }
+        }
+        if let Some(op) = wrote {
+            apply_local(self, &op);
+        }
+        Ok(())
+    }
+}
+
+/// Enough details for a lasting citation key: an author and a year.
+fn has_key_details(m: &PaperMeta) -> bool {
+    !m.authors.is_empty() && !m.year().trim().is_empty()
 }
 
 /// Brings the in-memory state up to date after a local write. Replaying every log keeps a single
@@ -730,6 +823,7 @@ fn paper_of(g: &Inner, id: &str) -> Paper {
         collections: p.collections.iter().cloned().collect(),
         tags: p.tags.iter().cloned().collect(),
         annotation_count: g.state.annotations.get(id).map(|m| m.len() as u32).unwrap_or(0),
+        cite_key: g.state.cite_keys.get(id).cloned().unwrap_or_default(),
     }
 }
 
@@ -778,6 +872,7 @@ fn cited_paper(id: &str, meta: PaperMeta) -> Paper {
         collections: vec![],
         tags: vec![],
         annotation_count: 0,
+        cite_key: String::new(),
     }
 }
 

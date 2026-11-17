@@ -36,19 +36,105 @@ fn initials(given: &str, with_dots: bool, spaced: bool) -> String {
     parts.join(if spaced { " " } else { "" })
 }
 
+/// Latin letters with accents (and a few ligatures) as plain ASCII, the rest of the text as is.
+fn ascii_fold(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        let r = match c {
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ă' | 'ą' => "a",
+            'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' | 'Ā' | 'Ă' | 'Ą' => "A",
+            'æ' => "ae", 'Æ' => "Ae", 'œ' => "oe", 'Œ' => "Oe", 'ß' => "ss", 'þ' => "th", 'Þ' => "Th",
+            'ç' | 'ć' | 'č' | 'ĉ' => "c", 'Ç' | 'Ć' | 'Č' | 'Ĉ' => "C",
+            'ď' | 'đ' | 'ð' => "d", 'Ď' | 'Đ' | 'Ð' => "D",
+            'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ė' | 'ę' | 'ě' => "e", 'È' | 'É' | 'Ê' | 'Ë' | 'Ē' | 'Ė' | 'Ę' | 'Ě' => "E",
+            'ğ' | 'ģ' => "g", 'Ğ' | 'Ģ' => "G",
+            'ì' | 'í' | 'î' | 'ï' | 'ī' | 'į' | 'ı' => "i", 'Ì' | 'Í' | 'Î' | 'Ï' | 'Ī' | 'Į' | 'İ' => "I",
+            'ķ' => "k", 'Ķ' => "K",
+            'ł' | 'ľ' | 'ļ' | 'ĺ' => "l", 'Ł' | 'Ľ' | 'Ļ' | 'Ĺ' => "L",
+            'ñ' | 'ń' | 'ň' | 'ņ' => "n", 'Ñ' | 'Ń' | 'Ň' | 'Ņ' => "N",
+            'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'ō' | 'ő' => "o", 'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' | 'Ø' | 'Ō' | 'Ő' => "O",
+            'ŕ' | 'ř' => "r", 'Ŕ' | 'Ř' => "R",
+            'ś' | 'š' | 'ş' | 'ș' => "s", 'Ś' | 'Š' | 'Ş' | 'Ș' => "S",
+            'ť' | 'ţ' | 'ț' => "t", 'Ť' | 'Ţ' | 'Ț' => "T",
+            'ù' | 'ú' | 'û' | 'ü' | 'ū' | 'ů' | 'ű' | 'ų' => "u", 'Ù' | 'Ú' | 'Û' | 'Ü' | 'Ū' | 'Ů' | 'Ű' | 'Ų' => "U",
+            'ý' | 'ÿ' => "y", 'Ý' | 'Ÿ' => "Y",
+            'ź' | 'ż' | 'ž' => "z", 'Ź' | 'Ż' | 'Ž' => "Z",
+            _ => {
+                out.push(c);
+                continue;
+            }
+        };
+        out.push_str(r);
+    }
+    out
+}
+
+/// Only ASCII letters and digits (accents folded first): "Müller-Lüdenscheidt" → "MullerLudenscheidt".
+fn key_part(s: &str) -> String {
+    ascii_fold(s).chars().filter(|c| c.is_ascii_alphanumeric()).collect()
+}
+
 fn first_word(title: &str) -> String {
     let stop = ["a", "an", "the", "of", "on", "in", "for", "and", "to", "with"];
     title
         .split(|c: char| !c.is_alphanumeric())
-        .find(|w| !w.is_empty() && !stop.contains(&w.to_lowercase().as_str()))
-        .unwrap_or("paper")
-        .to_lowercase()
+        .map(|w| key_part(w).to_lowercase())
+        .find(|w| !w.is_empty() && !stop.contains(&w.as_str()))
+        .unwrap_or_else(|| "paper".into())
 }
 
+/// The key a paper's details suggest: first author's family name, year and the first word of
+/// the title ("Kukanja2024cellular"), in characters BibTeX takes everywhere. A paper in the
+/// library keeps the key it got (`Paper::cite_key`); this is only where that key starts.
 pub fn cite_key(m: &PaperMeta) -> String {
-    let fam = m.authors.first().map(|a| split_name(a).0).unwrap_or_else(|| "anon".into());
-    let fam: String = fam.chars().filter(|c| c.is_alphanumeric()).collect();
-    format!("{}{}{}", fam, m.year(), first_word(&m.title))
+    let fam = m.authors.first().map(|a| key_part(&split_name(a).0)).unwrap_or_default();
+    let fam = if fam.is_empty() { "anon".to_string() } else { fam };
+    let year: String = m.year().chars().filter(|c| c.is_ascii_digit()).collect();
+    format!("{}{}{}", fam, year, first_word(&m.title))
+}
+
+/// The disambiguating suffix for the n-th paper (from 1) with the same key: a, b, …, z, aa, ab, …
+pub fn key_suffix(n: usize) -> String {
+    let mut n = n;
+    let mut out = Vec::new();
+    while n > 0 {
+        n -= 1;
+        out.push(b'a' + (n % 26) as u8);
+        n /= 26;
+    }
+    out.reverse();
+    String::from_utf8(out).unwrap()
+}
+
+/// `base`, or `base` with the first suffix that makes it unused (`taken` holds lowercased keys:
+/// BibTeX and biber treat keys that differ only in case as the same entry).
+pub fn unique_key(base: &str, taken: &std::collections::HashSet<String>) -> String {
+    if !taken.contains(&base.to_lowercase()) {
+        return base.to_string();
+    }
+    (1..).map(|n| format!("{base}{}", key_suffix(n))).find(|k| !taken.contains(&k.to_lowercase())).unwrap()
+}
+
+/// A citation key as typed, trimmed, or why it can't be one: ASCII letters, digits and
+/// `- _ : . + /` only, so it works in `\cite{…}` with BibTeX and biber alike.
+pub fn check_cite_key(key: &str) -> Result<String> {
+    let k = key.trim();
+    if k.is_empty() {
+        return Err(CoreError::Invalid("The key can't be empty.".into()));
+    }
+    if k.len() > 100 {
+        return Err(CoreError::Invalid("The key is too long.".into()));
+    }
+    if let Some(c) = k.chars().find(|c| !(c.is_ascii_alphanumeric() || "-_:.+/".contains(*c))) {
+        let what = if c.is_whitespace() { "spaces".to_string() } else { format!("“{c}”") };
+        return Err(CoreError::Invalid(format!("Keys can't contain {what}: use letters, digits and - _ : . + /")));
+    }
+    Ok(k.to_string())
+}
+
+/// `\cite{a,b,c}` for keys.
+pub fn latex_cite(keys: &[String]) -> String {
+    format!("\\cite{{{}}}", keys.join(","))
 }
 
 fn bib_escape(s: &str) -> String {
@@ -62,16 +148,20 @@ fn bib_escape(s: &str) -> String {
 }
 
 pub fn bibtex(papers: &[Paper]) -> String {
-    let mut used = std::collections::HashMap::<String, u32>::new();
+    // papers from the library carry their fixed key; others (cited in a document only) get one
+    // from their details, made unique within this export
+    let mut taken: std::collections::HashSet<String> =
+        papers.iter().filter(|p| !p.cite_key.is_empty()).map(|p| p.cite_key.to_lowercase()).collect();
     let mut out = String::new();
     for p in papers {
         let m = &p.meta;
-        let mut key = cite_key(m);
-        let n = used.entry(key.clone()).or_insert(0);
-        *n += 1;
-        if *n > 1 {
-            key.push((b'a' + (*n as u8 - 1)) as char);
-        }
+        let key = if p.cite_key.is_empty() {
+            let k = unique_key(&cite_key(m), &taken);
+            taken.insert(k.to_lowercase());
+            k
+        } else {
+            p.cite_key.clone()
+        };
         let kind = if m.journal.is_empty() || m.arxiv == m.journal { "misc" } else { "article" };
         out += &format!("@{kind}{{{key},\n");
         let mut field = |k: &str, v: &str| {
