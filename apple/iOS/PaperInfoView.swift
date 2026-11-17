@@ -70,6 +70,7 @@ struct PaperInfoView: View {
                             .buttonStyle(.bordered)
                         }
                         if copied { Text("Copied to the clipboard.").font(.caption).foregroundStyle(.secondary) }
+                        CiteKeyRow(paper: p)
                     }
                     if !p.meta.doi.isEmpty, let u = URL(string: "https://doi.org/\(p.meta.doi)") {
                         Link("Open publisher page", destination: u).font(.callout)

@@ -403,6 +403,7 @@ struct PaperRowActions: ViewModifier {
                     Button("Remove from This Folder", systemImage: "folder.badge.minus") { model.setMembership([p.id], collection: cid, false) }
                 }
                 Button("Share…", systemImage: "square.and.arrow.up") { sharing = ShareTargetIOS(id: p.id) }
+                Button("Copy \\cite", systemImage: "doc.on.doc") { model.copyLatexCite([p.id]) }
                 Menu("Watch", systemImage: "bell") { WatchMenu(paper: p) }
                 Divider()
                 Button("Delete Paper…", systemImage: "trash", role: .destructive) { deleting = p }

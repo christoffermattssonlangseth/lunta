@@ -484,9 +484,11 @@ struct PaperMenu: View {
             Button("Share…") { NotificationCenter.default.post(name: .luntaSharePapers, object: ids) }
             Divider()
             CiteMenu(ids: ids)
+            Button(model.latexCiteMenuTitle(ids)) { model.copyLatexCite(ids) }
         } else {
             Button("Share \(ids.count) Papers…") { NotificationCenter.default.post(name: .luntaSharePapers, object: ids) }
             Button("Copy BibTeX") { copyToPasteboard(model.bibtex(ids)) }
+            Button(model.latexCiteMenuTitle(ids)) { model.copyLatexCite(ids) }
         }
         Divider()
         let allMustRead = ids.allSatisfy { model.paper($0)?.mustRead == true }
@@ -531,6 +533,7 @@ struct CiteMenu: View {
             Button("Journal Style…") { NotificationCenter.default.post(name: .luntaJournalCite, object: ids) }
             Divider()
             Button("BibTeX") { copyToPasteboard(model.bibtex(ids)) }
+            Button("LaTeX \\cite") { model.copyLatexCite(ids) }
             Button("RIS") { copyToPasteboard(model.ris(ids)) }
         } label: {
             Label("Cite", systemImage: "quote.opening")
@@ -572,7 +575,10 @@ struct PaperDetail: View {
                     PaperFolders(paper: paper)
                     FlowTags(paper: paper, newTag: $newTag)
                 }
-                Card(title: "Identifiers") { LinksRow(meta: paper.meta) }
+                Card(title: "Identifiers") {
+                    LinksRow(meta: paper.meta)
+                    CiteKeyRow(paper: paper)
+                }
             }
             .padding(22)
             .frame(maxWidth: .infinity, alignment: .leading)
