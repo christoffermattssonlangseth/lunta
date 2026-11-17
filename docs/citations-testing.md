@@ -2,7 +2,7 @@
 
 The formatting, the API and the Google script run in automated tests (see "Citations in Word and Google
 Docs" in [development.md](development.md)). What only the real Word and Google Docs can show is below: go
-through it after changing `apple/citations/`, `CitationAPI` or `CitationServer`. Use a scratch document and
+through it after changing `apple/citations/`, `extension/gdocs/`, `CitationAPI` or `CitationServer`. Use a scratch document and
 a few papers you don't mind citing; a long document is quickest made by pasting the same paragraphs many
 times.
 
@@ -87,4 +87,45 @@ Other computers, other people
 - [ ] 200 citations, 150 papers: Update All finishes (note the time); a second Update All is quicker.
 - [ ] Lunta closed: Update All works from the document's copy; Insert Citation says to open Lunta.
 - [ ] File › Make a copy: the copy has the script and its citations update.
+- [ ] Download as .docx: citations are plain text with links, the list is there.
+- [ ] `Code.gs` 3 in a document last updated by `Code.gs` 2: the style is kept (read from the document
+      properties), and after one Update All it is in the named ranges too (the extension shows it).
+
+## Google Docs with the browser extension (Chrome, Edge, Firefox)
+
+Load `extension/` unpacked with a client ID in `gdocs/config.js` (see
+[google-docs-extension.md](google-docs-extension.md)); your account must be a test user. Lunta for Mac, and
+once the desktop app on Windows or Linux.
+
+- [ ] The Lunta button on a document (bottom right, clear of Docs' own buttons, also with the side panel
+      and in a narrow window); the toolbar button opens the same panel there. Light and dark mode.
+- [ ] Connect Google account: Google's consent screen once; afterwards opening the panel doesn't ask again,
+      also after an hour (the token is renewed without a window) and after restarting the browser (one
+      silent renewal, no window). Untick the permission on the consent screen: the panel says why it needs it.
+- [ ] Switch Google account; a document of another account, and one shared view-only: the message says so.
+- [ ] Search (also a pasted DOI), pick three papers, Insert Citation: one citation at the cursor, numbered,
+      the text around it untouched; the citation looks like plain text.
+- [ ] Cursor inside a citation: the papers join it. Right after one: a new citation. Text selected: the
+      citation goes after it, the text stays. Cursor in a footnote, in a table cell, in a second tab: works,
+      numbered in document order.
+- [ ] Insert Bibliography with the cursor at the end of a "References" heading: plain paragraphs after it (not
+      in heading style, not a list); again: no second one, the first is updated.
+- [ ] Style menu: Vancouver → Nature (superscript) → APA → a journal style found with *Find journal style…*;
+      reload the page: the document's style is shown.
+- [ ] Update All twice: version history shows no second change.
+- [ ] Type in the document while Update All runs on a long document (200 citations): no citation gets
+      another's text.
+- [ ] Undo (⌘Z) right after Insert Citation removes it in one or two steps; the document isn't left with a
+      "(…)" link (if it is, Update All makes it a citation).
+- [ ] Close the tab right after Insert Citation (before "Inserting…" ends), reopen, Update All: the citation is
+      made, numbered.
+- [ ] Lunta closed: the panel says so; Update All works from the document's copy; Insert Citation says to open
+      Lunta.
+- [ ] The same document with the Apps Script sidebar (`Code.gs` 3): it sees the extension's citations, style and
+      papers; the extension sees the sidebar's. A co-author on another computer with another library, through
+      the extension: Update All keeps every reference.
+- [ ] A document with citations from `Code.gs` 2 (style only in document properties): the panel asks for the
+      style first and changes nothing until it is picked.
+- [ ] Without a client ID (`config.js` empty): the panel says to use the Apps Script. Safari: the panel says to
+      use the Apps Script.
 - [ ] Download as .docx: citations are plain text with links, the list is there.

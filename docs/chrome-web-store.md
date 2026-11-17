@@ -21,7 +21,7 @@ version must be higher than the last one uploaded), then **Submit for review**. 
 | Field | Value |
 |---|---|
 | Name | Lunta (from the manifest) |
-| Summary (132) | Save papers and their PDFs to your Lunta library, with the access your browser already has. (from the manifest) |
+| Summary (132) | Save papers and their PDFs to your Lunta library, with the access your browser already has, and cite them in Google Docs. (from the manifest) |
 | Category | **Productivity › Education** (or Productivity › Tools) |
 | Language | English |
 | Store icon | `appstore/chrome/icon-128.png` |
@@ -44,6 +44,9 @@ On an article page, Lunta's panel shows the paper and whether it's already in yo
 USE THIS PAGE'S FULL TEXT
 On a journal's article page, Lunta can turn the page you're reading into the paper's reading view: the text, figures, tables and linked references, laid out for reading on any screen. It works with NEJM, Cell Press, Science, PNAS, Wiley, Taylor & Francis, SAGE, ACS, Springer Nature, JAMA, Oxford Academic, ScienceDirect and many others. Your highlights are checked first: if any wouldn't be found in the new text, your current reading view is kept.
 
+CITE IN GOOGLE DOCS
+In any Google Docs document, the Lunta button opens a panel: search your library, pick papers and insert a citation where your cursor is, insert the bibliography, and update everything after edits. APA, Harvard, Chicago, MLA, Vancouver, IEEE, Nature, Science, Cell and about 10,000 journal styles. Numbers, ordering and the reference list stay right as you write; co-authors with their own Lunta can update the same document. Connect your Google account once: Lunta edits only the document you cite in, through Google's own Docs API.
+
 ALSO
 • Save a PDF open in Chrome's PDF viewer with the toolbar button.
 • Works on any site that publishes papers: journals, preprint servers, PubMed, university repositories.
@@ -52,7 +55,7 @@ NEEDS THE LUNTA APP
 The extension works together with Lunta for Mac, Windows or Linux, which must be open on the same computer. Get it free at https://github.com/christoffermattssonlangseth/lunta/releases/latest
 
 PRIVATE
-The extension talks only to the Lunta app on your own computer (127.0.0.1). It sends nothing to any server, has no account, no analytics and no ads.
+The extension talks only to the Lunta app on your own computer (127.0.0.1) and, when you cite in Google Docs, to Google Docs for the document you're citing in. It sends nothing to us or anyone else, has no account, no analytics and no ads.
 
 Lunta is a reader and reference manager for scientific papers, for Mac, iPhone, iPad, Android, Windows and Linux.
 ```
@@ -62,7 +65,7 @@ Lunta is a reader and reference manager for scientific papers, for Mac, iPhone, 
 **Single purpose**
 
 ```
-Save the scientific paper on the current page (its details, PDF and full text) to the user's Lunta app running on the same computer.
+Be the browser side of the user's Lunta reference manager: save the scientific paper on the current page (its details, PDF and full text) to the Lunta app running on the same computer, and cite papers from that library in the Google Docs document the user is writing.
 ```
 
 **Permission justifications**
@@ -71,14 +74,17 @@ Save the scientific paper on the current page (its details, PDF and full text) t
 |---|---|
 | `activeTab` | When the user clicks the toolbar button, the extension reads the current tab: it saves the PDF open in Chrome's PDF viewer, or opens Lunta's panel on the article page. |
 | `scripting` | When the user clicks the toolbar button on a tab that was open before the extension was installed or updated, the extension adds its panel to that tab. |
-| Host permission `<all_urls>` | Scientific papers are published on thousands of sites (journals, publishers, preprint servers, university repositories). The content script looks for a paper's citation details (title, authors, DOI) in the page to show Lunta's panel, and, when the user asks, downloads the paper's PDF, figures and table pages with the user's own access. It does nothing on pages without a paper. |
-| Host permission `http://127.0.0.1:47480/*` | The extension talks to the user's Lunta app on the same computer: to check whether the paper is already in the library, and to hand it the paper, PDF or page the user chose to save. |
+| `identity` | To cite in Google Docs, the user connects their Google account once in Lunta's panel in a document: `identity.launchWebAuthFlow` shows Google's own sign-in and consent (scope: Google Docs documents) and returns an access token, kept only in the extension's background script. Nothing else uses it. |
+| `storage` | Keeps that Google access token in session storage (gone when the browser quits) so the user isn't asked again on every click, and remembers the journal citation styles the user picked before. |
+| Host permission `<all_urls>` | Scientific papers are published on thousands of sites (journals, publishers, preprint servers, university repositories). The content script looks for a paper's citation details (title, authors, DOI) in the page to show Lunta's panel, and, when the user asks, downloads the paper's PDF, figures and table pages with the user's own access. It does nothing on pages without a paper. The same access covers Google Docs documents (docs.google.com: the citing panel) and the Google Docs API (docs.googleapis.com: reading and writing the document the user cites in). |
+| Host permission `http://127.0.0.1:47480/*` | The extension talks to the user's Lunta app on the same computer: to check whether the paper is already in the library, to hand it the paper, PDF or page the user chose to save, and to search the library and format citations for Google Docs. |
 
 **Remote code:** No, I am not using remote code. (All scripts are in the package.)
 
 **Data usage.** Tick:
 - **Website content** (the article page's text and images, and PDFs, when the user saves a paper or uses
-  the page's full text; the citation details of article pages, to show whether the paper is in the library).
+  the page's full text; the citation details of article pages, to show whether the paper is in the library;
+  the Google Docs document the user cites in, read and written through the Google Docs API).
 
 Leave everything else unticked (no personal information, health, financial, authentication, personal
 communications, location, web history, or user activity is collected). Then certify all three:
@@ -86,7 +92,9 @@ communications, location, web history, or user activity is collected). Then cert
 - I do not use or transfer user data for purposes that are unrelated to my item's single purpose.
 - I do not use or transfer user data to determine creditworthiness or for lending purposes.
 
-All of it goes only to the Lunta app on the user's own computer; nothing leaves the device.
+All of it goes only to the Lunta app on the user's own computer; a Google Docs document goes only between the
+browser and Google Docs, where it lives. Nothing is sent to the developer or anyone else. (The Google access
+token isn't "collected": it stays in the browser's session storage.)
 
 **Privacy policy URL:** https://christoffermattssonlangseth.github.io/lunta/app-privacy.html
 
@@ -95,12 +103,16 @@ All of it goes only to the Lunta app on the user's own computer; nothing leaves 
 - Visibility: **Public**.
 - Regions: all.
 
+Google's own review of the Docs permission (OAuth verification) is separate: see
+[google-docs-extension.md](google-docs-extension.md).
+
 ## Review
 
 Access to all sites triggers an in-depth review: usually a few days, sometimes up to a few weeks. If the
 reviewer asks how to test it: install Lunta for Mac, Windows or Linux from the latest release and open it,
 then open any article page, for example https://doi.org/10.1038/s41586-023-06139-9 (open access), and click
-the Lunta tab at the right edge of the page.
+the Lunta tab at the right edge of the page. Citing: open a Google Docs document, click the Lunta button at the
+bottom right, Connect Google account, search for the paper saved before and Insert Citation.
 
 ## After it's published
 

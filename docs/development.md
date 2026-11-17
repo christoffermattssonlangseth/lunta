@@ -110,7 +110,8 @@ or unavailable. Pick the model in the panel's ⋯ menu.
 - **Word:** *Install in Word*, restart Word, then **Cite** on the Home tab. Search, pick papers, *Insert
   Citation*; *Insert Bibliography* where the references go; *Update All* after edits or a style change.
   Citations are content controls tagged with the paper ids, so they survive editing and renumber.
-- **Google Docs:** Extensions › Apps Script; paste `Code.gs` and an HTML file `Sidebar` (both copied from
+- **Google Docs:** with the browser extension (1.1+), the **Lunta** button on any document (see below); or,
+  without it (Safari), Extensions › Apps Script; paste `Code.gs` and an HTML file `Sidebar` (both copied from
   the Lunta window; the sidebar carries a pairing key), reload, then **Lunta › Cite…**.
 
 Styles: APA 7, Harvard, Chicago (author-date), Cell, MLA 9, Vancouver, IEEE, AMA, Nature, Science, PNAS and ACS, and any of the ~10,000 journal styles of the [Citation Style Language](https://citationstyles.org) catalogue (*Find journal style…*: fetched once from zotero.org/styles, formatted in the core with [hayagriva](https://github.com/typst/hayagriva)). Lunta must be open to search and cite.
@@ -130,7 +131,8 @@ How it fits together:
 - **Documents carry their papers.** Word keeps the style and a copy of each cited paper's details (and
   its entry in the current style) in a custom XML part (`https://lunta.app/ns/word-citations/1`; add-in
   settings would be per add-in id, and the sideloaded and store manifests differ); Google Docs keeps them
-  gzipped in document properties (`lunta.store.*`). Lunta formats a paper it doesn't have from these
+  gzipped in document properties (`lunta.store.*`) and, since `Code.gs` version 3, in named ranges
+  (`lunta:<generation>:<i>:<n>:<base64url>`, which the browser extension reads and writes too). Lunta formats a paper it doesn't have from these
   details, or finds it again by DOI or title (a merged duplicate, another library); with Lunta closed,
   Update All works from the saved entries. A cited paper with nothing to go on stops Update All with the
   citation selected; nothing is written.
@@ -140,10 +142,57 @@ How it fits together:
   bibliography's paragraph formatting. Older `Sidebar.html` copies keep working with the new `Code.gs`
   (`applyAll`); a new sidebar asks for both files to be copied again when `Code.gs` is older.
 
-Tests: `node --test apple/citations-tests/` (the shared formatting, and `Code.gs` against a stand-in for
-Apps Script's DocumentApp), `swift test --filter CitationAPITests` in `apple/LuntaCore` (the API on a
+Tests: `node --test apple/citations-tests/` (the shared formatting, `Code.gs` against a stand-in for
+Apps Script's DocumentApp, and the extension's Google Docs code against a stand-in for the Docs REST API), `swift test --filter CitationAPITests` in `apple/LuntaCore` (the API on a
 scratch library, the access rules, certificates), and the citation tests in `core` (`cargo test cit`).
 What only Word and Google Docs can show is in [citations-testing.md](citations-testing.md).
+
+### Citing in Google Docs from the browser extension
+
+Pasting Apps Script into every document (and pairing it) is too much to ask; Zotero and ReadCube cite from
+their browser extensions. Lunta's does the same (`extension/gdocs/`):
+
+- **How it reads and writes.** Docs draws its pages on a canvas, so the page's DOM can't be edited. The
+  extension uses the **Google Docs REST API** (`documents.get` with tabs, `documents.batchUpdate`), signed in with
+  `identity.launchWebAuthFlow` (Chrome, Edge, Firefox; one *Web application* OAuth client, scope `documents`; the
+  token only in the background script, in session storage). This is what Zotero does.
+- **Where the cursor is.** The API doesn't know. The panel pastes a placeholder through Docs' own paste handling
+  (a synthetic `paste` on Docs' input iframe, `.docs-texteventtarget-iframe`, as Zotero does): a link to
+  `https://margins.local/insert?t=<token>&ids=…` (or `&bib=1`). The background then finds it with the API (Docs
+  saves within a second or two; it polls up to 15 s) and makes it the citation in the same Update All: pasted
+  inside a citation (Docs splits that link around it) the papers join it; a bibliography placeholder becomes new
+  paragraphs after its paragraph (plain body text, no list). A selection is collapsed to its end first (Docs puts
+  the selection in its input on a synthetic `copy`), so nothing is replaced. A placeholder left behind isn't a
+  citation to the Apps Script and becomes one at the next Update All.
+- **Writing.** `docs-model.js` turns the document into the citations in order (tabs, footnotes where their
+  marks are, tables; runs split by formatting joined) and the bibliography paragraphs, and makes the requests:
+  new text inserted after the old, the old deleted, then styled (link, no underline, superscript or not), from the
+  end of each part to its start so positions hold; the bibliography's new text goes in before the old so its
+  paragraphs keep their look (lists, indents), and its last paragraph mark is never deleted. One `batchUpdate`
+  with `writeControl.requiredRevisionId`: if anyone typed since it was read, Google refuses it whole and the
+  extension starts over (three times). Text that's already right isn't written (Update All twice changes nothing).
+- **Formatting** is the add-ins' own: `gdocs/citations-common.js` is a copy of `apple/citations/common.js`
+  (a test fails when they differ: copy it after changing common.js), with Lunta's answers from the extension
+  endpoint's `/cite/…` routes, which are the citation API's (`CitationAPI.answerTrusted` on the Mac;
+  `desktop/src-tauri/src/citeapi.rs` on Windows and Linux). The endpoint already accepts only the extension, so
+  no certificate to trust and no pairing key.
+- **The same documents as the Apps Script.** Same citation and bibliography links; the style and the cited
+  papers in named ranges over the first tab's text, which both read and write (document properties are visible
+  only to the script that wrote them). A document whose style isn't in it (written with `Code.gs` 2) has its
+  citations left alone until the user picks the style.
+- **Rejected:** editing through the page (canvas; Docs' accessibility DOM is read-only and changes often);
+  reading through `export?format=html` and writing by paste only (no way to rewrite existing citations or the
+  bibliography: Update All and style changes are the point); `chrome.identity.getAuthToken` (Chrome only; a second
+  OAuth client); the narrower `drive.file` scope (needs the Google Picker per document, a remote script an MV3
+  extension can't load: see google-docs-extension.md); keeping only the Apps Script (it stays, for Safari and as
+  the fallback).
+- **Limits.** Safari: no `identity` API and the synthetic paste doesn't work there: the panel points to the Apps
+  Script. Google's verification of the `documents` scope is needed before more than 100 people can sign in.
+  The paste and copy tricks depend on Docs' page; if Google changes it, inserting fails with a message (Update All,
+  through the API alone, keeps working).
+
+What you set up in Google Cloud (the OAuth client, the consent screen, verification) is in
+[google-docs-extension.md](google-docs-extension.md); the client ID goes in `extension/gdocs/config.js`.
 
 ## Releases
 
@@ -217,7 +266,7 @@ and `P2E_DEBUG_CHARS=<page>` dump PDFium's lines and characters for one page.
 
 Chrome → `chrome://extensions` → Developer mode → Load unpacked → `extension/`. Lunta (for Mac,
 Windows or Linux) must be running; the extension talks to it on `127.0.0.1:47480` (extension
-requests only): `apple/Mac/ExtensionServer.swift` on the Mac, `desktop/src-tauri/src/extension.rs`
+requests only; `/cite/…` for citing in Google Docs, above): `apple/Mac/ExtensionServer.swift` on the Mac, `desktop/src-tauri/src/extension.rs`
 in the desktop app (same endpoints; "Use this page's full text" through `core/src/pagetext.rs`,
 with the page readers ported to `core/src/convert/webpage.rs` and friends; backups of replaced
 reading views in the app's data folder, `backups/`). A debug desktop build takes another port from
