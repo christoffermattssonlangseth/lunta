@@ -230,13 +230,21 @@ struct ReferencesList: View {
         .padding(.horizontal, 12).padding(.bottom, 8)
     }
 
+    /// The number column: as wide as the list's longest number ("120" → 26 pt); author–year
+    /// labels ("Devlin et al. (2019)") get a wider one. (A flexible width spread every number
+    /// over 70 pt of empty space.)
+    private var labelWidth: CGFloat {
+        let longest = refs.refs.map { $0.label.count }.max() ?? 1
+        return longest <= 4 ? CGFloat(max(2, longest)) * 7 + 6 : 64
+    }
+
     private func row(_ r: PaperReference) -> some View {
         let addable = r.addInput != nil
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(r.label.isEmpty ? "•" : r.label)
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                .lineLimit(1).frame(minWidth: 18, alignment: .trailing)
-                .frame(maxWidth: 70, alignment: .trailing)
+                .lineLimit(1).truncationMode(.tail)
+                .frame(width: labelWidth, alignment: .trailing)
             VStack(alignment: .leading, spacing: 4) {
                 Button { onShow(r) } label: {
                     Text(r.text).font(.callout).lineLimit(3)
