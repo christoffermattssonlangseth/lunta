@@ -31,10 +31,12 @@ which setup fits your devices, and how to move your library from Zotero, Mendele
   equations, themes, and scroll or page turning. The PDF is one tap away.
 - **Highlight and note:** four colours, a highlight mode for marking quickly, Apple Pencil on iPad. Highlights
   sync everywhere and are searchable.
-- **Library:** add papers by DOI, PubMed ID, arXiv link or PDF, or from Chrome and Safari. Lunta finds legal
-  open-access PDFs, and never swaps a published paper for its preprint. Folders, tags, Smart Folders,
+- **Library:** add papers by DOI, PubMed ID, arXiv link or PDF, or straight from your browser with the
+  [Lunta extension](#browser-extension-and-add-ins) (Chrome, Edge, Firefox, Safari). Lunta finds legal
+  open-access PDFs (also from PubMed pages), and never swaps a published paper for its preprint. Folders, tags, Smart Folders,
   stars and a Must Read list, with full-text search.
-- **New for You:** every morning, new papers picked for your research, with a short summary.
+- **New for You:** every morning, new papers picked for your research, with a short summary. Add your ORCID
+  iD and it also learns from your own papers and shows new papers citing them.
 - **Listen and ask:** papers read aloud in a natural voice, and an assistant that answers questions about a
   paper or your library, both running on your device.
 - **Cite:** 12 citation styles, BibTeX and RIS, and add-ins for Word and Google Docs.
@@ -47,8 +49,11 @@ which setup fits your devices, and how to move your library from Zotero, Mendele
 
 Saves the paper you're looking at to Lunta, with its PDF, using the access your browser already has (your
 institution's subscription, for example). On a journal's article page, **Use this page's full text** turns
-the page you're reading into the paper's reading view. It works in Chrome, Edge, Brave and other
-Chromium browsers.
+the page you're reading into the paper's reading view. On PubMed, **Find PDF** gets a free, legal copy.
+It works in Chrome, Edge, Brave and other Chromium browsers, and in Firefox.
+
+**Chrome Web Store and Firefox Add-ons:** submitted, in review. Once they're approved, installing is one
+click (and updates come by themselves); the links will be here. Until then, install it from the release:
 
 1. Download **`Lunta-…-Chrome-Extension.zip`** from the
    [latest release](https://github.com/christoffermattssonlangseth/lunta/releases/latest) and unzip it.
