@@ -202,6 +202,31 @@ function makeLuntaGDocs(deps) {
     }
   }
 
+  /** The character at a document index (null past the text), in a tab's body or a footnote. */
+  function charAt(doc, tabId, segmentId, index) {
+    var tabs = [];
+    (function walk(list) { (list || []).forEach(function (t) { tabs.push(t); walk(t.childTabs); }); })(doc.tabs);
+    var tab = tabs.filter(function (t) { return !tabId || t.tabProperties && t.tabProperties.tabId === tabId; })[0];
+    var dt = tab ? tab.documentTab : doc;
+    if (!dt) return null;
+    var content = segmentId ? ((dt.footnotes || {})[segmentId] || {}).content : (dt.body || {}).content;
+    var found = null;
+    (function walk(list) {
+      (list || []).forEach(function (el) {
+        if (found !== null) return;
+        if (el.paragraph) {
+          (el.paragraph.elements || []).forEach(function (pe) {
+            var t = pe.textRun && pe.textRun.content;
+            if (found === null && t && index >= pe.startIndex && index < pe.startIndex + t.length) found = t.charAt(index - pe.startIndex);
+          });
+        } else if (el.table) {
+          (el.table.tableRows || []).forEach(function (row) { (row.tableCells || []).forEach(function (c) { walk(c.content); }); });
+        }
+      });
+    })(content);
+    return found === '\n' ? null : found;
+  }
+
   /** The papers of a citation, for the panel: from Lunta, else from the document's copy. */
   async function details(docId, ids) {
     var x = await load(docId), kept = (x.store && x.store.papers) || {};
@@ -225,7 +250,7 @@ function makeLuntaGDocs(deps) {
   async function editCitation(docId, opts) {
     var want = C.unique(opts.ids || []), expect = C.unique(opts.expect || []);
     for (var attempt = 0; ; attempt++) {
-      var parsed = D.read(await deps.docs.get(docId));
+      var doc = await deps.docs.get(docId), parsed = D.read(doc);
       var it = parsed.items[opts.index];
       if (!it || it.kind !== 'cite' || it.ids.join(',') !== expect.join(',')) {
         throw fail('That citation changed or moved in the meantime. Click Edit Citation again.', 'moved');
@@ -233,6 +258,12 @@ function makeLuntaGDocs(deps) {
       var r = { startIndex: it.start, endIndex: it.end };
       if (it.segmentId) r.segmentId = it.segmentId;
       if (it.tabId) r.tabId = it.tabId;
+      if (!want.length) {
+        // "as shown (Lee, 2020)." → "as shown." : the space before goes too, when punctuation,
+        // a space or the paragraph's end follows
+        var before = charAt(doc, it.tabId, it.segmentId, it.start - 1), after = charAt(doc, it.tabId, it.segmentId, it.end);
+        if (before === ' ' && (after === null || /[\s.,;:!?)\]]/.test(after))) r.startIndex -= 1;
+      }
       var req = want.length
         ? { updateTextStyle: { range: r, textStyle: { link: { url: D.makeLink(want) } }, fields: 'link' } }
         : { deleteContentRange: { range: r } };

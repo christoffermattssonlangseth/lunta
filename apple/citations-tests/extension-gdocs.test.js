@@ -431,7 +431,7 @@ test('Edit Citation: the papers of one citation; remove one, add some, remove th
   // remove the last paper of the second: the citation goes, the bibliography follows
   r = await g.editCitation('doc', { index: 1, expect: ['c'], ids: [] });
   assert.equal(r.removed, true);
-  assert.equal(api.paragraphs()[0], 'One [1–3]. Two .');
+  assert.equal(api.paragraphs()[0], 'One [1–3]. Two.');
   assert.equal((await g.state('doc')).citations.length, 1);
   // Lunta closed: the papers from the document's copy
   const g2 = flow(api, fakeLunta(LIB, { offline: true }));
