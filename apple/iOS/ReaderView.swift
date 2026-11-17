@@ -41,6 +41,7 @@ struct ReaderView: View {
     @StateObject private var controller = ReaderController()
     @StateObject private var position = PositionKeeper()
     @Environment(\.scenePhase) private var phase
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var listening = false
     @State private var asking = false
     @StateObject private var ask: AskEngine
@@ -100,7 +101,9 @@ struct ReaderView: View {
         .statusBarHidden(chromeHidden && mode == .reading)
         .onChange(of: listening) { _, on in if on { chromeHidden = false } }
         .toolbar {
-            if book != nil && paper?.hasPdf == true {
+            // iPad: the Reading/PDF switch in the bar. iPhone: in the ⋯ menu, so the buttons fit (with the
+            // switch, iOS folded them into one control and every button took two taps)
+            if canSwitchView && sizeClass == .regular {
                 ToolbarItem(placement: .principal) {
                     Picker("View", selection: $mode) { ForEach(Mode.allCases, id: \.self) { Text($0.rawValue) } }
                         .pickerStyle(.segmented).frame(width: 170)
@@ -138,6 +141,7 @@ struct ReaderView: View {
                 }
                 Menu {
                     // every item works with one tap (appearance settings are in Text & Theme)
+                    if canSwitchView && sizeClass != .regular { ViewSwitchButton(mode: $mode) }
                     if mode == .reading, book != nil {
                         Button { showContents = true } label: { Label("Contents", systemImage: "list.bullet") }
                         Button { showAppearance = true } label: { Label("Text & Theme…", systemImage: "textformat.size") }
@@ -279,6 +283,7 @@ struct ReaderView: View {
         #endif
     }
 
+    private var canSwitchView: Bool { book != nil && model.paper(paperID)?.hasPdf == true }
     private var canGoToPage: Bool { (mode == .reading && book != nil) || (mode == .pdf && pdfURL != nil) }
     private var goToPageModifier: GoToPageModifier {
         GoToPageModifier(request: goToPage, pdf: mode == .pdf, webView: { [controller] in controller.webView }, pdfView: { [pdfHighlights] in pdfHighlights.view })
@@ -673,5 +678,17 @@ enum OpenReader {
         guard let d = UserDefaults.standard.dictionary(forKey: key), let id = d["id"] as? String,
               let at = d["at"] as? Double, Date().timeIntervalSince1970 - at < 24 * 3600 else { return nil }
         return id
+    }
+}
+
+/// iPhone: Reading View ⇄ PDF, in the reader's ⋯ menu.
+private struct ViewSwitchButton: View {
+    @Binding var mode: ReaderView.Mode
+    var body: some View {
+        if mode == .pdf {
+            Button { mode = .reading } label: { Label("Reading View", systemImage: "doc.plaintext") }
+        } else {
+            Button { mode = .pdf } label: { Label("Show PDF", systemImage: "doc.richtext") }
+        }
     }
 }
