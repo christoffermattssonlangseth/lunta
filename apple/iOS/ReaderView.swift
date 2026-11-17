@@ -14,6 +14,8 @@ struct ReaderView: View {
     @State private var loading = true
     @State private var message: String?
     @State private var showContents = false
+    @State private var showReferences = false
+    @StateObject private var references = ReferencesModel()
     @State private var showAppearance = false
     @State private var showInfo = false
     @AppStorage("readerFontScale") private var fontScale = 1.0
@@ -149,6 +151,7 @@ struct ReaderView: View {
                     }
                     if mode == .reading, book != nil {
                         Button { showContents = true } label: { Label("Contents", systemImage: "list.bullet") }
+                        Button { showReferences = true } label: { Label("References", systemImage: "text.book.closed") }
                         Button { showAppearance = true } label: { Label("Text & Theme…", systemImage: "textformat.size") }
                         Button { listening ? stopListening() : startListening() } label: {
                             Label(listening ? "Stop Listening" : "Listen", systemImage: listening ? "stop.circle" : "headphones")
@@ -194,6 +197,7 @@ struct ReaderView: View {
         .sheet(isPresented: $showContents) {
             if let book { ContentsSheet(book: book, current: current) { a in current = a; scrollRequest = ScrollRequest(anchor: a); showContents = false } }
         }
+        .modifier(ReferencesSheet.Presenter(shown: $showReferences, refs: references, controller: controller))
         .sheet(isPresented: $asking) {
             AssistantPanel(engine: ask, onPassage: { id in
                 asking = false
@@ -485,6 +489,48 @@ struct ContentsSheet: View {
         let parts = t.target.split(separator: "#", maxSplits: 1).map(String.init)
         if parts.count == 2 { return parts[1] }
         return "section-\(book.chapters.firstIndex { $0.path == parts[0] } ?? 0)"
+    }
+}
+
+/// The paper's reference list (⋯ › References): jump to one, open it if it's in the library
+/// (its info page), add it, or add all that are missing.
+struct ReferencesSheet: View {
+    @ObservedObject var refs: ReferencesModel
+    let onShow: (PaperReference) -> Void
+    @State private var opened: String?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ReferencesList(refs: refs, onShow: onShow, onOpen: { opened = $0 })
+                .navigationTitle("References")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+                .navigationDestination(item: $opened) { id in PaperInfoView(paperID: id, embedded: false) }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    /// The sheet over the reader: tapping a reference closes it and jumps there.
+    struct Presenter: ViewModifier {
+        @EnvironmentObject var model: LibraryModel
+        @Binding var shown: Bool
+        let refs: ReferencesModel
+        let controller: ReaderController
+
+        func body(content: Content) -> some View {
+            content.sheet(isPresented: $shown) {
+                ReferencesSheet(refs: refs, onShow: { r in
+                    shown = false
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(350))
+                        _ = try? await controller.webView?.evaluateJavaScript("window.luntaShowReference && luntaShowReference(\(r.index))")
+                    }
+                })
+                .environmentObject(model)
+                .task { await refs.load(controller, model: model) }
+            }
+        }
     }
 }
 

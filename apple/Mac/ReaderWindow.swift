@@ -32,6 +32,8 @@ struct ReaderWindow: View {
     @State private var goToPage = 0
     @State private var pdfFinder = PDFFinder()
     @State private var showHighlights = false
+    @State private var sideTab: SideTab = .contents
+    @StateObject private var references = ReferencesModel()
     @StateObject private var ask: AskEngine
     @Environment(\.openWindow) private var openWindow
     /// Undo for highlights and notes in this window (⌘Z / ⇧⌘Z, see ReaderUndoKeys).
@@ -43,6 +45,8 @@ struct ReaderWindow: View {
     }
 
     enum Mode: String, CaseIterable { case reading = "Reading", pdf = "PDF" }
+    /// The reading view's sidebar: its contents, or its reference list.
+    enum SideTab: String, CaseIterable { case contents = "Contents", references = "References" }
 
     /// The view a reader window should show when it opens (or switch to, if it's already open).
     static var requestedMode: [String: Mode] = [:]
@@ -57,15 +61,28 @@ struct ReaderWindow: View {
         let paper = model.paper(paperID)
         NavigationSplitView {
             if mode == .reading, let book {
-                List(selection: Binding(get: { current }, set: { id in
-                    if let id { current = id; scrollRequest = ScrollRequest(anchor: id) }
-                })) {
-                    ForEach(Array(book.toc.enumerated()), id: \.offset) { _, t in
-                        Text(t.title).lineLimit(2)
-                            .padding(.leading, CGFloat(max(0, Int(t.level) - 1)) * 12)
-                            .font(t.level <= 1 ? .body.weight(.medium) : .callout)
-                            .foregroundStyle(t.level <= 1 ? .primary : .secondary)
-                            .tag(anchor(t, in: book))
+                VStack(spacing: 0) {
+                    Picker("", selection: $sideTab) { ForEach(SideTab.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
+                        .pickerStyle(.segmented).labelsHidden()
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                    switch sideTab {
+                    case .contents:
+                        List(selection: Binding(get: { current }, set: { id in
+                            if let id { current = id; scrollRequest = ScrollRequest(anchor: id) }
+                        })) {
+                            ForEach(Array(book.toc.enumerated()), id: \.offset) { _, t in
+                                Text(t.title).lineLimit(2)
+                                    .padding(.leading, CGFloat(max(0, Int(t.level) - 1)) * 12)
+                                    .font(t.level <= 1 ? .body.weight(.medium) : .callout)
+                                    .foregroundStyle(t.level <= 1 ? .primary : .secondary)
+                                    .tag(anchor(t, in: book))
+                            }
+                        }
+                    case .references:
+                        ReferencesList(refs: references,
+                                       onShow: { r in controller.webView?.evaluateJavaScript("window.luntaShowReference && luntaShowReference(\(r.index))") },
+                                       onOpen: { id in openWindow(value: id) })
+                            .task(id: book.combined) { await references.load(controller, model: model) }
                     }
                 }
                 .navigationSplitViewColumnWidth(min: 180, ideal: 250)
