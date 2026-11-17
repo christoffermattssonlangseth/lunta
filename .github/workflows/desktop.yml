@@ -5,9 +5,9 @@ name: Desktop app
 on:
   push:
     branches: [main]
-    paths: ['desktop/**', 'core/**', 'apple/Shared/**', 'scripts/extract-reader-assets.mjs', '.github/workflows/desktop.yml']
+    paths: ['desktop/**', 'core/**', 'apple/Shared/**', 'scripts/extract-reader-assets.mjs', 'scripts/reader-tests/**', '.github/workflows/desktop.yml']
   pull_request:
-    paths: ['desktop/**', 'core/**', 'apple/Shared/**', 'scripts/extract-reader-assets.mjs', '.github/workflows/desktop.yml']
+    paths: ['desktop/**', 'core/**', 'apple/Shared/**', 'scripts/extract-reader-assets.mjs', 'scripts/reader-tests/**', '.github/workflows/desktop.yml']
   workflow_dispatch:
   # release.yml runs this for a version tag and attaches the result to the release
   workflow_call:
@@ -50,6 +50,9 @@ jobs:
 
       - name: Reader assets match the Swift sources
         run: node scripts/extract-reader-assets.mjs --check
+
+      - name: Reader script tests
+        run: node --test scripts/reader-tests/
 
       - name: Install frontend dependencies
         working-directory: desktop

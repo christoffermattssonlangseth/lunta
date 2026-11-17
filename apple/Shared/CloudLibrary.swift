@@ -237,7 +237,7 @@ enum ReaderAssets {
         return "var s=document.createElement('style');s.textContent=`\(c)`;document.documentElement.appendChild(s);"
             // never magnified: the page always fits the screen (pinching changes the text size instead)
             + "var m=document.querySelector('meta[name=viewport]');if(!m){m=document.createElement('meta');m.name='viewport';(document.head||document.documentElement).appendChild(m);}m.content='width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';"
-            + figureSettingJS + figureJS + overflowJS + citationJS + jumpBackJS
+            + figureSettingJS + figureJS + overflowJS + citationJS + jumpBackJS + referencesJS
     }
 
     /// Reports the id of the heading currently at the top of the screen to the "pos" handler.
