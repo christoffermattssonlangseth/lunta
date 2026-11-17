@@ -411,6 +411,95 @@ fn summary_page_highlights_are_front_matter() {
     assert!(paras.iter().any(|p| p.kind == Kind::Heading && p.text() == "SUMMARY"));
 }
 
+/// Wiley's body font (STIXTwoText) was taken for a math font, so short paragraphs, footnotes and
+/// footers became "equations" cropped as images, and pieces of them in two columns were joined into
+/// one picture. Running text stays text whatever its fonts say; a real formula is still one; the
+/// first page's journal footer, the running feet with "2of11" page numbers and the masthead logo
+/// go; an equal-contribution footnote is front matter; a real figure is found.
+#[test]
+fn prose_in_a_math_font_is_text_and_wiley_furniture_goes() {
+    let math = |mut l: PLine| {
+        l.math = 1.0;
+        l
+    };
+    let mut pages = Vec::new();
+    for p in 0..3 {
+        let mut lines = Vec::new();
+        if p == 0 {
+            lines.push(bold(line("A Tiny Test Paper About Hairpins", p, 54.0, 80.0, 18.0)));
+            lines.push(bold(line("1 Introduction", p, 54.0, 280.0, 10.0)));
+        }
+        // two columns of short paragraphs, the right-hand ones on the middle page in the "math" font
+        let y2 = if p == 1 { 400.0 } else { 360.0 };
+        for (x, y) in [(54.0, 300.0), (54.0, y2), (314.0, 300.0), (314.0, 360.0)] {
+            let m = p == 1 && x > 300.0;
+            lines.extend(para(LOREM, p, x, y, 3, 45).into_iter().map(|l| if m { math(l) } else { l }));
+        }
+        if p == 1 {
+            lines.push(math(line("x = a + b", p, 80.0, 352.0, 10.0)));
+        }
+        let foot = if p % 2 == 1 {
+            format!("{}of3 Journal of Tests,2026", p + 1)
+        } else {
+            format!("Journal of Tests,2026 {}of3", p + 1)
+        };
+        lines.push(math(line(&foot, p, 54.0, 754.0, 7.0)));
+        pages.push(Page { width: 612.0, height: 792.0, lines, graphics: PageGraphics::default() });
+    }
+    let p0 = &mut pages[0];
+    p0.lines.push(math(line("Ada Lovelace and Alan Turing contributed equally to this work.", 0, 54.0, 691.0, 6.0)));
+    p0.lines.push(math(line("Journal of Tests, 2026; 32:e70999 https://doi.org/10.1234/t.70999", 0, 54.0, 756.0, 7.0)));
+    p0.graphics.drawings.push(R::new(416.0, 42.0, 558.0, 72.0)); // masthead logo
+    pages[2].graphics.drawings.push(R::new(150.0, 450.0, 450.0, 640.0));
+    pages[2].lines.push(line("FIGURE 1 A grey box drawn as a vector rectangle.", 2, 150.0, 650.0, 8.0));
+
+    let mut r = White;
+    let log = |_: &str| {};
+    let an = Analyzer::new(pages.clone(), &mut r, &log);
+    assert!(an.is_noise(pages[0].lines.iter().find(|l| l.text.starts_with("Journal of Tests, 2026;")).unwrap()));
+    for (p, page) in pages.iter().enumerate() {
+        assert!(an.is_noise(page.lines.iter().find(|l| l.text.contains("of3")).unwrap()), "page {p}");
+    }
+    let (paras, _) = analyse(pages);
+    let eqs: Vec<String> = paras.iter().filter(|p| p.kind == Kind::Equation).map(|p| p.text()).collect();
+    assert_eq!(eqs, vec!["x = a + b".to_string()]);
+    assert!(paras.iter().filter(|p| p.kind == Kind::Text && p.text().contains("quick brown fox")).count() >= 8);
+    let fn_kind = paras.iter().find(|p| p.text().contains("contributed equally")).map(|p| p.kind);
+    assert_eq!(fn_kind, Some(Kind::Front));
+    let figs: Vec<usize> = paras.iter().filter(|p| p.kind == Kind::Figure).map(|p| p.page).collect();
+    assert_eq!(figs, vec![2]);
+    assert!(paras.iter().any(|p| p.kind == Kind::Caption && p.text().starts_with("FIGURE 1")));
+    assert!(!paras.iter().any(|p| p.text().contains("Journal of Tests")));
+}
+
+/// When most of the running text is in a "math" font, it's the body font and marks no formulas.
+#[test]
+fn math_font_setting_the_body_text_is_no_math_font() {
+    let mut lines: Vec<PLine> = para(LOREM, 0, 54.0, 100.0, 20, 45);
+    lines.push(line("x = a + b", 0, 80.0, 400.0, 10.0));
+    let page = Page { width: 612.0, height: 792.0, lines, graphics: PageGraphics::default() };
+    // all of it in the font: it's the body font
+    let mut all = vec![page.clone()];
+    all[0].lines.iter_mut().for_each(|l| l.math = 1.0);
+    clear_math_if_body_font(&mut all, 10.0);
+    assert!(all[0].lines.iter().all(|l| l.math == 0.0));
+    // a prose line and the formula (a manuscript's symbols in STIX-Regular): the formula keeps it
+    let mut few = vec![page];
+    few[0].lines[0].math = 1.0;
+    few[0].lines.last_mut().unwrap().math = 1.0;
+    clear_math_if_body_font(&mut few, 10.0);
+    assert_eq!(few[0].lines.last().unwrap().math, 1.0);
+}
+
+#[test]
+fn prose_is_not_a_formula() {
+    assert!(is_prose("the quick brown fox jumps over the lazy dog while seven wizards judge"));
+    assert!(is_prose("Chensirong Yue and Changyun Tu contributed equally to this work."));
+    assert!(!is_prose("x = a + b"));
+    assert!(!is_prose("f(x) = sin x + cos x for all x ∈ R"));
+    assert!(!is_prose("L = − ∑ i y i log p i + λ ∥ w ∥ 2 , where λ > 0"));
+}
+
 // MARK: - PDFium (generated PDF)
 
 /// A small two-page PDF with base-14 fonts: title, authors, abstract, numbered sections, an
@@ -485,18 +574,47 @@ pub(crate) fn sample_pdf(doi: &str) -> Vec<u8> {
 /// A PDF of the given page content streams (612 × 792, base-14 fonts F1 Helvetica-Bold, F2
 /// Times-Roman) with `title` in the document info.
 fn pdf_of(contents: &[String], title: &str) -> Vec<u8> {
+    pdf_with_fonts(contents, title, &["Helvetica-Bold", "Times-Roman"])
+}
+
+/// A PDF of the given page content streams (612 × 792) with fonts F1, F2, … of these base font
+/// names (not embedded; one that isn't a base-14 font gets widths of half an em and a font
+/// descriptor, so that PDFKit lays it out with a substitute) and `title` in the document info.
+fn pdf_with_fonts(contents: &[String], title: &str, fonts: &[&str]) -> Vec<u8> {
+    let base14 = |f: &str| f.starts_with("Helvetica") || f.starts_with("Times-") || f.starts_with("Courier");
     let n = contents.len();
-    let kids: Vec<String> = (0..n).map(|i| format!("{} 0 R", 5 + 2 * i)).collect();
+    let custom: Vec<usize> = (0..fonts.len()).filter(|&i| !base14(fonts[i])).collect();
+    let k = fonts.len() + custom.len(); // fonts, then the descriptors of the custom ones
+    let kids: Vec<String> = (0..n).map(|i| format!("{} 0 R", 3 + k + 2 * i)).collect();
     let mut objs: Vec<String> = vec![
         "<< /Type /Catalog /Pages 2 0 R >>".into(),
         format!("<< /Type /Pages /Kids [{}] /Count {n} >>", kids.join(" ")),
-        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>".into(),
-        "<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>".into(),
     ];
+    let widths = vec!["500"; 224].join(" ");
+    for (i, f) in fonts.iter().enumerate() {
+        match custom.iter().position(|&c| c == i) {
+            None => objs.push(format!("<< /Type /Font /Subtype /Type1 /BaseFont /{f} /Encoding /WinAnsiEncoding >>")),
+            Some(j) => objs.push(format!(
+                "<< /Type /Font /Subtype /Type1 /BaseFont /{f} /Encoding /WinAnsiEncoding /FirstChar 32 /LastChar 255 \
+                 /Widths [{widths}] /FontDescriptor {} 0 R >>",
+                3 + fonts.len() + j
+            )),
+        }
+    }
+    for &i in &custom {
+        let flags = if fonts[i].contains("Bold") { 32 | 262144 } else { 32 };
+        objs.push(format!(
+            "<< /Type /FontDescriptor /FontName /{} /Flags {flags} /FontBBox [-200 -250 1000 900] /ItalicAngle 0 \
+             /Ascent 750 /Descent -250 /CapHeight 660 /StemV 80 >>",
+            fonts[i]
+        ));
+    }
+    let res: Vec<String> = (0..k).map(|i| format!("/F{} {} 0 R", i + 1, 3 + i)).collect();
     for (i, c) in contents.iter().enumerate() {
         objs.push(format!(
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents {} 0 R >>",
-            6 + 2 * i
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << {} >> >> /Contents {} 0 R >>",
+            res.join(" "),
+            4 + k + 2 * i
         ));
         objs.push(format!("<< /Length {} >>\nstream\n{c}endstream", c.len()));
     }
@@ -595,6 +713,75 @@ pub(crate) fn columns_pdf() -> Vec<u8> {
     pdf_of(&[p1, p2], "Columns Around a Figure")
 }
 
+const WILEY_ABSTRACT: &str = "We present a tiny test paper typeset like a Wiley article, with its abstract on a light grey \
+    background, its body text in two columns, a footnote under the first column, a dashed rule, a copyright line \
+    and a footer with the journal, the DOI and the page number on every page.";
+const WILEY_BODY: &str = "Hairpin probes open only when they meet a perfectly matching target, and this simple fact \
+    has been used for many years to tell apart sequences that differ by a single base. Here the text runs on in \
+    the first column, past the footnote at its foot, and goes on at the top of the second column, where it ends \
+    after a few more words about circles that are amplified many times over.";
+const WILEY_BODY2: &str = "A second paragraph fills the rest of the second column, as it would in a real article, \
+    and talks about nothing in particular for a while so that the column is about as long as the first one and \
+    the page looks like a page of a journal rather than a sketch of one.";
+const WILEY_LEGEND: &str = "A grey box drawn as a vector rectangle, standing in for a microscopy image.";
+const WILEY_RESULTS: &str = "The probes found every target that was there and none that was not, in cells and in \
+    tissue sections, which is what one hopes for from any method of this kind and rarely sees in practice.";
+
+/// A three-page article typeset like Wiley's journals: body text in STIXTwoText (not a math
+/// font), a masthead logo, a Crossmark badge, an abstract on a grey background, numbered headings
+/// with the number set apart ("1   Introduction"), a footnote and a dashed rule under the first
+/// column, a copyright line, the first page's journal/DOI footer and running feet with "2of3" page
+/// numbers, and a figure whose label "FIGURE 1" stands apart from its legend.
+pub(crate) fn wiley_pdf() -> Vec<u8> {
+    fn t(font: &str, size: f64, x: f64, y: f64, s: &str) -> String {
+        format!("BT /{font} {size} Tf {x} {y} Td ({s}) Tj ET\n")
+    }
+    let lines = |font: &str, size: f64, x: f64, y: f64, text: &str, n: usize| -> (String, f64) {
+        let mut out = String::new();
+        let mut y = y;
+        for l in wrap(text, n) {
+            out += &t(font, size, x, y, &l);
+            y -= size * 1.3;
+        }
+        (out, y)
+    };
+    let mut p1 = t("F2", 7.0, 10.0, 780.0, "Check for updates");
+    p1 += "0.3 g 416 720 142 30 re f 0 g\n";
+    p1 += &t("F1", 10.0, 54.0, 741.0, "Journal of Tests");
+    p1 += &t("F1", 18.0, 54.0, 620.0, "Hairpins and Circles in a Tiny Test Paper");
+    p1 += &t("F2", 9.0, 54.0, 595.0, "Ada Lovelace | Alan Turing");
+    p1 += "0.9 g 54 455 504 110 re f 0 g\n";
+    p1 += &t("F1", 10.0, 64.0, 548.0, "ABSTRACT");
+    p1 += &lines("F2", 9.0, 64.0, 535.0, WILEY_ABSTRACT, 100).0;
+    p1 += &t("F1", 10.0, 54.0, 420.0, "1");
+    p1 += &t("F1", 10.0, 79.0, 420.0, "Introduction");
+    let body = wrap(WILEY_BODY, 48);
+    let split = body.len() - 2;
+    for (i, l) in body.iter().enumerate() {
+        let (x, y) = if i < split { (54.0, 400.0 - 11.5 * i as f64) } else { (314.0, 420.0 - 11.5 * (i - split) as f64) };
+        p1 += &t("F2", 9.0, x, y, l);
+    }
+    p1 += &lines("F2", 9.0, 314.0, 420.0 - 11.5 * (body.len() - split) as f64 - 14.0, WILEY_BODY2, 48).0;
+    p1 += "0 G 0.5 w 54 110 m 558 110 l S\n";
+    p1 += &t("F2", 6.0, 54.0, 100.0, "Ada Lovelace and Alan Turing contributed equally to this work.");
+    p1 += "[2 2] 0 d 54 80 m 558 80 l S [] 0 d\n";
+    p1 += &t("F2", 6.0, 54.0, 65.0, "\\251 2026 Test-VCH GmbH");
+    p1 += &t("F2", 7.0, 54.0, 30.0, "Journal of Tests, 2026; 32:e70999");
+    p1 += &t("F2", 7.0, 54.0, 21.0, "https://doi.org/10.1234/test.70999");
+    p1 += &t("F2", 7.0, 530.0, 30.0, "1 of 3");
+    let mut p2 = "0.5 g 60 450 492 300 re f 0 g\n".to_string();
+    p2 += &t("F1", 8.0, 54.0, 435.0, "FIGURE 1");
+    p2 += &t("F2", 8.0, 100.0, 435.0, WILEY_LEGEND);
+    p2 += &t("F1", 10.0, 54.0, 400.0, "2");
+    p2 += &t("F1", 10.0, 79.0, 400.0, "Results");
+    p2 += &lines("F2", 9.0, 54.0, 380.0, WILEY_RESULTS, 48).0;
+    p2 += &t("F2", 7.0, 54.0, 32.0, "2of3 Journal of Tests,2026");
+    let mut p3 = t("F1", 8.0, 54.0, 740.0, "References");
+    p3 += &t("F2", 8.0, 54.0, 726.0, "1. Someone. A paper about hairpins. Journal of Tests 2020.");
+    p3 += &t("F2", 7.0, 54.0, 32.0, "Journal of Tests,2026 3of3");
+    pdf_with_fonts(&[p1, p2, p3], "Hairpins and Circles in a Tiny Test Paper", &["STIXTwoText-Bold", "STIXTwoText"])
+}
+
 fn tmp(name: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("p2e-test-{name}-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&d).unwrap();
@@ -668,6 +855,43 @@ fn pdfium_columns_and_figure_legend() {
     let refs = read(&mut z, "EPUB/text/ch02.xhtml");
     let boxed = refs.split("<div class=\"box\">").nth(1).and_then(|b| b.split("</div>").next()).unwrap_or_default();
     assert!(boxed.contains("Box 1. Further reading") && boxed.contains(&format!("<p>{}</p>", norm(COLUMNS_BOX))), "{refs}");
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// A Wiley-style article reads as text: nothing but the figure is an image, the paragraph runs on
+/// past the footnote into the next column, the furniture is gone, the figure has its whole legend
+/// and the headings keep their numbers. `P2E_TEST_PDF_DIR` keeps the PDF there (to try it with the
+/// Swift converter).
+#[test]
+#[ignore]
+fn pdfium_wiley_article_is_text() {
+    let dir = tmp("wiley");
+    let pdf = dir.join("wiley.pdf");
+    std::fs::write(&pdf, wiley_pdf()).unwrap();
+    if let Some(keep) = std::env::var_os("P2E_TEST_PDF_DIR") {
+        std::fs::copy(&pdf, PathBuf::from(keep).join("wiley.pdf")).unwrap();
+    }
+    let opts = Options { offline: true, ..Default::default() };
+    let r = super::super::convert_file_with(&pdf, &dir, &opts).unwrap();
+    assert_eq!(r.images, 1);
+    let norm = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let text = norm(&r.fulltext);
+    for want in [WILEY_ABSTRACT, WILEY_BODY, WILEY_BODY2, WILEY_RESULTS] {
+        assert!(text.contains(&norm(want)), "{want}\n--- in ---\n{text}");
+    }
+    for gone in ["Check for updates", "Test-VCH", "Journal of Tests,", "of 3", "of3"] {
+        assert!(!text.contains(gone), "{gone} in {text}");
+    }
+    let mut z = zip::ZipArchive::new(std::fs::File::open(&r.file).unwrap()).unwrap();
+    let nav = read(&mut z, "EPUB/nav.xhtml");
+    assert!(nav.contains("1 Introduction") && nav.contains("2 Results"), "{nav}");
+    let all: String = (1..=4).filter_map(|i| z.by_name(&format!("EPUB/text/ch{i:02}.xhtml")).ok().map(|mut f| {
+        let mut s = String::new();
+        std::io::Read::read_to_string(&mut f, &mut s).unwrap();
+        s
+    })).collect();
+    assert!(all.contains(&format!("<figcaption><strong>FIGURE 1</strong> {WILEY_LEGEND}</figcaption>")), "{all}");
+    assert!(!all.contains("class=\"equation\""), "{all}");
     std::fs::remove_dir_all(dir).ok();
 }
 

@@ -246,6 +246,32 @@ pub fn known_sections() -> &'static Regex {
     ))
 }
 
+/// A "math" font that sets the running text (STIX-Regular in some Wiley and Springer journals) is the
+/// body font: when a good share of the body-size lines are prose in it, no font in the document marks
+/// a formula (and no paragraph is cropped as one).
+pub fn clear_math_if_body_font(pages: &mut [Page], body_size: f64) {
+    let (mut body, mut in_math) = (0usize, 0usize);
+    for l in pages.iter().flat_map(|p| &p.lines).filter(|l| (l.size - body_size).abs() <= 0.5) {
+        body += count(&l.text);
+        if l.math >= 0.5 && is_prose(&l.text) {
+            in_math += count(&l.text);
+        }
+    }
+    if body > 0 && in_math as f64 > 0.3 * body as f64 {
+        pages.iter_mut().flat_map(|p| p.lines.iter_mut()).for_each(|l| l.math = 0.0);
+    }
+}
+
+/// Running text rather than a formula: five or more words of three or more lower-case letters that
+/// make up most of it. Such a paragraph is kept as text (never cropped as an image), whatever its
+/// fonts say.
+pub fn is_prose(t: &str) -> bool {
+    let words: Vec<_> = re!(r"\b[a-z]{3,}\b").find_iter(t).collect();
+    let word_chars: usize = words.iter().map(|m| m.as_str().len()).sum();
+    let chars = t.chars().filter(|c| !c.is_whitespace()).count();
+    words.len() >= 5 && word_chars as f64 >= 0.5 * chars.max(1) as f64
+}
+
 /// A DOI on its own: "https://doi.org/10.1038/…", "doi: 10.…".
 pub fn doi_line(s: &str) -> bool {
     re!(r"(?i)^(https?://(dx\.)?doi\.org/|doi:?\s*)10\.\d{4,9}/\S+$").is_match(trim(s))
@@ -255,7 +281,7 @@ pub fn caption_re() -> &'static Regex {
     // the label must be followed by punctuation, a capitalised word or nothing: running text that
     // wraps onto a line starting "Figure S2G). Top genes…" or "Fig. 1a and …" is not a caption
     re!(concat!(
-        r"(?i)^(?:Supplementary\s+|Extended\s+Data\s+|Supporting\s+)?(Figure|Fig\.?|Table|Algorithm|Box)\s*S?\d+[A-Za-z]?",
+        r"(?i)^(?:Supplementary\s+|Extended\s+Data\s+|Supporting\s+)?(Figure|Fig\.?|Scheme|Table|Algorithm|Box)\s*S?\d+[A-Za-z]?",
         // (a dash straight into a letter or digit is a range: "Fig. 4a–c)")
         r"(?:$|[.:|—]|[\-–](?:$|(?-i:[^a-z0-9]))|\s+(?:[.:|\-–—]|(?-i:[A-Z(\[])|$))"
     ))
@@ -337,16 +363,21 @@ impl<'a> Analyzer<'a> {
         let body_size = first_max(&sizes, |x| (x.1, x.0)).map(|x| x.0).unwrap_or(10.0);
         let mut pages = pages;
         mark_hard_hyphens(&mut pages);
+        clear_math_if_body_font(&mut pages, body_size);
         let mut a = Analyzer { pages, body_size, running: HashSet::new(), renderer, log };
         a.find_running();
         a
     }
 
+    /// A margin line with its numbers left out ("2 of 11", "3of11", "e70999") and, if it has words,
+    /// the punctuation at its ends, for finding running heads and feet.
     fn norm(s: &str) -> String {
         let s = s.to_lowercase();
+        let s = re!(r"\d+\s*of\s*\d+").replace_all(&s, "");
         let s = re!(r"\b[es]?\d+\b").replace_all(&s, "");
         let s = re!(r"\s+").replace_all(&s, " ");
-        trim(&s).to_string()
+        let words = s.trim_matches(|c: char| " ,.;:|–-".contains(c));
+        if words.chars().any(char::is_alphabetic) { words.to_string() } else { trim(&s).to_string() }
     }
 
     /// Running heads and feet: lines in the top/bottom margin repeated on many pages.
@@ -378,6 +409,14 @@ impl<'a> Analyzer<'a> {
         let in_margin = l.bbox.y0 < 0.09 * h || l.bbox.y1 > 0.91 * h;
         if in_margin && (self.running.contains(&Self::norm(t)) || re!(r"^[\divxlcIVXLC\s\-–/of|]+$").is_match(t)) {
             return true;
+        }
+        // the first page's fuller version of a running foot: "Chemistry – A European Journal, 2026;
+        // 32:e70999 https://doi.org/…"
+        if in_margin && l.page == 0 {
+            let nt = Self::norm(t);
+            if self.running.iter().any(|k| count(k) >= 15 && nt.starts_with(k.as_str())) {
+                return true;
+            }
         }
         if re!(r"^\d{1,4}$").is_match(t) && l.bbox.w() < 25.0 {
             return true;
@@ -483,6 +522,10 @@ impl<'a> Analyzer<'a> {
                 continue; // shaded text box
             }
             if !c.has_image && c.n <= 2 && r.h() < 30.0 {
+                continue;
+            }
+            // the journal's logo in the first page's masthead
+            if pno == 0 && r.y1 < 0.12 * page.height && r.h() < 0.08 * page.height {
                 continue;
             }
             regions.push(Region { rect: r, kind: Kind::Figure, image: None });
@@ -1283,6 +1326,10 @@ impl<'a> Analyzer<'a> {
             if affil && (re!(r"(?i)e-?mail:|correspond").is_match(&text) || re!(r"^\d\s?[A-Z]").is_match(&text)) {
                 p.kind = Kind::Front;
             }
+            // "A and B contributed equally to this work." at the foot of the first page
+            if count(&text) < 300 && re!(r"(?i)contributed equally|equal(ly)? contribut|these authors contributed").is_match(&text) {
+                p.kind = Kind::Front;
+            }
         }
         heading_sizes.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
         let big: Vec<f64> = heading_sizes.iter().copied().filter(|&s| s >= body + 1.0).collect();
@@ -1314,16 +1361,18 @@ impl<'a> Analyzer<'a> {
         for mut p in paras {
             if p.kind == Kind::Text && !p.lines.is_empty() && p.boxed.is_none() {
                 let (mf, n) = math_frac(&p);
-                if mf > 0.3 && n < 400 {
+                if mf > 0.3 && n < 400 && !is_prose(&p.text()) {
                     p.kind = Kind::Equation;
                 }
             }
             if let Some(prev) = out.last_mut() {
                 let gap = p.bbox().y0 - prev.bbox().y1;
+                // stacked pieces (not a piece back up the page, at the top of the next column)
                 if prev.page == p.page
                     && (p.kind == Kind::Equation || (p.kind == Kind::Text && p.boxed.is_none()))
                     && prev.kind == Kind::Equation
                     && gap < 1.6 * body
+                    && p.bbox().y0 > prev.bbox().y0 - body
                     && (p.kind == Kind::Equation || count(&p.text()) < 30)
                 {
                     let mut lines = std::mem::take(&mut prev.lines);

@@ -57,7 +57,7 @@ fn style_for(name: &str, force_bold: bool, italic_flag: bool) -> Style {
     let bold = force_bold
         || layout_re::bold().is_match(clean);
     let italic = italic_flag || layout_re::italic().is_match(clean);
-    let math = layout_re::math().is_match(clean);
+    let math = layout_re::math().is_match(clean) && !layout_re::stix_text().is_match(clean);
     Style { bold, italic, math }
 }
 
@@ -70,8 +70,21 @@ mod layout_re {
     pub fn italic() -> &'static Regex {
         re!(r"(?i:ital|oblique|slant)|-(I|It|MI|LI|BI|HI|BdIt|SBIt|Ita)$|[a-z]It$")
     }
+    /// Math fonts. STIX counts, except STIXTwoText: the body text of Wiley's journals (their math is
+    /// STIXTwoMath).
     pub fn math() -> &'static Regex {
         re!(r"(?i)CMMI|CMSY|CMEX|MSAM|MSBM|Math|Symbol|STIX|rsfs|EUFM|CMBSY|LMMath|esint|MTMI|MTSY|txsy|txmi|pxmi|Euclid")
+    }
+    pub fn stix_text() -> &'static Regex {
+        re!(r"(?i)STIXTwo-?Text")
+    }
+    /// A figure/table label on its own: "FIGURE 1", "Table S2"
+    pub fn label() -> &'static Regex {
+        re!(r"(?i)^(Figure|Fig\.|Scheme|Table|Box)\s*S?\d+[A-Za-z]?$")
+    }
+    /// A section number on its own: "1", "2.4"
+    pub fn number() -> &'static Regex {
+        re!(r"^\d+(\.\d+)*\.?$")
     }
 }
 
@@ -278,6 +291,7 @@ pub fn extract_lines(text: &PdfPageText, mb: &MediaBox, pno: usize) -> Vec<PLine
     }
     fold_fragments(&mut raw_lines);
     let mut raw_lines: Vec<Vec<C>> = raw_lines.into_iter().flat_map(split_numbers).collect();
+    join_labels(&mut raw_lines);
     raw_lines.iter_mut().for_each(attach_accents);
     if std::env::var("P2E_DEBUG_LINES").ok().and_then(|v| v.parse::<usize>().ok()) == Some(pno + 1) {
         for l in &raw_lines {
@@ -334,6 +348,47 @@ fn split_numbers(cs: Vec<C>) -> Vec<Vec<C>> {
     }
     out.push(cur);
     out
+}
+
+/// A label set apart from its line by a wide space ("FIGURE 1   (a) Hairpin…", "2.4   High
+/// Specificity…", Wiley's "1 | Introduction"): PDFium gives it a line of its own; join it to the
+/// text beside it on the same baseline. A bare number must be bold, like the heading after it (so
+/// a manuscript's line numbers stay apart).
+fn join_labels(lines: &mut Vec<Vec<C>>) {
+    let mut i = 0;
+    while i + 1 < lines.len() {
+        let (a, b) = (&lines[i], &lines[i + 1]);
+        let vis = |cs: &[C]| cs.iter().filter(|c| !is_space(c.ch) && c.bx.w() > 0.0).count();
+        let text: String = a.iter().map(|c| c.ch).collect::<String>().trim().to_string();
+        let ok = (|| {
+            let (ea, _, _) = extent(a)?;
+            let (eb, sb, _) = extent(b)?;
+            let first = b.iter().find(|c| !is_space(c.ch) && c.bx.w() > 0.0)?;
+            let s = sb.max(4.0);
+            let gap = eb.x0 - ea.x1;
+            let same_line = ea.y1.min(eb.y1) - ea.y0.max(eb.y0) > 0.5 * ea.h().min(eb.h());
+            let caption = layout_re::label().is_match(&text);
+            let bold = |c: &C| c.style.map(|st| st.bold).unwrap_or(false);
+            let number = layout_re::number().is_match(&text)
+                && a.iter().filter(|c| !is_space(c.ch) && c.bx.w() > 0.0).all(bold)
+                && bold(first);
+            Some(vis(a) > 0 && same_line && gap > 0.0 && gap < 3.0 * s && (caption || (number && gap < 2.5 * s)))
+        })()
+        .unwrap_or(false);
+        if ok {
+            let b = lines.remove(i + 1);
+            let a = &mut lines[i];
+            while a.last().map(|c| is_space(c.ch)).unwrap_or(false) {
+                a.pop();
+            }
+            let (prev, next) = (a.last().unwrap().bx, b.iter().find(|c| c.bx.w() > 0.0).map(|c| c.bx).unwrap_or(a.last().unwrap().bx));
+            let size = a.last().unwrap().size;
+            a.push(C { ch: ' ', size, bx: R::new(prev.x1, next.y0, next.x0, next.y1), style: None, generated: true });
+            a.extend(b);
+        } else {
+            i += 1;
+        }
+    }
 }
 
 /// Bounding box and average size of a line's visible characters (a drop cap, set in far larger
