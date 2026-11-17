@@ -12,6 +12,10 @@ import LuntaCore
 //     your library, and what you added or turned down before.
 //  4. The language model reads the best ~20 abstracts, keeps the ones that really fit and says why.
 //
+// With your ORCID iD (optional; looked up on OpenAlex, no sign-in) Lunta also knows your own
+// papers: papers citing them always show up, they count with your library in the ranking, the
+// paragraph can be drafted from them, and they are never offered as new.
+//
 // Shared state lives in the library folder, so it syncs: watches.json (authors / papers / topics
 // you follow) and foryou.json (the paragraph, the feed, and your feedback). Whichever device runs
 // first each day makes the feed; usually the Mac.
@@ -97,6 +101,76 @@ struct FeedbackSnip: Codable, Hashable {
     var text: String
 }
 
+/// One of your own papers (from your ORCID iD), kept short.
+struct OwnPaper: Codable, Hashable, Sendable {
+    var title: String
+    var authors: [String]
+    var date: String
+    var journal: String
+    var doi: String
+    var abstract: String
+    var citedBy: Int
+
+    init(_ h: DiscoverHit) {
+        title = h.meta.title; authors = Array(h.meta.authors.prefix(12)); date = h.meta.date; journal = h.meta.journal
+        doi = h.meta.doi; abstract = String(h.meta.abstractText.prefix(700)); citedBy = Int(h.citedBy)
+    }
+
+    var key: String { doi.isEmpty ? LibraryModel.titleKey(title) : LibraryModel.doiKey(doi) }
+    var meta: PaperMeta {
+        PaperMeta(title: title, authors: authors, date: date, journal: journal, volume: "", issue: "", pages: "", publisher: "",
+                  doi: doi, pmid: "", pmcid: "", arxiv: "", url: "", abstractText: abstract, keywords: [], license: "")
+    }
+}
+
+/// Someone you publish with (from your ORCID iD).
+struct CoauthorRecord: Codable, Hashable {
+    var name: String
+    var author: String          // OpenAlex author id ("A…")
+    var orcid: String           // "" when OpenAlex has none
+    var shared: Int
+    /// What an author watch follows: the ORCID iD, else the OpenAlex id (exact, unlike a name).
+    var watchValue: String { orcid.isEmpty ? author : orcid }
+}
+
+/// You, by your ORCID iD (found on OpenAlex).
+struct OrcidLink: Codable, Hashable {
+    var orcid: String
+    var name: String
+    var author: String          // OpenAlex author id
+    var works: Int
+    var papers: [OwnPaper]      // the latest, then the most cited
+    var coauthors: [CoauthorRecord]
+    var updated: Date
+
+    init(_ p: OrcidProfile) {
+        orcid = p.orcid; name = p.name; author = p.openalexId; works = Int(p.worksCount)
+        var list = p.works.map(OwnPaper.init)
+        for h in p.mostCited where !list.contains(where: { $0.key == OwnPaper(h).key }) { list.append(OwnPaper(h)) }
+        papers = list
+        coauthors = p.coauthors.map { CoauthorRecord(name: $0.name, author: $0.openalexId, orcid: $0.orcid, shared: Int($0.shared)) }
+        updated = Date()
+    }
+
+    /// The papers to watch for citations: the most cited and the latest (with DOIs), up to `n`.
+    func citable(_ n: Int = 15) -> [OwnPaper] {
+        let withDOI = papers.filter { !$0.doi.isEmpty }
+        var out = Array(withDOI.sorted { $0.citedBy > $1.citedBy }.prefix(n / 2))
+        for p in withDOI where out.count < n && !out.contains(where: { $0.key == p.key }) { out.append(p) }
+        return out
+    }
+
+    /// Whether you are one of these authors (by name, as OpenAlex writes it).
+    func isMine(_ authors: [String]) -> Bool {
+        let me = Self.plain(name)
+        return !me.isEmpty && authors.contains { Self.plain($0) == me }
+    }
+
+    static func plain(_ s: String) -> String {
+        s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).filter(\.isLetter)
+    }
+}
+
 struct ForYouState: Codable {
     var interests = ""
     var queries: [String] = []
@@ -113,6 +187,7 @@ struct ForYouState: Codable {
     var digestFor: String?         // the feed (its paper keys) the digest describes
     var morning = 7 * 60           // minutes after midnight: when the day's papers are picked
     var preprints = Preprints.any
+    var orcid: OrcidLink?          // you, by your ORCID iD (optional)
 
     /// How many of the day's papers may be preprints (bioRxiv, medRxiv, arXiv, …).
     enum Preprints: String, Codable, CaseIterable {
@@ -151,6 +226,7 @@ struct ForYouState: Codable {
         digestFor = try? c.decodeIfPresent(String.self, forKey: .digestFor)
         morning = (try? c.decodeIfPresent(Int.self, forKey: .morning)) ?? 7 * 60
         preprints = (try? c.decodeIfPresent(Preprints.self, forKey: .preprints)) ?? .any
+        orcid = (try? c.decodeIfPresent(OrcidLink.self, forKey: .orcid)) ?? nil
     }
 
     /// The latest time the day's papers were due (this morning, or yesterday's before then).
@@ -186,6 +262,7 @@ final class WatchCenter: ObservableObject {
     private var timer: Timer?
     private var summaryTimer: Timer?
     private var libraryVectors: [String: [Double]] = [:]
+    private var ownVectors: [String: [Double]] = [:]     // your own papers (ORCID), by key
 
     /// Testing: keep the files somewhere else than the library.
     var folderOverride: URL?
@@ -289,6 +366,106 @@ final class WatchCenter: ObservableObject {
         saveWatches()
     }
 
+    /// Whether you already follow this person (by ORCID iD, OpenAlex id or name).
+    func follows(_ c: CoauthorRecord) -> Bool {
+        watches.contains { w in
+            w.kind == .author && [c.orcid, c.author, c.name].contains { !$0.isEmpty && w.value.caseInsensitiveCompare($0) == .orderedSame }
+        }
+    }
+
+    func follow(_ c: CoauthorRecord) {
+        guard !follows(c) else { return }
+        add(Watch(kind: .author, value: c.watchValue, label: c.name))
+    }
+
+    // MARK: your ORCID iD
+
+    /// A run after the settings close (your ORCID iD was connected or changed there).
+    private var pendingRun = false
+
+    /// Looks you up on OpenAlex by your ORCID iD and remembers it (synced). Returns a problem to show, or nil.
+    func connectOrcid(_ input: String) async -> String? {
+        let orcid = normalizeOrcid(input: input)
+        guard !orcid.isEmpty else { return "That isn’t an ORCID iD. It looks like 0000-0002-1825-0097." }
+        guard let lib = model?.lib else { return nil }
+        do {
+            let p = try await Task.detached { try lib.orcidProfile(orcid: orcid) }.value
+            change { $0.orcid = OrcidLink(p) }
+            pendingRun = true
+            return nil
+        } catch {
+            return error.readable
+        }
+    }
+
+    func disconnectOrcid() {
+        change { $0.orcid = nil }
+        ownVectors = [:]
+    }
+
+    /// Starts a run if something changed in the settings that needs one.
+    func runIfPending() {
+        guard pendingRun else { return }
+        pendingRun = false
+        Task { await run() }
+    }
+
+    /// Your papers as OpenAlex has them today (once a day, in the run; kept as they were on failure).
+    private func refreshOrcid() async {
+        guard let link = state.orcid, link.updated < Date().addingTimeInterval(-20 * 3600), let lib = model?.lib else { return }
+        let orcid = link.orcid
+        guard let p = try? await Task.detached(operation: { try lib.orcidProfile(orcid: orcid) }).value else { return }
+        change { if $0.orcid?.orcid == orcid { $0.orcid = OrcidLink(p) } }
+    }
+
+    @Published private(set) var addingMine: (done: Int, total: Int)?
+    @Published var addedMine: String?
+    private var addMineTask: Task<Void, Never>?
+
+    /// "Add My Papers to Lunta": your papers (with DOIs) not yet in the library, a few at a time,
+    /// all of them in the collection My Papers.
+    func addMyPapers() {
+        guard let model, let link = state.orcid, addMineTask == nil else { return }
+        addedMine = nil
+        addMineTask = Task { [weak self] in
+            await self?.addMine(model, link)
+            self?.addMineTask = nil
+            self?.addingMine = nil
+        }
+    }
+
+    func cancelAddMine() { addMineTask?.cancel() }
+
+    private func addMine(_ model: LibraryModel, _ link: OrcidLink) async {
+        let lib = model.lib
+        var ids: [String] = []
+        var todo: [OwnPaper] = []
+        var seen = Set<String>()
+        for p in link.papers where !p.doi.isEmpty && seen.insert(p.key).inserted {
+            if let e = lib.findByDoi(doi: p.doi) { ids.append(e.id) } else { todo.append(p) }
+        }
+        addingMine = (0, todo.count)
+        var done = 0, added = 0
+        await withTaskGroup(of: String?.self) { group in
+            var it = todo.makeIterator()
+            for _ in 0..<3 { if let p = it.next() { group.addTask { await model.add(p.doi, known: p.meta) } } }
+            for await id in group {
+                done += 1
+                if let id { ids.append(id); added += 1 }
+                addingMine = (done, todo.count)
+                if !Task.isCancelled, let p = it.next() { group.addTask { await model.add(p.doi, known: p.meta) } }
+            }
+        }
+        let name = "My Papers"
+        let folder = lib.collections().first { $0.name == name && $0.parent == nil }?.id
+            ?? (try? lib.createCollection(name: name, parent: nil))?.id
+        if let folder { for id in ids { try? lib.setMembership(collection: folder, paper: id, present: true) } }
+        model.reload()
+        let cancelled = Task.isCancelled
+        addedMine = (added == 0 && todo.isEmpty ? "Your papers were already in Lunta" : "Added \(added) paper\(added == 1 ? "" : "s")")
+            + (cancelled ? " before you stopped" : "") + "; \(ids.count) in \(name)."
+    }
+
     // MARK: feedback
 
     /// "Not for me": removes it here and on the other devices, and ranks similar papers lower.
@@ -362,7 +539,7 @@ final class WatchCenter: ObservableObject {
 
     func runIfDue() async {
         load()
-        guard !state.interests.isEmpty || !watches.isEmpty else { return }
+        guard !state.interests.isEmpty || !watches.isEmpty || state.orcid != nil else { return }
         // every morning at the chosen time (or as soon as Lunta runs after it). The Mac usually makes
         // the day's feed; the iPhone steps in when no Mac has two hours after the morning time.
         let morning = state.lastMorning()
@@ -378,9 +555,11 @@ final class WatchCenter: ObservableObject {
         guard let model, !checking else { return }
         load()
         let interests = state.interests
-        guard !interests.isEmpty || !watches.isEmpty else { return }
+        guard !interests.isEmpty || !watches.isEmpty || state.orcid != nil else { return }
         checking = true
         defer { checking = false; stage = nil }
+        await refreshOrcid()
+        let me = state.orcid
         let lib = model.lib
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
@@ -397,7 +576,10 @@ final class WatchCenter: ObservableObject {
 
         // 2. the wide net
         stage = "Looking for new papers…"
-        struct Job: Sendable { let kind: WatchKind; let value: String; let source: String; let explicit: Bool; let limit: UInt32 }
+        struct Job: Sendable {
+            let kind: WatchKind; let value: String; let source: String; let explicit: Bool; let limit: UInt32
+            var notBy: String? = nil    // citing your paper: leave out your own (OpenAlex author id)
+        }
         var jobs: [Job] = []
         for q in state.queries { jobs.append(Job(kind: .topic, value: q, source: "search “\(q)”", explicit: false, limit: 40)) }
         for w in watches {
@@ -408,8 +590,15 @@ final class WatchCenter: ObservableObject {
             case .journal: jobs.append(Job(kind: .journal, value: w.value, source: Self.journalSource(w.label), explicit: false, limit: 30))
             }
         }
+        // papers citing your own (as if you followed them), without your own citing them
+        if let me {
+            for p in me.citable() {
+                jobs.append(Job(kind: .citing, value: p.doi, source: Self.citesYourPaper(p.title), explicit: true, limit: 10, notBy: me.author))
+            }
+        }
+        let ownKeys = Set(me?.papers.map(\.key) ?? [])
         let every = lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
-        for p in every.filter({ !$0.meta.doi.isEmpty }).prefix(8) {
+        for p in every.filter({ !$0.meta.doi.isEmpty && !ownKeys.contains(LibraryModel.doiKey($0.meta.doi)) }).prefix(8) {
             jobs.append(Job(kind: .citing, value: p.meta.doi, source: "Cites “\(p.meta.title.prefix(80))” in your library.", explicit: false, limit: 10))
         }
         let keywords = state.keywords
@@ -417,7 +606,8 @@ final class WatchCenter: ObservableObject {
         await withTaskGroup(of: [(DiscoverHit, String, Bool)].self) { group in
             for j in jobs {
                 group.addTask {
-                    let hits = (try? lib.watchNew(kind: j.kind, value: j.value, since: since, limit: j.limit)) ?? []
+                    let hits = (j.notBy.map { try? lib.citingNew(doi: j.value, excludeAuthor: $0, since: since, limit: j.limit) }
+                                ?? (try? lib.watchNew(kind: j.kind, value: j.value, since: since, limit: j.limit))) ?? []
                     return hits.map { ($0, j.source, j.explicit) }
                 }
             }
@@ -434,14 +624,17 @@ final class WatchCenter: ObservableObject {
             for await batch in group { pool.append(contentsOf: batch.map { (hit: $0.0, source: $0.1, explicit: $0.2) }) }
         }
 
-        // 3. new to you: not in the library, never offered before
+        // 3. new to you: not in the library, never offered before, not your own
         let offered = Set(state.shown).union(state.items.map(\.key))
         var seenKeys = Set<String>()
         var candidates: [(hit: DiscoverHit, source: String, explicit: Bool)] = []
+        // a paper found twice keeps its strongest reason (citing your paper, then other follows)
+        pool = pool.filter { Self.citesYours($0.source) } + pool.filter { $0.explicit && !Self.citesYours($0.source) } + pool.filter { !$0.explicit }
         for c in pool {
             let key = LibraryModel.hitKey(c.hit)
             guard !key.isEmpty, c.hit.inLibrary == nil, !offered.contains(key), !seenKeys.contains(key),
                   c.hit.meta.title.count > 10 else { continue }
+            if ownKeys.contains(key) || me?.isMine(c.hit.meta.authors) == true { continue }
             if !c.hit.meta.doi.isEmpty, lib.findByDoi(doi: c.hit.meta.doi) != nil { continue }
             // papers only: no data or code deposits, theses servers or book series, and an abstract to judge by
             let venue = c.hit.meta.journal.lowercased()
@@ -456,14 +649,17 @@ final class WatchCenter: ObservableObject {
         // 4. ranking on the device
         stage = "Ranking \(candidates.count) papers…"
         await refreshLibraryVectors(every)
-        let libVecs = Array(libraryVectors.values)
+        await refreshOwnVectors(me?.papers ?? [])
+        // your own papers count like papers in your library
+        let libVecs = Array(libraryVectors.values) + Array(ownVectors.values)
         let liked = state.liked.map(\.text), disliked = state.disliked.map(\.text), boosted = state.boosted.map(\.text)
         let texts = candidates.map { Self.snip($0.hit.meta.title, $0.hit.meta.abstractText) }
         let scores = await Task.detached(priority: .utility) {
             Self.score(texts, interests: interests, library: libVecs, liked: liked, disliked: disliked, boosted: boosted)
         }.value
         lastStats = "pool \(pool.count), new candidates \(candidates.count) (" +
-            Dictionary(grouping: candidates, by: { $0.source.hasPrefix("search") ? "searches" : $0.source.hasPrefix("Cites") ? "citing library" : $0.source })
+            Dictionary(grouping: candidates, by: { $0.source.hasPrefix("search") ? "searches" : Self.citesYours($0.source) ? "citing your papers"
+                                       : $0.source.hasPrefix("Cites") ? "citing library" : $0.source })
                 .map { "\($0.key): \($0.value.count)" }.sorted().joined(separator: ", ") + ")"
         // newer first among papers about as close: up to +0.04 for one published today, none at 9 days
         // (closeness scores of the day's candidates differ by a few hundredths)
@@ -479,7 +675,8 @@ final class WatchCenter: ObservableObject {
         // 5. the language model reads the best abstracts
         var picked: [FeedRecord] = []
         var turnedDown: [String] = []
-        for e in ranked.filter(\.c.explicit).prefix(10) {
+        let explicit = ranked.filter(\.c.explicit)
+        for e in (explicit.filter { Self.citesYours($0.c.source) } + explicit.filter { !Self.citesYours($0.c.source) }).prefix(12) {
             picked.append(FeedRecord(e.c.hit, reason: e.c.source, score: e.s, source: e.c.source))
         }
         // the best papers from journals you follow come first (and pass at a lower bar), then the rest
@@ -531,6 +728,11 @@ final class WatchCenter: ObservableObject {
         if !fresh.isEmpty { notifyFeed() }
     }
 
+    nonisolated static func citesYourPaper(_ title: String) -> String {
+        let short = title.components(separatedBy: ": ").first.map { $0.count >= 12 ? $0 : title } ?? title
+        return "Cites your paper “\(short.count > 70 ? String(short.prefix(68)) + "…" : short)”."
+    }
+    nonisolated static func citesYours(_ source: String) -> Bool { source.hasPrefix("Cites your paper “") }
     nonisolated static func journalSource(_ name: String) -> String { "New in \(name), a journal you follow." }
     nonisolated static func fromJournal(_ source: String) -> Bool { source.hasPrefix("New in ") && source.hasSuffix("a journal you follow.") }
 
@@ -716,6 +918,18 @@ final class WatchCenter: ObservableObject {
         for (id, v) in made { libraryVectors[id] = v }
     }
 
+    private func refreshOwnVectors(_ papers: [OwnPaper]) async {
+        let keys = Set(papers.map(\.key))
+        ownVectors = ownVectors.filter { keys.contains($0.key) }
+        let todo = papers.filter { ownVectors[$0.key] == nil }.map { ($0.key, Self.snip($0.title, $0.abstract)) }
+        guard !todo.isEmpty else { return }
+        let made = await Task.detached(priority: .utility) { () -> [(String, [Double])] in
+            guard let e = NLEmbedding.sentenceEmbedding(for: .english) else { return [] }
+            return todo.compactMap { k, t in e.vector(for: t).map { (k, $0) } }
+        }.value
+        for (k, v) in made { ownVectors[k] = v }
+    }
+
     nonisolated static func score(_ texts: [String], interests: String, library: [[Double]],
                                   liked: [String], disliked: [String], boosted: [String] = []) -> [Double] {
         guard let e = NLEmbedding.sentenceEmbedding(for: .english) else { return texts.map { _ in 0 } }
@@ -824,21 +1038,32 @@ final class WatchCenter: ObservableObject {
         return (score, why)
     }
 
-    /// Drafts the interests paragraph from the library (the most recent papers).
+    /// Drafts the interests paragraph from your own papers (with your ORCID iD) and the library
+    /// (the most recent papers).
     func draftInterests() async -> String? {
         guard let model else { return nil }
         let papers = model.lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
-        guard !papers.isEmpty else { return nil }
-        let list = papers.prefix(60).map { "- " + $0.meta.title }.joined(separator: "\n")
+        let own = state.orcid?.papers.prefix(25) ?? []
+        guard !papers.isEmpty || !own.isEmpty else { return nil }
+        var parts: [String] = []
+        if !own.isEmpty {
+            // the latest ones with their abstracts (the model's context is small), the rest by title
+            let mine = own.enumerated().map { i, p in
+                "- " + p.title + (i < 8 && !p.abstract.isEmpty ? "\n  " + String(p.abstract.prefix(350)) : "")
+            }.joined(separator: "\n")
+            parts.append("Papers the researcher wrote themselves (newest first; these matter most):\n\n" + mine)
+        }
+        if !papers.isEmpty {
+            let list = papers.prefix(own.isEmpty ? 60 : 30).map { "- " + $0.meta.title }.joined(separator: "\n")
+            parts.append("Papers the researcher saved recently:\n\n" + list)
+        }
         let prompt = """
-            These are papers a researcher saved recently:
-
-            \(list)
+            \(parts.joined(separator: "\n\n"))
 
             Write their research interests as one paragraph of 3 to 5 sentences in the first person ("I work on…"). \
             Describe the field, the questions, the methods and the kinds of data in your own words, as a researcher \
             would describe their work. Be concrete: name the specific techniques (for example "spatial transcriptomics", \
-            "cell segmentation"), tissues, organisms and diseases that recur in the titles; never use vague phrases \
+            "cell segmentation"), tissues, organisms and diseases that recur in the papers; never use vague phrases \
             like "advanced techniques" or "complex biological data", never copy whole titles. Only the paragraph.
             """
         let engine = AskEngine(scope: .paper("__for-you__"))
@@ -1224,6 +1449,9 @@ struct ForYouSettings: View {
     @State private var preprints = ForYouState.Preprints.any
     @State private var drafting = false
     @State private var addingWatch = false
+    @State private var orcidText = ""
+    @State private var connecting = false
+    @State private var orcidProblem: String?
 
     var body: some View {
         NavigationStack {
@@ -1234,10 +1462,35 @@ struct ForYouSettings: View {
                     Button {
                         drafting = true
                         Task { if let d = await center.draftInterests(), !d.isEmpty { text = d }; drafting = false }
-                    } label: { Label(drafting ? "Reading your library…" : "Draft from My Library", systemImage: "wand.and.stars") }
+                    } label: {
+                        Label(drafting ? (center.state.orcid == nil ? "Reading your library…" : "Reading your papers…")
+                                       : (center.state.orcid == nil ? "Draft from My Library" : "Draft from My Papers and Library"),
+                              systemImage: "wand.and.stars")
+                    }
                     .disabled(drafting)
                 } header: { Text("Your research") } footer: {
                     Text("A few sentences on your topics, methods and systems. Lunta turns them into searches and uses them to rank and screen new papers.")
+                }
+                orcidSection
+                if let me = center.state.orcid, !me.coauthors.isEmpty {
+                    Section {
+                        ForEach(me.coauthors, id: \.author) { c in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(c.name)
+                                    Text("\(c.shared) paper\(c.shared == 1 ? "" : "s") together").font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if center.follows(c) {
+                                    Text("Following").font(.callout).foregroundStyle(.secondary)
+                                } else {
+                                    Button("Follow") { center.follow(c) }.buttonStyle(.borderless).tint(.luntaTeal)
+                                }
+                            }
+                        }
+                    } header: { Text("People you publish with") } footer: {
+                        Text("Follow someone to get their new papers.")
+                    }
                 }
                 Section {
                     DatePicker("Every morning at", selection: $morning, displayedComponents: .hourAndMinute)
@@ -1272,6 +1525,7 @@ struct ForYouSettings: View {
                 }
             }
             .sheet(isPresented: $addingWatch) { NewWatchView().environmentObject(model) }
+            .onDisappear { center.runIfPending() }
             .onAppear {
                 text = center.interests; perDay = center.perDay; preprints = center.state.preprints
                 let m = center.state.morning
@@ -1281,6 +1535,58 @@ struct ForYouSettings: View {
         #if os(macOS)
         .frame(minWidth: 520, minHeight: 560)
         #endif
+    }
+
+    /// Your ORCID iD: connect it, and add your papers to the library.
+    @ViewBuilder private var orcidSection: some View {
+        Section {
+            if let me = center.state.orcid {
+                HStack {
+                    Label("Connected: \(me.name), \(me.works) paper\(me.works == 1 ? "" : "s")", systemImage: "person.crop.circle.badge.checkmark")
+                    Spacer()
+                    Button("Disconnect", role: .destructive) { center.disconnectOrcid() }.buttonStyle(.borderless)
+                }
+                if let p = center.addingMine {
+                    HStack {
+                        ProgressView(value: Double(p.done), total: Double(max(p.total, 1)))
+                        Text("\(p.done) of \(p.total)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                        Button("Stop") { center.cancelAddMine() }.buttonStyle(.borderless)
+                    }
+                } else {
+                    Button { center.addMyPapers() } label: { Label("Add My Papers to Lunta", systemImage: "tray.and.arrow.down") }
+                    if let done = center.addedMine { Text(done).font(.caption).foregroundStyle(.secondary) }
+                }
+            } else {
+                HStack {
+                    TextField("0000-0000-0000-0000", text: $orcidText)
+                        .autocorrectionDisabled()
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.asciiCapable)
+                        #endif
+                        .onSubmit(connect)
+                    Button(connecting ? "Connecting…" : "Connect", action: connect)
+                        .buttonStyle(.borderless).tint(.luntaTeal)
+                        .disabled(connecting || orcidText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                if let orcidProblem { Text(orcidProblem).font(.caption).foregroundStyle(.red) }
+            }
+        } header: { Text("Your ORCID iD") } footer: {
+            Text(center.state.orcid == nil
+                 ? "Optional. Lunta finds your papers on OpenAlex: papers citing them always show up, and your own never do."
+                 : "Papers citing yours always show up. Your papers rank like your library and are never offered as new. “Add My Papers” puts them in the collection My Papers.")
+        }
+    }
+
+    private func connect() {
+        guard !connecting else { return }
+        connecting = true
+        orcidProblem = nil
+        Task {
+            orcidProblem = await center.connectOrcid(orcidText)
+            connecting = false
+            if orcidProblem == nil { orcidText = "" }
+        }
     }
 }
 
