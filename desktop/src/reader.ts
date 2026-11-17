@@ -159,6 +159,7 @@ function render() {
       h('div.tools', {},
         reading ? h('button.icon#figures-btn', { text: '🖼', hidden: !figures.length, onclick: () => openFigureGrid() }) : null,
         h('button.icon#find-btn', { text: '🔍', title: 'Find in paper (Ctrl+F)', 'aria-label': 'Find in paper', onclick: () => startFind() }),
+        reading ? h('button.icon#goto-btn', { text: '#', title: 'Go to page (Ctrl+Alt+G)', 'aria-label': 'Go to page', onclick: () => goToPage() }) : null,
         modeBtn,
         reading ? h('button.icon.hl-more', { text: '▾', title: 'Highlight colour, and highlight the selection now', onclick: (e: MouseEvent) => {
           const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); highlightMenu(r.left, r.bottom + 4);
@@ -406,6 +407,12 @@ async function citeFromPage(link: string) {
   run(`window.luntaCiteDone && luntaCiteDone(${JSON.stringify(label)})`);
 }
 
+/** Go to Page: the page's own panel (page number and slider; JumpBack.swift's luntaShowGoTo), with the keyboard. */
+function goToPage() {
+  frame?.contentWindow?.focus();
+  run('window.luntaShowGoTo && luntaShowGoTo()');
+}
+
 // keys for the reader when the page doesn't have the keyboard
 document.addEventListener('keydown', (e) => {
   if (!paper || $('#reader').hidden || (e.target as HTMLElement).closest?.('input, textarea')) return;
@@ -413,6 +420,7 @@ document.addEventListener('keydown', (e) => {
   const mod = e.metaKey || e.ctrlKey;
   if (e.key === 'Escape') { if (!closeAppearance() && !closeFind()) closeReader(); return; }
   if (mod && !e.shiftKey && !e.altKey && e.code === 'KeyF') { e.preventDefault(); startFind(); return; }
+  if (mode === 'reading' && mod && e.altKey && !e.shiftKey && e.code === 'KeyG') { e.preventDefault(); goToPage(); return; }
   if (e.key === 'F3' || (mod && !e.altKey && e.code === 'KeyG')) { e.preventDefault(); if (findOpen()) findStep(!e.shiftKey); else startFind(); return; }
   if (mode === 'reading' && e.ctrlKey && e.altKey && !e.shiftKey && e.code === 'KeyH') { e.preventDefault(); setHighlightMode(!hlMode); return; }
   if (mod && e.shiftKey && !e.altKey && e.code === 'KeyH') { e.preventDefault(); highlight(hlColor); return; }

@@ -445,6 +445,8 @@ private fun EpubReader(model: AppModel, paper: Paper) {
                         DropdownMenu(overflow, { overflow = false }) {
                             if (toc.isNotEmpty()) DropdownMenuItem({ Text("Contents") }, { overflow = false; showToc = true },
                                 leadingIcon = { Icon(Icons.AutoMirrored.Filled.FormatListBulleted, null) })
+                            DropdownMenuItem({ Text("Go to page…") }, { overflow = false; chrome = false; scope.launch { js("window.luntaShowGoTo && luntaShowGoTo()") } },
+                                leadingIcon = { Icon(Icons.Outlined.Pages, null) })
                             DropdownMenuItem({ Text("Text & Theme…") }, { overflow = false; showAppearance = true },
                                 leadingIcon = { Icon(Icons.Filled.FormatSize, null) })
                             DropdownMenuItem({ Text(if (annotations.isEmpty()) "Highlights & Notes" else "Highlights & Notes (${annotations.size})") },

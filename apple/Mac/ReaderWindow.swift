@@ -29,6 +29,7 @@ struct ReaderWindow: View {
     @State private var editingAnnotation: Annotation?
     @StateObject private var pdfHighlights = PDFHighlighter()
     @StateObject private var find = PaperFind()
+    @State private var goToPage = 0
     @State private var pdfFinder = PDFFinder()
     @State private var showHighlights = false
     @StateObject private var ask: AskEngine
@@ -200,6 +201,8 @@ struct ReaderWindow: View {
         .environment(\.highlightUndo, undo)
         .background(ReaderUndoKeys(undo: undo))
         .modifier(ReaderFindHooks(find: find, backend: findBackend, webView: mode == .reading ? controller.webView : nil))
+        .modifier(GoToPageModifier(request: goToPage, pdf: mode == .pdf, webView: { controller.webView }, pdfView: { pdfHighlights.view }))
+        .focusedSceneValue(\.goToPage, (mode == .pdf || book != nil) ? GoToPageAction { goToPage += 1 } : nil)
         // an undone or redone highlight: redraw (the reading view; the PDF follows the model)
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidUndoChange, object: undo)) { _ in refreshHighlights() }
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidRedoChange, object: undo)) { _ in refreshHighlights() }

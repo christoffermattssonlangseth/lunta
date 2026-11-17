@@ -24,6 +24,7 @@ struct LuntaApp: App {
         .commands {
             LuntaCommands(model: holder.model)
             PaperFindCommands()
+            GoToPageCommands()
             CommandMenu("Listen") {
                 Button("Play / Pause") { Narrator.active?.toggle() }.keyboardShortcut("p", modifiers: [.command, .option])
                 Button("Next Paragraph") { Narrator.active?.next() }.keyboardShortcut(.rightArrow, modifiers: [.command, .option])

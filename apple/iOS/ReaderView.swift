@@ -32,6 +32,7 @@ struct ReaderView: View {
     @State private var editingAnnotation: Annotation?
     @StateObject private var pdfHighlights = PDFHighlighter()
     @StateObject private var find = PaperFind()
+    @State private var goToPage = 0
     @State private var pdfFinder = PDFFinder()
     @State private var showHighlights = false
     @State private var current: String?
@@ -82,6 +83,7 @@ struct ReaderView: View {
         }
         // find in paper: over the page, so the page keeps its size (and its pages)
         .modifier(FindOverlay(find: find, theme: mode == .reading ? theme : nil))
+        .modifier(goToPageModifier)
         // ⌘F, ⌘G and ⇧⌘G from a hardware keyboard (buttons the keyboard can reach, not seen)
         .background {
             Group {
@@ -144,6 +146,7 @@ struct ReaderView: View {
                         }
                         Divider()
                     }
+                    if canGoToPage { GoToPageButton(request: $goToPage) }
                     if (mode == .reading && book != nil) || mode == .pdf {
                         Button { showHighlights = true } label: { Label("Highlights & Notes", systemImage: "highlighter") }
                     }
@@ -212,53 +215,7 @@ struct ReaderView: View {
         // finding: in pages the bar takes the navigation bar's place (the pages make room for it);
         // scrolling, the bars stay
         .onChange(of: find.shown) { _, shown in withAnimation { chromeHidden = shown && paged && mode == .reading } }
-        .task {
-            controller.onFigure = { figure = $0 }
-            controller.onPageReady = {
-                controller.setHighlightMode(highlightMode, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow)
-                refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
-            }
-            controller.onSelectionDone = { pageSel in
-                guard highlightMode, mode == .reading else { return }
-                Task {
-                    var sel = pageSel
-                    if sel == nil { sel = await controller.pageSelection() }
-                    guard let sel else { refreshHighlights(); return }
-                    autoHighlighter.apply(sel, paper: paperID, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow, model: model, undo: undoManager)
-                    controller.clearSelection()
-                    refreshHighlights()
-                }
-            }
-            controller.onAnnotation = { id in editingAnnotation = model.annotations(paperID).first { $0.id == id } }
-            controller.onMenu = { action in
-                Task {
-                    guard let sel = await controller.pageSelection() else { return }
-                    switch action {
-                    case .highlight(let c): model.addHighlight(paperID, sel, color: c, undo: undoManager)
-                    case .note: editingAnnotation = model.addHighlight(paperID, sel, undo: undoManager)
-                    }
-                    controller.clearSelection()
-                    refreshHighlights()
-                }
-            }
-            if PhoneVoice.shared.downloaded { Task { _ = await PhoneVoice.shared.prepare() } }
-            ask.model = model
-            ask.passages = { [weak controller] in await controller?.narrationItems(includeCaptions: true) ?? [] }
-            ask.selection = { [weak controller] in await controller?.selectedText() }
-            pdfFinder.highlighter = pdfHighlights
-            // opened from a library search that found this paper: find the search in it
-            if let q = PaperFind.libraryQuery(for: paperID, in: model) { find.prefill(q) }
-            position.onSettled = { [weak find] in find?.pageSettled() }
-            await load()
-            find.use(findBackend)
-            if mode == .pdf { try? await Task.sleep(for: .milliseconds(500)); find.pageSettled() }
-            #if DEBUG
-            Task { await shotHooks() }
-            await positionTest()
-            await controller.figureTest()
-            await findTest()
-            #endif
-        }
+        .task { await setUp() }
         .onAppear { OpenReader.set(paperID); position.resume() }
         .onDisappear {
             // a figure opened over the reader: it's still there, at the same place
@@ -273,6 +230,59 @@ struct ReaderView: View {
 
     private func refreshHighlights() { controller.showAnnotations(model.annotations(paperID)) }
 
+    /// The reader's hooks into the page, the assistant and the voice (run once the view appears).
+    private func setUp() async {
+        controller.onFigure = { figure = $0 }
+        controller.onPageReady = {
+            controller.setHighlightMode(highlightMode, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow)
+            refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
+        }
+        controller.onSelectionDone = { pageSel in
+            guard highlightMode, mode == .reading else { return }
+            Task {
+                var sel = pageSel
+                if sel == nil { sel = await controller.pageSelection() }
+                guard let sel else { refreshHighlights(); return }
+                autoHighlighter.apply(sel, paper: paperID, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow, model: model, undo: undoManager)
+                controller.clearSelection()
+                refreshHighlights()
+            }
+        }
+        controller.onAnnotation = { id in editingAnnotation = model.annotations(paperID).first { $0.id == id } }
+        controller.onMenu = { action in
+            Task {
+                guard let sel = await controller.pageSelection() else { return }
+                switch action {
+                case .highlight(let c): model.addHighlight(paperID, sel, color: c, undo: undoManager)
+                case .note: editingAnnotation = model.addHighlight(paperID, sel, undo: undoManager)
+                }
+                controller.clearSelection()
+                refreshHighlights()
+            }
+        }
+        if PhoneVoice.shared.downloaded { Task { _ = await PhoneVoice.shared.prepare() } }
+        ask.model = model
+        ask.passages = { [weak controller] in await controller?.narrationItems(includeCaptions: true) ?? [] }
+        ask.selection = { [weak controller] in await controller?.selectedText() }
+        pdfFinder.highlighter = pdfHighlights
+        // opened from a library search that found this paper: find the search in it
+        if let q = PaperFind.libraryQuery(for: paperID, in: model) { find.prefill(q) }
+        position.onSettled = { [weak find] in find?.pageSettled() }
+        await load()
+        find.use(findBackend)
+        if mode == .pdf { try? await Task.sleep(for: .milliseconds(500)); find.pageSettled() }
+        #if DEBUG
+        Task { await shotHooks() }
+        await positionTest()
+        await controller.figureTest()
+        await findTest()
+        #endif
+    }
+
+    private var canGoToPage: Bool { (mode == .reading && book != nil) || (mode == .pdf && pdfURL != nil) }
+    private var goToPageModifier: GoToPageModifier {
+        GoToPageModifier(request: goToPage, pdf: mode == .pdf, webView: { [controller] in controller.webView }, pdfView: { [pdfHighlights] in pdfHighlights.view })
+    }
     /// What the find bar searches: the reading view or the PDF.
     private var findBackend: FindBackend? { mode == .pdf ? (pdfURL != nil ? pdfFinder : nil) : (book != nil ? controller : nil) }
 

@@ -16,6 +16,9 @@ extension ReaderAssets {
       var on = false, top = 24, bottom = 34, native = false, W = 0, Hh = 0, anchor = null, settle = null, busy = false, checks = [], heldPage = -1, target = 0;
       var style = document.createElement('style'); document.documentElement.appendChild(style);
       var label = document.createElement('div'); label.id = 'm-page-no';
+      // the page number opens Go to Page (JumpBack.swift)
+      label.title = 'Go to Page';
+      label.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); if (window.luntaShowGoTo) window.luntaShowGoTo(); });
       function post(m){ try { window.webkit.messageHandlers.page.postMessage(m); } catch (x) {} }
 
       window.luntaPaged = function(){ return on; };
@@ -52,8 +55,9 @@ extension ReaderAssets {
           'html.m-paged h1, html.m-paged h2, html.m-paged h3, html.m-paged h4 { break-after: avoid; }' +
           'html.m-paged h1 { margin-top: 0; break-before: column; }' +
           'html.m-paged .titlepage h1, html.m-paged .titlepage + * h1:first-child { break-before: auto; }' +
-          '#m-page-no { position: fixed; left: 0; right: 0; bottom: ' + Math.max(6, bottom / 2 - 8) + 'px; text-align: center;' +
-          ' font: 12px -apple-system, sans-serif; color: rgba(127,127,127,.85); pointer-events: none; z-index: 10; }';
+          '#m-page-no { position: fixed; left: 50%; transform: translateX(-50%); bottom: ' + Math.max(2, bottom / 2 - 12) + 'px; text-align: center;' +
+          ' padding: 4px 12px; white-space: nowrap; cursor: pointer; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;' +
+          ' font: 12px -apple-system, sans-serif; color: rgba(127,127,127,.85); z-index: 10; }';
         document.documentElement.classList.add('m-paged');
         if (!label.parentNode) document.documentElement.appendChild(label);
         if (window.luntaFixOverflow) window.luntaFixOverflow();
@@ -75,6 +79,8 @@ extension ReaderAssets {
         else window.scrollTo({ left: n * W, top: 0, behavior: smooth ? 'smooth' : 'instant' });
         setTimeout(show, smooth ? 380 : 30);
       };
+      // the page showing and the number of pages, as the label counts them (two columns: two pages)
+      window.luntaPageInfo = function(){ return on ? { page: page(), pages: pages(), cols: cols() } : null; };
       window.luntaTurn = function(d){ window.luntaGoToPage(page() + d, true); };
 
       // the page holding a rectangle (from getBoundingClientRect or a range)
