@@ -63,9 +63,19 @@ Chromium browsers.
 Lunta must be open on the same computer: the extension talks only to the app, never to a server. To update,
 unzip the new version over the old folder and click ↻ on the extension in `chrome://extensions`.
 
+### Safari (Mac, iPhone, iPad)
+
+The extension comes with the Lunta app, so there's nothing to download:
+
+- **Mac:** open Lunta once, then in Safari choose **Safari › Settings › Extensions**, tick **Lunta** and
+  allow it on all websites. It works like the Chrome extension (Lunta must be open).
+- **iPhone and iPad:** in the **Settings** app, **Apps › Safari › Extensions › Lunta**: turn it on and
+  allow it on all websites. On an article page, open Safari's extensions menu (the puzzle piece, or **aA**)
+  and choose **Lunta**. What you save goes straight to Lunta on the same device; open Lunta to finish
+  (the panel has an **Open Lunta** link).
+
 **Android:** there are no extensions in Chrome for Android. Instead, open a paper's **Journal page** in Lunta,
-sign in there if needed, and tap **Use this page's full text**. **iPhone and iPad:** share a page from Safari
-to Lunta.
+sign in there if needed, and tap **Use this page's full text**.
 
 ### Word and Google Docs (Mac)
 
