@@ -16,8 +16,9 @@ struct Pill: View {
     var body: some View {
         HStack(spacing: 3) {
             if let icon { Image(systemName: icon).imageScale(.small) }
-            Text(text)
+            if !text.isEmpty { Text(text) }
         }
+        .fixedSize()
         .font(.caption2.weight(.semibold))
         .padding(.horizontal, 6).padding(.vertical, 2)
         .foregroundStyle(color)

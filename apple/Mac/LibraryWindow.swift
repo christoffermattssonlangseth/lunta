@@ -371,13 +371,16 @@ struct PaperTable: View {
             .width(18)
             TableColumn("Title") { p in
                 VStack(alignment: .leading, spacing: 3) {
+                    // every row has the same height from the start (two title lines, then the journal,
+                    // or a search's snippet): a new paper's details arrive after its row is measured,
+                    // and the table doesn't measure a row again, which left new rows squashed
                     Text(p.meta.title.isEmpty ? "Untitled" : p.meta.title)
                         .font(.body.weight(p.read ? .regular : .semibold))
-                        .lineLimit(2)
-                    if let snip = model.snippets[p.id], !snip.isEmpty {
-                        SnippetText(snippet: snip)
-                    } else if !p.meta.journal.isEmpty {
-                        Text(p.meta.journal).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        .lineLimit(2, reservesSpace: true)
+                    if !model.query.isEmpty {
+                        SnippetText(snippet: model.snippets[p.id] ?? "")
+                    } else {
+                        Text(p.meta.journal.isEmpty ? " " : p.meta.journal).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
                 .padding(.vertical, 5)
@@ -388,13 +391,13 @@ struct PaperTable: View {
             TableColumn("Year") { p in Text(p.meta.year).monospacedDigit().foregroundStyle(.secondary) }.width(42)
             TableColumn("") { p in
                 HStack(spacing: 4) {
-                    if p.hasEpub { Pill(text: "Read", icon: "book", color: .luntaTeal) }
+                    if p.hasEpub { Pill(text: "", icon: "book", color: .luntaTeal).help("Has a reading view") }
                     if p.hasPdf { Pill(text: "PDF", color: .luntaCopper) }
                     if p.hasAudio { Pill(text: "Audio", icon: "waveform", color: .purple) }
                     if p.annotationCount > 0 { Pill(text: "\(p.annotationCount)", icon: "highlighter", color: .secondary) }
                 }
             }
-            .width(min: 60, ideal: 110)
+            .width(min: 100, ideal: 130)
         } rows: {
             ForEach(model.papers) { p in
                 TableRow(p)
@@ -442,7 +445,7 @@ struct SnippetText: View {
             rest = rest[rest.index(after: close)...]
         }
         a += AttributedString(String(rest))
-        return Text(a).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+        return Text(a).font(.caption).foregroundStyle(.secondary).lineLimit(2, reservesSpace: true)
     }
 }
 
