@@ -121,7 +121,7 @@ final class PDFAnalyzer {
     static let captionRE = re(
         // the label must be followed by punctuation, a capitalised word or nothing: running text that
         // wraps onto a line starting "Figure S2G). Top genes…" or "Fig. 1a and …" is not a caption
-        #"^(?:Supplementary\s+|Extended\s+Data\s+|Supporting\s+)?(Figure|Fig\.?|Table|Algorithm|Box)\s*S?\d+[A-Za-z]?(?![\w)\];,])\s*(?:[.:|\-–—]|(?-i:[A-Z(\[])|$)"#,
+        #"^(?:Supplementary\s+|Extended\s+Data\s+|Supporting\s+)?(Figure|Fig\.?|Scheme|Table|Algorithm|Box)\s*S?\d+[A-Za-z]?(?![\w)\];,])\s*(?:[.:|\-–—]|(?-i:[A-Z(\[])|$)"#,
         .caseInsensitive)
 
     let doc: PDFDocument
@@ -177,6 +177,7 @@ final class PDFAnalyzer {
                 for l in ends { l.text = String(l.text.dropLast()) + Self.hardHyphen }
             }
         }
+        Self.clearMathIfBodyFont(pagesLines.joined(), bodySize: bodySize)
         findRunning()
     }
 
@@ -349,9 +350,14 @@ final class PDFAnalyzer {
             || t.contains("View the article online") && t.contains("Permissions"))
     }
 
+    /// A margin line with its numbers left out ("2 of 11", "3of11", "e70999") and, if it has words, the
+    /// punctuation at its ends, for finding running heads and feet.
     private func norm(_ s: String) -> String {
-        s.lowercased().replacingOccurrences(of: #"\b[es]?\d+\b"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        let t = s.lowercased().replacingOccurrences(of: #"\d+\s*of\s*\d+"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\b[es]?\d+\b"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        let words = t.trimmingCharacters(in: CharacterSet(charactersIn: " ,.;:|–-"))
+        return words.contains(where: \.isLetter) ? words : t.trimmingCharacters(in: .whitespaces)
     }
 
     private func findRunning() {
@@ -372,6 +378,8 @@ final class PDFAnalyzer {
         let h = boxes[l.page].height
         let inMargin = l.bbox.y0 < 0.09 * h || l.bbox.y1 > 0.91 * h
         if inMargin && (running.contains(norm(t)) || t.matches(#"^[\divxlcIVXLC\s\-–/of|]+$"#)) { return true }
+        // the first page's fuller version of a running foot: "Chemistry – A European Journal, 2026; 32:e70999 https://doi.org/…"
+        if inMargin && l.page == 0, case let nt = norm(t), running.contains(where: { $0.count >= 15 && nt.hasPrefix($0) }) { return true }
         if t.matches(#"^\d{1,4}$"#) && l.bbox.w < 25 { return true }
         if t.matches(#"^(bioRxiv|medRxiv) preprint doi"#, .caseInsensitive) || t.contains("copyright holder for this preprint") { return true }
         if inMargin && t.matches(#"^(downloaded from|arxiv:\d{4}\.\d+)"#, .caseInsensitive) { return true }
@@ -437,6 +445,8 @@ final class PDFAnalyzer {
             let inside = lines.filter { r.contains($0.bbox) }.reduce(0) { $0 + $1.text.count }
             if !c.hasImage && c.n <= 3 && inside > 250 { continue }   // shaded text box
             if !c.hasImage && c.n <= 2 && r.h < 30 { continue }
+            // the journal's logo in the first page's masthead
+            if pno == 0 && r.y1 < 0.12 * mb.height && r.h < 0.08 * mb.height { continue }
             regions.append(Region(rect: r, kind: .figure))
         }
 
@@ -978,6 +988,8 @@ final class PDFAnalyzer {
         for p in paras where p.page == 0 && p.kind == .text && p.boxed == nil {
             let affil = p.text.matches(#"(?i)universit|institut|department|hospital|laborator|faculty"#)
             if affil && (p.text.matches(#"(?i)e-?mail:|correspond"#) || p.text.matches(#"^\d\s?[A-Z]"#)) { p.kind = .front }
+            // "A and B contributed equally to this work." at the foot of the first page
+            if p.text.count < 300 && p.text.matches(#"(?i)contributed equally|equal(ly)? contribut|these authors contributed"#) { p.kind = .front }
         }
         let ranks = headingSizes.sorted(by: >)
         let big = ranks.filter { $0 >= body + 1 }
@@ -1001,10 +1013,12 @@ final class PDFAnalyzer {
         for p in paras {
             if p.kind == .text, !p.lines.isEmpty, p.boxed == nil {
                 let (mf, n) = mathFrac(p)
-                if mf > 0.3 && n < 400 { p.kind = .equation }
+                if mf > 0.3 && n < 400 && !Self.isProse(p.text) { p.kind = .equation }
             }
+            // stacked pieces (not a piece back up the page, at the top of the next column)
             if let prev = out.last, prev.page == p.page, (p.kind == .equation || (p.kind == .text && p.boxed == nil)), prev.kind == .equation,
-               p.bbox.y0 - prev.bbox.y1 < 1.6 * body, p.kind == .equation || p.text.count < 30 {
+               p.bbox.y0 - prev.bbox.y1 < 1.6 * body, p.bbox.y0 > prev.bbox.y0 - body,
+               p.kind == .equation || p.text.count < 30 {
                 out[out.count - 1] = Para(prev.lines + p.lines, page: p.page, kind: .equation)
                 continue
             }
@@ -1020,6 +1034,32 @@ final class PDFAnalyzer {
         }
         return out
     }
+
+    /// A "math" font that sets the running text (STIX-Regular in some Wiley and Springer journals) is
+    /// the body font: when a good share of the body-size lines are prose in it, no font in the document
+    /// marks a formula (and no paragraph is cropped as one).
+    static func clearMathIfBodyFont<S: Sequence>(_ lines: S, bodySize: CGFloat) where S.Element == PLine {
+        var body = 0, inMath = 0
+        for l in lines where abs(l.size - bodySize) <= 0.5 {
+            body += l.text.count
+            if l.math >= 0.5 && isProse(l.text) { inMath += l.text.count }
+        }
+        if body > 0 && Double(inMath) > 0.3 * Double(body) {
+            for l in lines { l.math = 0 }
+        }
+    }
+
+    /// Running text rather than a formula: five or more words of three or more lower-case letters
+    /// that make up most of it. Such a paragraph is kept as text (never cropped as an image), whatever
+    /// its fonts say.
+    static func isProse(_ t: String) -> Bool {
+        let ns = t as NSString
+        let words = proseWordRE.matches(in: t, range: NSRange(location: 0, length: ns.length))
+        let wordChars = words.reduce(0) { $0 + $1.range.length }
+        let chars = t.unicodeScalars.filter { !CharacterSet.whitespacesAndNewlines.contains($0) }.count
+        return words.count >= 5 && Double(wordChars) >= 0.5 * Double(max(1, chars))
+    }
+    static let proseWordRE = re(#"\b[a-z]{3,}\b"#)
 
     /// Paragraph text as XHTML with italics/bold/super- and subscripts.
     func styled(_ p: Para) -> String {

@@ -67,8 +67,10 @@ final class PDFContentScanner {
 
     static let boldRE = try! NSRegularExpression(pattern: "(?i:bold|black|heavy|semibold|demi|-bd\\b)|-(H|B|Bd|Hv|Hvy|Blk|SB|Sb|BdIt|BI|HI|Bol)$|[a-z](Bd|Blk|Hv)$", options: [])
     static let italicRE = try! NSRegularExpression(pattern: "(?i:ital|oblique|slant)|-(I|It|MI|LI|BI|HI|BdIt|SBIt|Ita)$|[a-z]It$", options: [])
+    /// Math fonts. STIX counts, except STIXTwoText: the body text of Wiley's journals (their math is
+    /// STIXTwoMath).
     static let mathRE = try! NSRegularExpression(
-        pattern: "CMMI|CMSY|CMEX|MSAM|MSBM|Math|Symbol|STIX|rsfs|EUFM|CMBSY|LMMath|esint|MTMI|MTSY|txsy|txmi|pxmi|Euclid",
+        pattern: "CMMI|CMSY|CMEX|MSAM|MSBM|Math|Symbol|STIX(?!Two-?Text)|rsfs|EUFM|CMBSY|LMMath|esint|MTMI|MTSY|txsy|txmi|pxmi|Euclid",
         options: .caseInsensitive)
 
     private var gstack: [GState] = [GState()]
