@@ -1,5 +1,5 @@
 # Pushing a version tag (git tag v0.1.0 && git push origin v0.1.0) makes a GitHub release and
-# attaches the Windows and Linux installers and the Android APK, built by desktop.yml and
+# attaches the Windows and Linux installers, the Android APK and the Chrome extension (zip), built by desktop.yml and
 # android.yml. The Mac app is built on a Mac and added with scripts/release-mac.sh.
 name: Release
 
@@ -22,6 +22,20 @@ jobs:
           gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
             gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Lunta $GITHUB_REF_NAME" \
               --notes "$(sed "s/VERSION/${GITHUB_REF_NAME#v}/g" .github/release-notes.md)"
+
+  # the Chrome extension, as a zip to unpack and load (it isn't in the Chrome Web Store)
+  extension:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Attach the Chrome extension
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name="Lunta-${GITHUB_REF_NAME#v}-Chrome-Extension.zip"
+          (cd extension && zip -r "../$name" . -x '.*')
+          gh release upload "$GITHUB_REF_NAME" "$name" -R "$GITHUB_REPOSITORY" --clobber
 
   desktop:
     needs: release

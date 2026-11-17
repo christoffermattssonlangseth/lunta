@@ -41,6 +41,47 @@ which setup fits your devices, and how to move your library from Zotero, Mendele
 - **Agents:** an [MCP server](docs/development.md#ai-agents-mcp) so Claude and other AI agents can search,
   read, cite and highlight in your library.
 
+## Browser extension and add-ins
+
+### Chrome extension (Mac, Windows, Linux)
+
+Saves the paper you're looking at to Lunta, with its PDF, using the access your browser already has (your
+institution's subscription, for example). On a journal's article page, **Use this page's full text** turns
+the page you're reading into the paper's reading view. It works in Chrome, Edge, Brave and other
+Chromium browsers.
+
+1. Download **`Lunta-…-Chrome-Extension.zip`** from the
+   [latest release](https://github.com/christoffermattssonlangseth/lunta/releases/latest) and unzip it.
+   Keep the folder somewhere permanent (Chrome loads the extension from it).
+2. Open **`chrome://extensions`** (Edge: `edge://extensions`) and turn on **Developer mode** (top right).
+3. Click **Load unpacked** and choose the unzipped folder.
+4. Pin it: click the puzzle piece in the toolbar, then the pin next to **Lunta**.
+
+Lunta must be open on the same computer: the extension talks only to the app, never to a server. To update,
+unzip the new version over the old folder and click ↻ on the extension in `chrome://extensions`.
+
+**Android:** there are no extensions in Chrome for Android. Instead, open a paper's **Journal page** in Lunta,
+sign in there if needed, and tap **Use this page's full text**. **iPhone and iPad:** share a page from Safari
+to Lunta.
+
+### Word and Google Docs (Mac)
+
+Cite from your library while you write: citations in 12 styles (or any of ~10,000 journal styles in Word), a
+reference list that updates itself, and renumbering after edits. On the Mac, choose **Lunta › Citations in
+Word & Google Docs…** and follow the two steps there:
+
+- **Word:** click **Trust Certificate** (your Mac asks for your password once), then **Install in Word** and
+  restart Word. **Cite** appears on the Home tab.
+- **Google Docs:** in your document, **Extensions › Apps Script**; paste the two files Lunta gives you
+  (`Code.gs` and `Sidebar`), save, and reload the document. **Lunta › Cite…** appears in the menu.
+
+Lunta for Mac must be open while you cite. More: [Lunta Citations](https://christoffermattssonlangseth.github.io/lunta/support.html).
+
+### AI agents (MCP)
+
+Claude and other AI agents can search, read, cite and highlight in your library through Lunta's MCP server:
+see [docs/development.md](docs/development.md#ai-agents-mcp).
+
 ## Sync
 
 - **Mac, iPhone and iPad** sync through iCloud Drive, with nothing to set up.
