@@ -91,10 +91,36 @@ struct CitationsView: View {
     private func installWord() {
         do {
             try CitationsSetup.installWordManifest()
-            wordInstalled = true
-            message = "Installed. Quit and reopen Word."
+            wordInstalled = CitationsSetup.wordManifestInstalled()
+            message = "Installed. Quit Word (⌘Q) and open it again: Cite is on the Home tab."
         } catch {
-            message = "Couldn't install into Word: \(error.readable). If macOS asked whether Lunta may access other apps' data, allow it and try again."
+            // macOS guards other apps' folders (Word's included): copying there needs the user's
+            // say-so. A save panel the user confirms is that say-so, so offer one at the right place.
+            saveWordManifestWithPanel()
+        }
+    }
+
+    private func saveWordManifestWithPanel() {
+        let panel = NSSavePanel()
+        panel.title = "Install Lunta Citations in Word"
+        panel.message = "macOS needs your OK to put the add-in in Word's folder. Click Save (the folder is \"wef\", inside Word's Documents)."
+        panel.prompt = "Save"
+        panel.nameFieldStringValue = "margins-citations.xml"
+        panel.canCreateDirectories = true
+        panel.directoryURL = CitationsSetup.wordWef
+        guard panel.runModal() == .OK, let url = panel.url else {
+            message = "Not installed. Click Install in Word again, and Save in the window that opens."
+            return
+        }
+        do {
+            let data = try Data(contentsOf: CitationsSetup.resources.appendingPathComponent("word/manifest.xml"))
+            try data.write(to: url, options: .atomic)
+            wordInstalled = CitationsSetup.wordManifestInstalled()
+            message = url.deletingLastPathComponent().lastPathComponent == "wef"
+                ? "Installed. Quit Word (⌘Q) and open it again: Cite is on the Home tab."
+                : "Saved, but not in Word's \"wef\" folder, so Word won't find it. Click Install in Word again and save it in \"wef\"."
+        } catch {
+            message = "Couldn't save the add-in: \(error.readable)"
         }
     }
 }
@@ -113,10 +139,12 @@ enum CitationsSetup {
     }
 
     static func installWordManifest() throws {
-        try FileManager.default.createDirectory(at: wordWef, withIntermediateDirectories: true)
+        // (creating the folder can succeed while writing into it is refused: check the copy below)
+        try? FileManager.default.createDirectory(at: wordWef, withIntermediateDirectories: true)
         let dest = wordWef.appendingPathComponent("margins-citations.xml")
         try? FileManager.default.removeItem(at: dest)
         try FileManager.default.copyItem(at: resources.appendingPathComponent("word/manifest.xml"), to: dest)
+        guard wordManifestInstalled() else { throw CocoaError(.fileWriteNoPermission) }
     }
 
     /// True when this Mac trusts the localhost certificate Lunta serves (also false once it has
