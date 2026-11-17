@@ -85,7 +85,7 @@ claude mcp add --scope user lunta -- /Applications/Lunta.app/Contents/MacOS/lunt
 ```
 
 Tools: `search_papers`, `list_papers`, `get_paper`, `read_paper` (full text, or the passages matching a query), `cite`
-(APA, Vancouver, Nature, BibTeX, RIS), `library_overview`, `find_new_papers` (OpenAlex), `add_paper`, `find_pdf`,
+(APA, Vancouver, Nature, …, BibTeX with the fixed keys, `latex` for `\cite{…}`, RIS), `library_overview`, `find_new_papers` (OpenAlex), `add_paper`, `find_pdf`,
 `tag_papers`, `add_to_collection`, `set_status`, `add_note`, `update_paper`, and for highlights `list_highlights` (across the library; filter by paper, colour, tag, collection or words), `add_highlight` (quote a passage; it shows in the reading view and the PDF) and `update_highlight` (note, colour, delete).
 
 The agent writes through its own change log (`ops/agent-….jsonl`), exactly like another device, so it can work while the
@@ -193,6 +193,38 @@ their browser extensions. Lunta's does the same (`extension/gdocs/`):
 
 What you set up in Google Cloud (the OAuth client, the consent screen, verification) is in
 [google-docs-extension.md](google-docs-extension.md); the client ID goes in `extension/gdocs/config.js`.
+
+## LaTeX: citation keys and .bib files
+
+**Keys.** `Paper::cite_key` is the paper's BibTeX key, used by every BibTeX output (Copy BibTeX, exports,
+the share panel's .bib, the MCP `cite` tool, kept .bib files) and by `Library::latex_cite` (`\cite{a,b}`).
+It starts as `export::cite_key` of the details (first author's family name, year, first word of the title,
+accents folded to ASCII) with `a`, `b`, … after it when another paper has that key (compared without case).
+
+- **Stored in the log:** a `set_cite_key` op fixes a paper's key. It is written when a paper is added (if it
+  has an author and a year; otherwise once it has them), when a key is first used (BibTeX, `\cite`, a .bib
+  file), when the user changes it (`set_cite_key`: letters, digits and `- _ : . + /`, unique), and before a
+  local edit or deletion would change a key that isn't fixed yet. So a key never changes because the title or
+  authors were edited or another paper was deleted. Older versions skip the op (an unknown `op` doesn't
+  parse) and never rewrite another device's log, so they don't lose it.
+- **The same on every device:** keys are worked out in `State::assign_cite_keys` from the logs alone:
+  fixed keys first (if two devices gave the same key to different papers before seeing each other's logs,
+  the earlier claim keeps it, by time, device and paper id); then papers without one (libraries from before
+  keys, papers added by older versions) take their base key and the first free suffix, in the order they
+  were added. Devices with the same logs compute the same keys, and two devices that fix the same paper's key
+  at once write the same value. The rare case that still moves a key: two devices offline giving the same
+  key to different papers; the later one becomes `…a` once they sync.
+
+**.bib files.** **Keep BibTeX File Updated…** on a folder or All Papers (Mac: `apple/Mac/BibFiles.swift`;
+desktop: `desktop/src-tauri/src/bibfiles.rs`) links it to a file. After a change to the library (local, or
+synced from another device) the linked files are rewritten after a 1.5 s pause: the folder's papers (not
+its subfolders') sorted by key, written atomically, and only when the text changed (no churn for Dropbox,
+Git or Overleaf). A folder that isn't in the library, or an empty library, leaves the file as it was. The
+links are per device (Mac: user defaults; desktop: `settings.json`), never in the synced library.
+
+Tests: `cargo test keys` and `cargo test thin_details` in `core` (stable keys across exports, uniqueness,
+edits and deletes, user keys, two library instances syncing through copied logs) and
+`cargo test bibfiles` in `desktop/src-tauri`.
 
 ## Releases
 

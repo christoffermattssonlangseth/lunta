@@ -39,7 +39,8 @@ which setup fits your devices, and how to move your library from Zotero, Mendele
   iD and it also learns from your own papers and shows new papers citing them.
 - **Listen and ask:** papers read aloud in a natural voice, and an assistant that answers questions about a
   paper or your library, both running on your device.
-- **Cite:** 12 citation styles, BibTeX and RIS, and add-ins for Word and Google Docs.
+- **Cite:** 12 citation styles, BibTeX and RIS, add-ins for Word and Google Docs, and for LaTeX fixed
+  citation keys and a .bib file that keeps itself up to date.
 - **Agents:** an [MCP server](docs/development.md#ai-agents-mcp) so Claude and other AI agents can search,
   read, cite and highlight in your library.
 
@@ -94,6 +95,21 @@ Word & Google Docs…** and follow the two steps there:
   (`Code.gs` and `Sidebar`), save, and reload the document. **Lunta › Cite…** appears in the menu.
 
 Lunta for Mac must be open while you cite. More: [Lunta Citations](https://christoffermattssonlangseth.github.io/lunta/support.html).
+
+### LaTeX and Overleaf
+
+Every paper has a citation key (`Kukanja2024cellular`) that never changes on its own, also when you edit the
+title or authors, and is the same on all your devices. You see it, and can change it, in the paper's details.
+
+- **Copy \cite:** right-click papers, **Copy \cite{…}** (several papers: one `\cite{a,b,c}`). On iPhone and
+  iPad it is in the paper's menu (touch and hold). The BibTeX entries use the same keys (**Cite › BibTeX**, or
+  **Share**).
+- **A .bib file that stays up to date (Mac, Windows, Linux):** right-click a folder or **All Papers**, **Keep
+  BibTeX File Updated…**, and choose where to save it. Lunta rewrites the file whenever papers in the folder are
+  added, removed or edited. To stop, right-click it again.
+- **Overleaf:** save the .bib file in Dropbox and link the project to Dropbox, or in the project's Git
+  repository (Overleaf's Git sync) and push. Without either, upload the .bib file to the project
+  (**Upload › From your computer**) and upload it again when it changes.
 
 ### AI agents (MCP)
 
