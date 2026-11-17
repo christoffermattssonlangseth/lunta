@@ -79,6 +79,7 @@ function makeLuntaGDocs(deps) {
     return {
       title: x.parsed.title,
       citations: x.parsed.items.map(function (it) { return it.ids; }),
+      texts: x.parsed.items.map(function (it) { return it.text; }),
       style: (s && s.style) || '', styleTitle: (s && s.styleTitle) || '',
       hasBibliography: !!x.parsed.bibliography,
       pending: x.parsed.items.filter(function (it) { return it.kind !== 'cite'; }).length + x.parsed.bibPlaceholders.length
@@ -201,6 +202,55 @@ function makeLuntaGDocs(deps) {
     }
   }
 
-  return { state: state, update: update, finishInsert: finishInsert, decodeStore: decodeStore, encodeStore: encodeStore };
+  /** The papers of a citation, for the panel: from Lunta, else from the document's copy. */
+  async function details(docId, ids) {
+    var x = await load(docId), kept = (x.store && x.store.papers) || {};
+    try {
+      var got = await deps.lunta.bibliography({ style: 'apa', ids: ids, papers: C.detailsFor(kept, ids) });
+      return { entries: got.entries || [] };
+    } catch (e) {
+      if (e.kind !== 'offline') throw e;
+      return { entries: ids.map(function (id) {
+        var r = kept[id];
+        return r ? { id: id, title: r.t, families: r.f, authors: r.f, year: r.y } : { id: id, missing: true };
+      }) };
+    }
+  }
+
+  /**
+   * Changes the papers of one citation (opts.index: its place among the document's citations;
+   * opts.expect: its papers as the panel showed them, so a citation that changed meanwhile isn't
+   * touched; opts.ids: the new papers, none = the citation goes), then Update All.
+   */
+  async function editCitation(docId, opts) {
+    var want = C.unique(opts.ids || []), expect = C.unique(opts.expect || []);
+    for (var attempt = 0; ; attempt++) {
+      var parsed = D.read(await deps.docs.get(docId));
+      var it = parsed.items[opts.index];
+      if (!it || it.kind !== 'cite' || it.ids.join(',') !== expect.join(',')) {
+        throw fail('That citation changed or moved in the meantime. Click Edit Citation again.', 'moved');
+      }
+      var r = { startIndex: it.start, endIndex: it.end };
+      if (it.segmentId) r.segmentId = it.segmentId;
+      if (it.tabId) r.tabId = it.tabId;
+      var req = want.length
+        ? { updateTextStyle: { range: r, textStyle: { link: { url: D.makeLink(want) } }, fields: 'link' } }
+        : { deleteContentRange: { range: r } };
+      try {
+        await deps.docs.batchUpdate(docId, [req], parsed.revisionId);
+        break;
+      } catch (e) {
+        if (e.kind !== 'revision') throw e;
+        if (attempt < 3) { await sleep(300 * (attempt + 1)); continue; }
+        throw fail('The document kept changing (someone typing?). Try again.', 'revision');
+      }
+    }
+    var out = await update(docId, opts);
+    out.removed = !want.length;
+    return out;
+  }
+
+  return { state: state, update: update, finishInsert: finishInsert, details: details, editCitation: editCitation,
+           decodeStore: decodeStore, encodeStore: encodeStore };
 }
 if (typeof module !== 'undefined') module.exports = makeLuntaGDocs;

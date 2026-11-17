@@ -175,6 +175,11 @@ async function handleGDocs(msg) {
         const ids = msg.ids || null;
         return { token, html: LuntaDocs.placeholderHTML(token, ids, "(…)"), url: LuntaDocs.placeholderUrl(token, ids), text: "(…)" };
       }
+      case "details":
+        return await gdocsFlow.details(msg.docId, (msg.ids || []).map(String));
+      case "editCitation":
+        return await gdocsFlow.editCitation(msg.docId, { index: Number(msg.index), expect: msg.expect || [], ids: (msg.ids || []).map(String),
+          style: msg.style, styleTitle: msg.styleTitle });
       case "finishInsert":
         return await gdocsFlow.finishInsert(msg.docId, msg.token, { style: msg.style, styleTitle: msg.styleTitle });
       default:

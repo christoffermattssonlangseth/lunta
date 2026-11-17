@@ -403,3 +403,38 @@ test('the background script: Google sign-in, the Docs API over fetch, Lunta’s 
   consented = false;
   assert.equal((await ask({ op: 'status' })).connected, false);
 });
+
+test('Edit Citation: the papers of one citation; remove one, add some, remove the last; a citation that moved is left alone', async () => {
+  const api = new FakeDocsAPI({ paragraphs: [
+    P('One ', link('(…)', CITE(['a', 'b'])), '. Two ', link('(…)', CITE(['c'])), '.'),
+    P(link('Refs', BIB))
+  ] });
+  const g = flow(api);
+  await g.update('doc', { style: 'vancouver' });
+  assert.deepEqual(api.paragraphs()[0], 'One [1,2]. Two [3].');
+  const st = await g.state('doc');
+  assert.deepEqual(st.texts, ['[1,2]', '[3]']);
+  // its papers, for the panel
+  const d = await g.details('doc', ['a', 'b']);
+  assert.deepEqual(d.entries.map((e) => e.title), ['Alpha cells', 'Beta waves']);
+  // remove Lee (a): the numbers follow
+  let r = await g.editCitation('doc', { index: 0, expect: ['a', 'b'], ids: ['b'] });
+  assert.equal(r.removed, false);
+  assert.equal(api.paragraphs()[0], 'One [1]. Two [2].');
+  assert.equal(api.linkAt(api.indexOf('[1]')), CITE(['b']));
+  // add c and d to the first
+  await g.editCitation('doc', { index: 0, expect: ['b'], ids: ['b', 'c', 'd'] });
+  assert.equal(api.paragraphs()[0], 'One [1–3]. Two [2].');
+  // the panel's view is stale (the citation has other papers now): nothing is changed
+  await assert.rejects(g.editCitation('doc', { index: 0, expect: ['b'], ids: [] }), /changed or moved/);
+  assert.equal(api.paragraphs()[0], 'One [1–3]. Two [2].');
+  // remove the last paper of the second: the citation goes, the bibliography follows
+  r = await g.editCitation('doc', { index: 1, expect: ['c'], ids: [] });
+  assert.equal(r.removed, true);
+  assert.equal(api.paragraphs()[0], 'One [1–3]. Two .');
+  assert.equal((await g.state('doc')).citations.length, 1);
+  // Lunta closed: the papers from the document's copy
+  const g2 = flow(api, fakeLunta(LIB, { offline: true }));
+  const d2 = await g2.details('doc', ['b']);
+  assert.equal(d2.entries[0].title, 'Beta waves');
+});

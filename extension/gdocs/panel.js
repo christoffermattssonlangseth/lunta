@@ -53,6 +53,16 @@
       .note { color: #6e6e73; font-size: 12px; margin: 6px 0; }
       .box { border-top: 1px solid #eee; margin-top: 8px; padding-top: 8px; }
       .row { display: flex; gap: 6px; align-items: center; }
+      .row strong { flex: 1; color: #2a6478; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+      .crow { display: flex; gap: 6px; align-items: flex-start; padding: 5px 0; border-top: 1px solid #eee; }
+      .crow:first-child { border-top: 0; }
+      .crow .ct { flex: 1; min-width: 0; }
+      .crow .t { font-weight: 600; font-size: 12.5px; }
+      .crow .m { color: #6e6e73; font-size: 11.5px; }
+      .crow.pick { cursor: pointer; border-radius: 6px; padding: 5px 6px; }
+      .crow.pick:hover { background: #f2f5f6; }
+      button.cx { all: unset; cursor: pointer; width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%; opacity: .5; font-size: 12px; flex: 0 0 auto; }
+      button.cx:hover { opacity: 1; background: #eee; }
       .row input { flex: 1; margin: 0; }
       [hidden] { display: none !important; }
       @media (prefers-color-scheme: dark) {
@@ -81,6 +91,13 @@
           <div class="picked"></div>
           <div class="buttons"><button class="btn primary insert" disabled>Insert Citation</button></div>
           <div class="buttons"><button class="btn bib" disabled>Insert Bibliography</button><button class="btn refresh" disabled>Update All</button></div>
+          <div class="buttons"><button class="btn edit" disabled>Edit Citation…</button></div>
+          <div class="cbox box" hidden>
+            <div class="row"><strong class="ctitle">This citation</strong><button class="link cclose">Close</button></div>
+            <div class="clist"></div>
+            <div class="buttons cadd-row"><button class="btn primary cadd" disabled>Add Selected Papers</button></div>
+            <p class="note chint"></p>
+          </div>
           <p class="note">Click in the document where the citation goes first. <button class="link account">Switch Google account</button></p>
         </div>
         <p class="status"></p>
@@ -100,6 +117,7 @@
     }
   });
 
+  let current = null;   // the citation being edited: {index, ids, text}
   let picked = [], style = "apa", styleTitle = "", styleSaved = false, needsStyle = false, ready = false, busy = false, lastSearch = 0, opened = false;
 
   function status(m, err) { const s = $(".status"); s.textContent = m || ""; s.className = "status" + (err ? " err" : ""); }
@@ -108,6 +126,8 @@
     $(".insert").disabled = !can || !picked.length || needsStyle;
     $(".bib").disabled = $(".refresh").disabled = !can || needsStyle;
     $(".style").disabled = !can;
+    $(".edit").disabled = !can || needsStyle;
+    $(".cadd").disabled = !can || !current || !picked.length;
   }
   function show(which) {
     ["setup", "connect", "main"].forEach((k) => { $("." + k).hidden = k !== which; });
@@ -216,6 +236,91 @@
     await delay(50);
   }
 
+  // ---- Edit Citation: the papers of one citation, to remove some or add more ----
+
+  /** The citation to edit: the one selected in the text, else the reader picks one from a list. */
+  async function editCitation() {
+    status("Reading the document’s citations…");
+    const st = check(await send({ op: "state", docId: docId() }));
+    const texts = st.texts || [], lists = st.citations || [];
+    if (!lists.length) { status("This document has no citations yet."); return; }
+    let sel = "";
+    try { sel = selectedText(editor()).trim(); } catch (_) { /* no selection to read */ }
+    const norm = (t) => String(t || "").replace(/\s+/g, " ").trim();
+    let i = -1;
+    if (sel.length >= 2) {
+      const s = norm(sel);
+      const hits = texts.map((t, k) => ({ t: norm(t), k })).filter((x) => x.t && (x.t === s || s.includes(x.t) || x.t.includes(s)));
+      if (hits.length === 1) i = hits[0].k;
+      else if (hits.length > 1) {
+        const exact = hits.filter((x) => x.t === s);
+        if (exact.length === 1) i = exact[0].k;
+      }
+    }
+    status("");
+    if (i >= 0) { openCitation(i, lists[i], texts[i]); return; }
+    // choose from the list
+    current = null; setButtons();
+    $(".cbox").hidden = false;
+    $(".ctitle").textContent = "Which citation?";
+    $(".cadd-row").hidden = true;
+    $(".chint").textContent = sel ? "The selected text isn’t one citation; pick it here." : "Tip: select a citation in the text first (double-click it), then Edit Citation.";
+    const list = $(".clist");
+    list.innerHTML = "";
+    lists.forEach((ids, k) => {
+      const row = document.createElement("div");
+      row.className = "crow pick";
+      row.innerHTML = '<div class="ct"><div class="t"></div><div class="m"></div></div>';
+      row.querySelector(".t").textContent = texts[k] || "(…)";
+      row.querySelector(".m").textContent = "Citation " + (k + 1) + " of " + lists.length + " · " + ids.length + (ids.length === 1 ? " paper" : " papers");
+      row.onclick = () => openCitation(k, ids, texts[k]);
+      list.appendChild(row);
+    });
+  }
+
+  async function openCitation(index, ids, text) {
+    current = { index, ids: ids.slice(), text };
+    $(".cbox").hidden = false;
+    $(".ctitle").textContent = "This citation " + (text ? "· " + text : "");
+    $(".cadd-row").hidden = false;
+    $(".chint").textContent = "Search above and pick papers to add them; ✕ removes one.";
+    setButtons();
+    const list = $(".clist");
+    list.innerHTML = "";
+    const rows = {};
+    ids.forEach((id) => {
+      const row = document.createElement("div");
+      row.className = "crow";
+      row.innerHTML = '<div class="ct"><div class="t">…</div><div class="m"></div></div><button class="cx" title="Remove from this citation">✕</button>';
+      row.querySelector(".cx").onclick = () => changeCitation(current.ids.filter((x) => x !== id));
+      rows[id] = row;
+      list.appendChild(row);
+    });
+    const d = await send({ op: "details", docId: docId(), ids });
+    if (!current || current.index !== index || d.error) return;
+    (d.entries || []).forEach((e) => {
+      const row = rows[e.id]; if (!row) return;
+      if (e.missing) { row.querySelector(".t").textContent = "Not in your library"; row.querySelector(".m").textContent = "Remove it, or add the paper to Lunta."; return; }
+      row.querySelector(".t").textContent = e.title || "Untitled";
+      row.querySelector(".m").textContent = LuntaCite.hitMeta(e);
+    });
+  }
+
+  function changeCitation(ids) {
+    if (!current) return;
+    const was = current;
+    return exclusive(async () => {
+      status(ids.length ? "Changing the citation…" : "Removing the citation…");
+      const r = check(await send({ op: "editCitation", docId: docId(), index: was.index, expect: was.ids, ids,
+        ...(styleSaved ? {} : { style, styleTitle }) }));
+      done(r);
+      if (!ids.length || r.removed) { closeCitation(); return; }
+      await openCitation(was.index, ids, "");
+    });
+  }
+
+  function closeCitation() { current = null; $(".cbox").hidden = true; $(".clist").innerHTML = ""; setButtons(); }
+
   async function insert(ids) {
     const prep = check(await send({ op: "prepareInsert", docId: docId(), ids }));
     if (prep.exists) {
@@ -285,6 +390,14 @@
   $(".insert").onclick = () => exclusive(() => insert(picked.map((p) => p.id)));
   $(".bib").onclick = () => exclusive(() => insert(null));
   $(".refresh").onclick = () => exclusive(() => update());
+  $(".edit").onclick = () => { if (ready && !busy) editCitation().catch((e) => status(String(e.message || e), true)); };
+  $(".cclose").onclick = () => closeCitation();
+  $(".cadd").onclick = () => {
+    if (!current || !picked.length) return;
+    const ids = LuntaCite.unique(current.ids.concat(picked.map((p) => p.id)));
+    picked = []; renderPicked();
+    changeCitation(ids);
+  };
 
   async function connect(selectAccount) {
     status("Waiting for Google…");
