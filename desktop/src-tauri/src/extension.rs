@@ -180,7 +180,7 @@ fn respond(conn: &mut TcpStream, status: u16, json: &Value, origin: Option<&str>
         if status == 200 { "OK" } else { "Error" },
         body.len()
     );
-    if let Some(o) = origin.filter(|o| o.starts_with("chrome-extension://") || o.starts_with("safari-web-extension://")) {
+    if let Some(o) = origin.filter(|o| o.starts_with("chrome-extension://") || o.starts_with("safari-web-extension://") || o.starts_with("moz-extension://")) {
         head += &format!("Access-Control-Allow-Origin: {o}\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\n");
         head += "Access-Control-Allow-Headers: Content-Type, X-Margins-Client\r\nAccess-Control-Allow-Private-Network: true\r\n";
     }

@@ -10,6 +10,10 @@
     return "";
   };
   const metas = (n) => [...document.querySelectorAll(`meta[name="${n}" i]`)].map((m) => m.content.trim()).filter(Boolean);
+  // requests the page itself would make (its PDF, figures, table pages), with the reader's access:
+  // in Firefox a content script's own fetch isn't the page's, content.fetch is
+  // eslint-disable-next-line no-undef
+  const pageFetch = typeof content !== "undefined" && content && typeof content.fetch === "function" ? content.fetch.bind(content) : fetch;
   const DOI_RE = /10\.\d{4,9}\/[^\s"<>?#&]+/i;
 
   function findDoi() {
@@ -222,7 +226,7 @@
     let msg = { type: "savePdf", id: state.id, pdfUrl, name: (title || "paper").slice(0, 80) + ".pdf" };
     try {
       // fetch from the page first: same-origin requests carry the site's login cookies
-      const r = await fetch(pdfUrl, { credentials: "include" });
+      const r = await pageFetch(pdfUrl, { credentials: "include" });
       const buf = await r.arrayBuffer();
       const head = new Uint8Array(buf.slice(0, 4));
       if (r.ok && head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46) {
@@ -258,7 +262,7 @@
   async function pageHTML() {
     const live = "<!DOCTYPE html>\n" + document.documentElement.outerHTML.replace(/<div id="lunta-ext-root"><\/div>/, "");
     try {
-      const r = await fetch(location.href, { credentials: "include" });
+      const r = await pageFetch(location.href, { credentials: "include" });
       const type = r.headers.get("content-type") || "";
       if (r.ok && /html/i.test(type)) {
         const text = await r.text();
@@ -324,7 +328,7 @@
     const out = [];
     for (const [u, raw] of [...links].slice(0, 30)) {
       try {
-        const r = await fetch(u, { credentials: "include" });
+        const r = await pageFetch(u, { credentials: "include" });
         if (!r.ok || !/html/i.test(r.headers.get("content-type") || "")) continue;
         const text = await r.text();
         if (!/<table[\s>]/i.test(text)) continue;
@@ -373,7 +377,7 @@
     if (m.type === "fullTextProgress") ftMessage(m.text);
     if (m.type === "fetchImage") {
       // a figure the extension couldn't fetch itself: from the page (same-origin cookies)
-      fetch(m.url, { credentials: "include" }).then(async (r) => {
+      pageFetch(m.url, { credentials: "include" }).then(async (r) => {
         if (!r.ok) return sendResponse({ error: `HTTP ${r.status}` });
         const buf = await r.arrayBuffer();
         sendResponse({ base64: toBase64(buf), type: r.headers.get("content-type") || "" });

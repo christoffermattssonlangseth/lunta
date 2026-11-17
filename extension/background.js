@@ -130,7 +130,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 // Toolbar button: on a PDF open in Chrome's viewer, save that PDF; elsewhere, show the panel.
+const FIREFOX = typeof navigator !== "undefined" && /Firefox\//.test(navigator.userAgent);
+
 chrome.action.onClicked.addListener(async (tab) => {
+  // Firefox lets people turn off the extension's access to sites: ask again on the click (the
+  // request has to come straight from the click, before anything is awaited)
+  if (FIREFOX && chrome.permissions) chrome.permissions.request({ origins: ["<all_urls>"] }).catch(() => {});
   if (!tab.id || !tab.url) return;
   const looksPdf = /\.pdf($|[?#])/i.test(tab.url);
   if (looksPdf) {

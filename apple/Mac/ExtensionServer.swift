@@ -18,7 +18,7 @@ import Paper2EpubKit
 ///          highlights, unmatched:[quotes], backup?, notes, reader, dryRun}; 422 + {error} if the
 ///          page can't be made into a reading view.
 ///
-/// Only requests from a browser extension (Origin chrome-extension://…) are accepted, so ordinary
+/// Only requests from a browser extension (Origin chrome-extension://…, safari-web-extension://… or moz-extension://…) are accepted, so ordinary
 /// web pages cannot use it.
 @MainActor
 final class ExtensionServer {
@@ -112,7 +112,7 @@ final class ExtensionServer {
         let body = (try? JSONSerialization.data(withJSONObject: json)) ?? Data("{}".utf8)
         var head = "HTTP/1.1 \(status) \(status == 200 ? "OK" : "Error")\r\n"
         head += "Content-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n"
-        if let origin, origin.hasPrefix("chrome-extension://") || origin.hasPrefix("safari-web-extension://") {
+        if let origin, origin.hasPrefix("chrome-extension://") || origin.hasPrefix("safari-web-extension://") || origin.hasPrefix("moz-extension://") {
             head += "Access-Control-Allow-Origin: \(origin)\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
             head += "Access-Control-Allow-Headers: Content-Type, X-Margins-Client\r\nAccess-Control-Allow-Private-Network: true\r\n"
         }
