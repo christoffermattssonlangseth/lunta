@@ -94,14 +94,10 @@ final class BibFiles: ObservableObject {
         if writing { again = true; return }
         writing = true
         defer { writing = false }
-        // folders deleted (here or on another device) drop their link
+        // a folder that isn't there (deleted, or not synced yet) leaves its file as it was: an
+        // empty .bib would break the document
         let folders = Set(model.collections.map(\.id))
-        let gone = links.filter { $0.source != Self.allPapers && !folders.contains($0.source) }
-        if !gone.isEmpty {
-            links.removeAll { l in gone.contains(l) }
-            save()
-        }
-        let lib = model.lib, todo = links
+        let lib = model.lib, todo = links.filter { $0.source == Self.allPapers || folders.contains($0.source) }
         let results = await Task.detached(priority: .utility) {
             todo.map { l in (l.source, Self.write(lib, l)) }
         }.value
@@ -114,18 +110,20 @@ final class BibFiles: ObservableObject {
 
     /// The .bib text for a source: its papers sorted by citation key, so the file changes only
     /// where papers did (friendly to Git and Overleaf).
-    nonisolated static func bibtex(_ lib: Library, source: String) -> String {
+    /// Nil for an empty library (still opening, or syncing to a new Mac): the file is left as it was.
+    nonisolated static func bibtex(_ lib: Library, source: String) -> String? {
         let filter = PaperFilter(collection: source == allPapers ? nil : source, tag: nil, starredOnly: false, unreadOnly: false)
         let ids = lib.papers(filter: filter, sort: .added)
             .sorted { $0.citeKey.lowercased() < $1.citeKey.lowercased() }
             .map(\.id)
+        if ids.isEmpty && source == allPapers { return nil }
         return "% Kept up to date by Lunta: changes made here are overwritten.\n\n" + lib.exportBibtex(ids: ids)
     }
 
     /// Writes the file if its text changed; returns the problem, if any.
     nonisolated private static func write(_ lib: Library, _ l: Link) -> String? {
         let url = URL(fileURLWithPath: l.path)
-        let text = bibtex(lib, source: l.source)
+        guard let text = bibtex(lib, source: l.source) else { return nil }
         if let old = try? String(contentsOf: url, encoding: .utf8), old == text { return nil }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
