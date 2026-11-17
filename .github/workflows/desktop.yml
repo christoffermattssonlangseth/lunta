@@ -52,7 +52,7 @@ jobs:
         run: node scripts/extract-reader-assets.mjs --check
 
       - name: Reader script tests
-        run: node --test scripts/reader-tests/
+        run: node --test scripts/reader-tests/*.test.mjs
 
       - name: Install frontend dependencies
         working-directory: desktop
