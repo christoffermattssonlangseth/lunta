@@ -45,6 +45,8 @@ final class LibraryModel: ObservableObject {
     @Published var discovering = false
     @Published var discoverError: String?
     private var refreshTimer: Timer?
+    /// iCloud: hears about other devices' changes as they arrive (CloudOpsWatcher.swift)
+    private var opsWatcher: CloudOpsWatcher?
     private var converting = false
 
     let libraryURL: URL
@@ -125,6 +127,7 @@ final class LibraryModel: ObservableObject {
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
+        if inCloud { opsWatcher = CloudOpsWatcher { [weak self] in self?.refreshFromDisk() } }
     }
 
     // MARK: - Reading the library
@@ -253,6 +256,14 @@ final class LibraryModel: ObservableObject {
         Task.detached(priority: .utility) { [weak self] in
             for p in lib.pendingDownloads() where p.contains("/ops/") || p.hasSuffix(".fulltext.txt.icloud") {
                 CloudLibrary.startDownload(CloudLibrary.realURL(forPlaceholder: p))
+            }
+            // the change logs already here: ask for iCloud's newest version too (iOS is slow to
+            // replace a file it has; a no-op when it's current)
+            if let root = await self?.libraryURL {
+                let ops = root.appendingPathComponent("ops")
+                for f in (try? FileManager.default.contentsOfDirectory(at: ops, includingPropertiesForKeys: nil)) ?? [] where f.pathExtension == "jsonl" {
+                    CloudLibrary.startDownload(f)
+                }
             }
             await MainActor.run { self?.scanningPlaceholders = false }
         }
