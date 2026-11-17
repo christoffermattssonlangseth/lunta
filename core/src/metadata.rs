@@ -424,7 +424,7 @@ const WORK_FIELDS: &str = "title,authorships,publication_date,primary_location,d
 pub enum WatchKind {
     /// Words, as in Discover.
     Topic,
-    /// An author's name.
+    /// An author: an ORCID iD or OpenAlex author id (exact), or a name (the best match).
     Author,
     /// Papers citing the work with this DOI.
     Citing,
@@ -447,6 +447,17 @@ pub fn watch_new(kind: WatchKind, value: &str, since: &str, limit: u32) -> Resul
             enc(v).replace('/', "%2F"), date, per, WORK_FIELDS
         ),
         WatchKind::Author => {
+            let filter = match author_ref(v) {
+                AuthorRef::Orcid(o) => format!("authorships.author.orcid:{o}"),
+                AuthorRef::OpenAlex(id) => format!("authorships.author.id:{id}"),
+                AuthorRef::Name(_) => String::new(),
+            };
+            if !filter.is_empty() {
+                return works(&format!(
+                    "https://api.openalex.org/works?filter={},{}&sort=publication_date:desc&per_page={}&select={}",
+                    filter, date, per, WORK_FIELDS
+                ));
+            }
             let a = get_json(&format!("https://api.openalex.org/authors?search={}&per_page=1&select=id", enc(v)))?;
             let id = s(&a["results"][0]["id"]).rsplit('/').next().unwrap_or("").to_string();
             if id.is_empty() {
@@ -517,7 +528,10 @@ pub fn journal_name(query: &str) -> Result<Option<String>> {
 
 /// Parses an OpenAlex /works list.
 fn works(url: &str) -> Result<Vec<DiscoverHit>> {
-    let j = get_json(url)?;
+    Ok(parse_works(&get_json(url)?))
+}
+
+fn parse_works(j: &Value) -> Vec<DiscoverHit> {
     let mut out = vec![];
     for w in j["results"].as_array().cloned().unwrap_or_default() {
         let doi = s(&w["doi"]).trim_start_matches("https://doi.org/").to_string();
@@ -556,7 +570,7 @@ fn works(url: &str) -> Result<Vec<DiscoverHit>> {
             in_library: None,
         });
     }
-    Ok(out)
+    out
 }
 
 /// OpenAlex stores abstracts as {word: [positions]}.
@@ -572,4 +586,189 @@ fn inverted_abstract(v: &Value) -> String {
     }
     words.sort_by_key(|x| x.0);
     words.into_iter().map(|x| x.1).collect::<Vec<_>>().join(" ")
+}
+
+// ---------------------------------------------------------------- ORCID (through OpenAlex)
+
+/// "0000-0002-1825-0097" from an ORCID iD as typed or pasted ("https://orcid.org/…", "orcid:…",
+/// without dashes, a lowercase x); None unless it has 16 characters and a valid check digit
+/// (ISO 7064 11,2).
+pub fn normalize_orcid(s: &str) -> Option<String> {
+    let mut t = s.trim();
+    for p in ["https://orcid.org/", "http://orcid.org/", "orcid.org/", "orcid:", "ORCID:"] {
+        if t.len() >= p.len() && t[..p.len()].eq_ignore_ascii_case(p) {
+            t = t[p.len()..].trim();
+        }
+    }
+    let chars: Vec<char> = t.chars().filter(|c| *c != '-' && *c != ' ').map(|c| c.to_ascii_uppercase()).collect();
+    if chars.len() != 16 || !chars[..15].iter().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let mut total = 0u32;
+    for c in &chars[..15] {
+        total = (total + c.to_digit(10)?) * 2;
+    }
+    let check = (12 - total % 11) % 11;
+    let expected = if check == 10 { 'X' } else { char::from_digit(check, 10)? };
+    if chars[15] != expected {
+        return None;
+    }
+    let d: String = chars.into_iter().collect();
+    Some(format!("{}-{}-{}-{}", &d[0..4], &d[4..8], &d[8..12], &d[12..16]))
+}
+
+/// Who an author watch follows.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum AuthorRef {
+    Orcid(String),
+    /// "A5023888391"
+    OpenAlex(String),
+    Name(String),
+}
+
+/// An ORCID iD or an OpenAlex author id ("A123…", "https://openalex.org/A123…") follows that
+/// author exactly; anything else is a name to search for.
+pub(crate) fn author_ref(v: &str) -> AuthorRef {
+    let v = v.trim();
+    if let Some(o) = normalize_orcid(v) {
+        return AuthorRef::Orcid(o);
+    }
+    let tail = v.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+    let bare = v.len() == tail.len();
+    let from_openalex = v.to_lowercase().contains("openalex.org/");
+    if (bare || from_openalex) && tail.len() >= 4 && tail[..1].eq_ignore_ascii_case("a") && tail[1..].chars().all(|c| c.is_ascii_digit()) {
+        return AuthorRef::OpenAlex(format!("A{}", &tail[1..]));
+    }
+    AuthorRef::Name(v.to_string())
+}
+
+/// Someone the researcher publishes with.
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct Coauthor {
+    pub name: String,
+    /// OpenAlex author id ("A…").
+    pub openalex_id: String,
+    /// "0000-…", or "" when OpenAlex has none.
+    pub orcid: String,
+    /// Papers written together (among the researcher's recent ones).
+    pub shared: u32,
+}
+
+/// A researcher's own work, found by their ORCID iD on OpenAlex.
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct OrcidProfile {
+    pub orcid: String,
+    pub name: String,
+    /// OpenAlex author id ("A…").
+    pub openalex_id: String,
+    pub works_count: u32,
+    pub cited_by_count: u32,
+    /// Their latest papers, newest first (up to 50).
+    pub works: Vec<DiscoverHit>,
+    /// Their most cited papers, most cited first (up to 15).
+    pub most_cited: Vec<DiscoverHit>,
+    /// The people they publish with most often (up to 12).
+    pub coauthors: Vec<Coauthor>,
+}
+
+/// Papers and the like (no datasets, errata, peer reviews or paratext).
+const OWN_TYPES: &str = "type:article|review|preprint|letter|book-chapter|editorial";
+
+fn short_id(v: &Value) -> String {
+    s(v).trim_end_matches('/').rsplit('/').next().unwrap_or("").to_string()
+}
+
+/// The researcher with this ORCID iD on OpenAlex: name, recent and most cited papers, co-authors.
+pub fn orcid_profile(orcid: &str) -> Result<OrcidProfile> {
+    let o = normalize_orcid(orcid).ok_or_else(|| CoreError::Invalid(format!("“{}” is not an ORCID iD", orcid.trim())))?;
+    let a = match get_json(&format!(
+        "https://api.openalex.org/authors/orcid:{o}?select=id,display_name,works_count,cited_by_count"
+    )) {
+        Ok(a) => a,
+        Err(CoreError::Network(e)) if e.contains("404") => {
+            return Err(CoreError::NotFound(format!("no author with ORCID iD {o} on OpenAlex")))
+        }
+        Err(e) => return Err(e),
+    };
+    let id = short_id(&a["id"]);
+    if id.is_empty() {
+        return Err(CoreError::NotFound(format!("no author with ORCID iD {o} on OpenAlex")));
+    }
+    let recent = get_json(&format!(
+        "https://api.openalex.org/works?filter=authorships.author.id:{id},{OWN_TYPES}&sort=publication_date:desc&per_page=100&select={WORK_FIELDS}"
+    ))?;
+    let cited = get_json(&format!(
+        "https://api.openalex.org/works?filter=authorships.author.id:{id},{OWN_TYPES}&sort=cited_by_count:desc&per_page=15&select={WORK_FIELDS}"
+    ))?;
+    let mut works = parse_works(&recent);
+    works.truncate(50);
+    Ok(OrcidProfile {
+        orcid: o.clone(),
+        name: s(&a["display_name"]),
+        openalex_id: id.clone(),
+        works_count: a["works_count"].as_u64().unwrap_or(0) as u32,
+        cited_by_count: a["cited_by_count"].as_u64().unwrap_or(0) as u32,
+        works,
+        most_cited: parse_works(&cited),
+        coauthors: coauthors(&recent, &id, &o, 12),
+    })
+}
+
+/// The people on most of these works (an OpenAlex /works list), leaving out the researcher and
+/// big consortium papers (over 30 authors), most shared papers first.
+pub(crate) fn coauthors(works: &Value, me: &str, my_orcid: &str, limit: usize) -> Vec<Coauthor> {
+    let mut by_id: std::collections::HashMap<String, Coauthor> = Default::default();
+    let mut order: Vec<String> = vec![];
+    for w in works["results"].as_array().into_iter().flatten() {
+        let list = w["authorships"].as_array().cloned().unwrap_or_default();
+        if list.len() > 30 {
+            continue;
+        }
+        let mut seen = std::collections::HashSet::new();
+        for x in list {
+            let id = short_id(&x["author"]["id"]);
+            let orcid = normalize_orcid(&s(&x["author"]["orcid"])).unwrap_or_default();
+            let name = s(&x["author"]["display_name"]);
+            if id.is_empty() || name.is_empty() || id == me || (!orcid.is_empty() && orcid == my_orcid) || !seen.insert(id.clone()) {
+                continue;
+            }
+            let e = by_id.entry(id.clone()).or_insert_with(|| {
+                order.push(id.clone());
+                Coauthor { name, openalex_id: id.clone(), orcid: String::new(), shared: 0 }
+            });
+            e.shared += 1;
+            if e.orcid.is_empty() {
+                e.orcid = orcid;
+            }
+        }
+    }
+    let mut out: Vec<Coauthor> = order.into_iter().filter_map(|id| by_id.remove(&id)).collect();
+    // most shared first; among equals, the most recent collaborators (the list is newest first)
+    out.sort_by(|a, b| b.shared.cmp(&a.shared));
+    out.truncate(limit);
+    out
+}
+
+/// Papers citing the work with this DOI published since `since`, leaving out those by the author
+/// with this OpenAlex id (self-citations) when one is given.
+pub fn citing_new(doi: &str, exclude_author: &str, since: &str, limit: u32) -> Result<Vec<DiscoverHit>> {
+    let doi = doi.trim().trim_start_matches("https://doi.org/").trim_start_matches("doi:");
+    if doi.is_empty() {
+        return Ok(vec![]);
+    }
+    let w = get_json(&format!("https://api.openalex.org/works/doi:{}?select=id", doi))?;
+    let id = short_id(&w["id"]);
+    if id.is_empty() {
+        return Ok(vec![]);
+    }
+    let not_by = match author_ref(exclude_author) {
+        AuthorRef::OpenAlex(a) => format!(",authorships.author.id:!{a}"),
+        AuthorRef::Orcid(o) => format!(",authorships.author.orcid:!{o}"),
+        AuthorRef::Name(_) => String::new(),
+    };
+    works(&format!(
+        "https://api.openalex.org/works?filter=cites:{id}{not_by},from_publication_date:{}&sort=publication_date:desc&per_page={}&select={WORK_FIELDS}",
+        since.trim(),
+        limit.clamp(1, 50)
+    ))
 }

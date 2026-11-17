@@ -550,6 +550,26 @@ impl Library {
         Ok(hits)
     }
 
+    /// A researcher's own papers and co-authors, by their ORCID iD (OpenAlex; blocking). Papers
+    /// already in the library are marked.
+    pub fn orcid_profile(&self, orcid: String) -> Result<metadata::OrcidProfile> {
+        let mut p = metadata::orcid_profile(&orcid)?;
+        for h in p.works.iter_mut().chain(p.most_cited.iter_mut()) {
+            h.in_library = self.find_by_doi(h.meta.doi.clone()).or_else(|| self.find_by_title(&h.meta.title)).map(|p| p.id);
+        }
+        Ok(p)
+    }
+
+    /// New papers citing the paper with this DOI, without the ones by `exclude_author` (an
+    /// OpenAlex author id or ORCID iD; "" keeps all): papers citing your own work.
+    pub fn citing_new(&self, doi: String, exclude_author: String, since: String, limit: u32) -> Result<Vec<metadata::DiscoverHit>> {
+        let mut hits = metadata::citing_new(&doi, &exclude_author, &since, limit)?;
+        for h in hits.iter_mut() {
+            h.in_library = self.find_by_doi(h.meta.doi.clone()).or_else(|| self.find_by_title(&h.meta.title)).map(|p| p.id);
+        }
+        Ok(hits)
+    }
+
     // ---- finding PDFs ----
 
     /// Searches open-access sources for the paper's PDF, downloads the best one and attaches it.
@@ -722,6 +742,13 @@ pub fn citation_style(key: String) -> model::CitationStyle {
 #[uniffi::export]
 pub fn journal_name(query: String) -> Result<Option<String>> {
     metadata::journal_name(&query)
+}
+
+/// "0000-0002-1825-0097" from an ORCID iD as typed or pasted, or "" when it isn't a valid one
+/// (format and check digit).
+#[uniffi::export]
+pub fn normalize_orcid(input: String) -> String {
+    metadata::normalize_orcid(&input).unwrap_or_default()
 }
 
 #[uniffi::export]

@@ -557,3 +557,76 @@ fn abstracts_keep_less_than_signs() {
     let b = metadata::strip_tags("<p>Patients with n<5 lesions and age >60 years.</p> <i>P</i> < 0.05 <br/>done");
     assert_eq!(b, "Patients with n<5 lesions and age >60 years. P < 0.05 done");
 }
+
+#[test]
+fn orcid_ids_are_checked() {
+    use metadata::normalize_orcid as n;
+    let ok = Some("0000-0002-1825-0097".to_string());
+    assert_eq!(n("0000-0002-1825-0097"), ok);
+    assert_eq!(n(" https://orcid.org/0000-0002-1825-0097 "), ok);
+    assert_eq!(n("orcid:0000000218250097"), ok);
+    assert_eq!(n("ORCID: 0000-0002-1825-0097"), ok);
+    // check digit X
+    assert_eq!(n("0000-0002-1694-233x"), Some("0000-0002-1694-233X".to_string()));
+    assert_eq!(n("0000-0001-5109-3700"), Some("0000-0001-5109-3700".to_string()));
+    // wrong check digit, too short, letters
+    assert_eq!(n("0000-0002-1825-0098"), None);
+    assert_eq!(n("0000-0002-1825-009"), None);
+    assert_eq!(n("0000-000A-1825-0097"), None);
+    assert_eq!(n("Jane Smith"), None);
+    assert_eq!(n(""), None);
+}
+
+#[test]
+fn author_watch_values() {
+    use metadata::{author_ref, AuthorRef};
+    assert_eq!(author_ref("0000-0002-1825-0097"), AuthorRef::Orcid("0000-0002-1825-0097".into()));
+    assert_eq!(author_ref("orcid:0000-0002-1825-0097"), AuthorRef::Orcid("0000-0002-1825-0097".into()));
+    assert_eq!(author_ref("https://orcid.org/0000-0002-1825-0097"), AuthorRef::Orcid("0000-0002-1825-0097".into()));
+    assert_eq!(author_ref("A5023888391"), AuthorRef::OpenAlex("A5023888391".into()));
+    assert_eq!(author_ref("https://openalex.org/A5023888391"), AuthorRef::OpenAlex("A5023888391".into()));
+    assert_eq!(author_ref("https://openalex.org/authors/a5023888391/"), AuthorRef::OpenAlex("A5023888391".into()));
+    // names stay names (even short or odd ones)
+    assert_eq!(author_ref("Josiah Carberry"), AuthorRef::Name("Josiah Carberry".into()));
+    assert_eq!(author_ref("Abe"), AuthorRef::Name("Abe".into()));
+    assert_eq!(author_ref("A123"), AuthorRef::OpenAlex("A123".into()));
+    assert_eq!(author_ref("A12"), AuthorRef::Name("A12".into()));
+    // a malformed ORCID iD is not an id
+    assert_eq!(author_ref("0000-0002-1825-0098"), AuthorRef::Name("0000-0002-1825-0098".into()));
+}
+
+#[test]
+fn coauthors_from_works() {
+    let w = serde_json::json!({"results": [
+        {"authorships": [
+            {"author": {"id": "https://openalex.org/A1", "display_name": "Me", "orcid": "https://orcid.org/0000-0002-1825-0097"}},
+            {"author": {"id": "https://openalex.org/A2", "display_name": "Ann", "orcid": "https://orcid.org/0000-0001-5109-3700"}},
+            {"author": {"id": "https://openalex.org/A3", "display_name": "Bo", "orcid": null}}]},
+        {"authorships": [
+            {"author": {"id": "https://openalex.org/A9", "display_name": "Me again", "orcid": "https://orcid.org/0000-0002-1825-0097"}},
+            {"author": {"id": "https://openalex.org/A3", "display_name": "Bo", "orcid": null}},
+            {"author": {"id": "https://openalex.org/A3", "display_name": "Bo", "orcid": null}}]}
+    ]});
+    let c = metadata::coauthors(&w, "A1", "0000-0002-1825-0097", 10);
+    assert_eq!(c.iter().map(|x| (x.name.as_str(), x.shared)).collect::<Vec<_>>(), vec![("Bo", 2), ("Ann", 1)]);
+    assert_eq!(c[1].orcid, "0000-0001-5109-3700");
+    assert_eq!(c[0].openalex_id, "A3");
+}
+
+#[test]
+#[ignore] // network: cargo test orcid_profile_online -- --ignored --nocapture
+fn orcid_profile_online() {
+    let p = metadata::orcid_profile("0000-0002-1825-0097").unwrap();
+    println!("{} {} works={} cited={} recent={} top={} coauthors={:?}", p.name, p.openalex_id, p.works_count, p.cited_by_count,
+             p.works.len(), p.most_cited.len(), p.coauthors.iter().map(|c| (&c.name, c.shared, &c.orcid)).collect::<Vec<_>>());
+    for w in p.works.iter().take(5) { println!("  {} | {} | {}", w.meta.date, w.meta.doi, w.meta.title); }
+    let by = metadata::watch_new(metadata::WatchKind::Author, "orcid:0000-0002-1825-0097", "2000-01-01", 5).unwrap();
+    println!("author watch by ORCID: {}", by.len());
+    let by = metadata::watch_new(metadata::WatchKind::Author, &p.openalex_id, "2000-01-01", 5).unwrap();
+    println!("author watch by OpenAlex id: {}", by.len());
+    if let Some(w) = p.most_cited.iter().find(|w| !w.meta.doi.is_empty()) {
+        let c = metadata::citing_new(&w.meta.doi, &p.openalex_id, "2000-01-01", 5).unwrap();
+        println!("citing {} (without self): {}", w.meta.doi, c.len());
+    }
+    assert!(!p.openalex_id.is_empty());
+}
