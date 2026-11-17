@@ -219,7 +219,7 @@ struct ReaderWindow: View {
                     var sel = pageSel
                     if sel == nil { sel = await controller.pageSelection() }
                     guard let sel else { refreshHighlights(); return }
-                    autoHighlighter.apply(sel, paper: paperID, color: hlColor, model: model, undo: undo)
+                    await autoHighlighter.apply(sel, paper: paperID, color: hlColor, model: model, controller: controller, undo: undo)
                     controller.clearSelection()
                     refreshHighlights()
                 }
@@ -276,7 +276,7 @@ struct ReaderWindow: View {
         }
         Task {
             guard let sel = await controller.pageSelection() else { return }
-            model.addHighlight(paperID, sel, color: c, undo: undo)
+            _ = await model.addHighlightMerging(paperID, sel, color: c, controller: controller, undo: undo)
             controller.clearSelection()
             refreshHighlights()
         }
@@ -284,7 +284,8 @@ struct ReaderWindow: View {
 
     private func noteOnSelection() {
         Task {
-            guard let sel = await controller.pageSelection(), let a = model.addHighlight(paperID, sel, undo: undo) else { return }
+            guard let sel = await controller.pageSelection(),
+                  let a = await model.addHighlightMerging(paperID, sel, controller: controller, undo: undo) else { return }
             controller.clearSelection()
             refreshHighlights()
             editingAnnotation = a

@@ -218,6 +218,34 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
     try { var o = JSON.parse(j); wrap(textNodes(), o.start, o.start + o.quote.length, { id: '__pending', color: color || 'yellow' }); } catch (x) {}
     return j;
   };
+  // A new highlight from s to e: the highlights already drawn that it overlaps or touches, and
+  // the passage covering all of them (so they become one highlight instead of one replacing
+  // or stacking on another). {ids: [...], quote, prefix, suffix, start}
+  window.luntaMergeRange = function(s, e){
+    var nodes = textNodes(), text = fullText(nodes), spans = {};
+    document.querySelectorAll('mark.m-hl[data-ann]').forEach(function(m){
+      var id = m.getAttribute('data-ann'); if (!id || id === '__pending') return;
+      var t = m.firstChild; if (!t || t.nodeType !== 3) return;
+      var a = offsetOf(nodes, t, 0); if (a < 0) return;
+      var b = a + t.nodeValue.length, sp = spans[id];
+      spans[id] = sp ? [Math.min(sp[0], a), Math.max(sp[1], b)] : [a, b];
+    });
+    var us = s, ue = e, ids = [], grew = true;
+    while (grew) {
+      grew = false;
+      for (var id in spans) {
+        if (ids.indexOf(id) >= 0) continue;
+        var sp = spans[id];
+        // overlapping, or touching (only whitespace between)
+        var gapOK = (sp[1] >= us && sp[0] <= ue) ||
+                    (sp[1] < us && !text.slice(sp[1], us).trim()) || (sp[0] > ue && !text.slice(ue, sp[0]).trim());
+        if (gapOK) { ids.push(id); us = Math.min(us, sp[0]); ue = Math.max(ue, sp[1]); grew = true; }
+      }
+    }
+    var j = selectionJSON(text, us, ue); if (!j) return '';
+    var o = JSON.parse(j); o.ids = ids;
+    return JSON.stringify(o);
+  };
   // a note on the paragraph at a point: anchored to its first sentence (or ~120 characters)
   window.luntaParagraphAt = function(x, y){
     var el = document.elementFromPoint(x, y);

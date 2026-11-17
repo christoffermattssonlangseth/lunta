@@ -254,6 +254,34 @@ extension ReaderAssets {
         try { var o = JSON.parse(j); wrap(textNodes(), o.start, o.start + o.quote.length, { id: '__pending', color: color || 'yellow' }); } catch (x) {}
         return j;
       };
+      // A new highlight from s to e: the highlights already drawn that it overlaps or touches, and
+      // the passage covering all of them (so they become one highlight instead of one replacing
+      // or stacking on another). {ids: [...], quote, prefix, suffix, start}
+      window.luntaMergeRange = function(s, e){
+        var nodes = textNodes(), text = fullText(nodes), spans = {};
+        document.querySelectorAll('mark.m-hl[data-ann]').forEach(function(m){
+          var id = m.getAttribute('data-ann'); if (!id || id === '__pending') return;
+          var t = m.firstChild; if (!t || t.nodeType !== 3) return;
+          var a = offsetOf(nodes, t, 0); if (a < 0) return;
+          var b = a + t.nodeValue.length, sp = spans[id];
+          spans[id] = sp ? [Math.min(sp[0], a), Math.max(sp[1], b)] : [a, b];
+        });
+        var us = s, ue = e, ids = [], grew = true;
+        while (grew) {
+          grew = false;
+          for (var id in spans) {
+            if (ids.indexOf(id) >= 0) continue;
+            var sp = spans[id];
+            // overlapping, or touching (only whitespace between)
+            var gapOK = (sp[1] >= us && sp[0] <= ue) ||
+                        (sp[1] < us && !text.slice(sp[1], us).trim()) || (sp[0] > ue && !text.slice(ue, sp[0]).trim());
+            if (gapOK) { ids.push(id); us = Math.min(us, sp[0]); ue = Math.max(ue, sp[1]); grew = true; }
+          }
+        }
+        var j = selectionJSON(text, us, ue); if (!j) return '';
+        var o = JSON.parse(j); o.ids = ids;
+        return JSON.stringify(o);
+      };
       // a note on the paragraph at a point: anchored to its first sentence (or ~120 characters)
       window.luntaParagraphAt = function(x, y){
         var el = document.elementFromPoint(x, y);
@@ -303,6 +331,19 @@ final class AnnotationMessageHandler: NSObject, WKScriptMessageHandler {
 }
 
 extension ReaderController {
+    /// The highlights already in the page that a new one over `sel` overlaps or touches, and the
+    /// passage covering them all (nil: none, or the page couldn't tell).
+    func mergeRange(_ sel: PageSelection) async -> (ids: [String], passage: PageSelection)? {
+        let end = sel.start + sel.quote.utf16.count
+        guard sel.start >= 0,
+              let json = try? await webView?.evaluateJavaScript("window.luntaMergeRange ? luntaMergeRange(\(sel.start), \(end)) : ''") as? String,
+              let data = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let ids = obj["ids"] as? [String], !ids.isEmpty,
+              let passage = try? JSONDecoder().decode(PageSelection.self, from: data) else { return nil }
+        return (ids, passage)
+    }
+
     func pageSelection() async -> PageSelection? {
         // a passage the Pencil marked (PencilReader.swift) stands in for the selection, once
         if let (sel, at) = pencilSelection {
@@ -364,6 +405,48 @@ extension LibraryModel {
             return saved
         }
         catch { errorMessage = error.readable; return nil }
+    }
+
+    /// Adds a highlight in the reading view. One that overlaps (or touches) highlights already there
+    /// becomes one highlight with them, covering the whole passage: the first of them is stretched
+    /// (keeping its id), the others are folded in, their notes kept; the new colour wins. Undo
+    /// puts them back as they were.
+    func addHighlightMerging(_ paper: String, _ sel: PageSelection, color: HighlightColor = .yellow,
+                             controller: ReaderController, undo: UndoManager? = nil) async -> Annotation? {
+        guard let (ids, passage) = await controller.mergeRange(sel) else { return addHighlight(paper, sel, color: color, undo: undo) }
+        let olds = annotations(paper).filter { ids.contains($0.id) && $0.location == "epub" }
+        guard var merged = olds.first else { return addHighlight(paper, sel, color: color, undo: undo) }
+        let notes = olds.map { $0.note.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        merged.quote = passage.quote
+        merged.prefix = passage.prefix
+        merged.suffix = passage.suffix
+        merged.position = String(passage.start)
+        merged.color = color.rawValue
+        merged.note = notes.joined(separator: "\n\n")
+        merged.kind = merged.note.isEmpty ? .highlight : .note
+        do {
+            let saved = try lib.saveAnnotation(a: merged)
+            for o in olds.dropFirst() { try? lib.deleteAnnotation(paper: o.paperId, id: o.id) }
+            reload()
+            registerMergeUndo(merged: saved, originals: olds, undo: undo)
+            return saved
+        } catch { errorMessage = error.readable; return nil }
+    }
+
+    private func registerMergeUndo(merged: Annotation, originals: [Annotation], undo: UndoManager?) {
+        undo?.registerUndo(withTarget: self) { m in MainActor.assumeIsolated {
+            // undo: the highlights as they were (the first keeps the merged one's id)
+            for o in originals { _ = try? m.lib.saveAnnotation(a: o) }
+            m.reload()
+            undo?.registerUndo(withTarget: m) { m in MainActor.assumeIsolated {
+                _ = try? m.lib.saveAnnotation(a: merged)
+                for o in originals.dropFirst() { try? m.lib.deleteAnnotation(paper: o.paperId, id: o.id) }
+                m.reload()
+                m.registerMergeUndo(merged: merged, originals: originals, undo: undo)
+            } }
+            undo?.setActionName("Highlight")
+        } }
+        undo?.setActionName("Highlight")
     }
 
     func saveAnnotation(_ a: Annotation) {
@@ -608,19 +691,12 @@ extension WKWebViewConfiguration {
 }
 
 /// Highlight mode: every selection is highlighted as soon as it's made, in the chosen colour, so
-/// marking up a paper doesn't need a menu each time. A selection that overlaps the highlight just
-/// made (the selection was adjusted after a pause) replaces it rather than stacking a second one.
+/// marking up a paper doesn't need a menu each time. A selection that overlaps highlights already
+/// there (including one just made, then extended) joins them into one highlight.
 @MainActor
 final class AutoHighlighter {
-    private var last: (id: String, start: Int, end: Int, at: Date)?
-
-    func apply(_ sel: PageSelection, paper: String, color: HighlightColor, model: LibraryModel, undo: UndoManager?) {
-        let end = sel.start + sel.quote.utf16.count
-        if let l = last, Date().timeIntervalSince(l.at) < 60, sel.start < l.end, end > l.start,
-           let old = model.annotations(paper).first(where: { $0.id == l.id }), old.note.isEmpty {
-            if sel.start == l.start && end == l.end { return }
-            model.deleteAnnotation(old)
-        }
-        if let a = model.addHighlight(paper, sel, color: color, undo: undo) { last = (a.id, sel.start, end, Date()) }
+    func apply(_ sel: PageSelection, paper: String, color: HighlightColor, model: LibraryModel,
+               controller: ReaderController, undo: UndoManager?) async {
+        _ = await model.addHighlightMerging(paper, sel, color: color, controller: controller, undo: undo)
     }
 }

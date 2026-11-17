@@ -252,7 +252,8 @@ struct ReaderView: View {
                 var sel = pageSel
                 if sel == nil { sel = await controller.pageSelection() }
                 guard let sel else { refreshHighlights(); return }
-                autoHighlighter.apply(sel, paper: paperID, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow, model: model, undo: undoManager)
+                await autoHighlighter.apply(sel, paper: paperID, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow,
+                                            model: model, controller: controller, undo: undoManager)
                 controller.clearSelection()
                 refreshHighlights()
             }
@@ -262,8 +263,8 @@ struct ReaderView: View {
             Task {
                 guard let sel = await controller.pageSelection() else { return }
                 switch action {
-                case .highlight(let c): model.addHighlight(paperID, sel, color: c, undo: undoManager)
-                case .note: editingAnnotation = model.addHighlight(paperID, sel, undo: undoManager)
+                case .highlight(let c): _ = await model.addHighlightMerging(paperID, sel, color: c, controller: controller, undo: undoManager)
+                case .note: editingAnnotation = await model.addHighlightMerging(paperID, sel, controller: controller, undo: undoManager)
                 }
                 controller.clearSelection()
                 refreshHighlights()
