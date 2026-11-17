@@ -204,20 +204,25 @@ private var anchorKey: UInt8 = 0
 /// and overlapped. When the list of ids changes, every row's height is asked for again.
 struct TableRowHeights: NSViewRepresentable {
     let ids: [String]
+    /// Changes when what the rows show changes (a paper added, or its details filled in later):
+    /// the heights are measured again then, not only when papers come and go.
+    var content: Int = 0
 
     func makeNSView(context: Context) -> Probe { Probe() }
 
     func updateNSView(_ v: Probe, context: Context) {
-        guard v.ids != ids else { return }
+        guard v.ids != ids || v.content != content else { return }
         let first = v.ids.isEmpty
-        v.ids = ids
+        v.ids = ids; v.content = content
         if first { return }
-        // after SwiftUI has applied the new rows
+        // after SwiftUI has applied the new rows, and again once they have drawn
         DispatchQueue.main.async { v.remeasure() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { v.remeasure() }
     }
 
     final class Probe: NSView {
         var ids: [String] = []
+        var content = 0
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
         func remeasure() {

@@ -343,6 +343,16 @@ struct PaperTable: View {
         }
     }
 
+    /// What decides the rows' heights (a new paper's details arrive after its row is first drawn).
+    private var rowContentKey: Int {
+        var h = Hasher()
+        for p in model.papers {
+            h.combine(p.id); h.combine(p.meta.title); h.combine(p.meta.journal.isEmpty); h.combine(p.read)
+            h.combine(model.snippets[p.id]?.isEmpty ?? true)
+        }
+        return h.finalize()
+    }
+
     private var table: some View {
         Table(of: Paper.self, selection: $selection) {
             TableColumn("") { p in
@@ -394,7 +404,7 @@ struct PaperTable: View {
         // drag papers onto sidebar folders and tags (AppKit; see PaperDrag.swift). Dragging a
         // selected paper drags the whole selection, as the table drags all selected rows.
         .background(PaperDragSource { [papers = model.papers] row in row < papers.count ? papers[row].id : nil })
-        .background(TableRowHeights(ids: model.papers.map(\.id)))
+        .background(TableRowHeights(ids: model.papers.map(\.id), content: rowContentKey))
         .contextMenu(forSelectionType: String.self) { ids in
             PaperMenu(ids: Array(ids))
         } primaryAction: { ids in
