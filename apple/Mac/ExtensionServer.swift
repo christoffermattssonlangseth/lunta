@@ -137,10 +137,10 @@ final class ExtensionServer {
         guard let model else { return (503, ["error": "library not open"]) }
         switch (r.method, r.path) {
         case ("GET", "/status"):
-            return (200, status(of: find(model, doi: r.query["doi"] ?? "", title: r.query["title"] ?? "")))
+            return (200, status(of: model.findPaper(doi: r.query["doi"] ?? "", title: r.query["title"] ?? "")))
         case ("POST", "/save"):
             guard let j = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any] else { return (400, ["error": "bad JSON"]) }
-            let p = await save(model, j)
+            let p = await model.saveFromPage(j)
             return (p == nil ? 500 : 200, status(of: p))
         case ("POST", "/pdf"):
             guard r.body.starts(with: Data("%PDF".utf8)) else { return (400, ["error": "not a PDF"]) }
@@ -212,42 +212,8 @@ final class ExtensionServer {
         }
     }
 
-    private func find(_ model: LibraryModel, doi: String, title: String) -> Paper? {
-        if !doi.isEmpty, let p = model.lib.findByDoi(doi: doi) { return p }
-        guard title.count > 12 else { return nil }
-        func norm(_ s: String) -> String { s.lowercased().filter { $0.isLetter || $0.isNumber } }
-        let t = norm(title)
-        return model.lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
-            .first { norm($0.meta.title) == t }
-    }
-
     private func status(of p: Paper?) -> [String: Any] {
         guard let p else { return ["inLibrary": false] }
         return ["inLibrary": true, "id": p.id, "title": p.meta.title, "hasPdf": p.hasPdf, "hasReadingView": p.hasEpub]
-    }
-
-    private func save(_ model: LibraryModel, _ j: [String: Any]) async -> Paper? {
-        let doi = (j["doi"] as? String) ?? ""
-        let title = (j["title"] as? String) ?? ""
-        if let existing = find(model, doi: doi, title: title) { return existing }
-        if !doi.isEmpty {
-            await model.add(doi)
-            if let p = model.lib.findByDoi(doi: doi) { return p }
-        }
-        // no DOI (or lookup failed): save what the page told us
-        var m = PaperMeta.empty
-        m.title = title
-        m.authors = (j["authors"] as? [String]) ?? []
-        m.journal = (j["journal"] as? String) ?? ""
-        m.date = (j["date"] as? String) ?? ""
-        m.doi = doi
-        m.url = (j["url"] as? String) ?? ""
-        m.abstractText = (j["abstract"] as? String) ?? ""
-        guard !m.title.isEmpty else { return nil }
-        let lib = model.lib
-        let meta = m
-        let p = try? await Task.detached { try lib.addPaper(meta: meta, pdf: nil, epub: nil, fulltext: nil) }.value
-        model.reload()
-        return p
     }
 }

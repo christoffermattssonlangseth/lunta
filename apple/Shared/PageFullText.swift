@@ -10,7 +10,11 @@ import Paper2EpubKit
 ///   reader's own `locate`, ported as `HighlightLocator`). If one wouldn't be, the current reading
 ///   view stays and the page's version is only saved as a backup, with the highlights that didn't
 ///   match listed. Otherwise the current reading view is backed up and replaced.
-/// Backups: ~/Library/Application Support/Lunta/backups/<paper id>-<date>/.
+/// Backups: ~/Library/Application Support/Lunta/backups/<paper id>-<date>/ (on iPhone and iPad,
+/// the same folder in the app's own container).
+///
+/// Shared by Lunta for Mac (the extension's /fulltext, ExtensionServer) and the iPhone and iPad app
+/// (Safari's requests from the app group, SafariInboxImport).
 struct PageSubmission {
     var html: String
     /// The page as the browser shows it (after scripts ran), tried when `html` can't be converted.
@@ -52,6 +56,43 @@ extension LibraryModel {
         if let t = testLibrary { return t.appendingPathComponent("backups", isDirectory: true) }
         return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Lunta/backups", isDirectory: true)
+    }
+
+    /// Where a backup went, in words for the extension's panel: the folder on the Mac; on iPhone
+    /// and iPad (where the path means nothing to the reader) the app's backups.
+    nonisolated static func backupPlace(_ folder: URL) -> String {
+        #if os(macOS)
+        return folder.path
+        #else
+        return "Lunta's backups (\(folder.lastPathComponent))"
+        #endif
+    }
+
+    /// "Save to Lunta" from an article page: the paper if it's already in the library; else added
+    /// by its DOI, or (no DOI, or the lookup failed) with what the page said about it
+    /// ({doi, title, authors, journal, date, url, abstract}).
+    func saveFromPage(_ j: [String: Any]) async -> Paper? {
+        let doi = (j["doi"] as? String) ?? ""
+        let title = (j["title"] as? String) ?? ""
+        if let existing = findPaper(doi: doi, title: title) { return existing }
+        if !doi.isEmpty {
+            await add(doi)
+            if let p = lib.findByDoi(doi: doi) { return p }
+        }
+        var m = PaperMeta.empty
+        m.title = title
+        m.authors = (j["authors"] as? [String]) ?? []
+        m.journal = (j["journal"] as? String) ?? ""
+        m.date = (j["date"] as? String) ?? ""
+        m.doi = doi
+        m.url = (j["url"] as? String) ?? ""
+        m.abstractText = (j["abstract"] as? String) ?? ""
+        guard !m.title.isEmpty else { return nil }
+        let lib = self.lib
+        let meta = m
+        let p = try? await Task.detached { try lib.addPaper(meta: meta, pdf: nil, epub: nil, fulltext: nil) }.value
+        reload()
+        return p
     }
 
     /// Finds a paper by DOI, else by exact (normalised) title.
@@ -157,7 +198,7 @@ extension LibraryModel {
             try Data("Highlights not found in the page's text (\(s.url?.absoluteString ?? "")):\n\(list)\n".utf8)
                 .write(to: folder.appendingPathComponent("unmatched-highlights.txt"))
             out.backup = folder.path
-            out.message += " The page's version is saved in \(folder.path)."
+            out.message += " The page's version is saved in \(Self.backupPlace(folder))."
             return out
         }
 
@@ -168,7 +209,7 @@ extension LibraryModel {
         }
         // back up the current reading view (and its text), then replace it
         guard let oldEpub = await ensureLocal(id, .epub), let oldData = try? Data(contentsOf: oldEpub) else {
-            throw ConversionError.message("The current reading view isn't on this Mac yet (iCloud), so it can't be backed up. Try again in a moment.")
+            throw ConversionError.message("The current reading view isn't downloaded from iCloud yet, so it can't be backed up. Try again in a moment.")
         }
         if oldData == epub {
             out.kind = .unchanged
@@ -187,7 +228,7 @@ extension LibraryModel {
         reload()
         out.backup = folder.path
         let kept = anchored.isEmpty ? "" : " All \(anchored.count) highlight\(anchored.count == 1 ? "" : "s") found in the new text."
-        out.message = "Reading view updated from this page (\(result.words) words, \(figures)).\(kept) The previous one is saved in \(folder.path)."
+        out.message = "Reading view updated from this page (\(result.words) words, \(figures)).\(kept) The previous one is saved in \(Self.backupPlace(folder))."
         return out
     }
 
