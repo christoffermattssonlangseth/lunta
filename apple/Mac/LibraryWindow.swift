@@ -28,14 +28,20 @@ struct LibraryWindow: View {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 180, ideal: 210)
         } content: {
-            Group {
-                if model.source == .discover {
-                    DiscoverList(selection: $discoverSelection)
-                } else if model.source == .alerts {
-                    WatchInbox(selection: $discoverSelection)
-                } else {
-                    PaperTable(selection: $selection)
+            // a paper being read aloud: its Now Playing bar under the list (not a safeAreaInset, which
+            // stops rows being dragged; not in the table, whose row heights are fragile)
+            VStack(spacing: 0) {
+                Group {
+                    if model.source == .discover {
+                        DiscoverList(selection: $discoverSelection)
+                    } else if model.source == .alerts {
+                        WatchInbox(selection: $discoverSelection)
+                    } else {
+                        PaperTable(selection: $selection)
+                    }
                 }
+                .frame(maxHeight: .infinity)
+                NowPlayingBar()
             }
             .navigationSplitViewColumnWidth(min: 420, ideal: 560)
         } detail: {

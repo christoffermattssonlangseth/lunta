@@ -52,12 +52,18 @@ final class Narrator: NSObject, ObservableObject {
     /// Called with the element id of the paragraph being read (to highlight and scroll to it).
     var onHighlight: ((String) -> Void)?
     var title = ""
+    /// The paper being read (the Now Playing bar opens it).
+    var paperID = ""
 
     private let synth = AVSpeechSynthesizer()
     private var current: AVSpeechUtterance?
 
-    /// The narrator of the reader that is playing (for menus and media keys).
-    static weak var active: Narrator?
+    /// The narrator that is playing or paused (for menus, media keys and the Now Playing bar). Held by
+    /// NowPlaying until stopped, so it keeps reading after its reader closes.
+    static var active: Narrator? {
+        get { NowPlaying.shared.narrator }
+        set { NowPlaying.shared.narrator = newValue }
+    }
 
     override init() {
         super.init()

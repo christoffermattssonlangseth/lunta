@@ -44,6 +44,10 @@ struct ReaderWindow: View {
     init(paperID: String) {
         self.paperID = paperID
         _ask = StateObject(wrappedValue: AskEngine(scope: .paper(paperID)))
+        // this paper is being read aloud (its window was closed): take the narration over
+        let playing = NowPlaying.shared.narrator(for: paperID)
+        _narrator = StateObject(wrappedValue: playing ?? Narrator())
+        _listening = State(initialValue: playing != nil)
     }
 
     enum Mode: String, CaseIterable { case reading = "Reading", pdf = "PDF" }
@@ -117,6 +121,11 @@ struct ReaderWindow: View {
                         ContentUnavailableView("No PDF", systemImage: "doc", description: Text("Use Find PDF in the library, or drop the PDF onto the library window."))
                     }
                 }
+            }
+            // another paper being read aloud (or this one, in the PDF): its Now Playing bar
+            .overlay(alignment: .bottom) {
+                NowPlayingBar(style: .capsule, except: listening && mode == .reading ? narrator : nil)
+                    .padding(.horizontal, 20).padding(.bottom, 14)
             }
             // find in paper (⌘F): over the page, so the page keeps its size (and its pages)
             .modifier(FindOverlay(find: find, theme: mode == .reading ? theme : nil))
@@ -215,6 +224,8 @@ struct ReaderWindow: View {
         .onChange(of: highlightModeColor) { controller.setHighlightMode(highlightMode, color: hlColor) }
         .onDisappear { position.stop(paperID, model: model, controller: controller); summary.stop() }
         .onChange(of: summariesOn) { _, on in summary.setEnabled(on) }
+        // stopped from the Now Playing bar or the Listen menu, or another paper is read aloud now
+        .onReceive(NowPlaying.shared.settled) { if listening, Narrator.active !== narrator { closePlayer() } }
         .onReceive(NotificationCenter.default.publisher(for: .luntaReaderMode)) { n in
             if n.object as? String == paperID, let m = Self.requestedMode.removeValue(forKey: paperID) { mode = m }
         }
@@ -233,6 +244,7 @@ struct ReaderWindow: View {
                 controller.setHighlightMode(highlightMode, color: hlColor)
                 refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
                 summary.pageReady(paperID, model: model, controller: controller)
+                resumeListening()
             }
             controller.onSelectionDone = { pageSel in
                 guard highlightMode, mode == .reading else { return }
@@ -329,6 +341,7 @@ struct ReaderWindow: View {
             } else {
                 narrator.load(items, title: title)
             }
+            narrator.paperID = paperID
             narrator.onHighlight = { [weak controller] id in controller?.highlight(id) }
             controller.onTapParagraph = { [weak narrator] id in narrator?.play(fromID: id) }
             controller.setListening(true)
@@ -344,8 +357,21 @@ struct ReaderWindow: View {
 
     private func stopListening() {
         narrator.stop()
+        closePlayer()
+    }
+
+    private func closePlayer() {
         controller.setListening(false)
         listening = false
+    }
+
+    /// Reopened while its narration plays on: the page follows the voice again, from the paragraph being read.
+    private func resumeListening() {
+        guard listening else { return }
+        narrator.onHighlight = { [weak controller] id in controller?.highlight(id) }
+        controller.onTapParagraph = { [weak narrator] id in narrator?.play(fromID: id) }
+        controller.setListening(true)
+        if narrator.items.indices.contains(narrator.index) { controller.highlight(narrator.items[narrator.index].id) }
     }
 
     /// Contents entries point at "section.xhtml#id" or at a whole section; in the continuous
