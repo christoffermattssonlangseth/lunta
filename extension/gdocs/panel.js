@@ -1,9 +1,10 @@
 // Lunta in Google Docs: a button at the right edge of a document opens a small panel to search the
 // Lunta library, insert citations and the bibliography, update them all, and pick the style. The
 // document is read and written by the background script through the Google Docs API
-// (gdocs/background-gdocs.js); this page script only shows the panel and, to insert at the
-// cursor (which the API doesn't know), pastes a placeholder through Docs' own paste handling.
-/* global LuntaCite */
+// (gdocs/background-gdocs.js; in Safari, by Lunta for Mac); this page script only shows the panel
+// and, to insert at the cursor (which the API doesn't know), pastes a placeholder through Docs' own
+// paste handling (Safari: puts it on the clipboard for the reader's ⌘V, gdocs/clipboard.js).
+/* global LuntaCite, LuntaClipboard */
 (() => {
   if (window.top !== window || document.getElementById("lunta-gdocs-root")) return;
   const docId = () => (location.pathname.match(/\/document\/(?:u\/\d+\/)?d\/([A-Za-z0-9_-]{20,})/) || [])[1] || "";
@@ -64,6 +65,7 @@
       button.cx { all: unset; cursor: pointer; width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%; opacity: .5; font-size: 12px; flex: 0 0 auto; }
       button.cx:hover { opacity: 1; background: #eee; }
       .row input { flex: 1; margin: 0; }
+      .pasteBox p { margin: 4px 0; }
       [hidden] { display: none !important; }
       @media (prefers-color-scheme: dark) {
         .card, .tab { background: #2a2a2c; color: #eee; } header strong { color: #9ec9d8; }
@@ -78,7 +80,7 @@
         <header><img alt=""><strong>Lunta</strong><select class="style" title="Citation style" disabled></select></header>
         <div class="setup" hidden><p class="note setupText"></p></div>
         <div class="connect" hidden>
-          <p class="note">Lunta writes citations into this document through Google Docs, with your permission (asked once). Only the document you cite in is read or changed.</p>
+          <p class="note connectText">Lunta writes citations into this document through Google Docs, with your permission (asked once). Only the document you cite in is read or changed.</p>
           <div class="buttons"><button class="btn primary connectBtn">Connect Google account</button></div>
         </div>
         <div class="main" hidden>
@@ -92,6 +94,10 @@
           <div class="buttons"><button class="btn primary insert" disabled>Insert Citation</button></div>
           <div class="buttons"><button class="btn bib" disabled>Insert Bibliography</button><button class="btn refresh" disabled>Update All</button></div>
           <div class="buttons"><button class="btn edit" disabled>Edit Citation…</button></div>
+          <div class="pasteBox box" hidden>
+            <p class="pasteText"><strong>Press ⌘V in the document where the citation goes.</strong></p>
+            <p class="note">Lunta put it on the clipboard (Safari doesn’t let extensions paste). It becomes the citation once it’s in the document. <button class="link pasteCancel">Cancel</button></p>
+          </div>
           <div class="cbox box" hidden>
             <div class="row"><strong class="ctitle">This citation</strong><button class="link cclose">Close</button></div>
             <div class="clist"></div>
@@ -119,6 +125,8 @@
 
   let current = null;   // the citation being edited: {index, ids, text}
   let picked = [], style = "apa", styleTitle = "", styleSaved = false, needsStyle = false, ready = false, busy = false, lastSearch = 0, opened = false;
+  let viaApp = false;   // Safari on the Mac: Lunta for Mac signs in to Google and edits the document
+  let pasting = null;   // Safari, waiting for the reader's ⌘V: {cancelled}
 
   function status(m, err) { const s = $(".status"); s.textContent = m || ""; s.className = "status" + (err ? " err" : ""); }
   function setButtons() {
@@ -382,6 +390,51 @@
     if (ids) { picked = []; renderPicked(); }
   }
 
+  // Safari: the placeholder goes on the clipboard in the click itself (Safari writes the clipboard
+  // only in answer to one), while the app checks the document; then the reader pastes it.
+  function startInsert(ids) {
+    if (busy || !ready) return;
+    if (!viaApp) { exclusive(() => insert(ids)); return; }
+    const prep = send({ op: "prepareInsert", docId: docId(), ids });
+    const copied = LuntaClipboard.copy(navigator.clipboard, typeof ClipboardItem === "function" ? ClipboardItem : null, prep);
+    copied.catch(() => {});
+    exclusive(() => insertByPaste(ids, prep, copied));
+  }
+
+  async function insertByPaste(ids, prepared, copied) {
+    const prep = check(await prepared);
+    if (prep.exists) {
+      status("This document already has a bibliography. Updating it…");
+      return update();
+    }
+    try {
+      await copied;
+    } catch (e) {
+      throw new Error("Safari didn’t let Lunta put the " + (ids ? "citation" : "bibliography") + " on the clipboard (" + (e.message || e) + "). Click the button again.");
+    }
+    // back to the document, so ⌘V goes where its cursor is
+    try { const ed = editor(); ed.frame.contentWindow.focus(); ed.target.focus(); } catch (_) { /* the reader clicks there */ }
+    const mine = { cancelled: false };
+    pasting = mine;
+    $(".pasteText").innerHTML = "<strong>Press ⌘V in the document where the " + (ids ? "citation" : "bibliography") + " goes.</strong>";
+    $(".pasteBox").hidden = false;
+    status("");
+    let r;
+    try {
+      r = await LuntaClipboard.wait(send, {
+        docId: docId(), token: prep.token, bare: prep.bare, extra: styleSaved ? {} : { style, styleTitle },
+        cancelled: () => mine.cancelled, pause: () => delay(1500),
+        onPlain: (m) => status(m, true),
+      });
+    } finally {
+      if (pasting === mine) pasting = null;
+      $(".pasteBox").hidden = true;
+    }
+    if (r.cancelled) { status("Not inserted. (If you paste it later, Update All makes it the citation.)"); return; }
+    done(r);
+    if (ids) { picked = []; renderPicked(); }
+  }
+
   async function update(newStyle, newTitle) {
     status("Updating…");
     const r = check(await send({ op: "update", docId: docId(), ...(newStyle ? { style: newStyle, styleTitle: newTitle || "" } : styleSaved ? {} : { style, styleTitle }) }));
@@ -435,8 +488,9 @@
   }
   watchBox(".q", search);
   watchBox(".jq", findJournal);
-  $(".insert").onclick = () => exclusive(() => insert(picked.map((p) => p.id)));
-  $(".bib").onclick = () => exclusive(() => insert(null));
+  $(".insert").onclick = () => startInsert(picked.map((p) => p.id));
+  $(".bib").onclick = () => startInsert(null);
+  $(".pasteCancel").onclick = () => { if (pasting) pasting.cancelled = true; };
   $(".refresh").onclick = () => exclusive(() => update());
   $(".edit").onclick = () => { if (ready && !busy) editCitation().catch((e) => status(String(e.message || e), true)); };
   $(".cclose").onclick = () => closeCitation();
@@ -448,9 +502,21 @@
   };
 
   async function connect(selectAccount) {
-    status("Waiting for Google…");
+    status(viaApp ? "Lunta for Mac opened Google’s sign-in in your browser: sign in there and allow Lunta to edit your documents, then come back here…" : "Waiting for Google…");
     const r = await send({ op: "connect", selectAccount });
     if (r.error) { status(r.error, true); return; }
+    // Safari: the app signs in, in a browser tab of its own; ask it until it's done
+    if (r.started) {
+      const until = Date.now() + 5 * 60000;
+      for (;;) {
+        await delay(1500);
+        const s = await send({ op: "status" });
+        if (s.error) { status(s.error, true); return; }
+        if (s.connected && !s.connecting) break;
+        if (!s.connecting) { status(s.authError || "Google sign-in didn’t finish. Try again.", true); return; }
+        if (Date.now() > until) { status("Google sign-in didn’t finish. Try again.", true); return; }
+      }
+    }
     status("");
     load();
   }
@@ -464,11 +530,17 @@
     status("Loading…");
     const s = await send({ op: "status" });
     if (s.error) { status(s.error, true); return; }
+    viaApp = !!s.viaApp;
+    if (viaApp) {
+      $(".connectText").textContent = "In Safari, Lunta for Mac writes the citations into this document through Google Docs. Connect it to your Google account once (your browser opens Google’s page), with permission to edit your Google Docs documents; only the document you cite in is read or changed.";
+    }
     if (!s.configured || !s.supported) {
       show("setup");
       $(".setupText").textContent = !s.supported
-        ? "This browser can’t sign in to Google for extensions (Safari). Cite with the Apps Script sidebar: Lunta › Citations in Word & Google Docs…, or use Lunta’s extension in Chrome, Edge or Firefox."
-        : "Google Docs citing isn’t set up in this copy of the extension. Cite with the Apps Script sidebar meanwhile: Lunta › Citations in Word & Google Docs….";
+        ? "Safari on iPhone and iPad can’t cite in Google Docs from the extension. Cite with the Apps Script sidebar (Lunta › Citations in Word & Google Docs… on a Mac sets it up), or from Safari on a Mac with Lunta for Mac."
+        : viaApp
+          ? "Citing in Google Docs from Safari isn’t set up yet in this version of Lunta for Mac. Cite with the Apps Script sidebar meanwhile: Lunta › Citations in Word & Google Docs…, or use Lunta’s extension in Chrome, Edge or Firefox."
+          : "Google Docs citing isn’t set up in this copy of the extension. Cite with the Apps Script sidebar meanwhile: Lunta › Citations in Word & Google Docs….";
       status("");
       return;
     }
@@ -486,7 +558,7 @@
     styleTitle = st.styleTitle || "";
     fillStyles();
     ready = true; setButtons();
-    if (s.lunta.error) status(s.lunta.error + (st.citations.length ? " Update All still works from the copy of the cited papers saved in this document." : ""), true);
+    if (s.lunta && s.lunta.error) status(s.lunta.error + (st.citations.length ? " Update All still works from the copy of the cited papers saved in this document." : ""), true);
     else if (needsStyle) status("Choose this document’s citation style above: Lunta didn’t find it saved in the document (written with an older copy of the Apps Script?).", true);
     else status(`Connected to Lunta · ${s.lunta.papers} papers` + (st.pending ? " · Update All finishes citations inserted before" : ""));
   }

@@ -9,8 +9,13 @@
 //     document changed since that revision
 //   deps.lunta.bibliography(body), deps.lunta.render(body) → Lunta's /api/bibliography, /api/render
 //   deps.cite, deps.model: LuntaCite and LuntaDocs; deps.sleep(ms) optional
+//   deps.gzip(text) → Uint8Array, deps.gunzip(bytes) → text: optional (default: the browser's
+//     CompressionStream; Lunta for Mac, which runs this file for Safari, brings its own)
+// The same file runs in Lunta for Mac for the extension in Safari (apple/Mac/GoogleDocsScript.swift,
+// through gdocs/app-host.js), so both browsers' citations come from one implementation.
 function makeLuntaGDocs(deps) {
   var C = deps.cite, D = deps.model;
+  var DOC_ID = /^[A-Za-z0-9_-]{20,}$/, PLACEHOLDER_TEXT = '(…)';
   var sleep = deps.sleep || function (ms) { return new Promise(function (ok) { setTimeout(ok, ms); }); };
 
   function fail(message, kind, extra) {
@@ -34,10 +39,12 @@ function makeLuntaGDocs(deps) {
     return out;
   }
   async function gzip(text) {
+    if (deps.gzip) return deps.gzip(text);
     var stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
     return new Uint8Array(await new Response(stream).arrayBuffer());
   }
   async function gunzip(bytes) {
+    if (deps.gunzip) return deps.gunzip(bytes);
     var stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
     return new Response(stream).text();
   }
@@ -195,11 +202,48 @@ function makeLuntaGDocs(deps) {
           throw e;
         }
       }
+      // pasted without its link (⌘⇧V, or the link dropped): "(…)" as plain text, one more than before
+      if (opts.bare != null && bareCount(doc) > opts.bare) {
+        throw fail('Google Docs pasted the citation as plain text, without its link, so it can’t become a citation. ' +
+          'Undo that (⌘Z) and paste with ⌘V (not Paste without formatting, ⌘⇧V).', 'plainPaste');
+      }
       if (Date.now() > until) {
         throw fail('The citation didn’t reach the document. Click in the text where it should go (so the cursor blinks there) and try again.', 'notInserted');
       }
       await sleep(opts.interval || 700);
     }
+  }
+
+  /**
+   * How many times the placeholder's text, "(…)", is in the document without a Lunta link: a
+   * placeholder pasted as plain text is one more than when it was put on the clipboard.
+   */
+  function bareCount(doc) {
+    var n = 0;
+    function walk(list) {
+      (list || []).forEach(function (el) {
+        if (el.paragraph) {
+          var text = (el.paragraph.elements || []).map(function (pe) {
+            if (!pe.textRun) return '\u0000';
+            var link = pe.textRun.textStyle && pe.textRun.textStyle.link && pe.textRun.textStyle.link.url;
+            return link && link.indexOf('https://margins.local/') === 0 ? '\u0000' : (pe.textRun.content || '');
+          }).join('');
+          n += text.split(PLACEHOLDER_TEXT).length - 1;
+        } else if (el.table) {
+          (el.table.tableRows || []).forEach(function (row) { (row.tableCells || []).forEach(function (c) { walk(c.content); }); });
+        }
+      });
+    }
+    function tab(dt) {
+      walk((dt.body || {}).content);
+      Object.keys(dt.footnotes || {}).forEach(function (k) { walk(dt.footnotes[k].content); });
+    }
+    if (doc.tabs && doc.tabs.length) {
+      (function each(list) { (list || []).forEach(function (t) { if (t.documentTab) tab(t.documentTab); each(t.childTabs); }); })(doc.tabs);
+    } else {
+      tab(doc);
+    }
+    return n;
   }
 
   /** The character at a document index (null past the text), in a tab's body or a footnote. */
@@ -281,7 +325,78 @@ function makeLuntaGDocs(deps) {
     return out;
   }
 
+  /**
+   * The document requests of the panel ({op, docId, …}, see gdocs/panel.js), the same in every
+   * browser: the background script answers them in Chrome, Edge and Firefox, Lunta for Mac in Safari.
+   */
+  async function op(msg) {
+    if (!msg || !DOC_ID.test(String(msg.docId))) throw fail('This isn’t a Google Docs document.', 'http');
+    var style = { style: msg.style, styleTitle: msg.styleTitle };
+    switch (msg.op) {
+      case 'state':
+        return state(msg.docId);
+      case 'update':
+        return update(msg.docId, style);
+      case 'prepareInsert': {
+        // nothing pasted unless the document can be written afterwards
+        var doc = await deps.docs.get(msg.docId), parsed = D.read(doc);
+        if (!msg.ids && parsed.bibliography) return { exists: true };
+        var token = D.newToken(), ids = msg.ids ? msg.ids.map(String) : null;
+        return { token: token, html: D.placeholderHTML(token, ids, PLACEHOLDER_TEXT), url: D.placeholderUrl(token, ids),
+                 text: PLACEHOLDER_TEXT, plain: PLACEHOLDER_TEXT, bare: bareCount(doc) };
+      }
+      case 'finishInsert':
+        return finishInsert(msg.docId, msg.token, Object.assign(style, {
+          // a short wait, asked again and again (Safari: until the reader pastes), or the usual 15 s
+          timeout: msg.timeout ? Math.min(Math.max(Number(msg.timeout) || 0, 1000), 30000) : undefined,
+          bare: msg.bare == null ? null : Number(msg.bare)
+        }));
+      case 'details':
+        return details(msg.docId, (msg.ids || []).map(String));
+      case 'editCitation':
+        return editCitation(msg.docId, Object.assign(style, { index: Number(msg.index), expect: msg.expect || [], ids: (msg.ids || []).map(String) }));
+      default:
+        throw fail('unknown request', 'http');
+    }
+  }
+
   return { state: state, update: update, finishInsert: finishInsert, details: details, editCitation: editCitation,
-           decodeStore: decodeStore, encodeStore: encodeStore };
+           decodeStore: decodeStore, encodeStore: encodeStore, bareCount: bareCount, op: op };
 }
+
+/**
+ * The Google Docs API (documents.get with tabs, documents.batchUpdate) and its errors, said so the
+ * reader knows what to do. `send(method, url, body)` makes the request with the Google token and
+ * answers {status, json} (a 401 already retried with a new token); it rejects only when Google
+ * can't be reached, or with an error that has its own `kind` (no token: "auth", "setup").
+ */
+makeLuntaGDocs.docsAPI = function (send) {
+  var API = 'https://docs.googleapis.com/v1/documents/';
+  function fail(message, kind) { var e = new Error(message); e.kind = kind; return e; }
+  async function call(method, path, body) {
+    var r;
+    try {
+      r = await send(method, API + path, body);
+    } catch (e) {
+      if (e && e.kind) throw e;
+      throw fail('Google Docs couldn’t be reached. Check the internet connection and try again.', 'network');
+    }
+    var j = r.json || {};
+    if (r.status >= 200 && r.status < 300) return j;
+    var msg = (j.error && j.error.message) || ('Google Docs answered ' + r.status + '.');
+    if (r.status === 400 && /revision/i.test(msg)) throw fail(msg, 'revision');
+    if (r.status === 401) throw fail('Connect your Google account to cite in this document.', 'auth');
+    if (r.status === 403 || r.status === 404) {
+      throw fail('The Google account connected to Lunta can’t edit this document (another account owns it, or you can only view or comment). ' +
+        'Use Switch account in Lunta’s panel, or ask for edit access.', 'access');
+    }
+    throw fail('Google Docs: ' + msg, 'http');
+  }
+  return {
+    get: function (docId) { return call('GET', encodeURIComponent(docId) + '?includeTabsContent=true'); },
+    batchUpdate: function (docId, requests, revisionId) {
+      return call('POST', encodeURIComponent(docId) + ':batchUpdate', { requests: requests, writeControl: { requiredRevisionId: revisionId } });
+    }
+  };
+};
 if (typeof module !== 'undefined') module.exports = makeLuntaGDocs;

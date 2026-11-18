@@ -4,10 +4,10 @@
 // gets from https://localhost:47481/api/…). The panel in the document (gdocs/panel.js) asks for
 // everything here; the access token never reaches the page.
 /* global LuntaCite, LuntaDocs, makeLuntaGDocs, LUNTA_GOOGLE_CLIENT_ID */
+// In Safari on the Mac, Lunta for Mac does all of this instead (below, "Safari").
 
 const GOOGLE_SCOPE = "https://www.googleapis.com/auth/documents";
 const GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
-const DOCS_API = "https://docs.googleapis.com/v1/documents/";
 const LUNTA_CITE = "http://127.0.0.1:47480/cite";
 
 function identityAPI() {
@@ -53,7 +53,7 @@ async function googleToken(interactive, selectAccount) {
   }
   const id = identityAPI();
   if (!id) {
-    throw gdocsError("This browser can’t sign in to Google for extensions (Safari). Cite with the Apps Script sidebar instead: Lunta › Citations in Word & Google Docs….", "unsupported");
+    throw gdocsError("Safari on iPhone and iPad can’t sign in to Google for extensions. Cite with the Apps Script sidebar instead, or from Safari on a Mac with Lunta for Mac.", "unsupported");
   }
   const redirect = id.getRedirectURL();
   const q = new URLSearchParams({
@@ -88,37 +88,21 @@ async function forgetGoogle() {
 
 // ---- the Docs API ----
 
-async function docsCall(method, path, body, again) {
+/** A Docs API request with the token ({status, json}); a token Google no longer takes: a new one, once. */
+async function docsSend(method, url, body, again) {
   const token = await googleToken(false);
-  let r;
-  try {
-    r = await fetch(DOCS_API + path, {
-      method, headers: { Authorization: "Bearer " + token, ...(body ? { "Content-Type": "application/json" } : {}) },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  } catch (_) {
-    throw gdocsError("Google Docs couldn’t be reached. Check the internet connection and try again.", "network");
-  }
+  const r = await fetch(url, {
+    method, headers: { Authorization: "Bearer " + token, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
   if (r.status === 401 && !again) {
     await saveToken(null);
-    return docsCall(method, path, body, true);
+    return docsSend(method, url, body, true);
   }
-  const j = await r.json().catch(() => ({}));
-  if (r.ok) return j;
-  const msg = (j.error && j.error.message) || `Google Docs answered ${r.status}.`;
-  if (r.status === 400 && /revision/i.test(msg)) throw gdocsError(msg, "revision");
-  if (r.status === 401) throw gdocsError("Connect your Google account to cite in this document.", "auth");
-  if (r.status === 403 || r.status === 404) {
-    throw gdocsError("The Google account connected to Lunta can’t edit this document (another account owns it, or you can only view or comment). Use Switch account in Lunta’s panel, or ask for edit access.", "access");
-  }
-  throw gdocsError(`Google Docs: ${msg}`, "http");
+  return { status: r.status, json: await r.json().catch(() => ({})) };
 }
 
-const gdocsAPI = {
-  get: (docId) => docsCall("GET", encodeURIComponent(docId) + "?includeTabsContent=true"),
-  batchUpdate: (docId, requests, revisionId) =>
-    docsCall("POST", encodeURIComponent(docId) + ":batchUpdate", { requests, writeControl: { requiredRevisionId: revisionId } }),
-};
+const gdocsAPI = makeLuntaGDocs.docsAPI((method, url, body) => docsSend(method, url, body));
 
 // ---- Lunta ----
 
@@ -140,15 +124,48 @@ const gdocsFlow = makeLuntaGDocs({
   },
 });
 
-const DOC_ID = /^[A-Za-z0-9_-]{20,}$/;
+// ---- Safari: Lunta for Mac does the Google part ----
+// Safari has no identity API for extensions: Lunta for Mac signs in to Google (an OAuth client for
+// installed apps, the token in the Mac's Keychain) and answers the panel's requests itself, with
+// this same flow.js (apple/Mac/GoogleDocsScript.swift). The extension only passes them on.
+
+const LUNTA_APP_GDOCS = "http://127.0.0.1:47480/gdocs";
+const APP_OPS = new Set(["status", "connect", "disconnect", "state", "update", "prepareInsert", "finishInsert", "details", "editCitation"]);
+
+/** Safari on the Mac (no sign-in for extensions; Lunta for Mac nearby). Not on iPhone and iPad. */
+async function docsThroughApp() {
+  if (identityAPI()) return false;
+  /* global useNative */
+  if (typeof useNative === "function" && (await useNative())) return false;
+  return true;
+}
+
+async function askApp(msg) {
+  let r;
+  try {
+    r = await fetch(LUNTA_APP_GDOCS, {
+      method: "POST", headers: { "Content-Type": "application/json", "X-Margins-Client": "extension" }, body: JSON.stringify(msg),
+    });
+  } catch (_) {
+    throw gdocsError("Can’t reach Lunta. Open Lunta for Mac and try again: in Safari, the Lunta app is what signs in to Google and writes the citations.", "offline");
+  }
+  const j = await r.json().catch(() => null);
+  if (r.status === 404 && !(j && j.kind)) {
+    throw gdocsError("This version of Lunta for Mac can’t cite in Google Docs for Safari. Update Lunta and try again.", "http");
+  }
+  if (!j) throw gdocsError(`Lunta answered ${r.status}.`, "http");
+  if (!r.ok && !j.error) throw gdocsError(`Lunta answered ${r.status}.`, "http");
+  return j;   // {error, kind} included: as the panel expects them
+}
 
 /** The panel's requests ({type: "gdocs", op, …}); answers {error, kind} instead of failing. */
 async function handleGDocs(msg) {
   try {
-    if (msg.docId !== undefined && !DOC_ID.test(String(msg.docId))) throw gdocsError("This isn’t a Google Docs document.", "http");
+    if (APP_OPS.has(msg.op) && (await docsThroughApp())) return await askApp(msg);
     switch (msg.op) {
       case "status": {
-        const out = { configured: !!LUNTA_GOOGLE_CLIENT_ID, supported: !!identityAPI(), connected: false };
+        const iOS = !identityAPI();   // here without the identity API: Safari on iPhone and iPad
+        const out = { configured: !!LUNTA_GOOGLE_CLIENT_ID, supported: !iOS, connected: false, ...(iOS ? { iOS: true } : {}) };
         if (out.configured && out.supported) out.connected = await googleToken(false).then(() => true, () => false);
         out.lunta = await luntaCite("/status", null, 8000).then((s) => ({ papers: s.papers }), (e) => ({ error: e.message }));
         return out;
@@ -163,27 +180,8 @@ async function handleGDocs(msg) {
         return { hits: await luntaCite("/search?q=" + encodeURIComponent(msg.q || "")) };
       case "styles":
         return { hits: await luntaCite("/styles?q=" + encodeURIComponent(msg.q || ""), null, 60000) };
-      case "state":
-        return await gdocsFlow.state(msg.docId);
-      case "update":
-        return await gdocsFlow.update(msg.docId, { style: msg.style, styleTitle: msg.styleTitle });
-      case "prepareInsert": {
-        // nothing pasted unless the document can be written afterwards
-        const st = await gdocsFlow.state(msg.docId);
-        if (!msg.ids && st.hasBibliography) return { exists: true };
-        const token = LuntaDocs.newToken();
-        const ids = msg.ids || null;
-        return { token, html: LuntaDocs.placeholderHTML(token, ids, "(…)"), url: LuntaDocs.placeholderUrl(token, ids), text: "(…)" };
-      }
-      case "details":
-        return await gdocsFlow.details(msg.docId, (msg.ids || []).map(String));
-      case "editCitation":
-        return await gdocsFlow.editCitation(msg.docId, { index: Number(msg.index), expect: msg.expect || [], ids: (msg.ids || []).map(String),
-          style: msg.style, styleTitle: msg.styleTitle });
-      case "finishInsert":
-        return await gdocsFlow.finishInsert(msg.docId, msg.token, { style: msg.style, styleTitle: msg.styleTitle });
       default:
-        throw gdocsError("unknown request", "http");
+        return await gdocsFlow.op(msg);
     }
   } catch (e) {
     return { error: String((e && e.message) || e), kind: (e && e.kind) || "" };
