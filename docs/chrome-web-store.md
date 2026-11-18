@@ -36,20 +36,22 @@ publisher's page.
 
 ### Description
 
+No lists of publishers, journals or styles: the Chrome Web Store rejected 1.0.3 for "keyword spam" (Yellow Argon) over the sentence naming NEJM, Cell Press, Science, PNAS… (18 November 2026).
+
 ```
 Lunta saves scientific papers to your Lunta library, straight from the journal's page, with the access your browser already has.
 
 On an article page, Lunta's panel shows the paper and whether it's already in your library. One click saves it, with its PDF: the extension downloads the PDF in your browser, so your institution's subscription or your sign-in applies.
 
 USE THIS PAGE'S FULL TEXT
-On a journal's article page, Lunta can turn the page you're reading into the paper's reading view: the text, figures, tables and linked references, laid out for reading on any screen. It works with NEJM, Cell Press, Science, PNAS, Wiley, Taylor & Francis, SAGE, ACS, Springer Nature, JAMA, Oxford Academic, ScienceDirect and many others. Your highlights are checked first: if any wouldn't be found in the new text, your current reading view is kept.
+On a journal's article page, Lunta can turn the page you're reading into the paper's reading view: the text, figures, tables and linked references, laid out for reading on any screen. Your highlights are checked first: if any wouldn't be found in the new text, your current reading view is kept.
 
 CITE IN GOOGLE DOCS
-In any Google Docs document, the Lunta button opens a panel: search your library, pick papers and insert a citation where your cursor is, insert the bibliography, and update everything after edits. APA, Harvard, Chicago, MLA, Vancouver, IEEE, Nature, Science, Cell and about 10,000 journal styles. Numbers, ordering and the reference list stay right as you write; co-authors with their own Lunta can update the same document. Connect your Google account once: Lunta edits only the document you cite in, through Google's own Docs API.
+In any Google Docs document, the Lunta button opens a panel: search your library, pick papers and insert a citation where your cursor is, insert the bibliography, and update everything after edits. About 10,000 citation styles, from APA to your journal's. Numbers, ordering and the reference list stay right as you write; co-authors with their own Lunta can update the same document. Connect your Google account once: Lunta edits only the document you cite in, through Google's own Docs API.
 
 ALSO
 • Save a PDF open in Chrome's PDF viewer with the toolbar button.
-• Works on any site that publishes papers: journals, preprint servers, PubMed, university repositories.
+• Works on article pages of journals, preprint servers and PubMed.
 
 NEEDS THE LUNTA APP
 The extension works together with Lunta for Mac, Windows or Linux, which must be open on the same computer. Get it free at https://github.com/christoffermattssonlangseth/lunta/releases/latest
