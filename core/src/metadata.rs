@@ -43,11 +43,11 @@ pub(crate) fn get_text(url: &str) -> Result<String> {
     }
 }
 
-fn get_json(url: &str) -> Result<Value> {
+pub(crate) fn get_json(url: &str) -> Result<Value> {
     serde_json::from_str(&get_text(url)?).map_err(|e| CoreError::Network(format!("bad JSON: {e}")))
 }
 
-fn enc(s: &str) -> String {
+pub(crate) fn enc(s: &str) -> String {
     let mut o = String::new();
     for b in s.bytes() {
         if b.is_ascii_alphanumeric() || b"-_.~/:".contains(&b) {

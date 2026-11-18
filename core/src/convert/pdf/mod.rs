@@ -107,6 +107,32 @@ pub fn doi_in_pdf(data: &[u8]) -> Option<String> {
     quick_doi_doc(&doc)
 }
 
+/// Every page's lines with where they are (top-left page coordinates), for finding the reference
+/// a citation points to (`refcite`). Each page's media box is in `boxes`: (left, top) in PDF user
+/// space, to turn a destination into these coordinates.
+pub fn text_lines(data: &[u8]) -> Result<(Vec<crate::refcite::TextLine>, Vec<(f64, f64)>)> {
+    let p = pdfium()?;
+    let doc = open(p, data)?;
+    let mut out = Vec::new();
+    let mut boxes = Vec::new();
+    for (pno, page) in doc.pages().iter().enumerate() {
+        let mb = extract::media_box(&page);
+        boxes.push(mb.origin());
+        let Ok(text) = page.text() else { continue };
+        for l in extract::extract_lines(&text, &mb, pno) {
+            out.push(crate::refcite::TextLine {
+                page: pno as u32,
+                text: l.text,
+                left: l.bbox.x0,
+                top: l.bbox.y0,
+                right: l.bbox.x1,
+                bottom: l.bbox.y1,
+            });
+        }
+    }
+    Ok((out, boxes))
+}
+
 /// Plain text of the first pages of a PDF (for matching a PDF to a known paper by its title).
 pub fn first_pages_text(data: &[u8], pages: usize) -> String {
     let Ok(p) = pdfium() else { return String::new() };

@@ -22,6 +22,7 @@ pub mod import;
 pub mod index;
 pub mod metadata;
 pub mod model;
+pub mod refcite;
 #[cfg(feature = "convert")]
 pub mod pagetext;
 pub mod store;
@@ -925,6 +926,35 @@ pub fn extract_doi(text: String) -> String {
 #[uniffi::export]
 pub fn parse_import(text: String) -> Vec<import::ImportEntry> {
     import::parse_any(&text)
+}
+
+/// The reference at a link's destination in a PDF (the PDF view's citation card): `lines` are the
+/// page's lines (and the next page's, for an entry cut off there), `page` from 0, `x` / `y` from
+/// the top left of the page. None when there is no text there.
+#[uniffi::export]
+pub fn pdf_reference_at(lines: Vec<refcite::TextLine>, page: u32, x: Option<f64>, y: f64) -> Option<String> {
+    refcite::reference_at(&lines, page, x, y)
+}
+
+/// Whether a citation ("[12]", a superscript number, "(Smith et al., 2020)") is at `offset`
+/// (UTF-16) in a line of a PDF.
+#[uniffi::export]
+pub fn pdf_is_citation_at(text: String, offset: u32) -> bool {
+    refcite::is_citation_at(&text, offset as usize)
+}
+
+/// The reference-list entry for the citation at `offset` (UTF-16) in `text`, from the PDF's lines
+/// (all pages, in reading order).
+#[uniffi::export]
+pub fn pdf_reference_for_citation(lines: Vec<refcite::TextLine>, text: String, offset: u32) -> Option<String> {
+    refcite::reference_for_citation(&lines, &text, offset as usize)
+}
+
+/// A reference's DOI or arXiv number: printed in it, else found by Crossref's bibliographic search
+/// when the match is plainly the same work (blocking). None when not found.
+#[uniffi::export]
+pub fn resolve_reference(text: String) -> Result<Option<refcite::ReferenceIds>> {
+    refcite::resolve_reference(&text)
 }
 
 #[cfg(test)]

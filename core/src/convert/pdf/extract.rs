@@ -32,6 +32,11 @@ pub fn media_box(page: &PdfPage) -> MediaBox {
 }
 
 impl MediaBox {
+    /// The box's left and top in PDF user space.
+    pub fn origin(&self) -> (f64, f64) {
+        (self.left, self.top)
+    }
+
     /// PDF user-space rectangle → top-left page coordinates.
     fn to_top(self, left: f64, bottom: f64, right: f64, top: f64) -> R {
         R::new(left - self.left, self.top - top, right - self.left, self.top - bottom)
