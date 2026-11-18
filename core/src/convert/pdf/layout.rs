@@ -462,6 +462,10 @@ impl<'a> Analyzer<'a> {
             if (r.w() < 1.0 && r.h() < 1.0) || r.area() > 0.95 * parea {
                 continue;
             }
+            // a band behind a line of text ("Published online: …" on a shaded strip) is not a picture
+            if r.h() < 30.0 && text_cover(r, lines) > 0.5 * r.area() {
+                continue;
+            }
             rects.push((true, *r));
         }
         let mut thin: Vec<R> = Vec::new();
@@ -1290,6 +1294,11 @@ impl<'a> Analyzer<'a> {
                 }
             }
         }
+        // the masthead above the title (the journal's logo, an "ARTICLE | Open Access" banner) is no figure
+        if let Some(ty) = paras.iter().find(|p| p.page == 0 && p.kind == Kind::Title).map(|p| p.bbox().y0) {
+            let h = self.pages[0].height;
+            paras.retain(|p| !(p.page == 0 && p.kind == Kind::Figure && p.bbox().y1 <= ty + 2.0 && p.bbox().h() < 0.25 * h));
+        }
         let mut heading_sizes: Vec<f64> = Vec::new();
         // (a box's own headings and labels stay in the box: plain text)
         for p in paras.iter_mut().filter(|p| p.kind == Kind::Text && p.boxed.is_none()) {
@@ -1417,6 +1426,13 @@ impl<'a> Analyzer<'a> {
             }
             // "A and B contributed equally to this work." at the foot of the first page
             if count(&text) < 300 && re!(r"(?i)contributed equally|equal(ly)? contribut|these authors contributed").is_match(&text) {
+                p.kind = Kind::Front;
+            }
+        }
+        // the first pages' footnotes: correspondence, e-mail, dates, editor, licence, ORCID
+        for p in paras.iter_mut().filter(|p| p.page <= 1 && p.kind == Kind::Text && p.boxed.is_none()) {
+            let h = self.pages[p.page].height;
+            if front_footnote(&p.text(), p.size(), body, p.bbox().y0 > 0.75 * h) {
                 p.kind = Kind::Front;
             }
         }
@@ -1558,6 +1574,50 @@ pub fn mark_hard_hyphens(pages: &mut [Page]) {
             }
         }
     }
+}
+
+/// A footnote of the first pages that belongs to the front matter, not the body: correspondence
+/// and e-mail, "A full list of affiliations…", dates, editor, competing interests, ORCID, licence.
+/// In footnote type anywhere on the page, or in body type at its foot if it starts like one; a
+/// sentence of the body that merely gives an address ("Requests to x@y") is in body type and does
+/// not start like a footnote.
+pub fn front_footnote(text: &str, size: f64, body: f64, at_foot: bool) -> bool {
+    let t = trim(text);
+    if count(t) > 1200 || re!(r"(?i)^(data|code|materials?|software)( and \w+)? availability").is_match(t) {
+        return false;
+    }
+    let starts = re!(concat!(
+        r"(?i)^[\W\d]{0,3}\s*(",
+        r"corresponding authors?|\*?\s*correspondence\b|(to )?whom (all )?correspondence|address(ed)? (all )?correspondence|",
+        r"e-?mail( address(es)?)?\s*:|email\b|edited by\b|reviewed by\b|academic editor\b|handling editor\b|",
+        r"(received|accepted|revised|published( online)?)\s*[:\d]|published online\b|available online\b|first published\b|article history\b|",
+        r"author contributions?\s*:|competing interests?\s*:|conflicts? of interests?\s*:|the authors? declares?\b|",
+        r"orcid\b|these authors contributed|present address|current address|deceased\b|a full list of affiliations|",
+        r"©|copyright\b|\(c\)\s*(19|20)\d\d|this (is an )?open access|open access\b|this article (is a pnas|is an open|is licensed|is distributed|contains supporting)|",
+        r"https?://doi\.org/|doi:\s*10\.",
+        r")"
+    ));
+    let anywhere = re!(concat!(
+        r"(?i)✉|\ba full list of affiliations\b|\breceived in revised form\b|\bPNAS Direct Submission\b|",
+        r"\bto whom correspondence\b|\bcorresponding authors?\b|\bcontributed equally\b"
+    ));
+    let email = re!(r"[\w.+-]+@[\w-]+(\.[\w-]+)+");
+    if size <= body - 0.4 {
+        starts.is_match(t) || anywhere.is_match(t) || email.is_match(t)
+    } else {
+        at_foot && (starts.is_match(t) || anywhere.is_match(t))
+    }
+}
+
+/// How much of `r` the text lines cover (their overlaps added up).
+fn text_cover(r: &R, lines: &[PLine]) -> f64 {
+    lines
+        .iter()
+        .map(|l| {
+            let o = r.intersection(&l.bbox);
+            if o.w() > 0.0 && o.h() > 0.0 { o.area() } else { 0.0 }
+        })
+        .sum()
 }
 
 fn merge_clusters(cs: &mut Vec<Cluster>, should_merge: impl Fn(&R, &R) -> bool) {

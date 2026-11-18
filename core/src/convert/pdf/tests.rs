@@ -528,6 +528,100 @@ fn column_table_does_not_take_the_running_heads_rule() {
     assert!(paras.iter().any(|p| p.kind == Kind::Text && p.text().starts_with("to infer and perform")));
 }
 
+/// Nature's first page: the dates in a box of rules, "Published online" on a shaded strip with the
+/// Crossmark badge beside "Check for updates", and the footnote box between two rules at the foot
+/// ("A full list of affiliations…", "✉ e-mail: …"), and above the title the masthead's banner.
+/// None of it is a figure or a table; the dates and the footnote are front matter, not body text,
+/// and the body around them stays.
+#[test]
+fn first_page_boxes_are_front_matter_not_figures() {
+    let mut p1 = vec![
+        bold(line("Microglia mediate motor memory decay", 0, 40.0, 110.0, 26.0)),
+        bold(line("Ada Lovelace & Alan Turing", 0, 217.0, 240.0, 9.5)),
+        line("Received: 15 December 2024", 0, 40.0, 240.0, 8.5),
+        line("Accepted: 6 October 2026", 0, 40.0, 260.0, 8.5),
+        line("Published online: 17 November 2026", 0, 40.0, 281.0, 8.5),
+        line("Check for updates", 0, 52.0, 300.0, 8.5),
+    ];
+    p1.extend(para(LOREM, 0, 217.0, 302.0, 20, 60).into_iter().map(|mut l| {
+        l.size = 10.0;
+        l
+    }));
+    p1.extend(para(LOREM, 0, 40.0, 574.0, 12, 45).into_iter().map(|mut l| {
+        l.size = 8.5;
+        l
+    }));
+    p1.push(line("A full list of affiliations appears at the end of the paper.", 0, 40.0, 736.0, 7.5));
+    p1.push(line("✉ e-mail: ada@example.org; alan@example.org", 0, 236.0, 736.0, 7.5));
+    let mut g = PageGraphics::default();
+    g.images.push(R::new(40.0, 76.0, 560.0, 104.0)); // the masthead's banner above the title
+    g.images.push(R::new(39.7, 279.9, 171.7, 290.7)); // the strip behind "Published online"
+    g.images.push(R::new(39.7, 301.2, 50.6, 310.8)); // the badge
+    g.drawings.push(R::new(41.0, 302.0, 49.0, 310.0));
+    for y in [256.5, 276.2, 295.7, 315.7] {
+        g.drawings.push(R::new(39.7, y, 206.0, y + 0.5));
+    }
+    g.drawings.push(R::new(39.7, 734.8, 561.3, 735.3)); // the footnote box's rules
+    g.drawings.push(R::new(39.7, 754.5, 562.1, 755.0));
+    let mut p2 = vec![bold(line("Results", 1, 40.0, 60.0, 11.0))];
+    p2.extend(para(LOREM, 1, 40.0, 80.0, 30, 45).into_iter().map(|mut l| {
+        l.size = 8.5;
+        l
+    }));
+    let pages = vec![
+        Page { width: 595.0, height: 791.0, lines: p1, graphics: g },
+        Page { width: 595.0, height: 791.0, lines: p2, graphics: PageGraphics::default() },
+    ];
+    let (paras, _) = analyse(pages);
+    assert!(!paras.iter().any(|p| matches!(p.kind, Kind::Figure | Kind::Table)), "{:?}", paras.iter().map(|p| p.kind).collect::<Vec<_>>());
+    for t in ["Published online", "A full list of affiliations", "✉ e-mail"] {
+        let k = paras.iter().find(|p| p.text().contains(t)).map(|p| p.kind);
+        assert_eq!(k, Some(Kind::Front), "{t}");
+    }
+    assert!(!paras.iter().any(|p| p.text().contains("Check for updates")));
+    let body: usize = paras.iter().filter(|p| p.kind == Kind::Text).map(|p| p.lines.len()).sum();
+    assert_eq!(body, 12 + 30);
+}
+
+#[test]
+fn first_page_footnotes_of_several_publishers() {
+    let small = |t: &str| front_footnote(t, 7.0, 9.0, false);
+    for t in [
+        "A full list of affiliations appears at the end of the paper. ✉e-mail: a@b.org",
+        "* Corresponding author. E-mail address: jane.doe@uni.edu (J. Doe).",
+        "*Correspondence: jane.doe@uni.edu",
+        "https://doi.org/10.1016/j.cell.2025.01.001 Received 2 May 2024; Received in revised form 1 June 2024; Accepted 3 July 2024",
+        "© 2025 The Author(s). Published by Elsevier Inc. This is an open access article under the CC BY license.",
+        "To whom correspondence should be addressed. Email: jdoe@pnas.org.",
+        "Author contributions: J.D. and A.B. designed research; J.D. performed research.",
+        "The authors declare no competing interest.",
+        "This article is a PNAS Direct Submission.",
+        "Edited by Jane Smith, University of Somewhere; received May 1, 2024; accepted June 2, 2024",
+        "†These authors contributed equally to this work.",
+        "ORCID: 0000-0002-1825-0097",
+        "Open Access This article is licensed under a Creative Commons Attribution 4.0 International License",
+        "Correspondence to: J. Doe, Department of Biology, University of X, jdoe@x.edu",
+        "Jane Doe, Department of Biology, jdoe@x.edu",
+    ] {
+        assert!(small(t), "{t}");
+    }
+    // in body type only at the foot of the page, and only if it starts like a footnote
+    assert!(front_footnote("*Correspondence: jane.doe@uni.edu", 9.0, 9.0, true));
+    assert!(!front_footnote("*Correspondence: jane.doe@uni.edu", 9.0, 9.0, false));
+    for t in [
+        "Requests for materials should be addressed to jdoe@x.edu, who will share the code.",
+        "These authors found that the effect was published in 2019 and accepted widely.",
+        "This article is organised as follows. Section 2 describes the data.",
+    ] {
+        assert!(!front_footnote(t, 9.0, 9.0, true), "{t}");
+    }
+    // the body's availability statements are never front matter
+    assert!(!small("Data availability: the data are available from jdoe@x.edu on request."));
+    assert!(!small("Code availability: https://github.com/x/y; questions to jdoe@x.edu"));
+    // nor a small legend that just says something
+    assert!(!small("Scale bar, 50 μm. Data are presented as the mean ± s.e.m."));
+}
+
 /// A figure of panels in rows (Nature's "a b c / d e"), the letters and axis labels between the
 /// rows, more than 22 pt apart: one figure, letters inside it, no heading "a b". Two figures with
 /// their captions and body text between them stay two.

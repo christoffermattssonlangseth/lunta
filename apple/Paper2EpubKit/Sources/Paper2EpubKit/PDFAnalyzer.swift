@@ -407,6 +407,8 @@ final class PDFAnalyzer {
         var rects: [(img: Bool, r: R)] = []
         for r in g.images {
             if (r.w < 1 && r.h < 1) || r.area > 0.95 * parea { continue }
+            // a band behind a line of text ("Published online: …" on a shaded strip) is not a picture
+            if r.h < 30 && Self.textCover(r, lines) > 0.5 * r.area { continue }
             rects.append((true, r))
         }
         var thin: [R] = []
@@ -565,6 +567,37 @@ final class PDFAnalyzer {
                     && (!all[i].rect.contains(all[j].rect, tol: 2) || j < i)
             }
         }.map { all[$0] }
+    }
+
+    /// How much of `r` the text lines cover (their overlaps added up).
+    static func textCover(_ r: R, _ lines: [PLine]) -> CGFloat {
+        lines.reduce(0) { acc, l in
+            let o = r.intersection(l.bbox)
+            return acc + (o.w > 0 && o.h > 0 ? o.area : 0)
+        }
+    }
+
+    /// A footnote of the first pages that belongs to the front matter, not the body: correspondence and
+    /// e-mail, "A full list of affiliations…", dates, editor, competing interests, ORCID, licence. In
+    /// footnote type anywhere on the page, or in body type at its foot if it starts like one; a sentence of
+    /// the body that merely gives an address ("Requests to x@y") is in body type and does not start like a
+    /// footnote.
+    static func frontFootnote(_ text: String, size: CGFloat, body: CGFloat, atFoot: Bool) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.count > 1200 || t.matches(#"(?i)^(data|code|materials?|software)( and \w+)? availability"#) { return false }
+        let starts = t.matches(#"(?i)^[\W\d]{0,3}\s*("#
+            + #"corresponding authors?|\*?\s*correspondence\b|(to )?whom (all )?correspondence|address(ed)? (all )?correspondence|"#
+            + #"e-?mail( address(es)?)?\s*:|email\b|edited by\b|reviewed by\b|academic editor\b|handling editor\b|"#
+            + #"(received|accepted|revised|published( online)?)\s*[:\d]|published online\b|available online\b|first published\b|article history\b|"#
+            + #"author contributions?\s*:|competing interests?\s*:|conflicts? of interests?\s*:|the authors? declares?\b|"#
+            + #"orcid\b|these authors contributed|present address|current address|deceased\b|a full list of affiliations|"#
+            + #"©|copyright\b|\(c\)\s*(19|20)\d\d|this (is an )?open access|open access\b|this article (is a pnas|is an open|is licensed|is distributed|contains supporting)|"#
+            + #"https?://doi\.org/|doi:\s*10\."#
+            + #")"#)
+        let anywhere = t.matches(#"(?i)✉|\ba full list of affiliations\b|\breceived in revised form\b|\bPNAS Direct Submission\b|"#
+            + #"\bto whom correspondence\b|\bcorresponding authors?\b|\bcontributed equally\b"#)
+        if size <= body - 0.4 { return starts || anywhere || t.matches(#"[\w.+-]+@[\w-]+(\.[\w-]+)+"#) }
+        return atFoot && (starts || anywhere)
     }
 
     private func mergeClusters(_ cs: inout [Cluster], _ shouldMerge: (R, R) -> Bool) {
@@ -981,6 +1014,11 @@ final class PDFAnalyzer {
            big.size >= body + 2, big.text.count < 400 {
             big.kind = .title
         }
+        // the masthead above the title (the journal's logo, an "ARTICLE | Open Access" banner) is no figure
+        if let title = paras.first(where: { $0.page == 0 && $0.kind == .title }) {
+            let ty = title.bbox.y0, h = boxes[0].height
+            paras.removeAll { $0.page == 0 && $0.kind == .figure && $0.bbox.y1 <= ty + 2 && $0.bbox.h < 0.25 * h }
+        }
         var headingSizes = Set<CGFloat>()
         // (a box's own headings and labels stay in the box: plain text)
         for p in paras where p.kind == .text && p.boxed == nil {
@@ -1058,6 +1096,10 @@ final class PDFAnalyzer {
             if affil && (p.text.matches(#"(?i)e-?mail:|correspond"#) || p.text.matches(#"^\d\s?[A-Z]"#)) { p.kind = .front }
             // "A and B contributed equally to this work." at the foot of the first page
             if p.text.count < 300 && p.text.matches(#"(?i)contributed equally|equal(ly)? contribut|these authors contributed"#) { p.kind = .front }
+        }
+        // the first pages' footnotes: correspondence, e-mail, dates, editor, licence, ORCID
+        for p in paras where p.page <= 1 && p.kind == .text && p.boxed == nil {
+            if Self.frontFootnote(p.text, size: p.size, body: body, atFoot: p.bbox.y0 > 0.75 * boxes[p.page].height) { p.kind = .front }
         }
         let ranks = headingSizes.sorted(by: >)
         let big = ranks.filter { $0 >= body + 1 }
