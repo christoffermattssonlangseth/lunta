@@ -122,6 +122,14 @@ title or authors, and is the same on all your devices. You see it, and can chang
 Claude and other AI agents can search, read, cite and highlight in your library through Lunta's MCP server:
 see [docs/development.md](docs/development.md#ai-agents-mcp).
 
+## Remaking reading views
+
+Lunta's converters keep improving (for example, from 1.0.6 reference lists and tables in PDFs are found far
+more reliably). A reading view is made once, when the paper is added, so older papers keep the view they got
+then. To give a paper the latest one, on the Mac select it (or several, or ⌘A in a folder or tag) and
+right-click › **Make Reading View**. The new view syncs to your other devices. Your highlights and notes are
+kept and found again in the new text; any that can't be placed are marked in the paper's Highlights list.
+
 ## Sync
 
 - **Mac, iPhone and iPad** sync through iCloud Drive, with nothing to set up.
