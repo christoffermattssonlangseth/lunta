@@ -106,3 +106,18 @@ test('a citation without either: Add to Lunta by its text, and Search', () => {
     assert.deepEqual(done, ['Added to your library', null]);
   });
 });
+
+test("a bioRxiv page's reference: without its link buttons and label, and its DOI from the CrossRef button", () => {
+  // as "Use this page's full text" keeps a HighWire reference (bioRxiv, medRxiv, many society journals)
+  const p = page(`
+    <p>Profiles <a id="c3" href="ch14.xhtml#ref-3">3</a>.</p>
+    <section><h2>References</h2><ol class="refs">
+      <li>[3].<span id="ref-3"></span><a href="ch02.xhtml#xref-ref-3-1">↵</a>Kuilman T, et al. Preserved genetic diversity in organoids. Proc Natl Acad Sci U S A. 2015;112(43):13308–13311. <a href="https://www.biorxiv.org/content/10.64898/%7Bopenurl%7D?query=x">OpenUrl</a><a href="https://www.biorxiv.org/lookup/ijlink/abc">Abstract/FREE Full Text</a><a href="https://www.biorxiv.org/lookup/external-ref?access_num=10.1073/pnas.1516689112&amp;link_type=DOI">CrossRef</a><a href="https://www.biorxiv.org/lookup/external-ref?access_num=26460009&amp;link_type=MED">PubMed</a></li>
+    </ol></section>`);
+  withGlobals(p, () => {
+    assert.equal(click(p, p.doc.getElementById('c3')), true);
+    const c = card(p);
+    assert.equal(c.text.trim(), 'Kuilman T, et al. Preserved genetic diversity in organoids. Proc Natl Acad Sci U S A. 2015;112(43):13308–13311.');
+    assert.deepEqual(c.buttons.find((b) => b[0] === 'Add to Lunta'), ['Add to Lunta', 'lunta://cite?doi=10.1073%2Fpnas.1516689112']);
+  });
+});

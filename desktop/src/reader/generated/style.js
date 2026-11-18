@@ -305,9 +305,38 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     return inRefs ? (t.closest('li') || t) : null;
   }
 
+  // A reference without the publisher's link buttons: bioRxiv/HighWire pages put "↵" (back to
+  // the text), "OpenUrl", "CrossRef", "PubMed", "Abstract/FREE Full Text", "Google Scholar"
+  // links in each entry, kept as text by "Use this page's full text"; and the "[3]." label.
+  var LINK_LABEL = /^\s*(↵|↩|\^|↑|OpenUrl|CrossRef|Crossref|PubMed|Medline|MEDLINE|PMC|PubMed Central|PMC free article|Google Scholar|Web of Science|Scopus|Abstract|Full Text|FREE Full Text|Abstract\/FREE Full Text|Article|CAS|ADS|ISI|View Article|Find this author on (Google Scholar|PubMed))\s*$/i;
+  function cleaned(el){
+    var c = el.cloneNode(true);
+    c.querySelectorAll('a').forEach(function(a){
+      var href = a.getAttribute('href') || '';
+      if (LINK_LABEL.test(a.textContent || '') || /^#|#xref-|\.xhtml#xref/.test(href) && /^\s*[↵↩^↑]?\s*$/.test(a.textContent || '')) a.remove();
+    });
+    // the entry's own label at its start ("[3].", "3.") when the list numbers it already
+    (function first(node){
+      for (var i = 0; i < node.childNodes.length; i++) {
+        var n = node.childNodes[i];
+        if (n.nodeType === 3) {
+          if (!(n.data || '').trim()) continue;
+          n.data = n.data.replace(/^\s*\[\d+\]\.?\s*|^\s*\d+\.\s+/, '');
+          return true;
+        }
+        if (n.nodeType === 1 && first(n)) return true;
+      }
+      return false;
+    })(c);
+    return c;
+  }
+
   function doiOf(el){
     var a = el.querySelector('a[href*="doi.org/"]');
     if (a) { var m = a.getAttribute('href').match(/doi\.org\/(10\.[^\s?#]+)/i); if (m) { try { return decodeURIComponent(m[1]); } catch (x) { return m[1]; } } }
+    // HighWire's CrossRef button: /lookup/external-ref?access_num=10.…&link_type=DOI
+    var cr = el.querySelector('a[href*="link_type=DOI"]');
+    if (cr) { var m3 = cr.getAttribute('href').match(/access_num=(10\.[^&]+)/); if (m3) { try { return decodeURIComponent(m3[1]); } catch (x) { return m3[1]; } } }
     var m2 = (el.textContent || '').match(/\b(10\.\d{4,9}\/[^\s"<>]+)/);
     return m2 ? m2[1].replace(/[.,;)\]]+$/, '') : '';
   }
@@ -327,7 +356,7 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     pop.style.background = (bg && bg !== 'rgba(0, 0, 0, 0)') ? bg : '#fff';
     pop.style.color = bs.color;
     var body = document.createElement('div'); body.className = 'm-cite-ref';
-    var copy = ref.cloneNode(true);
+    var copy = cleaned(ref);
     copy.querySelectorAll('[id]').forEach(function(x){ x.removeAttribute('id'); });
     copy.removeAttribute && copy.removeAttribute('id');
     body.innerHTML = copy.innerHTML;
@@ -348,7 +377,7 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
         la.addEventListener('click', function(){ setTimeout(function(){ if (pop && la.getAttribute('href')) la.textContent = 'Adding…'; }, 0); });
       } else {
         // neither: the app looks the reference up (Crossref's bibliographic search) and adds what it finds
-        var full = (ref.textContent || '').replace(/\s+/g, ' ').trim();
+        var full = (copy.textContent || '').replace(/\s+/g, ' ').trim();
         var lr = btn('Add to Lunta', 'lunta://cite?ref=' + encodeURIComponent(full.slice(0, 600)), 'm-cite-lunta');
         lr.addEventListener('click', function(){ setTimeout(function(){ if (pop && lr.getAttribute('href')) lr.textContent = 'Looking it up…'; }, 0); });
         btn('Search', 'https://scholar.google.com/scholar?q=' + encodeURIComponent(full.slice(0, 200)));
