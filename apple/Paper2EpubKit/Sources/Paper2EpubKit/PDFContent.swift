@@ -27,6 +27,12 @@ struct TextRun {
     var baseline: CGFloat            // y of the baseline (top-left page coords)
     var size: CGFloat
     var bold: Bool, italic: Bool, math: Bool
+    /// drawn outside the bounding box of the form it is in, so not shown (see GState.clip)
+    var hidden = false
+    /// the bounding box of the form it is in (page coordinates): the run's letters outside it are not shown
+    var clip: R?
+    /// where each glyph starts (x), to tell its letters from others drawn in about the same place
+    var starts: [CGFloat] = []
 }
 
 struct PageGraphics {
@@ -50,6 +56,10 @@ final class PDFContentScanner {
         /// Text state parameters in force at `q` (Tc, Tw, Tz, TL, Tf are part of the graphics state and
         /// come back at `Q`; the text matrices are not).
         var savedText: TextState?
+        /// The bounding boxes of the forms being drawn, in page coordinates: nothing outside shows. A
+        /// figure included as a whole page of a manuscript ("cells-2381855-g001.pdf", with the
+        /// manuscript's text around the figure) would otherwise add a second, shifted copy of the text.
+        var clip: R?
     }
     private struct TextState {
         var tm = CGAffineTransform.identity, tlm = CGAffineTransform.identity
@@ -107,8 +117,20 @@ final class PDFContentScanner {
         run(stream)
         streams.removeLast()
         CGPDFContentStreamRelease(stream)
+        // text in a form that an image drawn after it in the form covers is not shown either (the
+        // manuscript page's text under the figure it was included for)
+        for (img, at) in formImages {
+            for k in out.runs.indices where k < at && out.runs[k].clip != nil && !out.runs[k].hidden {
+                let r = out.runs[k]
+                let c = R(x0: (r.x0 + r.x1) / 2, y0: r.baseline - 0.3 * r.size, x1: (r.x0 + r.x1) / 2, y1: r.baseline - 0.3 * r.size)
+                if img.contains(c, tol: 0) { out.runs[k].hidden = true }
+            }
+        }
         return out
     }
+
+    /// images drawn in forms, with the number of text runs drawn before them
+    private var formImages: [(R, Int)] = []
 
     private func run(_ stream: CGPDFContentStreamRef) {
         let table = Self.operatorTable
@@ -137,7 +159,10 @@ final class PDFContentScanner {
     }
 
     private func paint() {
-        if let p = path { out.drawings.append(p) }
+        if var p = path {
+            if let c = gstack.last?.clip { p = p.intersection(c) }
+            if p.w >= 0, p.h >= 0 { out.drawings.append(p) }
+        }
         path = nil
     }
 
@@ -309,6 +334,7 @@ final class PDFContentScanner {
         var adv: CGFloat = 0
         var i = 0
         var firstCode = -1, lastCode = -1
+        var starts: [CGFloat] = []
         var zeroSpaces: [CGFloat] = []   // space glyphs word spacing takes all the room from
         let em = abs(ts.size * font.sizeScale)
         while i < len {
@@ -320,6 +346,7 @@ final class PDFContentScanner {
                 tx += ts.tw
                 if abs(tx) < 0.02 * em { zeroSpaces.append(adv) }
             }
+            starts.append(adv)
             if firstCode < 0 { firstCode = code }
             lastCode = code
             adv += tx * ts.th
@@ -330,8 +357,15 @@ final class PDFContentScanner {
         guard abs(trm.b) < 0.1 * abs(trm.a) + 0.001 else { return }   // rotated text: ignore
         let a = CGPoint(x: start.x - origin.x, y: pageHeight - (start.y - origin.y))
         let b = CGPoint(x: endP.x - origin.x, y: pageHeight - (endP.y - origin.y))
+        let xs = starts.map { CGPoint(x: $0, y: 0).applying(trm).x - origin.x }
+        // text outside the form's box is not shown: its baseline outside, or all of it to one side
+        if let c = gstack.last?.clip, a.y < c.y0 || a.y - 0.5 * effSize > c.y1 || max(a.x, b.x) < c.x0 || min(a.x, b.x) > c.x1 {
+            out.runs.append(TextRun(x0: min(a.x, b.x), x1: max(a.x, b.x), baseline: a.y, size: effSize,
+                                    bold: font.bold, italic: font.italic, math: font.math, hidden: true, starts: xs))
+            return
+        }
         out.runs.append(TextRun(x0: min(a.x, b.x), x1: max(a.x, b.x), baseline: a.y, size: effSize,
-                                bold: font.bold, italic: font.italic, math: font.math))
+                                bold: font.bold, italic: font.italic, math: font.math, clip: gstack.last?.clip, starts: xs))
         // a jump to the right on the same baseline since the last text = a word space nobody drew;
         // in text squeezed by horizontal scaling (OCR layers: "48.53 Tz") the spaces shrink with it
         if let e = lastEnd, abs(e.y - a.y) < 0.3 * max(effSize, 2), a.x - e.x > 0.15 * effSize * min(1, abs(ts.th), lastScale),
@@ -377,7 +411,12 @@ final class PDFContentScanner {
             let sub = Self.name(sd, "Subtype")
             if sub == "Image" {
                 let pts = [CGPoint(x: 0, y: 0), CGPoint(x: 1, y: 0), CGPoint(x: 0, y: 1), CGPoint(x: 1, y: 1)].map(toPage)
-                let r = R(x0: pts.map(\.x).min()!, y0: pts.map(\.y).min()!, x1: pts.map(\.x).max()!, y1: pts.map(\.y).max()!)
+                var r = R(x0: pts.map(\.x).min()!, y0: pts.map(\.y).min()!, x1: pts.map(\.x).max()!, y1: pts.map(\.y).max()!)
+                if let c = gstack.last?.clip {   // only what lies in the form's box shows
+                    r = r.intersection(c)
+                    guard r.w > 0, r.h > 0 else { return }
+                    formImages.append((r, out.runs.count))
+                }
                 out.images.append(r)
             } else if sub == "Form", depth < 6 {
                 var m = CGAffineTransform.identity
@@ -392,7 +431,23 @@ final class PDFContentScanner {
                 }
                 var formRes: CGPDFDictionaryRef?
                 let hasRes = CGPDFDictionaryGetDictionary(sd, "Resources", &formRes) && formRes != nil
-                gstack.append(GState(ctm: m.concatenating(ctm)))
+                var clip = gstack.last?.clip
+                var bb: CGPDFArrayRef?
+                if CGPDFDictionaryGetArray(sd, "BBox", &bb), let bb, CGPDFArrayGetCount(bb) == 4 {
+                    var v: [CGFloat] = []
+                    for k in 0..<4 {
+                        var o: CGPDFObjectRef?
+                        if CGPDFArrayGetObject(bb, k, &o), let o { v.append(Self.number(o) ?? 0) }
+                    }
+                    if v.count == 4 {
+                        let fm = m.concatenating(ctm)
+                        let pts = [CGPoint(x: v[0], y: v[1]), CGPoint(x: v[2], y: v[1]), CGPoint(x: v[0], y: v[3]), CGPoint(x: v[2], y: v[3])]
+                            .map { p -> CGPoint in let q = p.applying(fm); return CGPoint(x: q.x - origin.x, y: pageHeight - (q.y - origin.y)) }
+                        let r = R(x0: pts.map(\.x).min()!, y0: pts.map(\.y).min()!, x1: pts.map(\.x).max()!, y1: pts.map(\.y).max()!)
+                        clip = clip.map { $0.intersection(r) } ?? r
+                    }
+                }
+                gstack.append(GState(ctm: m.concatenating(ctm), clip: clip))
                 if hasRes { resources.append(formRes!); fontCache = [:] }
                 let savedTS = ts
                 depth += 1

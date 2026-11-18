@@ -5,7 +5,8 @@ import XCTest
 @testable import Paper2EpubKit
 
 /// Word breaks in text read from PDFs: spaces PDFKit reports where the glyphs leave no room for one
-/// ("foundati on model for pa thology"), and the layouts whose spaces must stay as they are.
+/// ("foundati on model for pa thology"), text a page does not show, and the layouts whose spaces must
+/// stay as they are.
 final class WordSpacingTests: XCTestCase {
 
     // MARK: spaces without room
@@ -70,6 +71,25 @@ final class WordSpacingTests: XCTestCase {
             .offsetBy(y: 14)))                                                          // next line
         XCTAssertFalse(PDFAnalyzer.isSpuriousSpace(" ", box(50, 50), added: true,       // put back for a line break
                                                    prev: ("s", box(47, 50), 12), next: ("t", box(50, 56), 12), joint: true))
+    }
+
+    func testTextOutsideAFormsBoxIsNotShown() {
+        // a figure included as a whole manuscript page: only the figure's box shows, but the page's own
+        // text lies under the article's lines, a point lower and set differently
+        var body = "", hidden = ""
+        for i in 0..<8 {
+            let y = 700 - i * 13
+            body += "BT /F2 10 Tf 72 \(y) Td (Line \(i) of the article text, set in its own way.) Tj ET\n"
+            hidden += "BT /F2 10 Tf 75 \(y - 1) Td (Manuscript line \(i) with other words here.) Tj ET\n"
+        }
+        hidden += "BT /F2 10 Tf 250 450 Td (Figure label A) Tj ET\n"
+        let form = "<< /Type /XObject /Subtype /Form /BBox [200 400 400 500] /Resources << /Font << /F2 6 0 R >> >> "
+            + "/Length \(hidden.utf8.count) >>\nstream\n\(hidden)\nendstream"
+        let content = body + "q /Fm1 Do Q"
+        let t = text(data: Self.pdf(content, extra: [form], xobject: "/Fm1 8 0 R"))
+        for i in 0..<8 { XCTAssertTrue(t.contains("Line \(i) of the article text, set in its own way."), t) }
+        XCTAssertFalse(t.contains("Manuscript"), t)
+        XCTAssertTrue(t.contains("Figure label A"), t)
     }
 
     // MARK: layouts whose spaces stay

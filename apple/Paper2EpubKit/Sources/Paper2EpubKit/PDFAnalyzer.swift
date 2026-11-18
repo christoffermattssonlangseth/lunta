@@ -219,6 +219,32 @@ final class PDFAnalyzer {
             return best
         }
 
+        // Whether a letter is one the page does not show (see TextRun.hidden). A hidden copy of the text
+        // may lie within a point of the text shown, too close to go by the baseline: the letter goes with
+        // the glyph that starts where it starts, and is hidden only when a hidden glyph starts there and
+        // none shown does.
+        let hasHidden = runs.contains { $0.hidden }
+        func isHidden(_ cb: R, size: CGFloat) -> Bool {
+            let s = max(size, 4), base = cb.y1 - 0.22 * s
+            var shown = CGFloat.greatestFiniteMagnitude, hidden = CGFloat.greatestFiniteMagnitude
+            let key = Int(cb.y1 / 4)
+            var near: [TextRun] = []
+            for k in (key - 2)...(key + 2) {
+                for r in buckets[k] ?? [] where abs(r.baseline - base) < 0.6 * s && cb.cx >= r.x0 - 1 && cb.cx <= r.x1 + 1 {
+                    near.append(r)
+                }
+            }
+            // a copy in another type size goes by the size first
+            let tol = max(0.3, 0.06 * size)
+            let sized = near.filter { r in abs(r.size - size) <= tol }
+            for r in sized.isEmpty ? near : sized {
+                let dx = r.starts.map { abs($0 - cb.x0) }.min() ?? .greatestFiniteMagnitude
+                if r.hidden || r.clip.map({ cb.cx < $0.x0 || cb.cx > $0.x1 }) == true { hidden = min(hidden, dx) } else { shown = min(shown, dx) }
+            }
+            // with no text shown on that baseline, a hidden glyph nearby is enough
+            return hidden < 0.3 && hidden + 0.2 < shown || shown == .greatestFiniteMagnitude && hidden < 0.5 * s
+        }
+
         var out: [PLine] = []
         var lineSels: [(sel: PDFSelection, range: NSRange)] = []
         for ls in sel.selectionsByLine() {
@@ -259,6 +285,49 @@ final class PDFAnalyzer {
             }
             while chars.last?.ch == " " { chars.removeLast() }
             guard !chars.isEmpty else { continue }
+            // text the content stream draws outside a form's box is not shown, though PDFKit reads it
+            // (see GState.clip) and mixes it into the lines it overlaps: leave it out, and the spaces
+            // that came with it unless there is room for one between the letters that stay
+            var endsHidden = false
+            if hasHidden {
+                let hidden = chars.map { c in
+                    !c.ch.trimmingCharacters(in: .whitespaces).isEmpty && c.box.w > 0 && isHidden(c.box, size: c.size)
+                }
+                // the last line does not run on into hidden letters
+                if hidden.first == true, let prev = out.last, prev.text.hasSuffix(Self.glue) {
+                    prev.text.removeLast()
+                    gluedLines[(prev.size * 2).rounded() / 2, default: 1] -= 1
+                }
+                // a line of mostly hidden letters is the hidden copy, whose few letters that start where a
+                // shown one does are hidden too
+                let letters = chars.filter { !$0.ch.trimmingCharacters(in: .whitespaces).isEmpty }.count
+                if letters > 0 && hidden.filter({ $0 }).count * 10 >= letters * 6 { continue }
+                if hidden.contains(true) {
+                    endsHidden = hidden.last == true
+                    // the letters that stay are spaced by where they stand: the spaces next to hidden letters
+                    // go, and one is put where the letters shown leave room for it
+                    var kept: [C] = []
+                    var cut = false
+                    for (k, c) in chars.enumerated() {
+                        let space = c.ch.trimmingCharacters(in: .whitespaces).isEmpty
+                        if hidden[k] || space && ((k > 0 && hidden[k - 1]) || (k + 1 < chars.count && hidden[k + 1])) {
+                            cut = true
+                            continue
+                        }
+                        if cut, !space, let p = kept.last, p.ch != " ",
+                           c.box.x0 - p.box.x1 >= 0.15 * max(c.size, p.size, 4) || c.box.x0 < p.box.x0 {
+                            kept.append(C(ch: " ", size: c.size, box: R(x0: p.box.x1, y0: c.box.y0, x1: max(p.box.x1, c.box.x0), y1: c.box.y1),
+                                          run: nil, added: true))
+                        }
+                        if !space { cut = false }
+                        kept.append(c)
+                    }
+                    chars = kept
+                    while chars.first?.ch == " " { chars.removeFirst() }
+                    while chars.last?.ch == " " { chars.removeLast() }
+                    guard !chars.isEmpty else { continue }
+                }
+            }
             chars = chars.indices.compactMap { k in
                 guard k > 0, k + 1 < chars.count, chars[k].ch == " " else { return chars[k] }
                 let p = chars[k - 1], n = chars[k + 1]
@@ -342,7 +411,7 @@ final class PDFAnalyzer {
             // the word goes on in the next line with nothing between (PDFKit dropped a hyphenation hyphen):
             // mark it so the lines are joined without a space
             let end = range.location + range.length
-            if li + 1 < lineSels.count, lineSels[li + 1].range.location == end, isLetter(end - 1), isLetter(end),
+            if li + 1 < lineSels.count, lineSels[li + 1].range.location == end, isLetter(end - 1), isLetter(end), !endsHidden,
                text.last.map({ $0.isLetter }) == true {
                 text += Self.glue
                 gluedLines[(dom * 2).rounded() / 2, default: 0] += 1
