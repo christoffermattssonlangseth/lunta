@@ -113,7 +113,11 @@ final class PDFCitations: ObservableObject {
         let p = v.convert(point, to: page)
         // a link there is the link's business
         if page.link(at: p) != nil { return false }
-        let ci = page.characterIndex(at: p)
+        // the clicked word's place in the page text: characterIndex(at:) counts differently from
+        // page.string in some PDFs (bioRxiv's: 12 characters off, on ", and" instead of "[1-3]"),
+        // while a selection's range is in page.string's terms, like the line's below
+        let word = page.selectionForWord(at: p).map { $0.range(at: 0, on: page) }
+        let ci = word.flatMap { $0.location == NSNotFound || $0.length == 0 ? nil : $0.location } ?? page.characterIndex(at: p)
         guard ci >= 0, let line = page.selectionForLine(at: p) else { return false }
         let range = line.range(at: 0, on: page)
         let ns = all as NSString
@@ -126,8 +130,8 @@ final class PDFCitations: ObservableObject {
         var ls: [TextLine] = []
         for k in start..<doc.pageCount { if let pg = doc.page(at: k) { ls += lines(pg) } }
         guard let ref = pdfReferenceForCitation(lines: ls, text: text, offset: offset) else { return false }
-        let word = page.selectionForWord(at: p)?.bounds(for: page) ?? CGRect(origin: p, size: .zero)
-        card = Card(text: ref, anchor: viewRect(word, on: page), destination: destination(of: ref, from: start, in: doc))
+        let wordBox = page.selectionForWord(at: p)?.bounds(for: page) ?? CGRect(origin: p, size: .zero)
+        card = Card(text: ref, anchor: viewRect(wordBox, on: page), destination: destination(of: ref, from: start, in: doc))
         return true
     }
 
