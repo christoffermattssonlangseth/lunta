@@ -21,6 +21,11 @@ import Paper2EpubKit
 ///   GET  /cite/status, /cite/search?q=…, /cite/styles?q=…; POST /cite/bibliography, /cite/render
 ///        Citing in Google Docs from the extension: the citation API's answers (CitationAPI, as
 ///        the Word and Google Docs add-ins get them on https://localhost:47481/api/…).
+///   POST /gdocs {op, docId, …}  Citing in Google Docs from Safari, which can't sign in to Google
+///        itself: the extension's panel requests (status, connect, disconnect, state, update,
+///        prepareInsert, finishInsert, details, editCitation), answered by this app signed in to
+///        Google (GoogleDocsAuth) with the extension's own code (GoogleDocsScript). 200 + the
+///        answer, or {error, kind} as the extension's background script gives them.
 ///
 /// Only requests from a browser extension (Origin chrome-extension://…, safari-web-extension://… or moz-extension://…) are accepted, so ordinary
 /// web pages cannot use it.
@@ -38,6 +43,7 @@ final class ExtensionServer {
     private var pagesInProgress = Set<String>()
     private weak var model: LibraryModel?
     private var citationAPI: CitationAPI?
+    private var googleDocs: GoogleDocsSafari?
 
     init(model: LibraryModel) {
         self.model = model
@@ -141,6 +147,10 @@ final class ExtensionServer {
         }
         guard let model else { return (503, ["error": "library not open"]) }
         if r.path.hasPrefix("/cite/") { return await cite(model, r) }
+        if r.method == "POST", r.path == "/gdocs" {
+            guard let msg = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any] else { return (400, ["error": "bad JSON"]) }
+            return (200, await docs(model).answer(msg))
+        }
         switch (r.method, r.path) {
         case ("GET", "/status"):
             return (200, status(of: model.findPaper(doi: r.query["doi"] ?? "", title: r.query["title"] ?? "")))
@@ -200,13 +210,49 @@ final class ExtensionServer {
     /// Citing in Google Docs: /cite/… answered by the citation API as /api/… (off the main thread:
     /// the first use of a journal style downloads it).
     private func cite(_ model: LibraryModel, _ r: Request) async -> (Int, Any) {
-        let api = citationAPI ?? CitationAPI(library: model.lib, cacheDir: CitationServer.cslCache, token: "")
-        citationAPI = api
-        let req = CitationRequest(method: r.method, path: "/api/" + r.path.dropFirst("/cite/".count), query: r.query, body: r.body)
-        let count = model.counts.all
-        let out = await Task.detached { api.answerTrusted(req, paperCount: count) }.value
+        let out = await citeAnswer(model, method: r.method, path: String(r.path.dropFirst("/cite/".count)), query: r.query, body: r.body)
         let json = (try? JSONSerialization.jsonObject(with: out.body)) ?? ["error": "Lunta’s answer couldn’t be read."]
         return (out.status, json)
+    }
+
+    private func citeAnswer(_ model: LibraryModel, method: String, path: String, query: [String: String] = [:], body: Data) async -> CitationResponse {
+        let api = citationAPI ?? CitationAPI(library: model.lib, cacheDir: CitationServer.cslCache, token: "")
+        citationAPI = api
+        let req = CitationRequest(method: method, path: "/api/" + path, query: query, body: body)
+        let count = model.counts.all
+        return await Task.detached { api.answerTrusted(req, paperCount: count) }.value
+    }
+
+    /// Google Docs for Safari: the app's Google account, the extension's code, Lunta's citation API.
+    private func docs(_ model: LibraryModel) -> GoogleDocsSafari {
+        if let googleDocs { return googleDocs }
+        let g = GoogleDocsSafari(account: GoogleDocsAuth.shared, scripts: { Self.googleDocsScripts() },
+            lunta: { [weak self, weak model] path, body in
+                guard let self, let model else { return (503, Data("{\"error\":\"library not open\"}".utf8)) }
+                let p = path.hasPrefix("/") ? String(path.dropFirst()) : path
+                let out = await self.citeAnswer(model, method: body == nil ? "GET" : "POST", path: p, body: body ?? Data())
+                return (out.status, out.body)
+            },
+            papers: { [weak model] in model?.counts.all ?? 0 })
+        googleDocs = g
+        return g
+    }
+
+    /// The extension's gdocs/ folder, as the Safari extension in this app has it (copied there from
+    /// extension/ at build time). Debug: `-gdocsScripts <folder>` (e.g. the repository's extension/gdocs).
+    static func googleDocsScripts() -> URL? {
+        #if DEBUG
+        let a = ProcessInfo.processInfo.arguments
+        if let i = a.firstIndex(of: "-gdocsScripts"), i + 1 < a.count { return URL(fileURLWithPath: a[i + 1], isDirectory: true) }
+        #endif
+        let fm = FileManager.default
+        guard let plugins = Bundle.main.builtInPlugInsURL,
+              let list = try? fm.contentsOfDirectory(at: plugins, includingPropertiesForKeys: nil) else { return nil }
+        for appex in list where appex.pathExtension == "appex" {
+            let dir = appex.appendingPathComponent("Contents/Resources/gdocs", isDirectory: true)
+            if fm.fileExists(atPath: dir.appendingPathComponent("app-host.js").path) { return dir }
+        }
+        return nil
     }
 
     private func fullText(_ model: LibraryModel, _ r: Request) async -> (Int, Any) {

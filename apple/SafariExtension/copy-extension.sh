@@ -12,7 +12,7 @@ src="$SRCROOT/../extension"
 dest="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
 mkdir -p "$dest/icons"
 for f in manifest.json background.js content.js; do cp -f "$src/$f" "$dest/$f"; done
-# Google Docs citing (Safari has no extension sign-in to Google: its panel points to the Apps Script)
+# Google Docs citing (in Safari on the Mac, Lunta for Mac runs gdocs/ itself: GoogleDocsScript.swift)
 rm -rf "$dest/gdocs" && cp -Rf "$src/gdocs" "$dest/gdocs"
 cp -f "$src"/icons/*.png "$dest/icons/"
 m="$dest/manifest.json"

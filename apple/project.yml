@@ -187,7 +187,8 @@ targets:
         SKIP_INSTALL: YES
 
   # Safari Web Extension (Mac): the browser extension in extension/, as is; it talks to Lunta for
-  # Mac on 127.0.0.1:47480 like Chrome and Firefox. Embedded in LuntaMac.
+  # Mac on 127.0.0.1:47480 like Chrome and Firefox. Embedded in LuntaMac, which also runs its
+  # gdocs/ code for Google Docs citing in Safari (GoogleDocsScript.swift).
   LuntaSafariMac:
     type: app-extension
     platform: macOS
@@ -208,6 +209,8 @@ targets:
           - $(SRCROOT)/../extension/gdocs/flow.js
           - $(SRCROOT)/../extension/gdocs/background-gdocs.js
           - $(SRCROOT)/../extension/gdocs/panel.js
+          - $(SRCROOT)/../extension/gdocs/clipboard.js
+          - $(SRCROOT)/../extension/gdocs/app-host.js
           - $(SRCROOT)/../extension/icons/icon-16.png
           - $(SRCROOT)/../extension/icons/icon-32.png
           - $(SRCROOT)/../extension/icons/icon-48.png
@@ -222,6 +225,8 @@ targets:
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/flow.js
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/background-gdocs.js
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/panel.js
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/clipboard.js
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/app-host.js
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/icons/icon-16.png
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/icons/icon-32.png
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/icons/icon-48.png
