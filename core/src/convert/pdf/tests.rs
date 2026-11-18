@@ -583,6 +583,33 @@ fn first_page_boxes_are_front_matter_not_figures() {
     assert_eq!(body, 12 + 30);
 }
 
+/// An author manuscript's first page: a coloured bar down the left edge ("Europe PMC Funders Author
+/// Manuscripts", with its logo) joined by the rules of the header box, and a frame around the
+/// abstract. Neither is a figure, and the abstract and body stay text.
+#[test]
+fn manuscript_side_bar_and_text_frame_are_no_figures() {
+    let mut lines = vec![bold(line("G-tract RNA removes Polycomb Repressive Complex 2", 0, 60.0, 80.0, 16.0))];
+    lines.extend(para(LOREM, 0, 90.0, 120.0, 12, 80));
+    lines.extend(para(LOREM, 0, 90.0, 300.0, 20, 80));
+    let mut g = PageGraphics::default();
+    g.drawings.push(R::new(18.0, 18.0, 36.0, 720.0)); // the bar
+    g.images.push(R::new(20.0, 114.0, 32.0, 126.0)); // its logo
+    for r in [R::new(35.5, 18.0, 534.5, 18.2), R::new(35.5, 63.3, 534.5, 63.5), R::new(534.0, 17.5, 534.2, 63.8)] {
+        g.drawings.push(r); // the header box
+    }
+    for r in [R::new(80.0, 112.0, 560.0, 112.2), R::new(80.0, 268.0, 560.0, 268.2), R::new(80.0, 112.0, 80.2, 268.0), R::new(559.8, 112.0, 560.0, 268.0)] {
+        g.drawings.push(r); // the abstract's frame
+    }
+    g.drawings.push(R::new(80.0, 112.0, 84.0, 116.0));
+    let page = Page { width: 612.0, height: 792.0, lines, graphics: g };
+    let mut other = page.clone();
+    other.graphics = PageGraphics::default();
+    let (paras, _) = analyse(vec![page, other]);
+    assert!(!paras.iter().any(|p| p.page == 0 && p.kind == Kind::Figure), "{:?}", paras.iter().filter(|p| p.kind == Kind::Figure).map(|p| p.bbox()).collect::<Vec<_>>());
+    let text_lines: usize = paras.iter().filter(|p| p.page == 0 && matches!(p.kind, Kind::Text | Kind::Abstract)).map(|p| p.lines.len()).sum();
+    assert_eq!(text_lines, 32);
+}
+
 #[test]
 fn first_page_footnotes_of_several_publishers() {
     let small = |t: &str| front_footnote(t, 7.0, 9.0, false);

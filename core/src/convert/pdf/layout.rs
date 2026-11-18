@@ -571,6 +571,20 @@ impl<'a> Analyzer<'a> {
             if pno == 0 && r.y1 < 0.12 * page.height && r.h() < 0.08 * page.height {
                 continue;
             }
+            // a bar down the page's edge ("Author manuscript", "Europe PMC Funders") is no figure, nor
+            // on the first page a frame or band that holds running text rather than a picture (the
+            // abstract's box; the bar with the header's rules)
+            if r.w() < 0.06 * page.width && r.h() > 0.4 * page.height {
+                continue;
+            }
+            let running = lines
+                .iter()
+                .filter(|l| r.contains(&l.bbox, 2.0) && l.size >= self.body_size - 0.5 && is_prose(&l.text))
+                .count();
+            let pictures: f64 = g.images.iter().filter(|i| r.contains(i, 2.0)).map(|i| i.area()).sum();
+            if pno == 0 && running >= 5 && pictures < 0.5 * r.area() {
+                continue;
+            }
             regions.push(Region { rect: r, kind: Kind::Figure, image: None });
         }
 

@@ -476,6 +476,13 @@ final class PDFAnalyzer {
             if !c.hasImage && c.n <= 2 && r.h < 30 { continue }
             // the journal's logo in the first page's masthead
             if pno == 0 && r.y1 < 0.12 * mb.height && r.h < 0.08 * mb.height { continue }
+            // a bar down the page's edge ("Author manuscript", "Europe PMC Funders") is no figure, nor on the first
+            // page a frame or band that holds running text rather than a picture (the abstract's box; the bar with
+            // the header's rules)
+            if r.w < 0.06 * mb.width && r.h > 0.4 * mb.height { continue }
+            let running = lines.filter { r.contains($0.bbox) && $0.size >= bodySize - 0.5 && Self.isProse($0.text) }.count
+            let pictures = g.images.filter { r.contains($0) }.reduce(0) { $0 + $1.area }
+            if pno == 0 && running >= 5 && pictures < 0.5 * r.area { continue }
             regions.append(Region(rect: r, kind: .figure))
         }
 
