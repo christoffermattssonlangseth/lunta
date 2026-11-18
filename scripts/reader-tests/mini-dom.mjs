@@ -13,6 +13,11 @@ class Node {
   get isConnected() { let n = this; while (n.parentNode) n = n.parentNode; return n === this.ownerDocument; }
   remove() { if (this.parentNode) { const c = this.parentNode.childNodes; c.splice(c.indexOf(this), 1); this.parentNode = null; } }
   appendChild(n) { n.remove(); n.parentNode = this; this.childNodes.push(n); return n; }
+  insertBefore(n, ref) {
+    if (!ref) return this.appendChild(n);
+    n.remove(); n.parentNode = this; this.childNodes.splice(this.childNodes.indexOf(ref), 0, n); return n;
+  }
+  get nextSibling() { if (!this.parentNode) return null; const c = this.parentNode.childNodes; return c[c.indexOf(this) + 1] ?? null; }
 }
 
 class Text extends Node {
