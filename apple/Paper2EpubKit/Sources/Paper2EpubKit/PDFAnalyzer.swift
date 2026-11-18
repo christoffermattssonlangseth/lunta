@@ -434,11 +434,38 @@ final class PDFAnalyzer {
             let u = a.union(b)
             return !prose.contains { u.contains($0, tol: 0) && !$0.intersects(a) && !$0.intersects(b) }
         }
+        // (with the rules that touch them, so that a table's or a frame's piece stands for all of it)
         for ci in clusters.indices {
             for r in thin where clusters[ci].rect.intersects(r, pad: 2) { clusters[ci].rect = clusters[ci].rect.union(r) }
         }
-        var regions: [Region] = []
+        // the rows and columns of one figure's panels sit further apart, their letters and axis labels in
+        // between: join pieces while the joined box holds no running text, caption or heading (only short labels)
+        let barrier = lines.filter { l in
+            let t = l.text.trimmingCharacters(in: .whitespaces)
+            return t.count > 50 || (l.size >= bodySize + 1 && t.matches(#"\p{L}{4}"#)) || Self.captionRE.test(t)
+        }.map(\.bbox)
+        // (a line of them in the box, if only by a few points)
+        func hits(_ u: R, _ p: R) -> Bool {
+            let o = u.intersection(p)
+            return o.w > 1 && o.h > 0.3 * p.h
+        }
+        func clean(_ u: R) -> Bool { !barrier.contains { hits(u, $0) } }
+        // (and two figures side by side, each over its own caption, stay two)
+        let capBoxes = lines.filter { Self.captionRE.test($0.text.trimmingCharacters(in: .whitespaces)) }.map(\.bbox)
+        func captionBelow(_ r: R) -> R? {
+            capBoxes.filter { $0.y0 >= r.y1 - 2 && $0.x1 > r.x0 && $0.x0 < r.x1 }.min { $0.y0 < $1.y0 }
+        }
+        func oneFigure(_ a: R, _ b: R) -> Bool {
+            if let x = captionBelow(a), let y = captionBelow(b) { return x == y }
+            return true
+        }
+        // (not the masthead's or the foot's logos and lines, nor a lone shape such as a frame's corner: only
+        // pictures and pieces of several shapes)
         let mTop = 0.07 * mb.height, mBot = 0.93 * mb.height
+        let lone = clusters.filter { !$0.hasImage && $0.n < 2 }.map(\.rect)
+        func joins(_ r: R) -> Bool { r.y1 >= mTop && r.y0 <= mBot && r.area >= 100 && !lone.contains(r) }
+        mergeClusters(&clusters) { a, b in a.intersects(b, pad: 60) && joins(a) && joins(b) && clean(a.union(b)) && oneFigure(a, b) }
+        var regions: [Region] = []
         for c in clusters {
             let r = c.rect
             if r.area < 2500 || r.y1 < mTop || r.y0 > mBot { continue }
@@ -493,21 +520,42 @@ final class PDFAnalyzer {
                 regions.append(Region(rect: tr, kind: .table))
             }
         }
-        // expand regions with nearby short labels (axis labels, panel letters)
+        // expand regions with nearby short labels (axis labels, panel letters); not a caption, nor the line
+        // beside one of this region's (its continuation in the other column)
         for gi in regions.indices {
             var r = regions[gi].rect
             for _ in 0..<2 {
                 for l in lines {
                     let t = l.text.trimmingCharacters(in: .whitespaces)
-                    if Self.captionRE.test(t) { continue }
+                    if capBoxes.contains(where: { min($0.y1, l.bbox.y1) - max($0.y0, l.bbox.y0) > 0.5 * l.bbox.h && $0.x1 > r.x0 && $0.x0 < r.x1 }) {
+                        continue
+                    }
                     let vo = min(r.y1, l.bbox.y1) - max(r.y0, l.bbox.y0) > 0.6 * l.bbox.h
-                    if r.intersects(l.bbox, pad: 8) && t.count < 70 && !r.contains(l.bbox)
+                    // (a line of running text beside it is no label)
+                    if r.intersects(l.bbox, pad: 8) && t.count < 70 && !(t.count > 50 && l.size >= bodySize - 0.5 && Self.isProse(t)) && !r.contains(l.bbox)
                         && (l.size < bodySize - 0.4 || vo || t.count <= 12) {
                         r = r.union(l.bbox)
                     }
                 }
             }
             regions[gi].rect = r
+        }
+        // pieces of a figure that have grown into each other by their labels are one figure
+        var merged = true
+        while merged {
+            merged = false
+            outer: for i in regions.indices {
+                for j in (i + 1)..<regions.count {
+                    let a = regions[i].rect, b = regions[j].rect
+                    if regions[i].kind == .figure && regions[j].kind == .figure && a.intersects(b) && clean(a.union(b))
+                        && oneFigure(a, b) {
+                        regions[i].rect = a.union(b)
+                        regions.remove(at: j)
+                        merged = true
+                        break outer
+                    }
+                }
+            }
         }
         // a piece that has grown inside another (by its labels) is part of it
         let all = regions

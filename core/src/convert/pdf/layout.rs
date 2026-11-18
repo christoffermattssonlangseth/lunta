@@ -503,6 +503,7 @@ impl<'a> Analyzer<'a> {
             let u = a.union(b);
             !prose.iter().any(|p| u.contains(p, 0.0) && !p.intersects(a, 0.0) && !p.intersects(b, 0.0))
         });
+        // (with the rules that touch them, so that a table's or a frame's piece stands for all of it)
         for c in clusters.iter_mut() {
             for r in &thin {
                 if c.rect.intersects(r, 2.0) {
@@ -510,8 +511,46 @@ impl<'a> Analyzer<'a> {
                 }
             }
         }
-        let mut regions: Vec<Region> = Vec::new();
+        // the rows and columns of one figure's panels sit further apart, their letters and axis
+        // labels in between: join pieces while the joined box holds no running text, caption or
+        // heading (only short labels)
+        let barrier: Vec<R> = lines
+            .iter()
+            .filter(|l| {
+                let t = trim(&l.text);
+                let n = count(t);
+                n > 50 || (l.size >= self.body_size + 1.0 && re!(r"\p{L}{4}").is_match(t)) || caption_re().is_match(t)
+            })
+            .map(|l| l.bbox)
+            .collect();
+        // (a line of them in the box, if only by a few points)
+        let hits = |u: &R, p: &R| {
+            let o = u.intersection(p);
+            o.w() > 1.0 && o.h() > 0.3 * p.h()
+        };
+        let clean = |u: &R| !barrier.iter().any(|p| hits(u, p));
+        // (and two figures side by side, each over its own caption, stay two)
+        let cap_boxes: Vec<R> = lines.iter().filter(|l| caption_re().is_match(trim(&l.text))).map(|l| l.bbox).collect();
+        let caption_below = |r: &R| {
+            cap_boxes
+                .iter()
+                .filter(|c| c.y0 >= r.y1 - 2.0 && c.x1 > r.x0 && c.x0 < r.x1)
+                .min_by(|a, b| a.y0.partial_cmp(&b.y0).unwrap_or(std::cmp::Ordering::Equal))
+                .copied()
+        };
+        let one_figure = |a: &R, b: &R| match (caption_below(a), caption_below(b)) {
+            (Some(x), Some(y)) => x == y,
+            _ => true,
+        };
+        // (not the masthead's or the foot's logos and lines, nor a lone shape such as a frame's
+        // corner: only pictures and pieces of several shapes)
         let (m_top, m_bot) = (0.07 * page.height, 0.93 * page.height);
+        let lone: Vec<R> = clusters.iter().filter(|c| !c.has_image && c.n < 2).map(|c| c.rect).collect();
+        let joins = |r: &R| r.y1 >= m_top && r.y0 <= m_bot && r.area() >= 100.0 && !lone.contains(r);
+        merge_clusters(&mut clusters, |a, b| {
+            a.intersects(b, 60.0) && joins(a) && joins(b) && clean(&a.union(b)) && one_figure(a, b)
+        });
+        let mut regions: Vec<Region> = Vec::new();
         for c in &clusters {
             let r = c.rect;
             if r.area() < 2500.0 || r.y1 < m_top || r.y0 > m_bot {
@@ -596,19 +635,24 @@ impl<'a> Analyzer<'a> {
                 regions.push(Region { rect: tr, kind: Kind::Table, image: None });
             }
         }
-        // expand regions with nearby short labels (axis labels, panel letters)
+        // expand regions with nearby short labels (axis labels, panel letters); not a caption, nor the
+        // line beside one of this region's (its continuation in the other column)
         for g in regions.iter_mut() {
             let mut r = g.rect;
             for _ in 0..2 {
                 for l in lines {
                     let t = trim(&l.text);
-                    if caption_re().is_match(t) {
+                    if cap_boxes.iter().any(|c| {
+                        c.y1.min(l.bbox.y1) - c.y0.max(l.bbox.y0) > 0.5 * l.bbox.h() && c.x1 > r.x0 && c.x0 < r.x1
+                    }) {
                         continue;
                     }
                     let vo = r.y1.min(l.bbox.y1) - r.y0.max(l.bbox.y0) > 0.6 * l.bbox.h();
                     let n = count(t);
                     if r.intersects(&l.bbox, 8.0)
                         && n < 70
+                        // (a line of running text beside it is no label)
+                        && !(n > 50 && l.size >= self.body_size - 0.5 && is_prose(t))
                         && !r.contains(&l.bbox, 2.0)
                         && (l.size < self.body_size - 0.4 || vo || n <= 12)
                     {
@@ -617,6 +661,27 @@ impl<'a> Analyzer<'a> {
                 }
             }
             g.rect = r;
+        }
+        // pieces of a figure that have grown into each other by their labels are one figure
+        let mut merged = true;
+        while merged {
+            merged = false;
+            'outer: for i in 0..regions.len() {
+                for j in (i + 1)..regions.len() {
+                    let (a, b) = (regions[i].rect, regions[j].rect);
+                    if regions[i].kind == Kind::Figure
+                        && regions[j].kind == Kind::Figure
+                        && a.intersects(&b, 0.0)
+                        && clean(&a.union(&b))
+                        && one_figure(&a, &b)
+                    {
+                        regions[i].rect = a.union(&b);
+                        regions.remove(j);
+                        merged = true;
+                        break 'outer;
+                    }
+                }
+            }
         }
         // a piece that has grown inside another (by its labels) is part of it
         let rects: Vec<(R, Kind)> = regions.iter().map(|g| (g.rect, g.kind)).collect();

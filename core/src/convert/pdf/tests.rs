@@ -528,6 +528,80 @@ fn column_table_does_not_take_the_running_heads_rule() {
     assert!(paras.iter().any(|p| p.kind == Kind::Text && p.text().starts_with("to infer and perform")));
 }
 
+/// A figure of panels in rows (Nature's "a b c / d e"), the letters and axis labels between the
+/// rows, more than 22 pt apart: one figure, letters inside it, no heading "a b". Two figures with
+/// their captions and body text between them stay two.
+#[test]
+fn figure_panels_with_letters_are_one_figure() {
+    let mut lines = para(LOREM, 0, 40.0, 50.0, 4, 90);
+    // two rows of three panels, 45 pt apart, their letters (bold, larger than the body) above them
+    let mut g = PageGraphics::default();
+    for (row, y) in [(0, 120.0), (1, 275.0)] {
+        for (col, x) in [40.0, 220.0, 400.0].into_iter().enumerate() {
+            // (a chart: its frame and a bar)
+            g.drawings.push(R::new(x + 10.0, y, x + 160.0, y + 110.0));
+            g.drawings.push(R::new(x + 40.0, y + 50.0, x + 60.0, y + 110.0));
+            let letter = ["a", "b", "c", "d", "e", "f"][row * 3 + col];
+            lines.push(bold(line(letter, 0, x, y - 16.0, 12.0)));
+            lines.push(line("Time (days)", 0, x + 60.0, y + 113.0, 6.5));
+        }
+    }
+    lines.push(bold(line("Fig. 1 | Panels in two rows.", 0, 40.0, 410.0, 7.0)));
+    lines.extend(para(LOREM, 0, 40.0, 430.0, 3, 90));
+    // a second figure under its own caption and some text
+    g.drawings.push(R::new(60.0, 480.0, 300.0, 600.0));
+    g.drawings.push(R::new(320.0, 480.0, 540.0, 600.0));
+    lines.push(line("Fig. 2 | Another figure.", 0, 40.0, 610.0, 7.0));
+    lines.extend(para(LOREM, 0, 40.0, 630.0, 3, 90));
+    let page = Page { width: 595.0, height: 791.0, lines, graphics: g };
+    let mut other = page.clone();
+    other.graphics = PageGraphics::default();
+    let (paras, _) = analyse(vec![page, other]);
+    let figs: Vec<R> = paras.iter().filter(|p| p.kind == Kind::Figure).map(|p| p.bbox()).collect();
+    assert_eq!(figs.len(), 2, "{figs:?}");
+    let f1 = figs[0];
+    assert!(f1.x0 <= 50.0 && f1.y0 <= 104.0 && f1.x1 >= 560.0 && f1.y1 >= 385.0 && f1.y1 < 410.0, "{f1:?}");
+    let f2 = figs[1];
+    assert!(f2.y0 >= 470.0 && f2.x0 <= 60.0 && f2.x1 >= 540.0, "{f2:?}");
+    assert!(!paras.iter().any(|p| p.page == 0 && p.kind == Kind::Heading));
+    assert!(!paras.iter().any(|p| p.page == 0 && p.kind == Kind::Text && (p.text().len() < 4 || p.text().contains("Time"))));
+    assert!(paras.iter().any(|p| p.kind == Kind::Caption && p.text().starts_with("Fig. 2")));
+}
+
+/// Two figures side by side, each over its own caption, 30 pt apart, are two figures; a framed
+/// figure's corners do not pull its legend into the picture.
+#[test]
+fn figures_side_by_side_stay_two() {
+    let mut lines = para(LOREM, 0, 40.0, 50.0, 4, 90);
+    let mut g = PageGraphics::default();
+    g.drawings.push(R::new(50.0, 120.0, 280.0, 300.0));
+    g.drawings.push(R::new(310.0, 120.0, 545.0, 300.0));
+    lines.push(line("Figure 6. Precision.", 0, 50.0, 310.0, 9.0));
+    lines.push(line("Figure 7. Recall.", 0, 310.0, 310.0, 9.0));
+    lines.extend(para(LOREM, 0, 40.0, 340.0, 3, 90));
+    // a frame with rounded corners around a picture and its legend
+    for (x, y) in [(50.0, 420.0), (541.0, 420.0), (50.0, 716.0), (541.0, 716.0)] {
+        g.drawings.push(R::new(x, y, x + 4.0, y + 4.0));
+    }
+    for r in [R::new(54.0, 420.0, 541.0, 420.2), R::new(54.0, 720.0, 541.0, 720.2), R::new(50.0, 424.0, 50.2, 716.0), R::new(544.8, 424.0, 545.0, 716.0)] {
+        g.drawings.push(r);
+    }
+    g.images.push(R::new(120.0, 430.0, 470.0, 640.0));
+    lines.push(line("Figure 8 A framed picture and its legend, which runs on in the frame", 0, 60.0, 660.0, 8.0));
+    for k in 1..4 {
+        lines.push(line("for more lines of legend text that are not part of the picture above.", 0, 60.0, 660.0 + 12.0 * k as f64, 8.0));
+    }
+    let page = Page { width: 595.0, height: 791.0, lines, graphics: g };
+    let mut other = page.clone();
+    other.graphics = PageGraphics::default();
+    let (paras, _) = analyse(vec![page, other]);
+    let figs: Vec<R> = paras.iter().filter(|p| p.page == 0 && p.kind == Kind::Figure).map(|p| p.bbox()).collect();
+    assert_eq!(figs.len(), 3, "{figs:?}");
+    assert!(figs.iter().any(|f| f.x1 < 300.0) && figs.iter().any(|f| f.x0 > 290.0), "{figs:?}");
+    assert!(figs.iter().all(|f| f.y1 < 655.0), "{figs:?}");
+    assert!(paras.iter().any(|p| p.kind == Kind::Caption && p.text().starts_with("Figure 8")));
+}
+
 // MARK: - Reference lists
 
 #[test]
