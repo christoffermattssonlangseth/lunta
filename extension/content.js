@@ -165,8 +165,23 @@
   let state = { inLibrary: false };
   let ftBusy = false;
 
+  // When the extension is updated or restarted (e.g. Lunta for Mac was updated), the Lunta box already on
+  // an open page is cut off from it: messages fail or never get an answer, and its icon no longer
+  // loads. Say so instead of "Checking…" for ever.
+  const STALE = "Lunta was updated or restarted since this page was opened. Reload the page.";
   const send = (msg) =>
-    new Promise((resolve) => chrome.runtime.sendMessage(msg, (r) => resolve(r || { error: chrome.runtime.lastError?.message })));
+    new Promise((resolve) => {
+      let done = false;
+      const finish = (r) => { if (!done) { done = true; resolve(r); } };
+      // status is quick; the rest (saving, the full text) can take minutes
+      if (msg.type === "status") setTimeout(() => finish({ error: STALE, stale: true }), 15000);
+      try {
+        if (!chrome.runtime || !chrome.runtime.id) return finish({ error: STALE, stale: true });
+        chrome.runtime.sendMessage(msg, (r) => finish(r || { error: chrome.runtime.lastError?.message || STALE }));
+      } catch (e) {
+        finish({ error: STALE, stale: true });
+      }
+    });
 
   function render() {
     $(".dot").classList.toggle("in", !!state.inLibrary);
@@ -260,7 +275,7 @@
 
   async function refresh() {
     const r = await send({ type: "status", doi, title });
-    if (r.error) { $(".lib").textContent = "App not running"; showError(r.error); return; }
+    if (r.error) { $(".lib").textContent = r.stale ? "Reload the page" : "App not running"; showError(r.error); return; }
     state = r;
     showError("");
     render();
