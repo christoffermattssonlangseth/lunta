@@ -16,6 +16,7 @@ mod extension;
 mod positions;
 mod settings;
 mod smart;
+mod updates;
 
 use lunta_core::model::{Annotation, AnnotationKind, CitationStyle, FileKind, Paper, PaperFilter, PaperMeta, SortKey};
 use lunta_core::Library;
@@ -772,6 +773,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updates::Pending::default())
         .register_asynchronous_uri_scheme_protocol("lunta", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             let path = request.uri().path().to_string();
@@ -851,6 +854,10 @@ pub fn run() {
             delete_annotation,
             position_latest,
             position_save,
+            updates::update_check,
+            updates::update_install,
+            updates::update_auto,
+            updates::set_update_auto,
             dev_log,
             dev_snapshot,
         ])

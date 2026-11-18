@@ -15,6 +15,15 @@ pub struct Settings {
     /// .bib files kept up to date: "*" (all papers) or a folder id -> file path (bibfiles.rs).
     #[serde(default)]
     pub bib_files: std::collections::BTreeMap<String, String>,
+    /// "Check for Updates Automatically" (updates.rs); unset means on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_update: Option<bool>,
+}
+
+impl Settings {
+    pub fn check_updates(&self) -> bool {
+        self.auto_update.unwrap_or(true)
+    }
 }
 
 fn file(config_dir: &Path) -> PathBuf {

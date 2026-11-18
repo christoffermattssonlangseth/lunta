@@ -9,6 +9,7 @@ import { editDetails, editSmart, blankSmart } from './editors';
 import { setupDrag, type Payload } from './drag';
 import { fill, h, $, status, prompt, menu, menuBelow, copy, authorsShort, type MenuItem } from './ui';
 import { openReader, readerPaper, closeReader } from './reader';
+import { startUpdateChecks, checkNow, updatesApi } from './updates';
 
 let source: Source = { kind: 'all' };
 let query = '';
@@ -47,6 +48,7 @@ async function showLibrary() {
   await reload();
   // changes synced from other devices (their op logs) show up within ten seconds
   setInterval(async () => { if (await api.refresh().catch(() => false)) reload(); }, 10000);
+  startUpdateChecks();
 }
 
 // ---- loading ----
@@ -509,6 +511,7 @@ $<HTMLInputElement>('#search').oninput = (e) => {
 };
 $('#settings').onclick = async () => {
   const info = await api.info();
+  const autoUpdate = await updatesApi.auto().catch(() => true);
   menuBelow($('#settings'), [
     { label: `Library: ${info.library}`, action: () => {}, disabled: true },
     { label: `This device: ${info.device_id}`, action: () => {}, disabled: true },
@@ -518,6 +521,11 @@ $('#settings').onclick = async () => {
       if (typeof dir !== 'string') return;
       try { await api.chooseLibrary(dir); source = { kind: 'all' }; selected = null; reload(); status(`Library: ${dir}`); }
       catch (e) { status(String(e), 'error'); }
+    } },
+    '-',
+    { label: 'Check for Updates…', action: checkNow },
+    { label: 'Check for Updates Automatically', checked: autoUpdate, action: () => {
+      updatesApi.setAuto(!autoUpdate).catch((e) => status(String(e), 'error'));
     } },
   ]);
 };

@@ -18,10 +18,15 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-opener = "2"
+# updates from GitHub Releases (latest.json, src/updates.rs)
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
 percent-encoding = "2"
+
+[dev-dependencies]
+semver = "1"
 
 [profile.release]
 opt-level = "s"
