@@ -42,6 +42,9 @@ final class LibraryModel: ObservableObject {
     // Discover: searching beyond the library (OpenAlex)
     @Published var discoverQuery = ""
     @Published var discoverResults: [DiscoverHit] = []
+    /// Discovered papers being added (their hitKey): added in the background, so a new search can
+    /// run meanwhile; a result being added shows as such in any later search too, and isn't added twice.
+    @Published private(set) var discoverAdding: Set<String> = []
     @Published var discovering = false
     @Published var discoverError: String?
     private var refreshTimer: Timer?
@@ -661,6 +664,10 @@ final class LibraryModel: ObservableObject {
     @discardableResult
     func addDiscovered(_ hit: DiscoverHit) async -> String? {
         if let id = hit.inLibrary { return id }
+        let key = Self.hitKey(hit)
+        guard !discoverAdding.contains(key) else { return nil }
+        discoverAdding.insert(key)
+        defer { discoverAdding.remove(key) }
         var id: String?
         if !hit.meta.doi.isEmpty {
             id = lib.findByDoi(doi: hit.meta.doi)?.id

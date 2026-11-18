@@ -92,8 +92,8 @@ struct DiscoverRow: View {
             Spacer(minLength: 6)
             if let id = model.libraryID(of: hit) {
                 OpenAddedPaper(id: id, compact: true).tint(.luntaTeal)
-            } else if adding {
-                ProgressView().controlSize(.small)
+            } else if adding || model.discoverAdding.contains(LibraryModel.hitKey(hit)) {
+                ProgressView().controlSize(.small).help("Adding to your library (it carries on while you search)")
             } else {
                 Button {
                     adding = true
@@ -146,10 +146,11 @@ struct DiscoverDetail: View {
                         .font(.footnote).foregroundStyle(Color.luntaTeal)
                 } else {
                     HStack(spacing: 10) {
-                        Button { add(mustRead: false) } label: { Label(adding ? "Adding…" : "Add to Library", systemImage: "plus") }
-                            .buttonStyle(.borderedProminent).tint(.luntaTeal).disabled(adding)
+                        let busy = adding || model.discoverAdding.contains(LibraryModel.hitKey(hit))
+                        Button { add(mustRead: false) } label: { Label(busy ? "Adding…" : "Add to Library", systemImage: "plus") }
+                            .buttonStyle(.borderedProminent).tint(.luntaTeal).disabled(busy)
                         Button { add(mustRead: true) } label: { Label("Add as Must Read", systemImage: "bookmark") }
-                            .buttonStyle(.bordered).tint(.luntaTeal).disabled(adding)
+                            .buttonStyle(.bordered).tint(.luntaTeal).disabled(busy)
                             .help("Add it and put it on your Must Read list")
                     }
                 }
