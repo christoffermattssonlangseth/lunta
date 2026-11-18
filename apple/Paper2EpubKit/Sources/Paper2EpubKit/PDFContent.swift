@@ -35,6 +35,11 @@ struct PageGraphics {
     var runs: [TextRun] = []
     /// Word gaps the content stream makes by moving instead of drawing a space: (x, baseline).
     var gaps: [CGPoint] = []
+    /// Places where the text goes on, with no space drawn, right where the last text ended ("foundati"
+    /// -15 "on" in a TJ array), whatever PDFKit makes of them, and space glyphs that take no room
+    /// (put in URLs to let them break: "https:// creat iveco mmons"): (x, baseline). A space glyph that
+    /// word spacing takes most of the room from is still a space (0.05 em in tightly justified lines).
+    var joints: [CGPoint] = []
 }
 
 /// Walks a page's content stream with CGPDFScanner to find image placements, vector drawings and
@@ -303,12 +308,20 @@ final class PDFContentScanner {
         let start = CGPoint.zero.applying(trm)
         var adv: CGFloat = 0
         var i = 0
+        var firstCode = -1, lastCode = -1
+        var zeroSpaces: [CGFloat] = []   // space glyphs word spacing takes all the room from
+        let em = abs(ts.size * font.sizeScale)
         while i < len {
             let code: Int
             if font.twoByte, i + 1 < len { code = Int(bytes[i]) << 8 | Int(bytes[i + 1]); i += 2 }
             else { code = Int(bytes[i]); i += 1 }
             var tx = font.width(code) * font.widthScale / 1000 * ts.size + ts.tc
-            if !font.twoByte && code == 32 { tx += ts.tw }
+            if !font.twoByte && code == 32 {
+                tx += ts.tw
+                if abs(tx) < 0.02 * em { zeroSpaces.append(adv) }
+            }
+            if firstCode < 0 { firstCode = code }
+            lastCode = code
             adv += tx * ts.th
         }
         let endP = CGPoint(x: adv, y: 0).applying(trm)
@@ -324,12 +337,22 @@ final class PDFContentScanner {
         if let e = lastEnd, abs(e.y - a.y) < 0.3 * max(effSize, 2), a.x - e.x > 0.15 * effSize * min(1, abs(ts.th), lastScale),
            a.x - e.x < 3 * effSize {
             out.gaps.append(CGPoint(x: (a.x + e.x) / 2, y: a.y))
+        } else if let e = lastEnd, abs(e.y - a.y) < 0.3 * max(effSize, 2), abs(a.x - e.x) < 0.08 * effSize,
+                  !font.twoByte, firstCode != 32, !lastEndedWithSpace {
+            // the text goes on right where the last ended, with no space drawn on either side
+            out.joints.append(CGPoint(x: a.x, y: a.y))
+        }
+        for x in zeroSpaces {
+            let p = CGPoint(x: x, y: 0).applying(trm)
+            out.joints.append(CGPoint(x: p.x - origin.x, y: pageHeight - (p.y - origin.y)))
         }
         lastEnd = CGPoint(x: max(a.x, b.x), y: a.y)
+        lastEndedWithSpace = !font.twoByte && lastCode == 32
         lastScale = abs(ts.th)
     }
 
     private var lastEnd: CGPoint?
+    private var lastEndedWithSpace = false
     private var lastScale: CGFloat = 1
 
     private func adjust(_ n: CGFloat) {   // TJ number: move left by n/1000 text-space units

@@ -4,11 +4,30 @@ import PDFKit
 import XCTest
 @testable import Paper2EpubKit
 
-/// Word breaks in text read from PDFs: word gaps measured in the content stream, and the layouts whose
-/// spaces must stay as they are.
+/// Word breaks in text read from PDFs: spaces PDFKit reports where the glyphs leave no room for one
+/// ("foundati on model for pa thology"), and the layouts whose spaces must stay as they are.
 final class WordSpacingTests: XCTestCase {
 
-    // MARK: word gaps in the content stream
+    // MARK: spaces without room
+
+    func testJointsInTheContentStream() {
+        // "foundati" -15 "on": the text goes on 0.18 pt further with no space drawn (where PDFKit, reading
+        // a Type 3 font, may put a space); "Cho " + "et al": a space drawn, even if a skewed font's glyph
+        // boxes cover it
+        let g = graphics(raw: """
+            BT /F1 12 Tf 72 700 Td [(A whole-slide foundati) -15 (on model) 40 (s)] TJ ET
+            BT /F1 12 Tf 72 680 Td (Cho ) Tj 1 0 0.32 1 100 680 Tm (et al) Tj ET
+            """)
+        let joints = g.joints.map { (Int($0.x.rounded()), Int($0.y.rounded())) }
+        XCTAssertEqual(joints.count, 2, "\(joints)")
+        XCTAssertTrue(joints.allSatisfy { $0.1 == 92 }, "\(joints)")   // both on the first line
+    }
+
+    func testSpacesWithoutRoomInURLs() {
+        // space glyphs word spacing takes all the room from, to let a URL break
+        let t = text(raw: "BT /F1 12 Tf 72 700 Td (See https://) Tj -3.336 Tw ( ) Tj 0 Tw (creat) Tj -3.336 Tw ( ) Tj 0 Tw (ivecommons.org.) Tj ET")
+        XCTAssertTrue(t.contains("See https://creativecommons.org."), t)
+    }
 
     func testTightlyJustifiedSpacesStay() {
         // space glyphs word spacing takes back to 0.4 pt (0.036 em) are still spaces
@@ -35,6 +54,25 @@ final class WordSpacingTests: XCTestCase {
         XCTAssertTrue(t.contains("*Department of Anatomy, University"), t)
         XCTAssertTrue(t.contains("of dUTP"), t)   // the gap after squeezed text, before text squeezed less
     }
+
+    func testRule() {
+        func box(_ x0: CGFloat, _ x1: CGFloat) -> R { R(x0: x0, y0: 100, x1: x1, y1: 112) }
+        func spurious(_ space: R, _ p: R, _ n: R, _ next: String = "o", joint: Bool = true) -> Bool {
+            PDFAnalyzer.isSpuriousSpace(" ", space, added: false, prev: ("i", p, 12), next: (next, n, 12), joint: joint)
+        }
+        XCTAssertTrue(spurious(box(50, 50.18), box(47, 50), box(50.18, 56)))           // "foundati on"
+        XCTAssertTrue(spurious(box(50, 50.18), box(47, 50), box(50.18, 54), "-"))      // "real -world"
+        XCTAssertTrue(spurious(box(50, 50), box(47, 50.3), box(50, 56)))               // kerned into each other
+        XCTAssertFalse(spurious(box(50, 50.6), box(47, 50), box(50.6, 56), joint: false)) // a space drawn ("et al" in a skewed font)
+        XCTAssertFalse(spurious(box(50, 53), box(47, 50), box(53, 59)))                // a normal space
+        XCTAssertFalse(spurious(box(50, 50), box(47, 50), box(53, 59)))                // a gap the glyphs leave
+        XCTAssertFalse(spurious(box(50, 50.18), box(47, 50), box(50.18, 56)
+            .offsetBy(y: 14)))                                                          // next line
+        XCTAssertFalse(PDFAnalyzer.isSpuriousSpace(" ", box(50, 50), added: true,       // put back for a line break
+                                                   prev: ("s", box(47, 50), 12), next: ("t", box(50, 56), 12), joint: true))
+    }
+
+    // MARK: layouts whose spaces stay
 
     func testJustifiedWideSpaces() {
         let t = text(raw: "BT /F1 12 Tf 72 700 Td 6 Tw (Justified text with wide word spaces) Tj ET")

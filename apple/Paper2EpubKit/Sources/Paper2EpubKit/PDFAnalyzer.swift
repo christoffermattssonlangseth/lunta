@@ -159,7 +159,7 @@ final class PDFAnalyzer {
             }
             let g = page.pageRef.map { PDFContentScanner(box: mb).scan($0) } ?? PageGraphics()
             graphics.append(g)
-            let lines = extractLines(page, pno: pno, mb: mb, runs: g.runs, gaps: g.gaps)
+            let lines = extractLines(page, pno: pno, mb: mb, runs: g.runs, gaps: g.gaps, joints: g.joints)
             for l in lines { sizes[l.size, default: 0] += l.text.count }
             pagesLines.append(lines)
             if pno % 5 == 4 { log("Reading page \(pno + 1) of \(doc.pageCount)") }
@@ -181,7 +181,7 @@ final class PDFAnalyzer {
         findRunning()
     }
 
-    private func extractLines(_ page: PDFPage, pno: Int, mb: CGRect, runs: [TextRun], gaps: [CGPoint]) -> [PLine] {
+    private func extractLines(_ page: PDFPage, pno: Int, mb: CGRect, runs: [TextRun], gaps: [CGPoint], joints: [CGPoint]) -> [PLine] {
         guard let attr = page.attributedString, let sel = page.selection(for: mb) else { return [] }
         let ns = attr.string as NSString
         // bucket text runs by baseline for quick style lookup
@@ -189,6 +189,17 @@ final class PDFAnalyzer {
         for r in runs { buckets[Int(r.baseline / 4), default: []].append(r) }
         var gapBuckets: [Int: [CGPoint]] = [:]
         for g in gaps { gapBuckets[Int(g.y / 4), default: []].append(g) }
+        var jointBuckets: [Int: [CGPoint]] = [:]
+        for j in joints { jointBuckets[Int(j.y / 4), default: []].append(j) }
+        /// a point of `buckets` between the middles of two characters, on their baseline
+        func between(_ buckets: [Int: [CGPoint]], _ p: R, _ c: R) -> Bool {
+            let lo = (p.x0 + p.x1) / 2, hi = (c.x0 + c.x1) / 2
+            let key = Int(c.y1 / 4)
+            // the point must sit on this line's baseline (lower part of the glyph box), not the line above
+            return ((key - 2)...(key + 2)).contains { k in
+                (buckets[k] ?? []).contains { g in g.x > lo && g.x < hi && g.y >= c.y0 + 0.4 * c.h && g.y <= c.y1 + 1.5 }
+            }
+        }
 
         func toTop(_ b: CGRect) -> R {
             R(x0: b.minX - mb.minX, y0: mb.maxY - b.maxY, x1: b.maxX - mb.minX, y1: mb.maxY - b.minY)
@@ -227,7 +238,7 @@ final class PDFAnalyzer {
             let bbox = toTop(ls.bounds(for: page))
             if bbox.h > 2.5 * bbox.w && range.length > 2 { continue }   // rotated margin text
 
-            struct C { var ch: String; var size: CGFloat; var box: R; var run: TextRun? }
+            struct C { var ch: String; var size: CGFloat; var box: R; var run: TextRun?; var added = false }
             var chars: [C] = []
             var i = range.location
             while i < range.location + range.length {
@@ -237,7 +248,7 @@ final class PDFAnalyzer {
                 if ch == "\n" || ch == "\r" {
                     // PDFKit removes soft hyphens and moves the line break to the end of the rejoined word
                     // ("ques-|tions require" → "questions\nrequire"): a break inside a line is a word space
-                    if let p = chars.last, p.ch != " " { chars.append(C(ch: " ", size: p.size, box: R(x0: p.box.x1, y0: p.box.y0, x1: p.box.x1, y1: p.box.y1), run: nil)) }
+                    if let p = chars.last, p.ch != " " { chars.append(C(ch: " ", size: p.size, box: R(x0: p.box.x1, y0: p.box.y0, x1: p.box.x1, y1: p.box.y1), run: nil, added: true)) }
                     continue
                 }
                 let f = attr.attribute(.font, at: r.location, effectiveRange: nil) as? PFont
@@ -248,6 +259,13 @@ final class PDFAnalyzer {
             }
             while chars.last?.ch == " " { chars.removeLast() }
             guard !chars.isEmpty else { continue }
+            chars = chars.indices.compactMap { k in
+                guard k > 0, k + 1 < chars.count, chars[k].ch == " " else { return chars[k] }
+                let p = chars[k - 1], n = chars[k + 1]
+                return Self.isSpuriousSpace(chars[k].ch, chars[k].box, added: chars[k].added, prev: (p.ch, p.box, p.size),
+                                            next: (n.ch, n.box, n.size), joint: between(jointBuckets, p.box, n.box))
+                    ? nil : chars[k]
+            }
             var sizeCount: [CGFloat: Int] = [:]
             for c in chars where !c.ch.trimmingCharacters(in: .whitespaces).isEmpty {
                 sizeCount[(c.size * 2).rounded() / 2, default: 0] += 1
@@ -268,15 +286,7 @@ final class PDFAnalyzer {
                 if let p = spaced.last, !p.ch.trimmingCharacters(in: .whitespaces).isEmpty,
                    !c.ch.trimmingCharacters(in: .whitespaces).isEmpty, p.box.w > 0, c.box.w > 0, c.box.x0 >= p.box.x0,
                    !Self.noSpaceBefore.contains(c.ch), !Self.noSpaceAfter.contains(p.ch) {
-                    let lo = (p.box.x0 + p.box.x1) / 2, hi = (c.box.x0 + c.box.x1) / 2
-                    let key = Int(c.box.y1 / 4)
-                    // the gap must sit on this line's baseline (lower part of the glyph box), not the line above
-                    let hit = ((key - 2)...(key + 2)).contains { k in
-                        (gapBuckets[k] ?? []).contains { g in
-                            g.x > lo && g.x < hi && g.y >= c.box.y0 + 0.4 * c.box.h && g.y <= c.box.y1 + 1.5
-                        }
-                    }
-                    if hit { spaced.append(C(ch: " ", size: c.size, box: R(x0: p.box.x1, y0: c.box.y0, x1: c.box.x0, y1: c.box.y1), run: nil)) }
+                    if between(gapBuckets, p.box, c.box) { spaced.append(C(ch: " ", size: c.size, box: R(x0: p.box.x1, y0: c.box.y0, x1: c.box.x0, y1: c.box.y1), run: nil)) }
                 }
                 spaced.append(c)
             }
@@ -341,6 +351,24 @@ final class PDFAnalyzer {
                              math: CGFloat(nMath) / CGFloat(max(1, n)), spans: spans, page: pno))
         }
         return out
+    }
+
+    /// PDFKit may put a space where the text goes on 0.18 pt further (pieces of a Type 3 font placed
+    /// one after the other: "foundati on model", "real -world"), and keeps the spaces some publishers
+    /// put in URLs with no room, to let them break ("https:// creat iveco mmons"). Such a space is
+    /// dropped when the content stream shows the text going on there with no room for a space (`joint`,
+    /// see PageGraphics.joints) and PDFKit's own glyph boxes leave no room for one either. Both are asked because neither is enough alone: synthetic italics
+    /// (a skewed font) widen PDFKit's boxes until real spaces look like none ("et al"), and tightly set
+    /// Helvetica has word spaces of 0.1 em. Spaces put back for a line break stay.
+    static func isSpuriousSpace(_ ch: String, _ box: R, added: Bool, prev: (String, R, CGFloat)?, next: (String, R, CGFloat)?,
+                                joint: Bool) -> Bool {
+        guard ch == " ", !added, joint, let (pc, p, ps) = prev, let (nc, n, ns) = next,
+              !pc.trimmingCharacters(in: .whitespaces).isEmpty, !nc.trimmingCharacters(in: .whitespaces).isEmpty,
+              p.w > 0, n.w > 0, p.h > 0, n.h > 0, ps > 0, ns > 0 else { return false }
+        let em = max(ps, ns, 4)
+        let sameLine = min(p.y1, n.y1) - max(p.y0, n.y0) > 0.5 * min(p.h, n.h)
+        let gap = n.x0 - p.x1
+        return sameLine && n.x0 > p.x0 && gap < 0.1 * em && gap > -0.3 * em && box.w < 0.1 * em
     }
 
     /// Publisher download sheets ("Use of this article is subject to the Terms of service") carry no content.
