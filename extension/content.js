@@ -335,6 +335,8 @@
     }
     let msg = { type: "savePdf", id: state.id, pdfUrl, pdfUrls, name: (title || "paper").slice(0, 80) + ".pdf", meta: info };
     // fetch from the page first: same-origin requests carry the site's login cookies; each link in turn
+    const tried = [];   // what each link gave, for the error message
+    const short = (u) => { try { const x = new URL(u); return x.pathname.split("/").pop() || x.host; } catch (_) { return u; } };
     for (const u of pdfUrls) {
       try {
         const r = await pageFetch(u, { credentials: "include" });
@@ -344,10 +346,11 @@
           msg = { ...msg, base64: toBase64(buf), pdfUrl: undefined, pdfUrls: undefined };
           break;
         }
-      } catch (_) { /* cross-origin: let the extension fetch it */ }
+        tried.push(`${short(u)}: ${r.status} ${(r.headers.get("content-type") || "").split(";")[0] || "?"}${r.redirected ? " via " + short(r.url) : ""}`);
+      } catch (e) { tried.push(`${short(u)}: ${e && e.message || "failed"}`); /* cross-origin: the extension tries it */ }
     }
     const r = await send(msg);
-    if (r.error) showError(r.error); else { state = r; showError(""); }
+    if (r.error) showError(r.error + (tried.length ? " Tried: " + tried.join("; ") + "." : (pdfUrls.length ? "" : " No PDF link found on this page."))); else { state = r; showError(""); }
     render();
   }
 
