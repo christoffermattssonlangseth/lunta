@@ -14,9 +14,12 @@ extension ReaderAssets {
       var st = document.createElement('style');
       st.textContent =
         '.m-summary { position: relative; margin: 1.5em 0 1.7em; padding: .8em 1.05em .75em; border-radius: 12px; background: #f2f1ee; border: 1px solid rgba(127,127,127,.16);' +
-        ' -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; break-inside: avoid; font-size: .93em; line-height: 1.5; text-align: left; }' +
+        ' -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; break-inside: avoid; -webkit-column-break-inside: avoid; font-size: 15px; line-height: 1.45; text-align: left; }' +
         '.m-sum-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .3em; }' +
-        '.m-sum-title { font: 600 .8rem -apple-system, "Helvetica Neue", sans-serif; letter-spacing: .01em; opacity: .7; }' +
+        '.m-sum-title { font: 600 13px -apple-system, "Helvetica Neue", sans-serif; letter-spacing: .01em; opacity: .7; }' +
+        // the summary in the system font at a fixed, compact size: in the reader's own (large on a phone)
+        // four sentences filled more than a page and the card broke across pages
+        '.m-sum-text { display: block; font: 15px/1.45 -apple-system, "Helvetica Neue", sans-serif; }' +
         '.m-sum-title::before, .m-sum-text::before, .m-sum-note::before, .m-sum-item::before { content: attr(data-t); }' +
         '.m-sum-more { -webkit-appearance: none; appearance: none; border: 0; background: none; margin: -6px -8px -6px 0; padding: 4px 8px; border-radius: 7px;' +
         ' cursor: pointer; color: inherit; opacity: .55; font: 600 1rem -apple-system, sans-serif; line-height: 1; -webkit-tap-highlight-color: transparent; }' +
@@ -24,7 +27,7 @@ extension ReaderAssets {
         '.m-sum-more:hover, .m-summary.m-sum-open .m-sum-more { opacity: .9; background: rgba(127,127,127,.14); }' +
         '.m-sum-loading .m-sum-text { opacity: .5; animation: m-sum-pulse 1.6s ease-in-out infinite; }' +
         '@keyframes m-sum-pulse { 50% { opacity: .25; } }' +
-        '.m-sum-note { margin-top: .5em; font: .7rem -apple-system, "Helvetica Neue", sans-serif; opacity: .5; }' +
+        '.m-sum-note { margin-top: .5em; font: 11px -apple-system, "Helvetica Neue", sans-serif; opacity: .5; }' +
         '.m-sum-note:not([data-t]), .m-sum-note[data-t=""] { display: none; }' +
         '.m-sum-pop { display: none; position: absolute; right: .5em; top: 2.3em; z-index: 30; min-width: 11em; padding: 4px; border-radius: 10px; background: #fff;' +
         ' box-shadow: 0 8px 28px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.07); }' +
