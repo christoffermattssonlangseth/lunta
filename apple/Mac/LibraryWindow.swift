@@ -118,6 +118,7 @@ struct LibraryWindow: View {
             ask.overview(ids, name: c.name)
         }
         .task { AppAppearance.apply() }
+        .checksSafariExtension()
         .task {
             // the citation card in a reader: open the cited paper, adding it first if needed
             ExternalLinks.onLunta = { [model] url, web in
@@ -347,6 +348,7 @@ struct PaperTable: View {
         // the search-beyond bar sits under the table, not in a safeAreaInset (which stops dragging rows)
         VStack(spacing: 0) {
             table
+            SafariExtensionBar()   // when the Lunta extension is off in Safari (under the table, as below)
             if !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
                 Button { model.searchBeyondLibrary() } label: {
                     Label("Search beyond your library for “\(model.query)”", systemImage: "globe.europe.africa")
