@@ -80,6 +80,73 @@ extension ReaderAssets {
         return m2 ? m2[1].replace(/[.,;)\]]+$/, '') : '';
       }
 
+      // numbers in a citation: "1,2", "11–13", "3, 5-7" (ranges spelled out); null if it isn't one
+      function citeNumbers(t){
+        if (!/^\s*\d{1,3}(\s*[,;–—\-]\s*\d{1,3})*\s*$/.test(t)) return null;
+        var out = [];
+        t.replace(/(\d{1,3})(?:\s*[–—\-]\s*(\d{1,3}))?/g, function(_, x, y){
+          var a = +x, b = y ? +y : a;
+          if (b < a || b - a > 60) b = a;
+          for (var n = a; n <= b; n++) out.push(n);
+        });
+        return out.length ? out : null;
+      }
+      // the number under the click in a citation's text (by character offset), else the first
+      function numberAt(t, off){
+        var re = /\d{1,3}/g, m, first = null;
+        while ((m = re.exec(t))) { if (first === null) first = +m[0]; if (off != null && off >= m.index && off <= m.index + m[0].length) return +m[0]; }
+        return first;
+      }
+      // reference n of the paper's numbered list: the entry printed "n." / "[n]" / "n ", else the n-th
+      function refNumbered(n){
+        var list = document.querySelector('ol.refs, ol.references, ul.references');
+        if (!list) return null;
+        var items = Array.prototype.filter.call(list.children || [], function(x){ return x.tagName && x.tagName.toLowerCase() === 'li'; });
+        var labelled = false;
+        for (var i = 0; i < items.length; i++) {
+          var m = (items[i].textContent || '').match(/^\s*\[?(\d{1,3})[\].)]?\s/);
+          if (m) { labelled = true; if (+m[1] === n) return items[i]; }
+        }
+        return !labelled && items[n - 1] ? items[n - 1] : null;
+      }
+      function caretAt(ev){
+        if (document.caretRangeFromPoint) { var r = document.caretRangeFromPoint(ev.clientX, ev.clientY); if (r) return { node: r.startContainer, offset: r.startOffset }; }
+        if (document.caretPositionFromPoint) { var p = document.caretPositionFromPoint(ev.clientX, ev.clientY); if (p) return { node: p.offsetNode, offset: p.offset }; }
+        return null;
+      }
+      function plainCitation(ev){
+        var t = ev.target;
+        var sup = t && t.closest && t.closest('sup');
+        var c = caretAt(ev);
+        if (sup && !sup.closest('ol.refs, ol.references, .references, figure, table')) {
+          var txt = sup.textContent || '';
+          if (!citeNumbers(txt.replace(/[()\[\]]/g, ''))) return null;
+          var off = null;
+          if (c && c.node && sup.contains(c.node)) {
+            // the offset within the superscript's text
+            off = 0; var found = false;
+            (function walk(n){ for (var i = 0; i < n.childNodes.length && !found; i++) { var k = n.childNodes[i];
+              if (k === c.node) { off += c.offset; found = true; } else if (k.nodeType === 3) off += (k.data || '').length; else walk(k); } })(sup);
+            if (!found) off = null;
+          }
+          var n = numberAt(txt, off), ref = n != null ? refNumbered(n) : null;
+          return ref ? { anchor: sup, ref: ref } : null;
+        }
+        // "[1-3]" in running text
+        if (!c || !c.node || c.node.nodeType !== 3) return null;
+        var d = c.node.data || '', o = c.offset;
+        var l = d.lastIndexOf('[', o), r = d.indexOf(']', Math.max(o - 1, 0));
+        if (l < 0 || r < 0 || r < l || r - l > 40 || o < l || o > r + 1) return null;
+        var inner = d.slice(l + 1, r);
+        if (!citeNumbers(inner)) return null;
+        var p = c.node.parentNode;
+        if (p && p.closest && p.closest('ol.refs, ol.references, .references, figure, table')) return null;
+        var n2 = numberAt(inner, o - l - 1), ref2 = n2 != null ? refNumbered(n2) : null;
+        if (!ref2) return null;
+        var range = document.createRange(); range.setStart(c.node, l); range.setEnd(c.node, r + 1);
+        return { anchor: { getBoundingClientRect: function(){ return range.getBoundingClientRect(); } }, ref: ref2 };
+      }
+
       function close(){ if (pop) { pop.remove(); pop = null; } }
       window.luntaCiteDone = function(text){
         if (!pop) return;
@@ -145,6 +212,12 @@ extension ReaderAssets {
         var ref = a && !document.body.classList.contains('listening') ? refTarget(a) : null;
         var sel = window.getSelection();
         if (ref && !(sel && !sel.isCollapsed)) { ev.preventDefault(); ev.stopPropagation(); open(a, ref); return; }
+        // a citation that isn't a link (reading views made from a PDF): a superscript "1,2" / "11–13"
+        // or "[1-3]" in the text, when the paper has a numbered reference list
+        if (!a && !(sel && !sel.isCollapsed) && !document.body.classList.contains('listening')) {
+          var pc = plainCitation(ev);
+          if (pc) { ev.preventDefault(); ev.stopPropagation(); open(pc.anchor, pc.ref); return; }
+        }
         // a tap that only closed the card does nothing else (no page turn, no highlight menu)
         if (wasOpen) { ev.preventDefault(); ev.stopPropagation(); }
       }, true);

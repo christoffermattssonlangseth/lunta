@@ -121,3 +121,21 @@ test("a bioRxiv page's reference: without its link buttons and label, and its DO
     assert.deepEqual(c.buttons.find((b) => b[0] === 'Add to Lunta'), ['Add to Lunta', 'lunta://cite?doi=10.1073%2Fpnas.1516689112']);
   });
 });
+
+test('a citation that is not a link (a reading view made from a PDF): superscript numbers and [1-3] open the card', () => {
+  const p = page(`
+    <p>Protein structure.<sup id="s">1,2</sup> And organoids <span id="t">profiles</span>.</p>
+    <section><h2>References</h2><ol class="refs" style="list-style-type: none">
+      <li>1. Lam, R. et al. Learning skillful medium-range global weather forecasting. Science 382, 1416–1421 (2023).</li>
+      <li>2. Jumper, J. et al. Highly accurate protein structure prediction with AlphaFold. Nature 596, 583–589 (2021).</li>
+    </ol></section>`);
+  withGlobals(p, () => {
+    const sup = p.doc.getElementById('s');
+    assert.equal(click(p, sup.childNodes[0].parentNode), true);
+    const c = card(p);
+    assert.match(c.text.trim(), /^Lam, R\. et al\. Learning skillful/);
+  });
+  // ordinary words open nothing
+  const q = page(`<p>Some <span id="t">profiles</span>.</p><ol class="refs"><li>1. Lam, R. (2023).</li></ol>`);
+  withGlobals(q, () => assert.equal(click(q, q.doc.getElementById('t')), false));
+});
