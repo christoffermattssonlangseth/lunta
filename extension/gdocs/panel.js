@@ -26,12 +26,12 @@
       :host { all: initial; }
       .wrap { position: fixed; right: 72px; bottom: 96px; z-index: 2147483000; font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1d1d1f; }
       .tab { width: 40px; height: 40px; border-radius: 12px; background: #fff; box-shadow: 0 3px 14px rgba(16,40,50,.25); border: 0; padding: 0; cursor: pointer; display: grid; place-items: center; }
-      .tab img { width: 26px; height: 26px; border-radius: 6px; }
+      .tab .logo, .tab .logo svg { display: block; width: 26px; height: 26px; }
       .card { position: absolute; right: 0; bottom: 50px; width: 330px; max-height: min(620px, calc(100vh - 170px)); overflow: auto; background: #fff;
               border-radius: 14px; box-shadow: 0 10px 34px rgba(16,40,50,.28); padding: 12px; display: none; box-sizing: border-box; }
       .card.open { display: block; }
       header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-      header img { width: 20px; height: 20px; border-radius: 5px; }
+      header .logo, header .logo svg { display: block; width: 20px; height: 20px; }
       header strong { color: #173e4c; font-weight: 650; flex: 1; }
       select, input { font: inherit; box-sizing: border-box; border: 1px solid #c9ced2; border-radius: 7px; padding: 5px 7px; background: #fff; color: inherit; }
       select { max-width: 190px; }
@@ -77,7 +77,7 @@
     </style>
     <div class="wrap">
       <div class="card">
-        <header><img alt=""><strong>Lunta</strong><select class="style" title="Citation style" disabled></select></header>
+        <header><span class="logo"></span><strong>Lunta</strong><select class="style" title="Citation style" disabled></select></header>
         <div class="setup" hidden><p class="note setupText"></p></div>
         <div class="connect" hidden>
           <p class="note connectText">Lunta writes citations into this document through Google Docs, with your permission (asked once). Only the document you cite in is read or changed.</p>
@@ -108,11 +108,16 @@
         </div>
         <p class="status"></p>
       </div>
-      <button class="tab" title="Lunta: cite from your library"><img alt="Lunta"></button>
+      <button class="tab" title="Lunta: cite from your library" aria-label="Lunta"><span class="logo"></span></button>
     </div>`;
   const $ = (s) => root.querySelector(s);
-  const icon = chrome.runtime.getURL("icons/icon-48.png");
-  root.querySelectorAll("img").forEach((i) => (i.src = icon));
+  // the logo drawn inline (as in content.js): Safari can refuse to load the extension's image files into pages
+  const logo = `<svg viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="9" fill="#1f4f60"/>
+    <path d="M14 8h15l7 7v25H14z" fill="#f7f4ec"/><path d="M29 8v7h7z" fill="#d9d4c7"/>
+    <path d="M18 10v28" stroke="#d9822b" stroke-width="1.2"/><circle cx="18" cy="23" r="1.6" fill="#d9822b"/>
+    <path d="M21 17h11M21 20h11M21 28h11M21 31h9" stroke="#9fb3bb" stroke-width="1.4"/>
+    <rect x="20.5" y="22.6" width="12" height="2.8" rx=".6" fill="#f0a64a"/></svg>`;
+  root.querySelectorAll(".logo").forEach((l) => (l.innerHTML = logo));
   document.documentElement.appendChild(host);
 
   const send = (msg) => new Promise((resolve) => {

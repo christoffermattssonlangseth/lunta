@@ -107,14 +107,14 @@
       .wrap { position: fixed; right: 16px; top: 38%; z-index: 2147483647; font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       .tab { width: 44px; height: 44px; border-radius: 12px; background: #fff; box-shadow: 0 4px 18px rgba(16,40,50,.22);
              display: grid; place-items: center; cursor: pointer; position: relative; border: 0; padding: 0; }
-      .tab img { width: 30px; height: 30px; border-radius: 7px; }
+      .tab .logo, .tab .logo svg { display: block; width: 30px; height: 30px; }
       .dot { position: absolute; right: -3px; top: -3px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; background: #b7c2c6; }
       .dot.in { background: #2f9e6b; }
       .card { position: absolute; right: 54px; top: -10px; width: 248px; background: #fff; color: #1d1d1f; border-radius: 14px;
               box-shadow: 0 10px 34px rgba(16,40,50,.25); padding: 14px; display: none; }
       .card.open { display: block; }
       .brand { display: flex; align-items: center; gap: 8px; font-weight: 650; color: #173e4c; margin-bottom: 8px; }
-      .brand img { width: 20px; height: 20px; border-radius: 5px; }
+      .brand .logo, .brand .logo svg { display: block; width: 20px; height: 20px; }
       .t { font-weight: 600; margin-bottom: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
       .sub { color: #6e6e73; font-size: 12px; margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-top: 1px solid #eee; gap: 8px; }
@@ -136,9 +136,9 @@
       }
     </style>
     <div class="wrap">
-      <button class="tab" title="Lunta"><img alt=""><span class="dot"></span></button>
+      <button class="tab" title="Lunta"><span class="logo"></span><span class="dot"></span></button>
       <div class="card">
-        <div class="brand"><img alt="">Lunta</div>
+        <div class="brand"><span class="logo"></span>Lunta</div>
         <div class="t"></div>
         <div class="sub"></div>
         <div class="row"><span>Library</span><span class="lib muted">Checking…</span></div>
@@ -148,8 +148,14 @@
         <div class="err"></div>
       </div>
     </div>`;
-  const icon = chrome.runtime.getURL("icons/icon-48.png");
-  root.querySelectorAll("img").forEach((i) => (i.src = icon));
+  // the logo drawn inline: Safari can refuse to load the extension's own image files into some pages
+  // (a broken-image box on bioRxiv), and an inline SVG loads nothing
+  const logo = `<svg viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="9" fill="#1f4f60"/>
+    <path d="M14 8h15l7 7v25H14z" fill="#f7f4ec"/><path d="M29 8v7h7z" fill="#d9d4c7"/>
+    <path d="M18 10v28" stroke="#d9822b" stroke-width="1.2"/><circle cx="18" cy="23" r="1.6" fill="#d9822b"/>
+    <path d="M21 17h11M21 20h11M21 28h11M21 31h9" stroke="#9fb3bb" stroke-width="1.4"/>
+    <rect x="20.5" y="22.6" width="12" height="2.8" rx=".6" fill="#f0a64a"/></svg>`;
+  root.querySelectorAll(".logo").forEach((l) => (l.innerHTML = logo));
   const $ = (s) => root.querySelector(s);
   $(".t").textContent = title || doi;
   $(".sub").textContent = [info.journal, doi && "doi:" + doi].filter(Boolean).join(" · ");
