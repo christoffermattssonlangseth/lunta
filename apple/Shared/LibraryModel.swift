@@ -851,6 +851,33 @@ final class LibraryModel: ObservableObject {
     }
 
     /// Builds reading views for every paper that lacks one (PMC papers first), a few at a time.
+    /// Makes (or remakes) the reading views of the chosen papers, with progress in the status bar:
+    /// "Making reading views: 3 of 18 — <title>", then how many were made.
+    func makeReadingViews(_ ids: [String]) async {
+        guard !ids.isEmpty else { return }
+        let one = ids.count == 1
+        var ok = 0, failed: [String] = []
+        for (i, id) in ids.enumerated() {
+            let title = lib.paper(id: id)?.meta.title ?? ""
+            let short = title.count > 60 ? String(title.prefix(57)) + "…" : title
+            status = one ? "Making the reading view: \(short)" : "Making reading views: \(i + 1) of \(ids.count) — \(short)"
+            progress = one ? nil : Double(i) / Double(ids.count)
+            if await makeReadingView(id) { ok += 1 } else { failed.append(short) }
+            if !one, (i + 1) % 5 == 0 { reload() }
+        }
+        reload()
+        if one {
+            status = ok == 1 ? "Reading view ready." : "No open full text found for this paper."
+        } else {
+            status = "Reading views: \(ok) of \(ids.count) made." + (failed.isEmpty ? "" : " No open full text for \(failed.count).")
+        }
+        // the result stays a moment (a full bar, not a spinner), then the status bar goes
+        progress = 1
+        let shown = status
+        try? await Task.sleep(for: .seconds(8))
+        if status == shown { status = nil; progress = nil }
+    }
+
     func makeReadingViews() async {
         guard !converting else { return }
         converting = true

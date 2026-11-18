@@ -519,7 +519,7 @@ struct PaperMenu: View {
         Button("Folders & Tags…") { NotificationCenter.default.post(name: .luntaOrganize, object: ids) }
         Divider()
         Button("Find PDF") { Task { for id in ids { await model.findPDF(id) } } }
-        Button("Make Reading View") { Task { for id in ids { await model.makeReadingView(id) }; model.reload() } }
+        Button("Make Reading View") { Task { await model.makeReadingViews(Array(ids)) } }
         Button("Make Natural Narration") { NarrationRenderer.shared.enqueue(ids.filter { model.paper($0)?.hasEpub == true }) }
         Divider()
         Button("Delete", role: .destructive) { model.delete(ids) }
@@ -753,7 +753,7 @@ struct MultiSelection: View {
                 .buttonStyle(.borderedProminent)
             }
             Button("Find PDFs") { Task { for id in ids { await model.findPDF(id) } } }
-            Button("Make Reading Views") { Task { for id in ids { await model.makeReadingView(id) }; model.reload() } }
+            Button("Make Reading Views") { Task { await model.makeReadingViews(Array(ids)) } }
             SharePanel(ids: ids).id(ids)
                 .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
         }
