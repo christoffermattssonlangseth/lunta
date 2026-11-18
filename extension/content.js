@@ -2,14 +2,16 @@
 (() => {
   if (window.top !== window || document.getElementById("lunta-ext-root")) return;
 
+  // entities a page escaped twice (bioRxiv: content="H&amp;amp;E" reads as "H&amp;E")
+  const unescape = (t) => t.replace(/&(amp|lt|gt|quot|#39|apos);/g, (_, e) => ({ amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'", apos: "'" })[e]);
   const meta = (...names) => {
     for (const n of names) {
       const el = document.querySelector(`meta[name="${n}" i], meta[property="${n}" i]`);
-      if (el && el.content && el.content.trim()) return el.content.trim();
+      if (el && el.content && el.content.trim()) return unescape(el.content.trim());
     }
     return "";
   };
-  const metas = (n) => [...document.querySelectorAll(`meta[name="${n}" i]`)].map((m) => m.content.trim()).filter(Boolean);
+  const metas = (n) => [...document.querySelectorAll(`meta[name="${n}" i]`)].map((m) => unescape(m.content.trim())).filter(Boolean);
   // requests the page itself would make (its PDF, figures, table pages), with the reader's access:
   // in Firefox a content script's own fetch isn't the page's, content.fetch is
   // eslint-disable-next-line no-undef
