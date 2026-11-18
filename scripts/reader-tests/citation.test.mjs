@@ -139,3 +139,19 @@ test('a citation that is not a link (a reading view made from a PDF): superscrip
   const q = page(`<p>Some <span id="t">profiles</span>.</p><ol class="refs"><li>1. Lam, R. (2023).</li></ol>`);
   withGlobals(q, () => assert.equal(click(q, q.doc.getElementById('t')), false));
 });
+
+test('a citation range shows every reference in it: linked [1-3] (links on 1 and 3) and a superscript 1–3', () => {
+  const refs = `<section><h2>References</h2><ol class="refs">
+      <li id="r1">1. Alpha A. First. 2020.</li><li id="r2">2. Beta B. Second. 2021.</li><li id="r3">3. Gamma C. Third. 2022.</li></ol></section>`;
+  const texts = (p) => p.doc.documentElement.children.find((e) => e.className === 'm-cite').querySelectorAll('div').filter((d) => d.className === 'm-cite-ref').map((d) => d.textContent.trim().slice(0, 5));
+  const p = page(`<p>Profiles [<a id="c1" href="#r1">1</a>-<a id="c3" href="#r3">3</a>].</p>${refs}`);
+  withGlobals(p, () => {
+    assert.equal(click(p, p.doc.getElementById('c3')), true);
+    assert.deepEqual(texts(p), ['Alpha', 'Beta ', 'Gamma']);
+  });
+  const q = page(`<p>Profiles.<sup id="s">1–3</sup></p>${refs}`);
+  withGlobals(q, () => {
+    assert.equal(click(q, q.doc.getElementById('s')), true);
+    assert.deepEqual(texts(q), ['Alpha', 'Beta ', 'Gamma']);
+  });
+});

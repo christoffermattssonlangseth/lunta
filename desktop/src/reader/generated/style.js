@@ -283,10 +283,11 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     '.m-cite-actions { display: flex; flex-wrap: wrap; gap: 8px; }' +
     '.m-cite-btn { font: 600 13px -apple-system, "Helvetica Neue", sans-serif; padding: 5px 10px; border-radius: 8px; text-decoration: none; ' +
     'color: #2a6478; background: rgba(42,100,120,.10); -webkit-tap-highlight-color: transparent; }' +
+    '.m-cite-sep { border-top: 1px solid rgba(127,127,127,.25); margin: 10px 0; } ' +
     '@media (prefers-color-scheme: dark) { .m-cite { box-shadow: 0 10px 30px rgba(0,0,0,.6); } .m-cite-btn { color: #9ec9d8; background: rgba(158,201,216,.14); } }';
   document.documentElement.appendChild(st);
 
-  var pop = null;
+  var pop = null, pending = null;   // the card; the Add button pressed last
 
   // the reference a link points to, if it points into the reference list
   function refTarget(a){
@@ -370,6 +371,34 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     }
     return !labelled && items[n - 1] ? items[n - 1] : null;
   }
+  // A linked citation's whole group: "[1-3]" with links on 1 and 3, a superscript "11–13": the
+  // references of all its numbers, found from the clicked one's place in the list
+  function group(a, ref){
+    var n0 = +((a.textContent || '').trim());
+    if (!(n0 > 0)) return [ref];
+    var ctx = null, sup = a.closest('sup');
+    if (sup) ctx = sup.textContent || '';
+    else {
+      // the text around the link, within its brackets
+      var par = a.parentNode, before = '', after = '', seen = false;
+      (par ? par.childNodes : []).forEach(function(k){
+        if (k === a || (k.contains && k.contains(a))) { seen = true; return; }
+        var t = k.textContent || ''; if (seen) after += t; else before += t;
+      });
+      var l = before.lastIndexOf('['), r = after.indexOf(']');
+      if (l < 0 || r < 0 || before.length - l > 40 || r > 40) return [ref];
+      ctx = before.slice(l + 1) + a.textContent + after.slice(0, r);
+    }
+    var ns = citeNumbers(ctx.replace(/[()\[\]]/g, ''));
+    if (!ns || ns.length < 2 || ns.indexOf(n0) < 0) return [ref];
+    var li = ref.closest ? (ref.closest('li') || ref) : ref, list = li.parentNode;
+    if (!list) return [ref];
+    var items = Array.prototype.filter.call(list.children || [], function(x){ return x.tagName && x.tagName.toLowerCase() === 'li'; });
+    var at = items.indexOf(li);
+    if (at < 0) return [ref];
+    var out = ns.map(function(n){ return items[at + (n - n0)]; }).filter(Boolean);
+    return out.length ? out : [ref];
+  }
   function caretAt(ev){
     if (document.caretRangeFromPoint) { var r = document.caretRangeFromPoint(ev.clientX, ev.clientY); if (r) return { node: r.startContainer, offset: r.startOffset }; }
     if (document.caretPositionFromPoint) { var p = document.caretPositionFromPoint(ev.clientX, ev.clientY); if (p) return { node: p.offsetNode, offset: p.offset }; }
@@ -390,8 +419,8 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
           if (k === c.node) { off += c.offset; found = true; } else if (k.nodeType === 3) off += (k.data || '').length; else walk(k); } })(sup);
         if (!found) off = null;
       }
-      var n = numberAt(txt, off), ref = n != null ? refNumbered(n) : null;
-      return ref ? { anchor: sup, ref: ref } : null;
+      var all = citeNumbers(txt.replace(/[()\[\]]/g, '')).map(refNumbered).filter(Boolean);
+      return all.length ? { anchor: sup, ref: all } : null;
     }
     // "[1-3]" in running text
     if (!c || !c.node || c.node.nodeType !== 3) return null;
@@ -402,8 +431,8 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     if (!citeNumbers(inner)) return null;
     var p = c.node.parentNode;
     if (p && p.closest && p.closest('ol.refs, ol.references, .references, figure, table')) return null;
-    var n2 = numberAt(inner, o - l - 1), ref2 = n2 != null ? refNumbered(n2) : null;
-    if (!ref2) return null;
+    var ref2 = citeNumbers(inner).map(refNumbered).filter(Boolean);
+    if (!ref2.length) return null;
     var range = document.createRange(); range.setStart(c.node, l); range.setEnd(c.node, r + 1);
     return { anchor: { getBoundingClientRect: function(){ return range.getBoundingClientRect(); } }, ref: ref2 };
   }
@@ -411,17 +440,21 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
   function close(){ if (pop) { pop.remove(); pop = null; } }
   window.luntaCiteDone = function(text){
     if (!pop) return;
-    var b = pop.querySelector('.m-cite-lunta'); if (b) { b.textContent = text; b.removeAttribute('href'); }
+    var b = (pending && pop.contains(pending)) ? pending : pop.querySelector('.m-cite-lunta'); if (b) { b.textContent = text; b.removeAttribute('href'); }
   };
 
-  function open(a, ref){
+  // the card: one reference, or each reference of a citation like "11–13" / "[1-3]" in turn
+  function open(a, refs){
     close();
-    var doi = doiOf(ref);
+    if (!refs.length) refs = [refs];
+    refs = refs.slice(0, 12);
     pop = document.createElement('div'); pop.className = 'm-cite';
     var bs = getComputedStyle(document.body);
     var bg = bs.backgroundColor; if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') bg = getComputedStyle(document.documentElement).backgroundColor;
     pop.style.background = (bg && bg !== 'rgba(0, 0, 0, 0)') ? bg : '#fff';
     pop.style.color = bs.color;
+    function section(ref){
+    var doi = doiOf(ref);
     var body = document.createElement('div'); body.className = 'm-cite-ref';
     var copy = cleaned(ref);
     copy.querySelectorAll('[id]').forEach(function(x){ x.removeAttribute('id'); });
@@ -433,7 +466,7 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     if (doi) {
       btn('Open paper', 'https://doi.org/' + doi);
       var l = btn('Add to Lunta', 'lunta://cite?doi=' + encodeURIComponent(doi), 'm-cite-lunta');
-      l.addEventListener('click', function(){ setTimeout(function(){ if (pop && l.getAttribute('href')) l.textContent = 'Adding…'; }, 0); });
+      l.addEventListener('click', function(){ pending = l; setTimeout(function(){ if (pop && l.getAttribute('href')) l.textContent = 'Adding…'; }, 0); });
     }
     else {
       // no DOI: an arXiv number, else a search for the reference
@@ -441,12 +474,12 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
       if (ax) {
         btn('Open paper', 'https://arxiv.org/abs/' + ax[1]);
         var la = btn('Add to Lunta', 'lunta://cite?arxiv=' + ax[1], 'm-cite-lunta');
-        la.addEventListener('click', function(){ setTimeout(function(){ if (pop && la.getAttribute('href')) la.textContent = 'Adding…'; }, 0); });
+        la.addEventListener('click', function(){ pending = la; setTimeout(function(){ if (pop && la.getAttribute('href')) la.textContent = 'Adding…'; }, 0); });
       } else {
         // neither: the app looks the reference up (Crossref's bibliographic search) and adds what it finds
         var full = (copy.textContent || '').replace(/\s+/g, ' ').trim();
         var lr = btn('Add to Lunta', 'lunta://cite?ref=' + encodeURIComponent(full.slice(0, 600)), 'm-cite-lunta');
-        lr.addEventListener('click', function(){ setTimeout(function(){ if (pop && lr.getAttribute('href')) lr.textContent = 'Looking it up…'; }, 0); });
+        lr.addEventListener('click', function(){ pending = lr; setTimeout(function(){ if (pop && lr.getAttribute('href')) lr.textContent = 'Looking it up…'; }, 0); });
         btn('Search', 'https://scholar.google.com/scholar?q=' + encodeURIComponent(full.slice(0, 200)));
       }
     }
@@ -456,6 +489,9 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
       if (ref.id) location.hash = ref.id; else ref.scrollIntoView({ block: 'center' });
     });
     pop.appendChild(acts);
+    }
+    refs.forEach(function(ref, k){ if (k) { var hr = document.createElement('div'); hr.className = 'm-cite-sep'; pop.appendChild(hr); } section(ref); });
+
     // outside <body>: never part of the page text
     document.documentElement.appendChild(pop);
     var r = a.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
@@ -472,7 +508,7 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     var a = ev.target.closest && ev.target.closest('a[href]');
     var ref = a && !document.body.classList.contains('listening') ? refTarget(a) : null;
     var sel = window.getSelection();
-    if (ref && !(sel && !sel.isCollapsed)) { ev.preventDefault(); ev.stopPropagation(); open(a, ref); return; }
+    if (ref && !(sel && !sel.isCollapsed)) { ev.preventDefault(); ev.stopPropagation(); open(a, group(a, ref)); return; }
     // a citation that isn't a link (reading views made from a PDF): a superscript "1,2" / "11–13"
     // or "[1-3]" in the text, when the paper has a numbered reference list
     if (!a && !(sel && !sel.isCollapsed) && !document.body.classList.contains('listening')) {
