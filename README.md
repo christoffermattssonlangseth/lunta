@@ -19,7 +19,7 @@ Google Drive: no account, no server, nothing collected.
 
 **[Latest release](https://github.com/christoffermattssonlangseth/lunta/releases/latest)** for Mac, Windows,
 Linux and Android (the release page says which file you need), plus the browser extension. iPhone and iPad:
-in App Store review now; TestFlight until then.
+**[Lunta on the App Store](https://apps.apple.com/app/lunta/id6835403752)**.
 
 Lunta updates itself on Mac, Windows, Linux (AppImage) and Android: once a day it asks GitHub whether
 there is a newer version and offers to install it (**Check for Updates** is in the Lunta menu on the Mac,
