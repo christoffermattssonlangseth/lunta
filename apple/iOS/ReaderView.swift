@@ -639,7 +639,9 @@ struct EpubWebViewIOS: UIViewRepresentable {
     private func pagedState() -> PagedState {
         let win = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
         let inset = win?.safeAreaInsets ?? UIEdgeInsets(top: 50, left: 0, bottom: 34, right: 0)
-        return PagedState(on: paged, top: inset.top + 14 + (findBar && paged ? 52 : 0), bottom: max(inset.bottom, 12) + 22, native: true)
+        // pages start below the toolbar (the back button and the tools, ~52 pt under the status bar),
+        // which otherwise covered each page's first line while shown; the find bar takes its place
+        return PagedState(on: paged, top: inset.top + 14 + (paged ? 52 : 0), bottom: max(inset.bottom, 12) + 22, native: true)
     }
 
     private func configureScroll(_ sv: UIScrollView) {
