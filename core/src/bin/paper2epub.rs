@@ -35,7 +35,7 @@ fn main() {
         std::process::exit(2);
     };
     let out = args.get(1).map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap());
-    let opts = Options { log: Some(Box::new(|m| eprintln!("{m}"))), offline };
+    let opts = Options { log: Some(Box::new(|m| eprintln!("{m}"))), offline, doi: None };
     let r = if input.to_lowercase().ends_with(".webarchive") {
         match std::fs::read(&input) {
             Ok(d) => convert::convert_webarchive_with(&d, &out, &opts),

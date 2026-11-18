@@ -746,9 +746,14 @@ final class LibraryModel: ObservableObject {
         if !arxiv.isEmpty {
             result = try? await Paper2Epub.convert("arxiv:\(arxiv)", into: tmp)
         }
+        // a PMC paper without a DOI: its XML beats the PDF
+        if result == nil, p.meta.doi.isEmpty, !p.meta.pmcid.isEmpty {
+            result = try? await Paper2Epub.convert(p.meta.pmcid, into: tmp)
+        }
         if result != nil {
         } else if let pdf = await ensureLocal(id, .pdf) {
-            result = try? await Paper2Epub.convert(file: pdf, into: tmp)
+            // the paper's own DOI finds its XML version even when the PDF doesn't show it
+            result = try? await Paper2Epub.$knownDOI.withValue(p.meta.doi) { try await Paper2Epub.convert(file: pdf, into: tmp) }
         } else {
             for input in [p.meta.pmcid, p.meta.doi] where !input.isEmpty {
                 if let r = try? await Paper2Epub.convert(input, into: tmp) { result = r; break }
@@ -757,7 +762,7 @@ final class LibraryModel: ObservableObject {
             if result == nil, !p.meta.doi.isEmpty || !p.meta.arxiv.isEmpty {
                 let lib = self.lib
                 if (await Task.detached { (try? lib.findPdf(id: id)) ?? nil }.value) != nil, let pdf = fileURL(id, .pdf) {
-                    result = try? await Paper2Epub.convert(file: pdf, into: tmp)
+                    result = try? await Paper2Epub.$knownDOI.withValue(p.meta.doi) { try await Paper2Epub.convert(file: pdf, into: tmp) }
                 }
             }
         }

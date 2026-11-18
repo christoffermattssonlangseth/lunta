@@ -80,6 +80,8 @@ impl Say {
 enum Conv {
     Input(String),
     File(PathBuf),
+    /// A library paper's PDF, with the paper's DOI (an XML version is looked for by it first).
+    PaperPdf(PathBuf, String),
 }
 
 type Converted = (Vec<u8>, String, ConversionResult);
@@ -87,10 +89,14 @@ type Converted = (Vec<u8>, String, ConversionResult);
 fn run(input: Conv, say: &Say) -> std::result::Result<Converted, String> {
     let tmp = std::env::temp_dir().join(format!("lunta-conv-{}", uuid::Uuid::new_v4()));
     let s = say.clone();
-    let opts = Options { log: Some(Box::new(move |m: &str| s.say(m))), offline: false };
+    let doi = match &input {
+        Conv::PaperPdf(_, d) if !d.is_empty() => Some(d.clone()),
+        _ => None,
+    };
+    let opts = Options { log: Some(Box::new(move |m: &str| s.say(m))), offline: false, doi };
     let r = match &input {
         Conv::Input(s) => convert::convert_with(s, &tmp, &opts),
-        Conv::File(p) => convert::convert_file_with(p, &tmp, &opts),
+        Conv::File(p) | Conv::PaperPdf(p, _) => convert::convert_file_with(p, &tmp, &opts),
     };
     let out = match r {
         Ok(r) => std::fs::read(&r.file).map(|d| (d, r.fulltext.clone(), r)).map_err(|e| e.to_string()),
@@ -211,9 +217,16 @@ impl Library {
                 Err(e) => errors.push(e),
             }
         }
+        // a PMC paper without a DOI: its XML beats the PDF
+        if result.is_none() && p.meta.doi.is_empty() && !p.meta.pmcid.is_empty() {
+            match run(Conv::Input(p.meta.pmcid.clone()), &say) {
+                Ok(r) => result = Some(r),
+                Err(e) => errors.push(e),
+            }
+        }
         if result.is_none() {
             if let Some(pdf) = self.file_path(id.clone(), FileKind::Pdf) {
-                match run(Conv::File(PathBuf::from(pdf)), &say) {
+                match run(Conv::PaperPdf(PathBuf::from(pdf), p.meta.doi.clone()), &say) {
                     Ok(r) => result = Some(r),
                     Err(e) => errors.push(e),
                 }
@@ -237,7 +250,7 @@ impl Library {
             say.say("Looking for an open-access PDF…");
             if let Ok(Some(_)) = self.find_pdf(id.clone()) {
                 if let Some(pdf) = self.file_path(id.clone(), FileKind::Pdf) {
-                    match run(Conv::File(PathBuf::from(pdf)), &say) {
+                    match run(Conv::PaperPdf(PathBuf::from(pdf), p.meta.doi.clone()), &say) {
                         Ok(r) => result = Some(r),
                         Err(e) => errors.push(e),
                     }
@@ -288,7 +301,7 @@ impl Library {
         let say = Say(progress);
         say.say("Making the reading view…");
         let s = say.clone();
-        let opts = Options { log: Some(Box::new(move |m: &str| s.say(m))), offline: false };
+        let opts = Options { log: Some(Box::new(move |m: &str| s.say(m))), offline: false, doi: None };
         let o = pagetext::use_page_full_text(self, &page, Path::new(&backups_dir), dry_run, &opts).map_err(inv)?;
         if !dry_run && matches!(o.kind, PageOutcomeKind::Attached | PageOutcomeKind::Replaced) {
             // the unpacked book of the reading view that was there (open_epub's cache)

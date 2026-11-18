@@ -153,6 +153,9 @@ pub struct Options {
     /// When true, converting a file never goes online (no XML lookup by a PDF's DOI, no
     /// Crossref metadata).
     pub offline: bool,
+    /// The paper's DOI when it is known (a library paper's): converting its PDF looks for an XML
+    /// version by this DOI, also when the PDF doesn't show it.
+    pub doi: Option<String>,
 }
 
 impl Options {
@@ -266,7 +269,7 @@ fn build(src: Source, pdf: Option<&[u8]>, opts: &Options, earlier: &[String]) ->
         Source::Pdf { data, meta, label } => {
             // An open-access XML version beats any PDF analysis: check for one via the PDF's DOI.
             if !opts.offline {
-                if let Some(doi) = pdf_doi(&data) {
+                if let Some(doi) = opts.doi.clone().filter(|d| !d.trim().is_empty()).or_else(|| pdf_doi(&data)) {
                     opts.log(&format!("PDF has DOI {doi}; checking for an XML version"));
                     for c in resolver::doi_candidates(&doi) {
                         let Ok(src) = (c.load)(opts) else { continue };
