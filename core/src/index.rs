@@ -70,18 +70,40 @@ impl Index {
         if q.is_empty() {
             return Ok(vec![]);
         }
+        // Ranking first, without snippets: making a snippet reads through the paper's full text,
+        // which for a few hundred hits took most of a second per keystroke (seconds for a
+        // one-letter search). Snippets are then made for the top hits only; the rest get none.
         let mut st = self.db.prepare(
-            "SELECT paper_id,
-                    snippet(docs, -1, '[', ']', '…', 14),
-                    bm25(docs, 0.0, 10.0, 6.0, 3.0, 2.0, 3.0, 1.0)
+            "SELECT rowid, paper_id, bm25(docs, 0.0, 10.0, 6.0, 3.0, 2.0, 3.0, 1.0)
              FROM docs WHERE docs MATCH ?1 ORDER BY 3 LIMIT ?2",
         )?;
-        let rows = st.query_map(params![q, limit], |r| Ok((r.get(0)?, r.get(1)?, -r.get::<_, f64>(2)?)))?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
+        let ranked: Vec<(i64, String, f64)> = st
+            .query_map(params![q, limit], |r| Ok((r.get(0)?, r.get(1)?, -r.get::<_, f64>(2)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+        let top: Vec<String> = ranked.iter().take(SNIPPETS).map(|(rowid, _, _)| rowid.to_string()).collect();
+        let mut snippets = std::collections::HashMap::new();
+        if !top.is_empty() {
+            let mut st = self.db.prepare(&format!(
+                "SELECT rowid, snippet(docs, -1, '[', ']', '…', 14) FROM docs WHERE docs MATCH ?1 AND rowid IN ({})",
+                top.join(",")
+            ))?;
+            for row in st.query_map(params![q], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?.flatten() {
+                snippets.insert(row.0, row.1);
+            }
+        }
+        Ok(ranked
+            .into_iter()
+            .map(|(rowid, id, score)| (id, snippets.remove(&rowid).unwrap_or_default(), score))
+            .collect())
     }
 }
 
+/// Snippets are made for this many of the best hits (the rest of a long result list gets none).
+const SNIPPETS: usize = 40;
+
 /// Turns free text into an FTS5 query: every word must match, as a prefix; "quoted phrases" stay phrases.
+/// A single letter matches only itself (as a prefix it matched nearly every word, and was slow).
 pub fn fts_query(input: &str) -> String {
     let mut parts = Vec::new();
     let mut rest = input.trim();
@@ -97,7 +119,9 @@ pub fn fts_query(input: &str) -> String {
             let end = rest.find(|c: char| c.is_whitespace() || c == '"').unwrap_or(rest.len());
             let word: String = rest[..end].chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_').collect();
             let word = word.trim_matches('-').to_string();
-            if !word.is_empty() {
+            if word.chars().count() == 1 {
+                parts.push(format!("\"{}\"", word));
+            } else if !word.is_empty() {
                 parts.push(format!("\"{}\"*", word));
             }
             rest = rest[end..].trim_start();
