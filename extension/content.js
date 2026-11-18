@@ -39,15 +39,17 @@
   function findPdfUrls() {
     const urls = [];
     const add = (u) => { try { u = new URL(u, location.href).href; if (!urls.includes(u)) urls.push(u); } catch (_) {} };
-    const visible = (x) => x.offsetParent !== null;
+    // shown on the page (offsetParent is null for links in fixed sidebars too, so not that)
+    const visible = (x) => x.getClientRects().length > 0;
     const supplement = (h) => /supplement|MOESM|\/esm\/|_ESM\.|suppl|mmc\d/i.test(h);
     const m = meta("citation_pdf_url");
     if (m) add(m);
     const link = document.querySelector('link[type="application/pdf"]');
     if (link && link.href) add(link.href);
-    const links = [...document.querySelectorAll("a[href]")].filter((x) => visible(x) && !supplement(x.getAttribute("href")));
-    // the publisher's own download button
-    links.filter((x) => x.matches('[data-article-pdf], [data-test="download-pdf"], .c-pdf-download__link, [data-track-action="download pdf"]')
+    const all = [...document.querySelectorAll("a[href]")].filter((x) => !supplement(x.getAttribute("href")));
+    const links = all.filter(visible);
+    // the publisher's own download button (shown or not: some pages show it only in a menu)
+    all.filter((x) => x.matches('[data-article-pdf], [data-test="download-pdf"], .c-pdf-download__link, [data-track-action="download pdf"]')
         || /^\s*(download\s+(article\s+)?pdf|view\s+pdf|pdf)\s*$/i.test(x.textContent || ""))
       .forEach((x) => add(x.href));
     links.filter((x) => /\.pdf($|[?#])|\/pdf(\/|$|\?)|\/epdf\//i.test(x.getAttribute("href"))).forEach((x) => add(x.href));
