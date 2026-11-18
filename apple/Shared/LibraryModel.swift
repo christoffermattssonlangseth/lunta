@@ -190,6 +190,7 @@ final class LibraryModel: ObservableObject {
             guard !Task.isCancelled, let self, self.query.trimmingCharacters(in: .whitespaces) == q else { return }
             self.papers = result.0
             self.snippets = result.1
+            RecentSearches.shared.searched(q, found: result.0.count)
         }
     }
 

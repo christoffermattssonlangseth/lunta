@@ -421,6 +421,8 @@ struct LibrarySearch: ViewModifier {
     func body(content: Content) -> some View {
         if enabled {
             content.searchable(text: $model.query, prompt: model.source == .discover ? "Search new papers, then tap Search" : "Titles, authors, full text, notes")
+                .modifier(RecentSearchSuggestions())
+                .onSubmit(of: .search) { if model.source != .discover { RecentSearches.shared.remember(model.query) } }
         } else {
             content
         }

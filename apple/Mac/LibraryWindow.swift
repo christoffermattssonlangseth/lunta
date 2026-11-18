@@ -78,8 +78,10 @@ struct LibraryWindow: View {
         }
         .searchable(text: $model.query, placement: .toolbar,
                     prompt: model.source == .discover ? "Search new papers (OpenAlex) — press Return" : "Search your library: titles, authors, full text, notes")
+        .modifier(RecentSearchSuggestions())
         .onSubmit(of: .search) {
             if model.source == .discover { Task { await model.discover(model.query) } }
+            else { RecentSearches.shared.remember(model.query) }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
