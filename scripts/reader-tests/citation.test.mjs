@@ -26,6 +26,7 @@ function page(html) {
   doc.addEventListener = on;
   El.prototype.remove = function () { const p = this.parentNode; if (p) p.childNodes.splice(p.childNodes.indexOf(this), 1); this.parentNode = null; };
   El.prototype.getBoundingClientRect = () => ({ left: 10, top: 10, right: 30, bottom: 25, width: 20, height: 15 });
+  El.prototype.contains = function (n) { for (; n; n = n.parentNode) if (n === this) return true; return false; };
   Object.defineProperty(El.prototype, 'style', { configurable: true, get() { return (this._style ??= {}); } });
   Object.defineProperty(El.prototype, 'offsetWidth', { configurable: true, get: () => 300 });
   Object.defineProperty(El.prototype, 'offsetHeight', { configurable: true, get: () => 100 });
@@ -187,4 +188,26 @@ test('author–year citations: "(Jaume et al., 2024)", two in one, and "Jaume et
   assert.deepEqual(open('t3', '2024'), ['Guillaume Jaume,']);
   // a parenthesis that isn't a citation opens nothing
   assert.equal(open('t1', 'HEST'), null);
+});
+
+test('the card remembers: a reference added stays "Added" when the card opens again, and one already in the library says "In library"', () => {
+  const p = page(html);
+  withGlobals(p, () => {
+    const addBtn = () => card(p).buttons.find((b) => /Lunta|library|Added/.test(b[0]));
+    assert.equal(click(p, p.doc.getElementById('c1')), true);
+    assert.deepEqual(addBtn(), ['Add to Lunta', 'lunta://cite?doi=10.1038%2Fs41586-019-1234-5']);
+    // the app answers that it was added
+    p.win.luntaCiteDone('Added to your library');
+    click(p, p.doc.body);                                  // closes the card
+    assert.equal(click(p, p.doc.getElementById('c1')), true);
+    assert.deepEqual(addBtn(), ['Added to your library', null]);
+    // a paper the app says is in the library
+    p.win.luntaSetLibrary(['10.1038/s41586-019-1234-5']);
+    const q = page(html);
+    q.win.luntaSetLibrary(['10.1038/S41586-019-1234-5']);
+    withGlobals(q, () => {
+      assert.equal(click(q, q.doc.getElementById('c1')), true);
+      assert.equal(card(q).buttons.find((b) => /Lunta|library/.test(b[0]))[0], 'In library · Open');
+    });
+  });
 });

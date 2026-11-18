@@ -288,6 +288,10 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
   document.documentElement.appendChild(st);
 
   var pop = null, pending = null;   // the card; the Add button pressed last
+  // what the card knows about the library: DOIs and arXiv numbers in it (from the app), and how
+  // "Add to Lunta" went for references added since the page opened (by the reference's key)
+  var inLib = {}, known = {};
+  window.luntaSetLibrary = function(ids){ inLib = {}; (ids || []).forEach(function(k){ inLib[String(k).toLowerCase()] = true; }); };
 
   // the reference a link points to, if it points into the reference list
   function refTarget(a){
@@ -501,7 +505,8 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
   function close(){ if (pop) { pop.remove(); pop = null; } }
   window.luntaCiteDone = function(text){
     if (!pop) return;
-    var b = (pending && pop.contains(pending)) ? pending : pop.querySelector('.m-cite-lunta'); if (b) { b.textContent = text; b.removeAttribute('href'); }
+    var b = (pending && pop.contains(pending)) ? pending : pop.querySelector('.m-cite-lunta'); if (b) { b.textContent = text; b.removeAttribute('href');
+      var k = b.getAttribute('data-key'); if (k && !/couldn|nothing|fail|error/i.test(text)) known[k] = text; }
   };
 
   // the card: one reference, or each reference of a citation like "11–13" / "[1-3]" in turn
@@ -524,22 +529,30 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     pop.appendChild(body);
     var acts = document.createElement('div'); acts.className = 'm-cite-actions';
     function btn(label, href, cls){ var b = document.createElement('a'); b.className = 'm-cite-btn' + (cls ? ' ' + cls : ''); b.textContent = label; b.setAttribute('href', href); acts.appendChild(b); return b; }
+    // Add to Lunta, or what is already known: added since the page opened, or in the library
+    // (then it opens the paper: the app opens a paper it already has)
+    function lunta(key, href, inLibrary){
+      var b = btn(known[key] || (inLibrary ? 'In library · Open' : 'Add to Lunta'), href, 'm-cite-lunta');
+      b.setAttribute('data-key', key);
+      if (known[key]) b.removeAttribute('href');
+      return b;
+    }
     if (doi) {
       btn('Open paper', 'https://doi.org/' + doi);
-      var l = btn('Add to Lunta', 'lunta://cite?doi=' + encodeURIComponent(doi), 'm-cite-lunta');
-      l.addEventListener('click', function(){ pending = l; setTimeout(function(){ if (pop && l.getAttribute('href')) l.textContent = 'Adding…'; }, 0); });
+      var l = lunta('doi:' + doi.toLowerCase(), 'lunta://cite?doi=' + encodeURIComponent(doi), inLib[doi.toLowerCase()]);
+      l.addEventListener('click', function(){ pending = l; var opening = /In library/.test(l.textContent); setTimeout(function(){ if (pop && l.getAttribute('href')) l.textContent = opening ? 'Opening…' : 'Adding…'; }, 0); });
     }
     else {
       // no DOI: an arXiv number, else a search for the reference
       var ax = (ref.textContent || '').match(/arXiv:\s*(\d{4}\.\d{4,5})(v\d+)?/i);
       if (ax) {
         btn('Open paper', 'https://arxiv.org/abs/' + ax[1]);
-        var la = btn('Add to Lunta', 'lunta://cite?arxiv=' + ax[1], 'm-cite-lunta');
+        var la = lunta('arxiv:' + ax[1], 'lunta://cite?arxiv=' + ax[1], inLib['arxiv:' + ax[1]] || inLib['10.48550/arxiv.' + ax[1]]);
         la.addEventListener('click', function(){ pending = la; setTimeout(function(){ if (pop && la.getAttribute('href')) la.textContent = 'Adding…'; }, 0); });
       } else {
         // neither: the app looks the reference up (Crossref's bibliographic search) and adds what it finds
         var full = (copy.textContent || '').replace(/\s+/g, ' ').trim();
-        var lr = btn('Add to Lunta', 'lunta://cite?ref=' + encodeURIComponent(full.slice(0, 600)), 'm-cite-lunta');
+        var lr = lunta('ref:' + full.slice(0, 160), 'lunta://cite?ref=' + encodeURIComponent(full.slice(0, 600)), false);
         lr.addEventListener('click', function(){ pending = lr; setTimeout(function(){ if (pop && lr.getAttribute('href')) lr.textContent = 'Looking it up…'; }, 0); });
         btn('Search', 'https://scholar.google.com/scholar?q=' + encodeURIComponent(full.slice(0, 200)));
       }

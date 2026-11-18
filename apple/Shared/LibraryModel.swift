@@ -878,6 +878,16 @@ final class LibraryModel: ObservableObject {
         if status == shown { status = nil; progress = nil }
     }
 
+    /// The library's DOIs and arXiv numbers ("arxiv:<id>"), lower-cased: for the citation card.
+    func libraryIDs() -> [String] {
+        lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added).flatMap { p -> [String] in
+            var out: [String] = []
+            if !p.meta.doi.isEmpty { out.append(p.meta.doi.lowercased()) }
+            if !p.meta.arxiv.isEmpty { out.append("arxiv:" + p.meta.arxiv.lowercased()) }
+            return out
+        }
+    }
+
     func makeReadingViews() async {
         guard !converting else { return }
         converting = true

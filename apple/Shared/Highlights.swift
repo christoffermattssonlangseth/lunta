@@ -377,6 +377,13 @@ extension ReaderController {
         }
     }
 
+    /// Tells the citation card which papers are in the library (DOIs, "arxiv:<id>"), so it says
+    /// "In library" rather than "Add to Lunta" for those.
+    func setLibraryIDs(_ ids: [String]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: ids), let json = String(data: data, encoding: .utf8) else { return }
+        webView?.evaluateJavaScript("window.luntaSetLibrary && luntaSetLibrary(\(json))")
+    }
+
     func showAnnotation(_ id: String) {
         let safe = id.filter { $0.isLetter || $0.isNumber || $0 == "-" }
         webView?.evaluateJavaScript("luntaShowAnnotation('\(safe)')")

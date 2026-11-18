@@ -295,7 +295,10 @@ struct ReaderWindow: View {
 
     private var hlColor: HighlightColor { HighlightColor(rawValue: highlightModeColor) ?? .yellow }
 
-    private func refreshHighlights() { controller.showAnnotations(model.annotations(paperID)) }
+    private func refreshHighlights() {
+        controller.showAnnotations(model.annotations(paperID))
+        controller.setLibraryIDs(model.libraryIDs())   // the citation card: "In library" for those
+    }
 
     private func highlightSelection(_ c: HighlightColor) {
         if mode == .pdf {

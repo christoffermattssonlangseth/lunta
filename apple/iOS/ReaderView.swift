@@ -256,7 +256,10 @@ struct ReaderView: View {
         .onChange(of: phase) { _, p in if p != .active { position.saveNow(paperID, model: model, controller: controller) } }
     }
 
-    private func refreshHighlights() { controller.showAnnotations(model.annotations(paperID)) }
+    private func refreshHighlights() {
+        controller.showAnnotations(model.annotations(paperID))
+        controller.setLibraryIDs(model.libraryIDs())   // the citation card: "In library" for those
+    }
 
     /// The reader's hooks into the page, the assistant and the voice (run once the view appears).
     private func setUp() async {
