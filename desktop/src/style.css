@@ -288,3 +288,11 @@ h4.drop-over { color: #fff; padding: 2px 6px; margin-left: 0; }
 .modal.editor .examples { display: flex; gap: 6px; flex-wrap: wrap; }
 .modal.editor label.chk { display: flex; gap: 6px; align-items: center; }
 h4 .mini { margin-left: auto; }
+
+/* the citation card in the PDF view (pdfcite.ts) */
+.pdf-cite { position: fixed; z-index: 50; width: min(28em, 92vw); max-height: 50vh; overflow: auto; padding: 12px 14px 10px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.22); }
+.pdf-cite-ref { font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; user-select: text; }
+.pdf-cite-status { margin: 8px 0; font-size: 12px; color: var(--dim); overflow-wrap: anywhere; user-select: text; }
+.pdf-cite-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.pdf-cite-actions button { font-size: 12px; }

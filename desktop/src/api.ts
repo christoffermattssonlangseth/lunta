@@ -51,7 +51,12 @@ export const api = {
   setBibFile: (source: string, path: string | null) => invoke<void>('set_bib_file', { source, path }),
   updateBibFiles: () => invoke<Record<string, string>>('update_bib_files'),
   addPaper: (input: string) => invoke<{ paper: Paper; note: string | null }>('add_paper', { input }),
-  citePaper: (doi: string, arxiv: string) => invoke<{ id: string | null; label: string }>('cite_paper', { doi, arxiv }),
+  citePaper: (doi: string, arxiv: string, reference?: string) => invoke<{ id: string | null; label: string }>('cite_paper', { doi, arxiv, reference: reference ?? null }),
+  // the citation card in the PDF view (pdfcite.ts)
+  pdfPrepareCitations: (id: string) => invoke<void>('pdf_prepare_citations', { id }),
+  pdfReferenceAt: (id: string, page: number, x: number | null, y: number) => invoke<string | null>('pdf_reference_at', { id, page, x, y }),
+  pdfReferenceForCitation: (id: string, text: string, offset: number) => invoke<string | null>('pdf_reference_for_citation', { id, text, offset }),
+  lookupReference: (text: string) => invoke<{ doi: string; arxiv: string; in_library: string | null } | null>('lookup_reference', { text }),
   attachPdf: (id: string, path: string) => invoke<string | null>('attach_pdf', { id, path }),
   makeReadingView: (id: string) => invoke<void>('make_reading_view', { id }),
   findPdf: (id: string) => invoke<string | null>('find_pdf', { id }),

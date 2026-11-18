@@ -12,6 +12,7 @@ mod bibfiles;
 mod citeapi;
 #[cfg(all(debug_assertions, target_os = "macos"))]
 mod devsnap;
+mod pdfcite;
 mod extension;
 mod positions;
 mod settings;
@@ -466,27 +467,43 @@ struct CiteResult {
     label: String,
 }
 
-/// The citation card's "Add to Lunta" (lunta://cite?doi=…|arxiv=…): the paper if it is already in
-/// the library, else it is added like "Add a Paper…" does (LibraryModel.paperForCitation in
-/// apple/Shared/ExternalLinks.swift).
+/// The paper with this DOI or arXiv number, if it is in the library (no network).
+fn paper_in_library(lib: &Library, doi: &str, arxiv: &str) -> Option<String> {
+    let key = if doi.is_empty() { format!("10.48550/arXiv.{arxiv}") } else { doi.to_string() };
+    if !doi.is_empty() || !arxiv.is_empty() {
+        if let Some(p) = lib.find_by_doi(key) {
+            return Some(p.id);
+        }
+    }
+    if !arxiv.is_empty() {
+        return lib.papers(PaperFilter::default(), SortKey::Added).into_iter().find(|p| p.meta.arxiv.starts_with(arxiv)).map(|p| p.id);
+    }
+    None
+}
+
+/// The citation card's "Add to Lunta" (lunta://cite?doi=…|arxiv=…, or ?ref=<the reference's
+/// text> when it has neither: its DOI is looked up by Crossref's bibliographic search): the paper
+/// if it is already in the library, else it is added like "Add a Paper…" does
+/// (LibraryModel.paperForCitation in apple/Shared/ExternalLinks.swift).
 #[tauri::command]
-async fn cite_paper(app: AppHandle, state: State<'_, AppState>, doi: String, arxiv: String) -> R<CiteResult> {
+async fn cite_paper(app: AppHandle, state: State<'_, AppState>, doi: String, arxiv: String, reference: Option<String>) -> R<CiteResult> {
     let lib = state.lib()?;
     let log = logger(&app);
     tauri::async_runtime::spawn_blocking(move || {
-        let (doi, arxiv) = (doi.trim().to_string(), arxiv.trim().to_string());
+        let (mut doi, mut arxiv) = (doi.trim().to_string(), arxiv.trim().to_string());
         let done = |id: Option<String>, label: &str| CiteResult { id, label: label.to_string() };
+        let reference = reference.unwrap_or_default();
+        if doi.is_empty() && arxiv.is_empty() && !reference.trim().is_empty() {
+            match lunta_core::refcite::resolve_reference(&reference) {
+                Ok(Some(ids)) => (doi, arxiv) = (ids.doi, ids.arxiv),
+                _ => return done(None, "Couldn\u{2019}t find its DOI"),
+            }
+        }
         if doi.is_empty() && arxiv.is_empty() {
             return done(None, "Nothing to add");
         }
-        let key = if doi.is_empty() { format!("10.48550/arXiv.{arxiv}") } else { doi.clone() };
-        if let Some(p) = lib.find_by_doi(key) {
-            return done(Some(p.id), "In your library");
-        }
-        if !arxiv.is_empty() {
-            if let Some(p) = lib.papers(PaperFilter::default(), SortKey::Added).into_iter().find(|p| p.meta.arxiv.starts_with(&arxiv)) {
-                return done(Some(p.id), "In your library");
-            }
+        if let Some(id) = paper_in_library(&lib, &doi, &arxiv) {
+            return done(Some(id), "In your library");
         }
         let input = if doi.is_empty() { format!("arXiv:{arxiv}") } else { doi };
         match add::add(&lib, &input, &log) {
@@ -847,6 +864,10 @@ pub fn run() {
             make_reading_view,
             find_pdf,
             pdf_bytes,
+            pdfcite::pdf_prepare_citations,
+            pdfcite::pdf_reference_at,
+            pdfcite::pdf_reference_for_citation,
+            pdfcite::lookup_reference,
             open_book,
             annotations,
             add_highlight,

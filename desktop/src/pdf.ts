@@ -5,6 +5,7 @@
 import 'pdfjs-dist/legacy/web/pdf_viewer.css';
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { api } from './api';
+import { attachCitations, closeCitation } from './pdfcite';
 
 let viewer: any = null;
 let doc: any = null;
@@ -22,7 +23,8 @@ async function lib() {
   return { pdfjs, v };
 }
 
-export async function showPdf(host: HTMLElement, id: string) {
+/** Shows the paper's PDF in `host`; `open` opens another paper (a citation card's Open in Lunta). */
+export async function showPdf(host: HTMLElement, id: string, open: (id: string) => void = () => {}) {
   const { pdfjs, v } = await lib();
   const data = new Uint8Array(await api.pdfBytes(id));
   const container = document.createElement('div');
@@ -47,6 +49,8 @@ export async function showPdf(host: HTMLElement, id: string) {
   eventBus.on('updatefindcontrolstate', (e: any) =>
     report(e.matchesCount, e.state === findState.PENDING || (e.state !== findState.NOT_FOUND && !e.matchesCount?.total)));
   linkService.setViewer(viewer);
+  // a clicked citation: its reference in a card instead of the jump (pdfcite.ts)
+  attachCitations({ container, linkService, doc: () => doc, id, open });
   eventBus.on('pagesinit', () => { viewer.currentScaleValue = 'page-width'; });
   doc = await pdfjs.getDocument({ data, isEvalSupported: false }).promise;
   viewer.setDocument(doc);
@@ -80,6 +84,7 @@ export function pdfFindClear() {
 }
 
 export function closePdf() {
+  closeCitation();
   try { viewer?.setDocument(null); } catch { /* not loaded */ }
   doc?.destroy?.();
   viewer = null;

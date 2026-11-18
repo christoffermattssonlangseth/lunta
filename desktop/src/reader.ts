@@ -212,7 +212,7 @@ async function show() {
   const page = $('#page');
   if (mode === 'pdf') {
     frame = null;
-    try { await showPdf(page, p.id); }
+    try { await showPdf(page, p.id, (id) => openRef(id)); }
     catch (e) { page.replaceChildren(h('div.empty', {}, h('p', { text: `Couldn't open the PDF: ${e}` }))); }
     refreshList();
     return;
@@ -396,15 +396,15 @@ async function startFind() {
 
 // ---- citation cards ----
 
-/** "Add to Lunta" on a citation card (lunta://cite?doi=… or ?arxiv=…): the paper is found in the
+/** "Add to Lunta" on a citation card (lunta://cite?doi=…, ?arxiv=… or ?ref=<text>): the paper is found in the
  *  library or added, and the card says which (ExternalLinks.swift). */
 async function citeFromPage(link: string) {
-  let doi = '', arxiv = '';
-  try { const u = new URL(link); doi = u.searchParams.get('doi') || ''; arxiv = u.searchParams.get('arxiv') || ''; } catch { /* not a link */ }
+  let doi = '', arxiv = '', ref = '';
+  try { const u = new URL(link); doi = u.searchParams.get('doi') || ''; arxiv = u.searchParams.get('arxiv') || ''; ref = u.searchParams.get('ref') || ''; } catch { /* not a link */ }
   const forPaper = paper?.id;
   let label = 'Couldn’t add it';
   try {
-    const r = await api.citePaper(doi, arxiv);
+    const r = await api.citePaper(doi, arxiv, ref || undefined);
     label = r.label;
     if (r.label === 'Added to your library') status('Added to your library');
   } catch (e) { status(String(e), 'error'); }

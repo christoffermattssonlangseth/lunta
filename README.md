@@ -34,7 +34,8 @@ which setup fits your devices, and how to move your library from Zotero, Mendele
 ## What it does
 
 - **Read:** each paper becomes a reflowable reading view, with tappable figures and citations, real
-  equations, themes, and scroll or page turning. The PDF is one tap away.
+  equations, themes, and scroll or page turning. The PDF is one tap away. Click a citation, in the reading
+  view or the PDF, to see the reference and add it to your library.
 - **Highlight and note:** four colours, a highlight mode for marking quickly, Apple Pencil on iPad. Highlights
   sync everywhere and are searchable.
 - **Library:** add papers by DOI, PubMed ID, arXiv link or PDF, or straight from your browser with the
