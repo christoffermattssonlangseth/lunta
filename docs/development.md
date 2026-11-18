@@ -143,7 +143,9 @@ How it fits together:
   (`applyAll`); a new sidebar asks for both files to be copied again when `Code.gs` is older.
 
 Tests: `node --test apple/citations-tests/` (the shared formatting, `Code.gs` against a stand-in for
-Apps Script's DocumentApp, and the extension's Google Docs code against a stand-in for the Docs REST API), `swift test --filter CitationAPITests` in `apple/LuntaCore` (the API on a
+Apps Script's DocumentApp, and the extension's Google Docs code against a stand-in for the Docs REST API, also
+as Lunta for Mac runs it for Safari: `gdocs-safari.test.js`, and `gdocs-safari-swift.test.js`, which compiles
+`GoogleDocsScript.swift` with a test driver), `swift test --filter CitationAPITests` in `apple/LuntaCore` (the API on a
 scratch library, the access rules, certificates), and the citation tests in `core` (`cargo test cit`).
 What only Word and Google Docs can show is in [citations-testing.md](citations-testing.md).
 
@@ -184,10 +186,30 @@ their browser extensions. Lunta's does the same (`extension/gdocs/`):
   reading through `export?format=html` and writing by paste only (no way to rewrite existing citations or the
   bibliography: Update All and style changes are the point); `chrome.identity.getAuthToken` (Chrome only; a second
   OAuth client); the narrower `drive.file` scope (needs the Google Picker per document, a remote script an MV3
-  extension can't load: see google-docs-extension.md); keeping only the Apps Script (it stays, for Safari and as
-  the fallback).
-- **Limits.** Safari: no `identity` API and the synthetic paste doesn't work there: the panel points to the Apps
-  Script. Google's verification of the `documents` scope is needed before more than 100 people can sign in.
+  extension can't load: see google-docs-extension.md); keeping only the Apps Script (it stays, as the fallback); for Safari, a second
+  implementation of the citations in Swift (the app runs the extension's JavaScript instead), and
+  `ASWebAuthenticationSession` (it doesn't take a loopback redirect, which a Desktop client needs).
+- **Safari (on the Mac): Lunta for Mac does the Google part.** Safari has no `identity` API for extensions and
+  blocks the synthetic paste. There, the background script passes the panel's requests (status, connect,
+  disconnect, state, update, prepareInsert, finishInsert, details, editCitation) to the app, `POST /gdocs` on
+  the extension endpoint (searching and styles keep using `/cite/…`). The app signs in to Google as an
+  installed app (`GoogleDocsAuth.swift`: a *Desktop app* OAuth client, Google's page in the default browser, PKCE,
+  a loopback redirect to `http://127.0.0.1:<free port>` it answers itself; the refresh token in the Keychain) and
+  answers with **the extension's own code**: `GoogleDocsScript.swift` loads `citations-common.js`,
+  `docs-model.js`, `flow.js` and `app-host.js` from the Safari extension inside the app into a JavaScriptCore
+  context; what JavaScriptCore lacks (the Docs API with the app's token, the citation API, gzip, waiting) is
+  bridged to Swift. So there is one implementation of the citations for every browser; the requests the panel
+  makes are `flow.op`, answered by the background script in Chrome and Firefox and by the app in Safari.
+  Inserting: Insert Citation / Insert Bibliography put the placeholder (the same linked `(…)`) on the clipboard
+  from the click itself (`navigator.clipboard.write` with `text/html` and `text/plain`; Safari takes the
+  app's answer as a promise in the `ClipboardItem`, `gdocs/clipboard.js`), the panel says "Press ⌘V in the
+  document where the citation goes" and asks the app (`finishInsert`, 4 s at a time, up to 3 minutes, Cancel)
+  until it has arrived. Pasted as plain text (⌘⇧V, or the link dropped): one more unlinked `(…)` than when it
+  was copied; the panel says to undo and paste with ⌘V, and keeps waiting. Clicking a citation to edit it works
+  as in the other browsers (the link bubble is in the page). Safari on iPhone and iPad: no app nearby; the panel
+  points to the Apps Script.
+- **Limits.** Safari needs Lunta for Mac open, and its own OAuth client (empty until made:
+  `GoogleDocsClient` in `GoogleDocsAuth.swift`, see google-docs-extension.md), and the reader's ⌘V. Google's verification of the `documents` scope is needed before more than 100 people can sign in.
   The paste and copy tricks depend on Docs' page; if Google changes it, inserting fails with a message (Update All,
   through the API alone, keeps working).
 

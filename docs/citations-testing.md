@@ -126,6 +126,26 @@ once the desktop app on Windows or Linux.
       the extension: Update All keeps every reference.
 - [ ] A document with citations from `Code.gs` 2 (style only in document properties): the panel asks for the
       style first and changes nothing until it is picked.
-- [ ] Without a client ID (`config.js` empty): the panel says to use the Apps Script. Safari: the panel says to
-      use the Apps Script.
+- [ ] Without a client ID (`config.js` empty): the panel says to use the Apps Script.
 - [ ] Download as .docx: citations are plain text with links, the list is there.
+
+## Google Docs with the browser extension in Safari (Mac)
+
+Lunta for Mac with the Desktop client in `GoogleDocsAuth.swift` (see [google-docs-extension.md](google-docs-extension.md),
+"Safari"), its Safari extension turned on (Safari › Settings › Extensions) and allowed on docs.google.com.
+
+- [ ] Without the Desktop client (`GoogleDocsClient.id` empty): the panel says it isn't set up yet in Safari and
+      points to the Apps Script. Lunta closed: the panel says to open Lunta for Mac.
+- [ ] Connect Google account: the default browser opens Google's page; allow; the tab says Lunta is connected and
+      the panel shows the search by itself. Deny: the panel says so. Quit and reopen Lunta: still connected
+      (Keychain), no window. Switch Google account: Google's account picker.
+- [ ] Insert Citation: the panel says "Press ⌘V in the document where the citation goes"; ⌘V (the cursor where it
+      was before clicking the button): "(…)" appears and becomes the citation within a few seconds. Cancel while
+      waiting: nothing changes; pasting later and Update All makes it a citation.
+- [ ] ⌘⇧V (Paste without formatting) instead: the panel says it was pasted as plain text; ⌘Z, then ⌘V: it
+      becomes the citation.
+- [ ] Insert Bibliography the same way; again: no second one, the first is updated.
+- [ ] Click a citation with the panel open: it opens in the panel; ✕ and Add Selected Papers work. Style menu and
+      Update All as in Chrome.
+- [ ] The same document in Chrome with the extension: the same citations, style and papers.
+- [ ] Safari on iPhone or iPad: the panel points to the Apps Script.

@@ -77,7 +77,7 @@ var LUNTA_GOOGLE_CLIENT_ID = "1234567890-abcdefg.apps.googleusercontent.com";
 ```
 
 Commit it; it goes into the release's extension zip (Chrome, Edge, Firefox) and into the Safari extension
-(where it is unused). Reload the unpacked extension, open a Google Docs document, click the Lunta button
+(where it is unused: in Safari, Lunta for Mac signs in with its own client, see "Safari" below). Reload the unpacked extension, open a Google Docs document, click the Lunta button
 (bottom right) › **Connect Google account**. While the app is in Testing, Google shows "Google hasn't verified
 this app": *Continue* (only test users can).
 
@@ -135,12 +135,43 @@ Brand verification (logo, name) is part of it; keep the app name "Lunta" as in t
   to the developer or third parties. Notes to reviewer: "Google Docs citing uses identity.launchWebAuthFlow with
   Google OAuth (scope documents) and the Google Docs API on the document the user cites in."
 
-## Safari
+## Safari: the OAuth client of Lunta for Mac
 
-Safari has no `identity` API for extensions, and the synthetic paste the panel uses to reach the cursor doesn't
-work there (Zotero, which uses the same trick, says so in its code), so in Safari the panel says to use the Apps Script sidebar (Lunta › Citations in Word & Google
-Docs…). A Safari route would be the Lunta app signing in to Google itself (an installed-app OAuth client, the
-token in the Keychain) and making the API calls for the extension; not done.
+Safari has no `identity` API for extensions, and it doesn't let the panel paste into Docs itself. So in Safari
+on the Mac, **Lunta for Mac does the Google part**: it signs in to Google itself and makes the Docs API calls for
+the extension (how: [development.md](development.md#citing-in-google-docs-from-the-browser-extension), "Safari").
+For that the app needs **a second OAuth client, of type Desktop app**, in the same project. Until it has one,
+the panel in Safari says Google Docs citing isn't set up yet there and points to the Apps Script sidebar.
+
+Do this once the project's verification (step 5) is through, or before it while trying it out as a test user:
+
+1. https://console.cloud.google.com → the **Lunta Docs** project → **Google Auth Platform › Clients** →
+   **Create client**.
+2. Application type: **Desktop app**. Name: `Lunta for Mac`. → **Create**.
+   There are no redirect URIs to enter: a Desktop client takes any `http://127.0.0.1:<port>` redirect, which is
+   what the app uses (a free port each time, answered by the app itself; RFC 8252, with PKCE).
+3. Copy the **Client ID** and the **Client secret** Google shows. Google calls the second one a secret, but for a
+   Desktop client it isn't one (it ships inside the app, and Google's documentation for installed apps says so);
+   Google still asks for it when the app fetches tokens, so it goes in too.
+4. Put both in `apple/Mac/GoogleDocsAuth.swift`:
+
+   ```swift
+   enum GoogleDocsClient {
+       static let id = "1234567890-abcdefg.apps.googleusercontent.com"
+       static let secret = "GOCSPX-…"
+   }
+   ```
+
+   and build Lunta for Mac. Nothing else changes: same consent screen, same scope (`documents` only), same
+   verification (the consent screen is the project's; a new client doesn't need verifying again). If the app is
+   still in **Testing**, only test users can connect.
+5. Try it: open a Google Docs document in Safari (with Lunta's Safari extension on) › the Lunta button ›
+   **Connect Google account**. Your default browser opens Google's page; allow it; the page says Lunta is
+   connected and the panel follows. Then [citations-testing.md](citations-testing.md), "Google Docs with the
+   browser extension in Safari".
+
+The refresh token stays in the Mac's Keychain (item "Lunta: Google Docs"); access tokens only in the app's
+memory. Disconnect (or a permission taken back in the Google account) removes it.
 
 ## The narrower scope (`drive.file`), for later
 
