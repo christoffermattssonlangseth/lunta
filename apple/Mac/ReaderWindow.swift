@@ -24,6 +24,8 @@ struct ReaderWindow: View {
     @StateObject private var narrator = Narrator()
     @StateObject private var controller = ReaderController()
     @StateObject private var position = PositionKeeper()
+    @StateObject private var summary = SummaryMaker()
+    @AppStorage(SummaryMaker.key) private var summariesOn = true
     @State private var listening = false
     @State private var asking = false
     @State private var editingAnnotation: Annotation?
@@ -211,7 +213,8 @@ struct ReaderWindow: View {
         .onChange(of: paper?.annotationCount) { refreshHighlights() }
         .onChange(of: highlightMode) { _, on in controller.setHighlightMode(on, color: hlColor) }
         .onChange(of: highlightModeColor) { controller.setHighlightMode(highlightMode, color: hlColor) }
-        .onDisappear { position.stop(paperID, model: model, controller: controller) }
+        .onDisappear { position.stop(paperID, model: model, controller: controller); summary.stop() }
+        .onChange(of: summariesOn) { _, on in summary.setEnabled(on) }
         .onReceive(NotificationCenter.default.publisher(for: .luntaReaderMode)) { n in
             if n.object as? String == paperID, let m = Self.requestedMode.removeValue(forKey: paperID) { mode = m }
         }
@@ -229,6 +232,7 @@ struct ReaderWindow: View {
             controller.onPageReady = {
                 controller.setHighlightMode(highlightMode, color: hlColor)
                 refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
+                summary.pageReady(paperID, model: model, controller: controller)
             }
             controller.onSelectionDone = { pageSel in
                 guard highlightMode, mode == .reading else { return }
@@ -392,6 +396,7 @@ struct EpubWebView: NSViewRepresentable {
         cfg.userContentController.addUserScript(WKUserScript(source: theme.js, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         context.coordinator.theme = theme
         cfg.addAnnotations(controller)
+        cfg.addSummary(controller)
         cfg.userContentController.addUserScript(WKUserScript(source: ReaderAssets.findJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         let state = pagedState(fontScale)
         context.coordinator.paging = cfg.addPaging(state)

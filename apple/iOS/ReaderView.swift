@@ -42,6 +42,8 @@ struct ReaderView: View {
     @StateObject private var narrator = Narrator()
     @StateObject private var controller = ReaderController()
     @StateObject private var position = PositionKeeper()
+    @StateObject private var summary = SummaryMaker()
+    @AppStorage(SummaryMaker.key) private var summariesOn = true
     @Environment(\.scenePhase) private var phase
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var listening = false
@@ -235,8 +237,10 @@ struct ReaderView: View {
             guard figure == nil else { return }
             if listening { stopListening() }
             position.stop(paperID, model: model, controller: controller)
+            summary.stop()
             OpenReader.clear(paperID)
         }
+        .onChange(of: summariesOn) { _, on in summary.setEnabled(on) }
         // leaving the app: save the place now (iOS may close Lunta in the background to free memory)
         .onChange(of: phase) { _, p in if p != .active { position.saveNow(paperID, model: model, controller: controller) } }
     }
@@ -249,6 +253,7 @@ struct ReaderView: View {
         controller.onPageReady = {
             controller.setHighlightMode(highlightMode, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow)
             refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
+            summary.pageReady(paperID, model: model, controller: controller)
         }
         controller.onSelectionDone = { pageSel in
             guard highlightMode, mode == .reading else { return }
@@ -570,6 +575,7 @@ struct EpubWebViewIOS: UIViewRepresentable {
         cfg.userContentController.addUserScript(WKUserScript(source: theme.js, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         context.coordinator.theme = theme
         cfg.addAnnotations(controller)
+        cfg.addSummary(controller)
         // find in paper; a match counts as in view between the bars and the keyboard
         cfg.userContentController.addUserScript(WKUserScript(source: "window.luntaFindZone = [0.18, 0.55];" + ReaderAssets.findJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         // text size: the font scales, the page itself is never zoomed

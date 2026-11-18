@@ -18,6 +18,8 @@ final class ReaderController: ObservableObject {
     var onAnnotation: ((String) -> Void)?
     /// Called when the page has loaded (to draw highlights).
     var onPageReady: (() -> Void)?
+    /// The Summary card's menu: "regenerate" or "hide" (Summary.swift).
+    var onSummary: ((String) -> Void)?
     /// Highlight mode: the user finished a selection.
     var onSelectionDone: ((PageSelection?) -> Void)?
     /// Called from the text selection menu (and by the Pencil, with `pencilSelection` set).

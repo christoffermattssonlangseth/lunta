@@ -57,6 +57,11 @@ struct ReaderAppearanceSheet: View {
                     }
                     .pickerStyle(.segmented)
                 }
+                Section {
+                    SummarySettingToggle()
+                } footer: {
+                    Text(SummarySettingToggle.explanation)
+                }
                 Section("Listening") {
                     Picker("Natural Voice", selection: Binding(get: { voice.voice }, set: { voice.voice = $0 })) {
                         ForEach(PhoneVoice.voices, id: \.id) { Text($0.name).tag($0.id) }
