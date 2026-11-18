@@ -630,6 +630,17 @@ enum GenericPage {
         /// A reference's text without its rows of service links ("Article · PubMed · Google Scholar").
         func refInline(_ n: XNode) -> String {
             n.children.map { c -> String in
+                // a service link on its own ("OpenUrl", "CrossRef", "PubMed", "Abstract/FREE Full
+                // Text" on bioRxiv/HighWire pages) or the "↵" back to the text
+                if c.name == "a", c.plain.wholeMatch(of: GenericPage.serviceLink) != nil {
+                    // HighWire's CrossRef button carries the reference's DOI: keep that as a DOI link
+                    let href = (c.attr("href") ?? "").replacingOccurrences(of: "&amp;", with: "&")
+                    if let m = href.firstMatch(of: GenericPage.crossrefDOI) {
+                        let doi = String(m.output[1].substring ?? "").replacingOccurrences(of: "%2F", with: "/").replacingOccurrences(of: "%2f", with: "/")
+                        return " <a href=\"https://doi.org/\(esc(doi))\">doi:\(esc(doi))</a>"
+                    }
+                    return ""
+                }
                 if !c.isText, c.name != "a", isBlock(c) || c.name == "span" {
                     let all = GenericPage.words(c.plain), linked = c.all(where: { $0.name == "a" }).reduce(0) { $0 + GenericPage.words($1.plain) }
                     if all > 0, all < 15, linked * 10 >= all * 9 { return "" }
@@ -848,4 +859,12 @@ enum GenericPage {
             return "<\(tag)>\(items)</\(tag)>"
         }
     }
+}
+
+extension GenericPage {
+    /// A reference's service link or back-link, by its text ("OpenUrl", "CrossRef", "PubMed",
+    /// "Abstract/FREE Full Text", "Google Scholar", "↵").
+    nonisolated(unsafe) static let serviceLink = try! Regex(#"(?i)\s*(↵|↩|\^|↑|OpenUrl|CrossRef|PubMed|Medline|PubMed Central|PMC free article|Google Scholar|Web of Science|Scopus|Abstract|Full Text|FREE Full Text|Abstract/FREE Full Text|CAS|ISI)\s*"#)
+    /// HighWire's CrossRef button: /lookup/external-ref?access_num=10.…&link_type=DOI
+    nonisolated(unsafe) static let crossrefDOI = try! Regex(#"access_num=(10\.[^&]+)&link_type=DOI"#)
 }

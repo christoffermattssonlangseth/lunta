@@ -1201,6 +1201,17 @@ impl<'b> Renderer<'b> {
     fn ref_inline(&mut self, n: Node) -> String {
         let mut out = String::new();
         for c in n.children() {
+            // a service link on its own ("OpenUrl", "CrossRef", "PubMed", "Abstract/FREE Full Text"
+            // on bioRxiv/HighWire pages) or the "↵" back to the text
+            if c.name() == "a" && is_service_link(&c.plain()) {
+                // HighWire's CrossRef button carries the reference's DOI: keep that as a DOI link
+                let href = c.attr("href").unwrap_or("").replace("&amp;", "&");
+                if let Some(m) = re!(r"access_num=(10\.[^&]+)&link_type=DOI").captures(&href) {
+                    let doi = m[1].replace("%2F", "/").replace("%2f", "/");
+                    out += &format!(" <a href=\"https://doi.org/{}\">doi:{}</a>", esc(&doi), esc(&doi));
+                }
+                continue;
+            }
             if !c.is_text() && c.name() != "a" && (self.is_block(c) || c.name() == "span") {
                 let all = words(&c.plain());
                 let linked = linked_words(c);
@@ -1635,4 +1646,14 @@ pub(crate) fn el(doc: &mut Doc, name: &str, attrs: &[(&str, &str)], kids: &[Node
 
 pub(crate) fn text_node(doc: &mut Doc, t: &str) -> NodeId {
     doc.new_text(t)
+}
+
+/// A reference's service link or back-link, by its text ("OpenUrl", "CrossRef", "PubMed",
+/// "Abstract/FREE Full Text", "Google Scholar", "↵").
+fn is_service_link(text: &str) -> bool {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r"(?i)^\s*(↵|↩|\^|↑|OpenUrl|CrossRef|PubMed|Medline|PubMed Central|PMC free article|Google Scholar|Web of Science|Scopus|Abstract|Full Text|FREE Full Text|Abstract/FREE Full Text|CAS|ISI)\s*$").unwrap()
+    })
+    .is_match(text)
 }

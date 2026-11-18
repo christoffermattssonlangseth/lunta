@@ -156,6 +156,23 @@ fn generic_page_becomes_book() {
 }
 
 #[test]
+fn highwire_references_lose_their_service_links() {
+    // bioRxiv/HighWire: "↵" back to the text and the OpenUrl / Abstract / CrossRef / PubMed buttons
+    // sit loose in each reference
+    let html = fill(GENERIC).replace(
+        "<li id=\"ref1\">Hopper G. The education of a computer. 1952.</li>",
+        "<li id=\"ref1\"><a href=\"#xref-ref-1-1\">↵</a>Hopper G. The education of a computer. 1952. <a href=\"https://www.biorxiv.org/x?openurl\">OpenUrl</a><a href=\"https://www.biorxiv.org/lookup/ijlink/a\">Abstract/FREE Full Text</a><a href=\"https://www.biorxiv.org/lookup/external-ref?access_num=10.1/x&amp;link_type=DOI\">CrossRef</a><a href=\"https://www.biorxiv.org/lookup/external-ref?access_num=1&amp;link_type=MED\">PubMed</a></li>",
+    );
+    let b = page_book(&html, "https://journal.example/articles/1", vec![], &offline()).unwrap();
+    let refs = &b.chapters.last().unwrap().html;
+    assert!(refs.contains("Hopper G. The education of a computer. 1952."), "{refs}");
+    assert!(refs.contains("<a href=\"https://doi.org/10.1/x\">doi:10.1/x</a>"), "{refs}");
+    for junk in ["↵", "OpenUrl", "FREE Full Text", "CrossRef", "PubMed"] {
+        assert!(!refs.contains(junk), "{junk} in {refs}");
+    }
+}
+
+#[test]
 fn generic_page_with_only_the_abstract_is_refused() {
     let start = GENERIC.find("<section id=\"s1\">").unwrap();
     let end = GENERIC.find("</article>").unwrap();
