@@ -535,7 +535,17 @@ impl<'a> Analyzer<'a> {
         let caps: Vec<usize> = (0..lines.len())
             .filter(|&i| re!(r"(?i)^(Supplementary\s+)?Table\s*S?\d+").is_match(trim(&lines[i].text)))
             .collect();
-        let mut hrules: Vec<R> = thin.iter().filter(|r| r.w() > 80.0 && r.h() < 2.5).copied().collect();
+        let mut segs: Vec<R> = thin.iter().filter(|r| r.w() > 2.5 && r.h() < 2.5).copied().collect();
+        segs.sort_by(|a, b| (a.y0, a.x0).partial_cmp(&(b.y0, b.x0)).unwrap_or(std::cmp::Ordering::Equal));
+        // a rule drawn in pieces (one per column of the table) is one rule
+        let mut hrules: Vec<R> = Vec::new();
+        for r in segs {
+            match hrules.last_mut() {
+                Some(m) if (m.y0 - r.y0).abs() < 1.0 && r.x0 <= m.x1 + 2.0 => *m = m.union(&r),
+                _ => hrules.push(r),
+            }
+        }
+        hrules.retain(|r| r.w() > 80.0);
         hrules.sort_by(|a, b| a.y0.partial_cmp(&b.y0).unwrap_or(std::cmp::Ordering::Equal));
         for ci in caps {
             let cap = &lines[ci];
@@ -544,28 +554,42 @@ impl<'a> Analyzer<'a> {
             }
             let below: Vec<R> = hrules.iter().filter(|r| r.y0 > cap.bbox.y0 - 2.0).copied().collect();
             let above: Vec<R> = hrules.iter().filter(|r| r.y1 < cap.bbox.y0 + 2.0).copied().collect();
-            let mut grp: Option<Vec<R>> = None;
-            if let Some(f) = below.first().filter(|f| f.y0 - cap.bbox.y1 < 60.0) {
-                let mut gg = vec![*f];
-                for r in &below[1..] {
-                    if r.y0 - gg.last().unwrap().y1 < 250.0 {
-                        gg.push(*r);
-                    } else {
-                        break;
+            // the table's rules are about as wide as the one next to its caption: a rule much wider
+            // (the running head's rule over both columns of the page) or narrower (a table in the
+            // other column) is not one of them, unless that leaves the table a single rule
+            let same_table = |a: &R, r: &R| {
+                r.w() <= 1.5 * a.w() && r.w() >= 0.6 * a.w() && r.x1.min(a.x1) - r.x0.max(a.x0) > 0.5 * r.w()
+            };
+            // (and a table ends before another table's or figure's caption)
+            let other_caption = |y0: f64, y1: f64| {
+                lines.iter().enumerate().any(|(j, l)| j != ci && l.bbox.y0 > y0 && l.bbox.y1 < y1 && caption_re().is_match(trim(&l.text)))
+            };
+            let group = |only_same: bool| -> Option<Vec<R>> {
+                if let Some(f) = below.first().filter(|f| f.y0 - cap.bbox.y1 < 60.0) {
+                    let mut gg = vec![*f];
+                    for r in below[1..].iter().filter(|r| !only_same || same_table(f, r)) {
+                        if r.y0 - gg.last().unwrap().y1 < 250.0 && !other_caption(gg.last().unwrap().y1, r.y0) {
+                            gg.push(*r);
+                        } else {
+                            break;
+                        }
                     }
-                }
-                grp = Some(gg);
-            } else if let Some(l) = above.last().filter(|l| cap.bbox.y0 - l.y1 < 60.0) {
-                let mut gg = vec![*l];
-                for r in above[..above.len() - 1].iter().rev() {
-                    if gg.last().unwrap().y0 - r.y1 < 250.0 {
-                        gg.push(*r);
-                    } else {
-                        break;
+                    Some(gg)
+                } else if let Some(l) = above.last().filter(|l| cap.bbox.y0 - l.y1 < 60.0) {
+                    let mut gg = vec![*l];
+                    for r in above[..above.len() - 1].iter().rev().filter(|r| !only_same || same_table(l, r)) {
+                        if gg.last().unwrap().y0 - r.y1 < 250.0 && !other_caption(r.y1, gg.last().unwrap().y0) {
+                            gg.push(*r);
+                        } else {
+                            break;
+                        }
                     }
+                    Some(gg)
+                } else {
+                    None
                 }
-                grp = Some(gg);
-            }
+            };
+            let grp = group(true).filter(|g| g.len() >= 2).or_else(|| group(false));
             if let Some(grp) = grp.filter(|g| g.len() >= 2) {
                 regions.push(Region { rect: R::union_all(&grp), kind: Kind::Table, image: None });
             } else if let Some(tr) = self.text_table_region(ci, lines, page) {

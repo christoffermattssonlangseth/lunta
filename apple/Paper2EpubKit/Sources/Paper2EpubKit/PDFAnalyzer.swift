@@ -452,21 +452,41 @@ final class PDFAnalyzer {
 
         // tables: caption + horizontal rules, or a borderless grid of short cells
         let caps = lines.filter { $0.text.trimmingCharacters(in: .whitespaces).matches(#"^(Supplementary\s+)?Table\s*S?\d+"#, .caseInsensitive) }
-        let hrules = thin.filter { $0.w > 80 && $0.h < 2.5 }.sorted { $0.y0 < $1.y0 }
+        // a rule drawn in pieces (one per column of the table) is one rule
+        var hrules: [R] = []
+        for r in thin.filter({ $0.w > 2.5 && $0.h < 2.5 }).sorted(by: { ($0.y0, $0.x0) < ($1.y0, $1.x0) }) {
+            if let m = hrules.last, abs(m.y0 - r.y0) < 1, r.x0 <= m.x1 + 2 { hrules[hrules.count - 1] = m.union(r) } else { hrules.append(r) }
+        }
+        hrules = hrules.filter { $0.w > 80 }.sorted { $0.y0 < $1.y0 }
         for cap in caps {
             if regions.contains(where: { cap.bbox.intersects($0.rect, pad: 30) }) { continue }
             let below = hrules.filter { $0.y0 > cap.bbox.y0 - 2 }
             let above = hrules.filter { $0.y1 < cap.bbox.y0 + 2 }
-            var grp: [R]?
-            if let f = below.first, f.y0 - cap.bbox.y1 < 60 {
-                var gg = [f]
-                for r in below.dropFirst() { if r.y0 - gg.last!.y1 < 250 { gg.append(r) } else { break } }
-                grp = gg
-            } else if let l = above.last, cap.bbox.y0 - l.y1 < 60 {
-                var gg = [l]
-                for r in above.dropLast().reversed() { if gg.last!.y0 - r.y1 < 250 { gg.append(r) } else { break } }
-                grp = gg
+            // the table's rules are about as wide as the one next to its caption: a rule much wider (the
+            // running head's rule over both columns of the page) or narrower (a table in the other column) is
+            // not one of them, unless that leaves the table a single rule
+            func sameTable(_ a: R, _ r: R) -> Bool { r.w <= 1.5 * a.w && r.w >= 0.6 * a.w && min(r.x1, a.x1) - max(r.x0, a.x0) > 0.5 * r.w }
+            // (and a table ends before another table's or figure's caption)
+            func otherCaption(_ y0: CGFloat, _ y1: CGFloat) -> Bool {
+                lines.contains { $0 !== cap && $0.bbox.y0 > y0 && $0.bbox.y1 < y1 && Self.captionRE.test($0.text.trimmingCharacters(in: .whitespaces)) }
             }
+            func group(_ onlySame: Bool) -> [R]? {
+                if let f = below.first, f.y0 - cap.bbox.y1 < 60 {
+                    var gg = [f]
+                    for r in below.dropFirst() where !onlySame || sameTable(f, r) {
+                        if r.y0 - gg.last!.y1 < 250 && !otherCaption(gg.last!.y1, r.y0) { gg.append(r) } else { break }
+                    }
+                    return gg
+                } else if let l = above.last, cap.bbox.y0 - l.y1 < 60 {
+                    var gg = [l]
+                    for r in above.dropLast().reversed() where !onlySame || sameTable(l, r) {
+                        if gg.last!.y0 - r.y1 < 250 && !otherCaption(r.y1, gg.last!.y0) { gg.append(r) } else { break }
+                    }
+                    return gg
+                }
+                return nil
+            }
+            let grp = group(true).flatMap { $0.count >= 2 ? $0 : nil } ?? group(false)
             if let grp, grp.count >= 2 {
                 regions.append(Region(rect: R.union(grp), kind: .table))
             } else if let tr = textTableRegion(cap, lines, mb) {

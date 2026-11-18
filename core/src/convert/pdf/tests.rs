@@ -500,6 +500,34 @@ fn prose_is_not_a_formula() {
     assert!(!is_prose("L = − ∑ i y i log p i + λ ∥ w ∥ 2 , where λ > 0"));
 }
 
+/// GPT-2 paper: a table in the right column between two rules, its caption below, and the running
+/// head's rule over both columns just above it. The table is its own column, not the page's top:
+/// the running head and the left column stay text.
+#[test]
+fn column_table_does_not_take_the_running_heads_rule() {
+    let mut lines = vec![line("Language Models are Unsupervised Multitask Learners", 0, 192.0, 46.0, 9.0)];
+    for k in 0..18 {
+        lines.push(line("to infer and perform many different tasks on examples with this type of format and", 0, 55.0, 68.0 + 12.0 * k as f64, 10.0));
+    }
+    for k in 0..8 {
+        lines.push(line("French sentence and its translation", 0, 315.0, 72.0 + 25.0 * k as f64, 9.0));
+    }
+    lines.push(line("Table 1. Examples of naturally occurring demonstrations of English", 0, 307.0, 303.0, 9.0));
+    for k in 0..10 {
+        lines.push(line("Common Crawl. Trinh and Le found the best results using a small", 0, 307.0, 340.0 + 12.0 * k as f64, 10.0));
+    }
+    let mut g = PageGraphics::default();
+    g.drawings.push(R::new(55.0, 58.0, 541.0, 58.4)); // the running head's rule
+    g.drawings.push(R::new(309.0, 67.0, 540.0, 67.4));
+    g.drawings.push(R::new(315.0, 286.0, 534.0, 286.4));
+    let page = Page { width: 612.0, height: 792.0, lines, graphics: g };
+    let (paras, _) = analyse(vec![page.clone(), page]);
+    let table = paras.iter().find(|p| p.kind == Kind::Table).expect("a table");
+    let r = table.bbox();
+    assert!(r.x0 > 300.0 && r.y0 > 60.0 && r.y1 < 300.0, "{r:?}");
+    assert!(paras.iter().any(|p| p.kind == Kind::Text && p.text().starts_with("to infer and perform")));
+}
+
 // MARK: - PDFium (generated PDF)
 
 /// A small two-page PDF with base-14 fonts: title, authors, abstract, numbered sections, an
