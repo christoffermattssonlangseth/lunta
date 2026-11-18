@@ -261,6 +261,66 @@ the repository secrets `ANDROID_KEYSTORE_BASE64` and `ANDROID_KEYSTORE_PASSWORD`
 signed with the same key, so **keep a backup of the key file and its password** somewhere safe. Its
 SHA-256 fingerprint: `E3:B3:4F:21:4A:50:95:CF:F7:6A:4F:AA:19:CE:1B:51:A8:EF:CD:42:8A:45:C2:55:14:D1:AD:21:F6:C9:BB:41`.
 
+### Updates
+
+The apps from GitHub Releases update themselves from **the latest release** (the iPhone and iPad app
+is updated by the App Store and has none of this):
+
+| App | How | Feed on the release | Signed with |
+|---|---|---|---|
+| Mac | Sparkle 2 (`apple/Mac/Updates.swift`; Lunta › Check for Updates…, the switch in Settings) | `appcast.xml` | EdDSA key in the login Keychain of the Mac that releases (Sparkle `generate_keys --account lunta`); public key `SUPublicEDKey` in `project.yml` |
+| Windows, Linux AppImage | tauri-plugin-updater (`desktop/src-tauri/src/updates.rs`, `desktop/src/updates.ts`; Settings ▾) | `latest.json` | minisign key `~/.tauri/lunta-updater.key` (password in `~/.tauri/lunta-updater.password`); public key in `tauri.conf.json` |
+| Android | the app asks GitHub's API for the latest release (`android/…/update/`; Settings) | none: the release and its APK | the APK release key above (Android installs an update only with the same key) |
+
+Each checks at most once a day (on by default; a switch in each app's settings) and on demand. The
+Linux .deb can't replace itself: it offers the release page. Android's updater is a build flag
+(`lunta.selfUpdate`, on; a Play Store build would set it to false, which also leaves out the
+REQUEST_INSTALL_PACKAGES permission).
+
+**Once:** put the Tauri key in the repository secrets (the desktop release builds fail without them):
+
+```sh
+gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/lunta-updater.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD < ~/.tauri/lunta-updater.password
+```
+
+Keep copies of both private keys somewhere safe, as with the Android key: without them no installed
+copy can be updated again. The Sparkle key: `apple/build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys --account lunta -x <file>`
+exports it (`-f <file>` imports it on another Mac).
+
+**Each release** (as above, plus):
+
+1. The tag's release starts with the previous release's `latest.json` and `appcast.xml` (so the apps
+   never find no feed), then `release.yml` replaces `latest.json` once the desktop builds are attached
+   (`scripts/update-feeds.sh desktop`, from the installers' `.sig` files).
+2. `scripts/release-mac.sh vX.Y.Z` builds the Mac app with the tag's version and a build number
+   from the time (`YYYYMMDDHHMM`, UTC: what Sparkle compares, and larger than the `YYYYMMDDn` numbers
+   in `project.yml`), attaches the zip and then `appcast.xml`, signed with `sign_update` (the Keychain
+   may ask to allow it the first time).
+3. After writing the release notes (`gh release edit vX.Y.Z --notes-file …`), run
+   `scripts/release-mac.sh --notes vX.Y.Z`: it puts them (the part above "Which file do I need?") into
+   both feeds. Android reads them from the release directly.
+
+`DRY_RUN=1 scripts/update-feeds.sh mac vX.Y.Z <zip>` prints a feed instead of attaching it.
+
+**Testing an update** (needs a published release newer than the copy you test with):
+
+- **Mac:** keep an older notarized build (e.g. from `scripts/release-mac.sh --check` before tagging, or
+  the previous release's zip once it has Sparkle) in a scratch folder, open it there, Lunta › Check for
+  Updates…: it offers the release, installs it over that copy and reopens it. Delete the copy afterwards
+  and unregister it (`lsregister -u <path>`), so only `/Applications/Lunta.app` stays registered.
+  Debug builds never check by themselves.
+- **Windows / Linux:** install the previous release (AppImage on Linux), or build an older version
+  without the private key (the app only needs the public key to check what it downloads):
+  `npx tauri build --bundles appimage --config '{"version":"1.0.0","bundle":{"createUpdaterArtifacts":false}}'`;
+  run it, Settings ▾ › Check for Updates…, Install and Restart.
+- **Android:** install an older APK signed with the release key, e.g.
+  `LUNTA_VERSION_NAME=1.0.0 ./gradlew :app:assembleRelease` (with the key in `local.properties`),
+  then Settings › Check for updates › Download; Android asks once to allow installs from Lunta. A debug
+  build checks but refuses to install (another key: Android would refuse it too).
+- The feeds and version comparison have unit tests: `cargo test updates` in `desktop/src-tauri` (runs
+  `scripts/update-feeds.sh` on fixtures; needs `jq`) and `./gradlew :app:testDebugUnitTest` in `android/`.
+
 ## Build
 
 ```sh
@@ -511,6 +571,8 @@ Windows 10/11):
 ```sh
 cd desktop && npm install
 npx tauri dev                           # run
+# with the updater's signatures: TAURI_SIGNING_PRIVATE_KEY(_PASSWORD) set (see Updates); without:
+#   add --config '{"bundle":{"createUpdaterArtifacts":false}}'
 npx tauri build --bundles msi,nsis      # Windows installers → src-tauri/target/release/bundle/
 npx tauri build --bundles appimage,deb  # Linux packages
 npx tauri build --bundles app           # macOS, for testing

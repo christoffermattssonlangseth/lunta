@@ -21,6 +21,12 @@ Google Drive: no account, no server, nothing collected.
 Linux and Android (the release page says which file you need), plus the browser extension. iPhone and iPad:
 in App Store review now; TestFlight until then.
 
+Lunta updates itself on Mac, Windows, Linux (AppImage) and Android: once a day it asks GitHub whether
+there is a newer version and offers to install it (**Check for Updates** is in the Lunta menu on the Mac,
+under Settings elsewhere, where the daily check can be turned off). The Linux .deb is updated by
+downloading the new one; Lunta says when there is one. Lunta 1.0.5 and earlier don't update themselves:
+download the newest version once more by hand.
+
 **New to Lunta?** Start with **[Getting started](https://christoffermattssonlangseth.github.io/lunta/getting-started.html)**:
 which setup fits your devices, and how to move your library from Zotero, Mendeley, ReadCube or EndNote
 ([step-by-step import guide](docs/importing.md)).
