@@ -730,7 +730,15 @@ final class PaperFind: ObservableObject {
     /// The paper the library's search found it in, with a query to look for (nil: opened otherwise).
     static func libraryQuery(for paperID: String, in model: LibraryModel) -> String? {
         let q = model.query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard q.count >= 2, model.snippets[paperID] != nil else { return nil }
+        guard q.count >= 2, model.snippets[paperID] != nil, let p = model.paper(paperID) else { return nil }
+        // Only when the search found the paper by its text. A search that matches the paper's
+        // details (its title "scSLIDE…", an author, the journal, a DOI) was a search *for* the paper,
+        // not for something in it: it isn't carried into the reader.
+        func fold(_ s: String) -> String { s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+        let details = fold([p.meta.title, p.meta.authors.joined(separator: " "), p.meta.journal, p.meta.doi,
+                            p.meta.pmid, p.meta.pmcid, p.meta.arxiv, p.meta.year].joined(separator: " "))
+        let words = fold(q).replacingOccurrences(of: "\"", with: "").split(whereSeparator: { $0.isWhitespace })
+        if !words.isEmpty, words.allSatisfy({ details.contains($0.trimmingCharacters(in: .punctuationCharacters)) }) { return nil }
         return q
     }
 }
