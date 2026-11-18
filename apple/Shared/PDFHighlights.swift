@@ -203,7 +203,25 @@ final class PDFHighlighter: ObservableObject {
 #if os(macOS)
 private final class ClickablePDFView: PDFView {
     var onClick: ((CGPoint) -> Bool)?
+    /// A click on a link within the PDF (its destination, the link's bounds and page): true when
+    /// it was handled (the citation card) and the PDF shouldn't jump.
+    var onLink: ((PDFDestination, CGRect, PDFPage) -> Bool)?
+    private var swallowUp = false
+
+    override func mouseDown(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        if event.clickCount == 1, let onLink, let page = page(for: p, nearest: false),
+           let a = page.link(at: convert(p, to: page)),
+           let dest = a.destination ?? (a.action as? PDFActionGoTo)?.destination,
+           onLink(dest, a.bounds, page) {
+            swallowUp = true
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
     override func mouseUp(with event: NSEvent) {
+        if swallowUp { swallowUp = false; return }
         super.mouseUp(with: event)
         if event.clickCount == 1 { _ = onClick?(convert(event.locationInWindow, from: nil)) }
     }
@@ -212,14 +230,21 @@ private final class ClickablePDFView: PDFView {
 struct HighlightablePDFView: NSViewRepresentable {
     let url: URL
     let highlighter: PDFHighlighter
+    var citations: PDFCitations?
     func makeNSView(context: Context) -> PDFView {
         let v = ClickablePDFView()
         v.autoScales = true
         v.displayMode = .singlePageContinuous
         highlighter.ink.attach(v, folder: url.deletingLastPathComponent())   // (before the document)
         v.document = PDFDocument(url: url)
-        v.onClick = { [weak highlighter] p in highlighter?.handleTap(at: p) ?? false }
+        v.onClick = { [weak highlighter, weak citations] p in
+            MainActor.assumeIsolated { (highlighter?.handleTap(at: p) ?? false) || (citations?.showCitation(at: p) ?? false) }
+        }
+        v.onLink = { [weak citations] dest, rect, page in
+            MainActor.assumeIsolated { citations?.showLink(dest, at: rect, on: page) ?? false }
+        }
         highlighter.attach(v)
+        citations?.attach(v)
         return v
     }
     func updateNSView(_ v: PDFView, context: Context) {
@@ -233,8 +258,9 @@ struct HighlightablePDFView: NSViewRepresentable {
 struct HighlightablePDFView: UIViewRepresentable {
     let url: URL
     let highlighter: PDFHighlighter
+    var citations: PDFCitations?
     func makeUIView(context: Context) -> PDFView {
-        let v = PDFView()
+        let v = CitingPDFView()
         v.autoScales = true
         v.displayMode = .singlePageContinuous
         highlighter.ink.attach(v, folder: url.deletingLastPathComponent())   // (before the document)
@@ -244,7 +270,17 @@ struct HighlightablePDFView: UIViewRepresentable {
         tap.delegate = context.coordinator
         v.addGestureRecognizer(tap)
         context.coordinator.highlighter = highlighter
+        context.coordinator.citations = citations
+        // a tapped link into the reference list: the card at the link instead of the jump
+        v.onLink = { [weak v, weak citations] dest, point in
+            MainActor.assumeIsolated {
+                guard let v, let citations, let page = v.page(for: point, nearest: false),
+                      let a = page.link(at: v.convert(point, to: page)) else { return false }
+                return citations.showLink(dest, at: a.bounds, on: page)
+            }
+        }
         highlighter.attach(v)
+        citations?.attach(v)
         return v
     }
     func updateUIView(_ v: PDFView, context: Context) {}
@@ -252,11 +288,18 @@ struct HighlightablePDFView: UIViewRepresentable {
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         weak var highlighter: PDFHighlighter?
+        weak var citations: PDFCitations?
         @MainActor @objc func tapped(_ g: UITapGestureRecognizer) {
             guard let v = g.view else { return }
-            _ = highlighter?.handleTap(at: g.location(in: v))
+            let p = g.location(in: v)
+            if highlighter?.handleTap(at: p) == true { return }
+            _ = citations?.showCitation(at: p)
         }
         func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            if let v = g.view as? CitingPDFView { v.lastTouch = (touch.location(in: v), Date()) }
+            return true
+        }
     }
 }
 #endif
@@ -270,9 +313,28 @@ struct PDFReader: View {
     let paperID: String
     @ObservedObject var highlighter: PDFHighlighter
     var onEdit: (Annotation) -> Void
+    @StateObject private var citations = PDFCitations()
+    #if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+    #endif
 
     var body: some View {
-        HighlightablePDFView(url: url, highlighter: highlighter)
+        HighlightablePDFView(url: url, highlighter: highlighter, citations: citations)
+            // a clicked citation: the reference, in a card at the citation (PDFCitations.swift)
+            .popover(item: $citations.card, attachmentAnchor: .rect(.rect(citations.card?.anchor ?? .zero)), arrowEdge: .bottom) { c in
+                PDFCitationCard(card: c, goTo: { citations.goToReference(c) }, open: { id in
+                    citations.card = nil
+                    #if os(macOS)
+                    openWindow(value: id)
+                    #else
+                    NotificationCenter.default.post(name: .luntaReadPaper, object: id)
+                    #endif
+                })
+                .environmentObject(model)
+                #if os(iOS)
+                .presentationCompactAdaptation(.popover)
+                #endif
+            }
             .overlay(alignment: .bottom) {
                 if highlighter.hasSelection {
                     PDFHighlightBar { color, note in highlight(color, note: note) }
