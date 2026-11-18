@@ -3,14 +3,23 @@
 # attaches it (zipped) to the GitHub release for a tag:
 #   scripts/release-mac.sh v0.1.0             build, notarize, attach to the release
 #   scripts/release-mac.sh --check            build and notarize only (nothing is published)
+#   scripts/release-mac.sh --notes v0.1.0     after editing the release notes: put them in the
+#                                             update feeds (appcast.xml, latest.json) as well
 # The release is made by .github/workflows/release.yml when the tag is pushed; this waits for it.
+#
+# Updates (Sparkle, apple/Mac/Updates.swift): the app gets the tag's version (MARKETING_VERSION)
+# and a build number from the time of the build, YYYYMMDDHHMM in UTC (CURRENT_PROJECT_VERSION,
+# which Sparkle compares; always larger than the YYYYMMDDn numbers of earlier builds), and
+# scripts/update-feeds.sh attaches appcast.xml, signed with the EdDSA key in the login Keychain
+# (made once with Sparkle's generate_keys --account lunta; keep a copy: generate_keys -x).
 #
 # Signing and notarizing go through the Apple account Xcode is signed in to (Xcode > Settings >
 # Accounts): the first run lets Xcode create the Developer ID certificate if there is none.
 set -euo pipefail
 log() { echo "  (full output: $build/xcodebuild.log)"; }
-tag=${1:?usage: scripts/release-mac.sh <tag, e.g. v0.1.0> | --check}
+tag=${1:?usage: scripts/release-mac.sh <tag, e.g. v0.1.0> | --check | --notes <tag>}
 root=${0:A:h:h}
+[[ $tag == --notes ]] && exec "$root/scripts/update-feeds.sh" all "${2:?usage: scripts/release-mac.sh --notes <tag>}"
 team=7R6QL53THM
 build="$root/apple/build/release-mac"
 cd "$root/apple"
@@ -39,7 +48,12 @@ echo "› archive"
 xcodegen generate -q
 # the compiler's warnings (mostly MLX's Metal shaders) go to a log; errors are shown
 # Apple silicon only (ARCHS also for the Swift packages): the Rust core is arm64
+# the version: the tag's, and a build number that only grows (what Sparkle compares)
+versions=(CURRENT_PROJECT_VERSION=$(date -u +%Y%m%d%H%M))
+[[ $tag != --check ]] && versions+=(MARKETING_VERSION=${tag#v})
+# the packages in apple/build/SourcePackages, where scripts/update-feeds.sh finds Sparkle's sign_update
 xcodebuild -project Lunta.xcodeproj -scheme LuntaMac -configuration Release -destination 'generic/platform=macOS' ARCHS=arm64 \
+  "${versions[@]}" -clonedSourcePackagesDirPath "$root/apple/build/SourcePackages" \
   -archivePath "$build/Lunta.xcarchive" -allowProvisioningUpdates archive >"$build/xcodebuild.log" 2>&1 ||
   { grep -E " error: |\*\* ARCHIVE" "$build/xcodebuild.log" | tail -20; log; exit 1; }
 
@@ -65,3 +79,5 @@ out="$build/Lunta-${tag#v}-Mac-AppleSilicon.zip"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$out"
 gh release upload "$tag" "$out" --clobber
 echo "attached $(basename "$out") to $tag"
+# the Sparkle feed for this zip, with the release notes as they are now (--notes refreshes them)
+"$root/scripts/update-feeds.sh" mac "$tag" "$out"

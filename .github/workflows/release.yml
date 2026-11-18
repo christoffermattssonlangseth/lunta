@@ -1,6 +1,11 @@
 # Pushing a version tag (git tag v0.1.0 && git push origin v0.1.0) makes a GitHub release and
 # attaches the Windows and Linux installers, the Android APK and the Chrome extension (zip), built by desktop.yml and
 # android.yml. The Mac app is built on a Mac and added with scripts/release-mac.sh.
+#
+# Updates: the apps read the latest release. latest.json (Windows, Linux AppImage) is made here
+# from the installers' signatures (secrets TAURI_SIGNING_PRIVATE_KEY and _PASSWORD) by
+# scripts/update-feeds.sh; appcast.xml (Mac) by scripts/release-mac.sh. Until they are made, the
+# new release carries the previous release's feeds, so the apps never find none.
 name: Release
 
 on:
@@ -19,9 +24,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
-            gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Lunta $GITHUB_REF_NAME" \
-              --notes "$(sed "s/VERSION/${GITHUB_REF_NAME#v}/g" .github/release-notes.md)"
+          gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 && exit 0
+          # the update feeds of the release that is the latest until now (none before the first)
+          mkdir -p feeds
+          gh release download -R "$GITHUB_REPOSITORY" -D feeds -p latest.json -p appcast.xml 2>/dev/null || true
+          gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Lunta $GITHUB_REF_NAME" \
+            --notes "$(sed "s/VERSION/${GITHUB_REF_NAME#v}/g" .github/release-notes.md)"
+          if ls feeds/* >/dev/null 2>&1; then gh release upload "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --clobber feeds/*; fi
 
   # the Chrome extension, as a zip to unpack and load (it isn't in the Chrome Web Store)
   extension:
@@ -42,6 +51,18 @@ jobs:
     uses: ./.github/workflows/desktop.yml
     with:
       release_tag: ${{ github.ref_name }}
+    secrets: inherit
+
+  # latest.json for the desktop app's updater, from the signatures the desktop builds attached
+  updater:
+    needs: desktop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Attach latest.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/update-feeds.sh desktop "$GITHUB_REF_NAME"
 
   android:
     needs: release
