@@ -40,6 +40,7 @@ struct ReaderView: View {
     @State private var current: String?
     @State private var scrollRequest = ScrollRequest()
     @StateObject private var narrator = Narrator()
+    @ObservedObject private var nowPlaying = NowPlaying.shared
     @StateObject private var controller = ReaderController()
     @StateObject private var position = PositionKeeper()
     @StateObject private var summary = SummaryMaker()
@@ -53,6 +54,10 @@ struct ReaderView: View {
     init(paperID: String) {
         self.paperID = paperID
         _ask = StateObject(wrappedValue: AskEngine(scope: .paper(paperID)))
+        // this paper is being read aloud (its reader was left): take the narration over
+        let playing = NowPlaying.shared.narrator(for: paperID)
+        _narrator = StateObject(wrappedValue: playing ?? Narrator())
+        _listening = State(initialValue: playing != nil)
     }
 
     enum Mode: String, CaseIterable { case reading = "Reading", pdf = "PDF" }
@@ -74,14 +79,17 @@ struct ReaderView: View {
                                    withAnimation(.easeInOut(duration: 0.22)) { chromeHidden = hide }
                                }) { current = $0 }
                     // pages stay put when the bars come and go: the view always fills the screen
-                    .ignoresSafeArea(edges: paged ? (listening ? .top : .all) : (listening ? [] : .bottom))
+                    .ignoresSafeArea(edges: paged ? (bottomBar ? .top : .all) : (bottomBar ? [] : .bottom))
                     .safeAreaInset(edge: .bottom) {
                         if listening { NarrationBar(narrator: narrator) { stopListening() } }
+                        else { NowPlayingBar() }   // another paper being read aloud
                     }
                     .overlay(alignment: .top) { ResumeNote(text: position.note).animation(.easeOut, value: position.note) }
             } else if mode == .pdf, let pdfURL {
                 PDFReader(url: pdfURL, paperID: paperID, highlighter: pdfHighlights) { a in editingAnnotation = a }
                     .ignoresSafeArea(edges: .bottom)
+                    // a paper being read aloud (this one too: its player is in the reading view)
+                    .overlay(alignment: .bottom) { NowPlayingBar(style: .capsule).padding(.horizontal, 12).padding(.bottom, 12) }
             } else {
                 PaperInfoView(paperID: paperID, embedded: true)
             }
@@ -231,16 +239,19 @@ struct ReaderView: View {
         // scrolling, the bars stay
         .onChange(of: find.shown) { _, shown in withAnimation { chromeHidden = shown && paged && mode == .reading } }
         .task { await setUp() }
-        .onAppear { OpenReader.set(paperID); position.resume() }
+        .onAppear { OpenReader.set(paperID); position.resume(); NowPlaying.shared.readerAppeared() }
         .onDisappear {
+            NowPlaying.shared.readerDisappeared()
             // a figure opened over the reader: it's still there, at the same place
             guard figure == nil else { return }
-            if listening { stopListening() }
+            // listening goes on: the Now Playing bar shows it in the library (NowPlaying.swift)
             position.stop(paperID, model: model, controller: controller)
             summary.stop()
             OpenReader.clear(paperID)
         }
         .onChange(of: summariesOn) { _, on in summary.setEnabled(on) }
+        // stopped from the Now Playing bar, or another paper is read aloud now
+        .onReceive(NowPlaying.shared.settled) { if listening, Narrator.active !== narrator { closePlayer() } }
         // leaving the app: save the place now (iOS may close Lunta in the background to free memory)
         .onChange(of: phase) { _, p in if p != .active { position.saveNow(paperID, model: model, controller: controller) } }
     }
@@ -254,6 +265,7 @@ struct ReaderView: View {
             controller.setHighlightMode(highlightMode, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow)
             refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
             summary.pageReady(paperID, model: model, controller: controller)
+            resumeListening()
         }
         controller.onSelectionDone = { pageSel in
             guard highlightMode, mode == .reading else { return }
@@ -413,6 +425,7 @@ struct ReaderView: View {
                     }
                 }
             }
+            narrator.paperID = paperID
             narrator.onHighlight = { [weak controller] id in controller?.highlight(id) }
             controller.onTapParagraph = { [weak narrator] id in narrator?.play(fromID: id) }
             controller.setListening(true)
@@ -427,9 +440,25 @@ struct ReaderView: View {
 
     private func stopListening() {
         narrator.stop()
+        closePlayer()
+    }
+
+    private func closePlayer() {
         controller.setListening(false)
         listening = false
     }
+
+    /// Reopened while its narration plays on: the page follows the voice again, from the paragraph being read.
+    private func resumeListening() {
+        guard listening else { return }
+        narrator.onHighlight = { [weak controller] id in controller?.highlight(id) }
+        controller.onTapParagraph = { [weak narrator] id in narrator?.play(fromID: id) }
+        controller.setListening(true)
+        if narrator.items.indices.contains(narrator.index) { controller.highlight(narrator.items[narrator.index].id) }
+    }
+
+    /// A player at the bottom of the reading view: this paper's, or the Now Playing bar of another.
+    private var bottomBar: Bool { listening || (nowPlaying.narrator.map { $0 !== narrator } ?? false) }
 
     private func load() async {
         guard let p = model.paper(paperID) else { loading = false; return }

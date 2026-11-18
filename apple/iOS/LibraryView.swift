@@ -3,6 +3,7 @@ import LuntaCore
 
 struct LibraryView: View {
     @EnvironmentObject var model: LibraryModel
+    @ObservedObject private var nowPlaying = NowPlaying.shared
     @State private var adding = false
     @State private var input = ""
     @State private var asking = false
@@ -74,14 +75,18 @@ struct LibraryView: View {
         }
         #endif
         .safeAreaInset(edge: .bottom) {
-            if let s = model.status {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text(s).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+            VStack(spacing: 0) {
+                // a paper being read aloud, its reader left: Now Playing (readers show their own)
+                if nowPlaying.readersShown == 0 { NowPlayingBar() }
+                if let s = model.status {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(s).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    .padding(.horizontal).padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(.bar)
                 }
-                .padding(.horizontal).padding(.vertical, 8)
-                .frame(maxWidth: .infinity)
-                .background(.bar)
             }
         }
     }

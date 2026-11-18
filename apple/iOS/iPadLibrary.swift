@@ -22,6 +22,7 @@ struct AdaptiveLibrary: View {
 /// can take the whole screen (⌃⌘F, or the button at the top left of the reader).
 struct iPadLibrary: View {
     @EnvironmentObject var model: LibraryModel
+    @ObservedObject private var nowPlaying = NowPlaying.shared
     @State private var columns: NavigationSplitViewVisibility = .all
     @State private var selected: String?
     @State private var reveal: String?
@@ -85,14 +86,18 @@ struct iPadLibrary: View {
         .task { await debugLaunch() }
         #endif
         .safeAreaInset(edge: .bottom) {
-            if let s = model.status {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text(s).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+            VStack(spacing: 0) {
+                // a paper being read aloud, its reader left: Now Playing (readers show their own)
+                if nowPlaying.readersShown == 0 { NowPlayingBar() }
+                if let s = model.status {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(s).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    .padding(.horizontal).padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(.bar)
                 }
-                .padding(.horizontal).padding(.vertical, 8)
-                .frame(maxWidth: .infinity)
-                .background(.bar)
             }
         }
         .alert("Add Paper", isPresented: $adding) {
