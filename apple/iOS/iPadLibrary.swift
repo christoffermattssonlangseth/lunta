@@ -64,6 +64,9 @@ struct iPadLibrary: View {
                 if columns != .detailOnly { columns = isNarrow ? .doubleColumn : .all }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .luntaReadPaper)) { n in
+            if let id = n.object as? String, model.paper(id) != nil { selected = id }
+        }
         .onReceive(MorningNotice.shared.$openForYou) { open in
             // the morning notification was tapped
             guard open else { return }

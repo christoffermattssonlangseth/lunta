@@ -492,21 +492,27 @@ struct ContentsSheet: View {
     }
 }
 
-/// The paper's reference list (⋯ › References): jump to one, open it if it's in the library
-/// (its info page), add it, or add all that are missing.
+/// The paper's reference list (⋯ › References): jump to one, read it if it's in the library,
+/// add it, or add all that are missing.
 struct ReferencesSheet: View {
     @ObservedObject var refs: ReferencesModel
     let onShow: (PaperReference) -> Void
-    @State private var opened: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            ReferencesList(refs: refs, onShow: onShow, onOpen: { opened = $0 })
+            // a reference in the library: the sheet closes and that paper opens in the reader
+            // (iPhone: on top of this one, Back returns; iPad: selected in the library)
+            ReferencesList(refs: refs, onShow: onShow, onOpen: { id in
+                dismiss()
+                Task {
+                    try? await Task.sleep(for: .milliseconds(350))
+                    NotificationCenter.default.post(name: .luntaReadPaper, object: id)
+                }
+            })
                 .navigationTitle("References")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-                .navigationDestination(item: $opened) { id in PaperInfoView(paperID: id, embedded: false) }
         }
         .presentationDetents([.medium, .large])
     }
@@ -743,4 +749,9 @@ private struct ViewSwitchButton: View {
             Button { mode = .pdf } label: { Label("Show PDF", systemImage: "doc.richtext") }
         }
     }
+}
+
+extension Notification.Name {
+    /// Open this paper (object: its id) in the reader, from inside a reader (References › In library).
+    static let luntaReadPaper = Notification.Name("luntaReadPaper")
 }

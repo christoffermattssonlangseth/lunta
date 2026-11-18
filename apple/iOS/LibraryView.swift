@@ -27,6 +27,9 @@ struct LibraryView: View {
                 .navigationDestination(for: String.self) { id in PaperInfoView(paperID: id, embedded: true, canRead: true) }
                 .navigationDestination(for: ReadTarget.self) { t in ReaderView(paperID: t.id) }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .luntaReadPaper)) { n in
+            if let id = n.object as? String, model.paper(id) != nil { path.append(ReadTarget(id: id)) }
+        }
         .onReceive(MorningNotice.shared.$openForYou) { open in
             // the morning notification was tapped
             guard open else { return }
