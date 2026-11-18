@@ -268,8 +268,6 @@ struct ReaderWindow: View {
             ask.passages = { [weak controller] in await controller?.narrationItems(includeCaptions: true) ?? [] }
             ask.selection = { [weak controller] in await controller?.selectedText() }
             pdfFinder.highlighter = pdfHighlights
-            // opened from a library search that found this paper: find the search in it
-            if let q = PaperFind.libraryQuery(for: paperID, in: model) { find.prefill(q) }
             position.onSettled = { [weak find] in find?.pageSettled() }
             // warm up the natural voice so Listen starts right away
             if KokoroLive.shared.installed { Task { _ = await KokoroLive.shared.start() } }

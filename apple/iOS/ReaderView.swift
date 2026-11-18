@@ -296,8 +296,6 @@ struct ReaderView: View {
         ask.passages = { [weak controller] in await controller?.narrationItems(includeCaptions: true) ?? [] }
         ask.selection = { [weak controller] in await controller?.selectedText() }
         pdfFinder.highlighter = pdfHighlights
-        // opened from a library search that found this paper: find the search in it
-        if let q = PaperFind.libraryQuery(for: paperID, in: model) { find.prefill(q) }
         position.onSettled = { [weak find] in find?.pageSettled() }
         await load()
         find.use(findBackend)
