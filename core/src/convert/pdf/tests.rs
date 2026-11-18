@@ -528,6 +528,207 @@ fn column_table_does_not_take_the_running_heads_rule() {
     assert!(paras.iter().any(|p| p.kind == Kind::Text && p.text().starts_with("to infer and perform")));
 }
 
+// MARK: - Reference lists
+
+#[test]
+fn reference_headings_entries_and_scores() {
+    use super::refs::*;
+    for h in ["References", "REFERENCES", "6 References", "6. References", "❚ REFERENCES", "■ REFERENCES", "R E F E R E N C E S",
+        "Literature Cited", "References and Notes", "Bibliography", "Literatur", "Références", "Referencias", "Reference list"] {
+        assert!(is_heading(h), "{h}");
+    }
+    for h in ["Reference genes", "Literature review", "References 1. Smith J. A paper. 2001", "Results"] {
+        assert!(!is_heading(h), "{h}");
+    }
+    assert_eq!(heading_text("❚ REFERENCES"), "REFERENCES");
+    assert_eq!(label("12. Smith JA, Jones B."), Some(12));
+    assert_eq!(label("10.Hino K, Hara Y."), Some(10));
+    assert_eq!(label("[3] Y. Guo, Y. Fan"), Some(3));
+    assert_eq!(label("1 Hanahan D, Weinberg RA."), Some(1));
+    assert_eq!(label("2 A. Wang, Y. Xue"), Some(2));
+    assert_eq!(label("2010;257:359–66."), None);
+    assert_eq!(label("10.1016/j.cell.2011.02.013"), None);
+    for a in ["Smith JA, Jones B (2001)", "Smith, J. A., & Jones, B.", "Cryan, J. F. & Dinan, T. G.", "van der Berg, A. (2003)",
+        "J. A. Smith, B. Jones,", "Nelson PT, Jicha GA"] {
+        assert!(author_start(a), "{a}");
+    }
+    for a in ["The cells were washed", "In 2010, Smith and colleagues", "Figure 2 shows"] {
+        assert!(!author_start(a), "{a}");
+    }
+    assert!(score("Nelson PT, Jicha GA, Kryscio RJ. Low sensitivity in clinical diagnoses of dementia. J Neurol. 2010;257:359–66.") >= 4);
+    assert!(score("[20] S. Mundlos, Clin. Genet. 2009, 76, 123.") >= 3);
+    assert!(score("Swanson, L. W. & Lichtman, J. W. From Cajal to connectome and beyond. Annu. Rev. Neurosci. 39, 197–216 (2016).") >= 3);
+    // running text with citations is not a reference
+    let body = "We found that these cells were more active than in earlier work (Smith et al., 2010; Jones 2012), which suggests that \
+                the pathway is also required in vivo, as has been shown for the related kinases in yeast and in flies.";
+    assert!(score(body) < 2, "{}", score(body));
+}
+
+/// Body pages, then a list of references that would otherwise read as body text.
+fn refs_pages(heading: Option<PLine>, entries: &[&str], numbered_body_list: bool) -> Vec<Page> {
+    let mut p1 = vec![
+        bold(line("A Tiny Test Paper About Boxes", 0, 150.0, 80.0, 18.0)),
+        line("Ada Lovelace and Alan Turing", 0, 200.0, 110.0, 11.0),
+        bold(line("Abstract", 0, 72.0, 150.0, 11.0)),
+    ];
+    p1.extend(para(LOREM, 0, 72.0, 170.0, 4, 90));
+    p1.push(bold(line("1 Introduction", 0, 72.0, 240.0, 12.0)));
+    p1.extend(para(LOREM, 0, 72.0, 260.0, 30, 90));
+    let mut p2 = vec![bold(line("2 Methods", 1, 72.0, 72.0, 12.0))];
+    p2.extend(para(LOREM, 1, 72.0, 92.0, 20, 90));
+    if numbered_body_list {
+        // steps of a protocol: numbered, but running text
+        for (k, s) in ["1. The samples were thawed on ice and then were washed twice in the buffer that we had made.",
+            "2. These were then spun down, which was done at 4 degrees for ten minutes as we had planned.",
+            "3. The pellets were resuspended and were kept on ice until they were used in the assay."].iter().enumerate()
+        {
+            p2.push(line(s, 1, 72.0, 350.0 + 14.0 * k as f64, 10.0));
+        }
+    }
+    p2.extend(para(LOREM, 1, 72.0, 420.0, 10, 90));
+    let mut p3 = vec![bold(line("3 Discussion", 2, 72.0, 72.0, 12.0))];
+    p3.extend(para(LOREM, 2, 72.0, 92.0, 8, 90));
+    let mut y = 220.0;
+    if let Some(h) = heading {
+        let mut h = h;
+        h.page = 2;
+        h.bbox = R::new(72.0, y, 72.0 + h.bbox.w(), y + h.bbox.h());
+        p3.push(h);
+        y += 9.0;
+    }
+    for e in entries {
+        // a hanging indent: the first line at 72, the rest at 84
+        // (wrapped lines run to the right edge, the last one ends short)
+        let mut chunks: Vec<String> = vec![String::new()];
+        for w in e.split(' ') {
+            if chunks.last().unwrap().chars().count() > 55 {
+                chunks.push(String::new());
+            }
+            let c = chunks.last_mut().unwrap();
+            if !c.is_empty() {
+                c.push(' ');
+            }
+            *c += w;
+        }
+        let n = chunks.len();
+        for (k, c) in chunks.iter().enumerate() {
+            let x = if k == 0 { 72.0 } else { 84.0 };
+            let mut l = line(c, 2, x, y, 7.5);
+            if k + 1 < n {
+                l.bbox.x1 = 320.0;
+            }
+            p3.push(l);
+            y += 9.0;
+        }
+        y += 1.0;
+    }
+    vec![
+        Page { width: 612.0, height: 792.0, lines: p1, graphics: PageGraphics::default() },
+        Page { width: 612.0, height: 792.0, lines: p2, graphics: PageGraphics::default() },
+        Page { width: 612.0, height: 792.0, lines: p3, graphics: PageGraphics::default() },
+    ]
+}
+
+const NUMBERED_REFS: [&str; 7] = [
+    "1. Nelson PT, Jicha GA, Kryscio RJ, Abner EL. Low sensitivity in clinical diagnoses of dementia. J Neurol. 2010;257:359–66.",
+    "2. Vann Jones SA, O'Brien JT. The prevalence and incidence of dementia with Lewy bodies. Psychol Med. 2014;44:673–83.",
+    "3. McKeith IG, Dickson DW, Lowe J, et al. Diagnosis and management of dementia with Lewy bodies. Neurology. 2005;65:1863–72.",
+    "4. Ballard C, Howard R. Neuroleptic drugs in dementia: benefits and harm. Nat Rev Neurosci. 2006;7:492–500.",
+    "5. Boeve BF, Silber MH, Ferman TJ. REM sleep behavior disorder in Parkinson's disease. J Geriatr Psychiatry Neurol. 2004;17:146–57.",
+    "6. Aarsland D, Perry R, Larsen JP, et al. Neuroleptic sensitivity in Parkinson's disease. J Clin Psychiatry. 2005;66:633–7.",
+    "7. Kurlan R, Cummings J, Raman R, Thal L. Quetiapine for agitation or psychosis in patients with dementia. Neurology. 2007;68:1356–63.",
+];
+
+fn book_of(pages: Vec<Page>) -> Book {
+    let (paras, body) = analyse(pages);
+    let opts = Options { offline: true, ..Default::default() };
+    assemble(paras, PaperMeta::default(), &PaperMeta::default(), body, &opts).unwrap()
+}
+
+fn list_items(html: &str) -> Vec<String> {
+    let Some(ol) = html.split("<ol class=\"refs\"").nth(1) else { return vec![] };
+    let ol = ol.split("</ol>").next().unwrap();
+    ol.split("<li>").skip(1).map(|li| li.split("</li>").next().unwrap().to_string()).collect()
+}
+
+/// BMC: "References" in the reference type (no bold font name), on the first line of the list's
+/// first paragraph: a References chapter with one list item per entry, none of it body text.
+#[test]
+fn references_heading_on_the_first_line_of_the_list() {
+    let book = book_of(refs_pages(Some(line("References", 0, 72.0, 0.0, 7.5)), &NUMBERED_REFS, false));
+    let last = book.chapters.last().unwrap();
+    assert_eq!(last.title, "References");
+    let items = list_items(&last.html);
+    assert_eq!(items.len(), 7, "{}", last.html);
+    assert!(items[0].starts_with("1. Nelson PT") && items[0].ends_with("2010;257:359–66."), "{}", items[0]);
+    assert!(items[6].starts_with("7. Kurlan R"));
+    assert!(!book.chapters.iter().take(book.chapters.len() - 1).any(|c| c.html.contains("Nelson PT")));
+}
+
+/// A small bold "References" (smaller than the body, so no heading for the layout analysis), and an
+/// ornamented "❚ REFERENCES".
+#[test]
+fn small_and_ornamented_reference_headings() {
+    for h in [bold(line("References", 0, 72.0, 0.0, 7.5)), bold(line("❚ REFERENCES", 0, 72.0, 0.0, 12.0))] {
+        let book = book_of(refs_pages(Some(h), &NUMBERED_REFS, false));
+        let last = book.chapters.last().unwrap();
+        assert!(last.title == "References" || last.title == "REFERENCES", "{}", last.title);
+        assert_eq!(list_items(&last.html).len(), 7, "{}", last.html);
+    }
+}
+
+/// No heading at all (Wiley): the entries themselves make a reference list; entries that share a
+/// paragraph are cut at the next number.
+#[test]
+fn reference_list_without_a_heading() {
+    let refs: Vec<String> = NUMBERED_REFS.iter().map(|e| {
+        let (n, rest) = e.split_once(". ").unwrap();
+        format!("[{n}] {rest}")
+    }).collect();
+    let refs: Vec<&str> = refs.iter().map(|s| s.as_str()).collect();
+    let book = book_of(refs_pages(None, &refs, false));
+    let last = book.chapters.last().unwrap();
+    assert_eq!(last.title, "References");
+    let items = list_items(&last.html);
+    assert_eq!(items.len(), 7, "{}", last.html);
+    assert!(items[2].starts_with("[3] McKeith IG"));
+    let discussion = book.chapters.iter().find(|c| c.title == "3 Discussion").unwrap();
+    assert!(!discussion.html.contains("Nelson PT") && discussion.html.contains("<p>"));
+}
+
+/// Author–year entries with a hanging indent, two of them run together in one paragraph.
+#[test]
+fn author_year_entries_are_cut_at_the_hanging_indent() {
+    let refs = [
+        "Abebe DA, van Bentum S, Suzuki M (2021) Plant death caused by inefficient induction of antiviral R-gene resistance. Plant Physiol 186:1–15.",
+        "Akhter MS, Nakahara KS, Masuta C (2021) Resistance induction based on the understanding of molecular interactions. Plant Sci 305:110830.",
+        "Alcaide C, Rabadán MP, Gómez P (2020) Implications of mixed viral infections on plant disease ecology. Viruses 12:1–17.",
+    ];
+    let mut pages = refs_pages(Some(bold(line("References", 0, 72.0, 0.0, 7.5))), &refs, false);
+    // the second and third entries in one paragraph (no gap between them)
+    let p3 = &mut pages[2].lines;
+    let k = p3.iter().position(|l| l.text.starts_with("Alcaide")).unwrap();
+    for l in p3[k..].iter_mut() {
+        l.bbox.y0 -= 1.0;
+        l.bbox.y1 -= 1.0;
+    }
+    let book = book_of(pages);
+    let items = list_items(&book.chapters.last().unwrap().html);
+    assert_eq!(items.len(), 3, "{}", book.chapters.last().unwrap().html);
+    assert!(items[2].starts_with("Alcaide C"));
+}
+
+/// Conservative: a numbered list of protocol steps in the methods is running text, and without
+/// a reference list nothing is cut out of the body.
+#[test]
+fn numbered_steps_in_the_body_are_no_references() {
+    let book = book_of(refs_pages(None, &[], true));
+    assert!(book.chapters.iter().all(|c| !c.html.contains("class=\"refs\"")));
+    assert!(book.chapters.iter().all(|c| c.title != "References"));
+    let methods = book.chapters.iter().find(|c| c.title == "2 Methods").unwrap();
+    assert!(methods.html.contains("1. The samples were thawed"));
+}
+
 // MARK: - PDFium (generated PDF)
 
 /// A small two-page PDF with base-14 fonts: title, authors, abstract, numbered sections, an

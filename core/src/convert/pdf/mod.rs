@@ -8,6 +8,7 @@
 
 pub mod extract;
 pub mod layout;
+pub mod refs;
 
 use super::{esc, fail, net, Book, BookImage, Chapter, ConvertError, Heading, Options, PaperMeta, Result};
 use layout::{re, styled, Analyzer, Kind, Para};
@@ -281,6 +282,9 @@ fn debug_dump(paras: &[Para]) {
     }
 }
 
+/// A PDF's reference list: its entries keep the numbers they are printed with.
+const REFS_OL: &str = "<ol class=\"refs\" style=\"list-style-type: none; padding-left: 0\">";
+
 /// Turns analysed paragraphs into chapters (the rest of Swift's `PDFBook.build`).
 pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_size: f64, opts: &Options) -> Result<Book> {
     let mut meta = guessed.clone();
@@ -342,6 +346,8 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
         folded.push(p);
     }
     let merged = folded;
+    // the reference list: one entry per reference
+    let (merged, ref_entry) = refs::mark(merged, body_size);
     // attach captions to the nearest figure/table on the same page
     let is_table_caption = |c: &Para| re!(r"(?i)^(supplementary\s+)?table").is_match(&c.text());
     let mut cap_of: Vec<(usize, usize)> = Vec::new();
@@ -432,6 +438,7 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
     let mut last_kind: Option<Kind> = None;
     let missing_title = meta.title.is_empty();
     let mut open_box: Option<usize> = None;
+    let mut in_list = false;
     for (i, p) in merged.iter().enumerate() {
         // appends to the current chapter, opening "Main text" if there is none
         macro_rules! append {
@@ -443,6 +450,19 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
                 }
                 cur.as_mut().unwrap().html += &h;
             }};
+        }
+        // reference entries: one list item each (numbered as printed)
+        if in_list && !ref_entry[i] {
+            append!("</ol>".to_string());
+            in_list = false;
+        }
+        if ref_entry[i] {
+            if !in_list {
+                append!(REFS_OL.to_string());
+                in_list = true;
+            }
+            append!(format!("<li>{}</li>", styled(p)));
+            continue;
         }
         // a box's paragraphs, kept together
         if p.boxed != open_box {
@@ -534,8 +554,11 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
             last_kind = Some(p.kind);
         }
     }
-    if open_box.is_some() {
-        if let Some(c) = cur.as_mut() {
+    if let Some(c) = cur.as_mut() {
+        if in_list {
+            c.html += "</ol>";
+        }
+        if open_box.is_some() {
             c.html += "</div>";
         }
     }

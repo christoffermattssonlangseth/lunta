@@ -1161,6 +1161,9 @@ final class PDFAnalyzer {
 // MARK: - Book assembly
 
 enum PDFBook {
+    /// A PDF's reference list: its entries keep the numbers they are printed with.
+    static let refsOL = "<ol class=\"refs\" style=\"list-style-type: none; padding-left: 0\">"
+
     static func build(_ data: Data, meta extra: PaperMeta, log: @escaping (String) -> Void) async throws -> Book {
         guard let doc = PDFDocument(data: data) else { throw fail("Could not open the PDF.") }
         if doc.isLocked && !doc.unlock(withPassword: "") { throw fail("The PDF is password-protected.") }
@@ -1214,6 +1217,9 @@ enum PDFBook {
             folded.append(p)
         }
         merged = folded
+        // the reference list: one entry per reference
+        let (withRefs, refEntry) = PDFReferences.mark(merged, body: an.bodySize)
+        merged = withRefs
         // attach captions to the nearest figure/table on the same page
         var capOf: [Int: Int] = [:]
         for (i, p) in merged.enumerated() where p.kind == .figure || p.kind == .table {
@@ -1274,7 +1280,15 @@ enum PDFBook {
         var lastKind: Para.Kind?
         let missingTitle = meta.title.isEmpty
         var openBox: Int?
+        var inList = false
         for (i, p) in merged.enumerated() {
+            // reference entries: one list item each (numbered as printed)
+            if inList && !refEntry[i] { append("</ol>"); inList = false }
+            if refEntry[i] {
+                if !inList { append(refsOL); inList = true }
+                append("<li>\(an.styled(p))</li>")
+                continue
+            }
             // a box's paragraphs, kept together
             if p.boxed != openBox {
                 if openBox != nil { append("</div>") }
@@ -1325,6 +1339,7 @@ enum PDFBook {
             }
             if p.kind != .front { lastKind = p.kind }
         }
+        if inList { cur?.html += "</ol>" }
         if openBox != nil { cur?.html += "</div>" }
         close()
         _ = hasAbstractHeading
