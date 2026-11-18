@@ -43,7 +43,7 @@ android {
         targetSdk = 36
         // a release from a tag: its version (v0.2.0 -> "0.2.0") and an always larger code (the CI run)
         versionCode = setting("LUNTA_VERSION_CODE", "lunta.versionCode")?.toInt() ?: 1
-        versionName = setting("LUNTA_VERSION_NAME", "lunta.versionName") ?: "1.0.5"
+        versionName = setting("LUNTA_VERSION_NAME", "lunta.versionName") ?: "1.0.6"
         buildConfigField("String", "GOOGLE_CLIENT_ID", "\"$googleClientId\"")
         buildConfigField("String", "REDIRECT_SCHEME", "\"$redirectScheme\"")
         buildConfigField("boolean", "SELF_UPDATE", selfUpdate.toString())
