@@ -9,6 +9,10 @@ typealias PaperMeta = LuntaCore.PaperMeta
 struct LuntaApp: App {
     @StateObject private var holder = ModelHolder()
 
+    init() {
+        _ = AppUpdater.shared   // Sparkle's daily check starts with the app (Mac/Updates.swift)
+    }
+
     var body: some Scene {
         WindowGroup("Lunta") {
             Group {
@@ -205,6 +209,9 @@ struct LuntaCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            CheckForUpdatesButton()
+        }
         CommandGroup(replacing: .help) {
             Button("Getting Started with Lunta") {
                 NSWorkspace.shared.open(URL(string: "https://christoffermattssonlangseth.github.io/lunta/getting-started.html")!)

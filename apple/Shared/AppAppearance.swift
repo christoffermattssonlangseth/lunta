@@ -52,6 +52,8 @@ struct AppSettingsView: View {
             AppearancePicker()
             Text("System follows your Mac's light or dark mode. The reader's own themes (Paper, Quiet, Black…) are in the reader toolbar.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Divider().padding(.vertical, 6)
+            UpdateSettings()   // Mac/Updates.swift
         }
         .padding(24)
         .frame(width: 420)

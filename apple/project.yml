@@ -24,6 +24,10 @@ packages:
   swift-transformers:
     url: https://github.com/huggingface/swift-transformers
     from: "1.3.0"
+  # updates for the Mac app from GitHub Releases (appcast.xml made by scripts/release-mac.sh)
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.10.0"
 
 settings:
   base:
@@ -63,6 +67,8 @@ targets:
         product: HuggingFace
       - package: swift-transformers
         product: Tokenizers
+      - package: Sparkle
+        product: Sparkle
     postCompileScripts:
       - name: Embed lunta-mcp (agent server and CLI)
         basedOnDependencyAnalysis: false
@@ -84,6 +90,14 @@ targets:
           - CFBundleURLName: com.cmlangseth.margins
             CFBundleURLSchemes: [lunta, margins]   # margins:// from before the rename
         NSHumanReadableCopyright: ""
+        # Sparkle (Mac/Updates.swift): the feed is attached to the latest GitHub release by
+        # scripts/release-mac.sh, signed with the EdDSA key in the release Mac's login Keychain
+        # (Sparkle's generate_keys --account lunta); only the public key is here
+        SUFeedURL: https://github.com/christoffermattssonlangseth/lunta/releases/latest/download/appcast.xml
+        SUPublicEDKey: vxyOE1peWAzp28iZBv/+c9chjnJrWgvaCf67oAuMiqc=
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+        SUVerifyUpdateBeforeExtraction: true
     entitlements:
       path: Mac/Lunta.entitlements
       properties:

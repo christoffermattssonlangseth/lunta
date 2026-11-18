@@ -36,5 +36,15 @@
 	<string>public.app-category.education</string>
 	<key>NSHumanReadableCopyright</key>
 	<string></string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/christoffermattssonlangseth/lunta/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>vxyOE1peWAzp28iZBv/+c9chjnJrWgvaCf67oAuMiqc=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 </dict>
 </plist>
