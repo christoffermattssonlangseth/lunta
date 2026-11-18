@@ -33,14 +33,25 @@
     return d.replace(/[.,;)\]]+$/, "").replace(/\/(full|abstract|pdf|epdf)$/i, "").replace(/~.*$/, "");
   }
 
-  function findPdfUrl() {
+  // Where the PDF may be, best first: the page's citation_pdf_url, then the page's own Download PDF
+  // button (Nature's citation_pdf_url can be a web page while its button has the PDF: "_reference.pdf"),
+  // then other PDF links. Saving tries them in turn until one gives a PDF.
+  function findPdfUrls() {
+    const urls = [];
+    const add = (u) => { try { u = new URL(u, location.href).href; if (!urls.includes(u)) urls.push(u); } catch (_) {} };
+    const visible = (x) => x.offsetParent !== null;
+    const supplement = (h) => /supplement|MOESM|\/esm\/|_ESM\.|suppl|mmc\d/i.test(h);
     const m = meta("citation_pdf_url");
-    if (m) return new URL(m, location.href).href;
+    if (m) add(m);
     const link = document.querySelector('link[type="application/pdf"]');
-    if (link && link.href) return link.href;
-    const a = [...document.querySelectorAll("a[href]")].find((x) =>
-      /\.pdf($|[?#])|\/pdf(\/|$|\?)|\/epdf\//i.test(x.getAttribute("href")) && x.offsetParent !== null);
-    return a ? a.href : "";
+    if (link && link.href) add(link.href);
+    const links = [...document.querySelectorAll("a[href]")].filter((x) => visible(x) && !supplement(x.getAttribute("href")));
+    // the publisher's own download button
+    links.filter((x) => x.matches('[data-article-pdf], [data-test="download-pdf"], .c-pdf-download__link, [data-track-action="download pdf"]')
+        || /^\s*(download\s+(article\s+)?pdf|view\s+pdf|pdf)\s*$/i.test(x.textContent || ""))
+      .forEach((x) => add(x.href));
+    links.filter((x) => /\.pdf($|[?#])|\/pdf(\/|$|\?)|\/epdf\//i.test(x.getAttribute("href"))).forEach((x) => add(x.href));
+    return urls.slice(0, 4);
   }
 
   // publishers whose article pages Lunta can read (also when a page lacks citation_* tags)
@@ -95,7 +106,8 @@
     abstract: meta("citation_abstract", "dc.description", "description"),
     url: location.href,
   };
-  const pdfUrl = findPdfUrl();
+  const pdfUrls = findPdfUrls();
+  const pdfUrl = pdfUrls[0] || "";
 
   // ---- panel (shadow DOM keeps the page's CSS out) ----
   const host = document.createElement("div");
@@ -319,16 +331,19 @@
       if (s.error) { showError(s.error); render(); return; }
       state = s;
     }
-    let msg = { type: "savePdf", id: state.id, pdfUrl, name: (title || "paper").slice(0, 80) + ".pdf", meta: info };
-    try {
-      // fetch from the page first: same-origin requests carry the site's login cookies
-      const r = await pageFetch(pdfUrl, { credentials: "include" });
-      const buf = await r.arrayBuffer();
-      const head = new Uint8Array(buf.slice(0, 4));
-      if (r.ok && head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46) {
-        msg = { ...msg, base64: toBase64(buf), pdfUrl: undefined };
-      }
-    } catch (_) { /* cross-origin: let the extension fetch it */ }
+    let msg = { type: "savePdf", id: state.id, pdfUrl, pdfUrls, name: (title || "paper").slice(0, 80) + ".pdf", meta: info };
+    // fetch from the page first: same-origin requests carry the site's login cookies; each link in turn
+    for (const u of pdfUrls) {
+      try {
+        const r = await pageFetch(u, { credentials: "include" });
+        const buf = await r.arrayBuffer();
+        const head = new Uint8Array(buf.slice(0, 4));
+        if (r.ok && head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46) {
+          msg = { ...msg, base64: toBase64(buf), pdfUrl: undefined, pdfUrls: undefined };
+          break;
+        }
+      } catch (_) { /* cross-origin: let the extension fetch it */ }
+    }
     const r = await send(msg);
     if (r.error) showError(r.error); else { state = r; showError(""); }
     render();

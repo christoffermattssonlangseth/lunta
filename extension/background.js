@@ -39,6 +39,15 @@ async function fetchPdf(url) {
   return buf;
 }
 
+// The first of the page's PDF links that gives a PDF (the error of the first when none does).
+async function fetchPdfAny(urls) {
+  let first;
+  for (const u of urls.filter(Boolean)) {
+    try { return await fetchPdf(u); } catch (e) { first = first || e; }
+  }
+  throw first || new Error("No PDF link on this page.");
+}
+
 // Limits for "Use this page's full text": figures beyond these are left out (and counted).
 // iPhone and iPad: smaller, for the memory Safari and the app have there.
 const LIMITS = { images: 80, imageBytes: 15 * 1024 * 1024, totalBytes: 80 * 1024 * 1024 };
@@ -212,7 +221,7 @@ async function handle(msg, sender) {
       return api("/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(msg.meta) });
     case "savePdf": {
       // bytes fetched by the page (same-origin cookies) arrive as base64; otherwise fetch here
-      const bytes = msg.base64 ? base64ToBytes(msg.base64) : await fetchPdf(msg.pdfUrl);
+      const bytes = msg.base64 ? base64ToBytes(msg.base64) : await fetchPdfAny(msg.pdfUrls || [msg.pdfUrl]);
       const q = new URLSearchParams({ id: msg.id || "", name: msg.name || "paper.pdf" });
       return api("/pdf?" + q, { method: "POST", headers: { "Content-Type": "application/pdf" }, body: bytes });
     }
@@ -235,7 +244,7 @@ async function handleNative(msg) {
     case "save":
       return nativeSubmit({ kind: "save", meta: msg.meta || {} });
     case "savePdf": {
-      const base64 = msg.base64 || bytesToBase64(await fetchPdf(msg.pdfUrl));
+      const base64 = msg.base64 || bytesToBase64(await fetchPdfAny(msg.pdfUrls || [msg.pdfUrl]));
       return nativeSubmit({ kind: "pdf", pdf: "paper.pdf", paperId: msg.id || "", name: msg.name || "paper.pdf", meta: msg.meta || {} },
         [{ name: "paper.pdf", base64 }]);
     }
