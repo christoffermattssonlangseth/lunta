@@ -26,6 +26,10 @@ val redirectScheme: String =
 // android/local.properties (lunta.keystore=…, lunta.keystorePassword=…). Without it, release builds
 // are unsigned. Every update must be signed with the same key: keep a backup of it.
 fun setting(env: String, prop: String): String? = (System.getenv(env) ?: local.getProperty(prop))?.trim()?.takeIf { it.isNotEmpty() }
+// Updates from GitHub Releases (app/lunta/update/): on, for the APK on GitHub. A build for a store
+// (which updates apps itself and doesn't allow REQUEST_INSTALL_PACKAGES for this) sets
+// lunta.selfUpdate=false or LUNTA_SELF_UPDATE=false: no update checks, no permission, no provider.
+val selfUpdate: Boolean = setting("LUNTA_SELF_UPDATE", "lunta.selfUpdate")?.toBooleanStrictOrNull() ?: true
 val releaseKeystore = setting("LUNTA_KEYSTORE", "lunta.keystore")
 val releasePassword = setting("LUNTA_KEYSTORE_PASSWORD", "lunta.keystorePassword")
 
@@ -42,6 +46,7 @@ android {
         versionName = setting("LUNTA_VERSION_NAME", "lunta.versionName") ?: "1.0.5"
         buildConfigField("String", "GOOGLE_CLIENT_ID", "\"$googleClientId\"")
         buildConfigField("String", "REDIRECT_SCHEME", "\"$redirectScheme\"")
+        buildConfigField("boolean", "SELF_UPDATE", selfUpdate.toString())
         manifestPlaceholders["redirectScheme"] = redirectScheme
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
@@ -75,6 +80,12 @@ android {
         // libpdfium.so is loaded by path (PDFIUM_PATH), so the libraries must be extracted
         jniLibs.useLegacyPackaging = true
     }
+    if (selfUpdate) {
+        // the install permission and the FileProvider (src/selfupdate/AndroidManifest.xml)
+        sourceSets["debug"].manifest.srcFile("src/selfupdate/AndroidManifest.xml")
+        sourceSets["release"].manifest.srcFile("src/selfupdate/AndroidManifest.xml")
+    }
+    testOptions.unitTests.isReturnDefaultValues = true
     sourceSets["main"].apply {
         kotlin.directories.add("src/main/generated/uniffi")
         assets.directories.add(layout.buildDirectory.dir("generated/readerAssets").get().asFile.path)
@@ -106,4 +117,6 @@ dependencies {
     // SVG figures in the figure viewer and grid (BitmapFactory reads only raster images)
     implementation(libs.androidsvg)
     implementation("${libs.jna.get()}@aar")
+    testImplementation(libs.junit)
+    testImplementation(libs.json)   // org.json for the JVM (Android's is a stub in unit tests)
 }

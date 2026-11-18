@@ -13,6 +13,7 @@ import app.lunta.data.LibraryMode
 import app.lunta.data.Positions
 import app.lunta.data.Settings
 import app.lunta.data.SmartFolder
+import app.lunta.update.Updater
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -55,6 +56,8 @@ data class Row(val paper: Paper, val snippet: String? = null)
 class AppModel(val app: Application) {
     val settings = Settings(app)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /** New versions from GitHub Releases (update/Updater.kt). */
+    val updater = Updater(app, settings, scope)
 
     var mode by mutableStateOf(settings.mode)
         private set

@@ -17,6 +17,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         model.start()
+        model.updater.checkIfDue()
         setContent { LuntaTheme { LuntaRoot(model) } }
         if (savedInstanceState == null) handle(intent)
     }
@@ -30,6 +31,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (model.opened) model.refreshNow()
+        model.updater.resume()
     }
 
     private fun handle(i: Intent?) {

@@ -66,6 +66,15 @@ class Settings(context: Context) {
         get() = p.getLong("lastSyncMs", 0)
         set(v) = p.edit { putLong("lastSyncMs", v) }
 
+    /** "Check for updates automatically" (update/Updater.kt): at most once a day, on start. */
+    var autoUpdate: Boolean
+        get() = p.getBoolean("autoUpdate", true)
+        set(v) = p.edit { putBoolean("autoUpdate", v) }
+
+    var lastUpdateCheckMs: Long
+        get() = p.getLong("lastUpdateCheckMs", 0)
+        set(v) = p.edit { putLong("lastUpdateCheckMs", v) }
+
     // sign-in in progress (survives the app being killed while the browser is open)
     var pendingVerifier: String
         get() = p.getString("pendingVerifier", "")!!

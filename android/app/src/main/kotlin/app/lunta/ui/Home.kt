@@ -2,6 +2,7 @@ package app.lunta.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -185,7 +186,7 @@ private fun PlaceRow(
 @Composable
 private fun SettingsSheet(model: AppModel, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismiss) {
-        Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
+        Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
             Text("Library", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(8.dp))
             val where = when {
@@ -207,8 +208,9 @@ private fun SettingsSheet(model: AppModel, onDismiss: () -> Unit) {
             OutlinedButton({ onDismiss(); model.leaveLibrary(model.mode == LibraryMode.Drive) }) {
                 Text(if (model.mode == LibraryMode.Drive) "Sign out and choose another library" else "Choose another library")
             }
+            UpdateSettings(model.updater)
             Spacer(Modifier.height(20.dp))
-            Text("Lunta for Android 0.1 · Rust core, PDFium for PDFs (see licenses in the app’s assets).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Lunta for Android ${BuildConfig.VERSION_NAME} · Rust core, PDFium for PDFs (see licenses in the app’s assets).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

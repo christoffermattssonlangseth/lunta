@@ -44,6 +44,7 @@ fun LuntaRoot(model: AppModel) {
                     confirmButton = { TextButton({ model.error = null }) { Text("OK") } },
                 )
             }
+            UpdateDialogs(model.updater)
             model.info?.let { e ->
                 AlertDialog(
                     onDismissRequest = { model.info = null },
