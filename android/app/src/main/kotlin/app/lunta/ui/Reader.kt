@@ -306,14 +306,21 @@ private fun EpubReader(model: AppModel, paper: Paper) {
         }
     }
 
-    // The citation card's "Add to Lunta" (lunta://cite?doi=…|arxiv=…): the paper if it is already in
-    // the library, else added like "Add paper" does; the card says which (ExternalLinks.swift).
+    // The citation card's "Add to Lunta" (lunta://cite?doi=…|arxiv=…, or ?ref=<the reference's text>
+    // without either: its DOI is looked up by Crossref's bibliographic search): the paper if it is
+    // already in the library, else added like "Add paper" does; the card says which (ExternalLinks.swift).
     fun cite(link: String) {
         val u = runCatching { Uri.parse(link) }.getOrNull()
-        val doi = u?.getQueryParameter("doi")?.trim().orEmpty()
-        val arxiv = u?.getQueryParameter("arxiv")?.trim().orEmpty()
+        var doi = u?.getQueryParameter("doi")?.trim().orEmpty()
+        var arxiv = u?.getQueryParameter("arxiv")?.trim().orEmpty()
+        val ref = u?.getQueryParameter("ref")?.trim().orEmpty()
         scope.launch {
             val label = withContext(Dispatchers.IO) {
+                if (doi.isEmpty() && arxiv.isEmpty() && ref.isNotEmpty()) {
+                    val ids = runCatching { resolveReference(ref) }.getOrNull() ?: return@withContext "Couldn’t find its DOI"
+                    doi = ids.doi
+                    arxiv = ids.arxiv
+                }
                 if (doi.isEmpty() && arxiv.isEmpty()) return@withContext "Nothing to add"
                 val key = doi.ifEmpty { "10.48550/arXiv.$arxiv" }
                 if (lib.findByDoi(key) != null) return@withContext "In your library"

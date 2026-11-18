@@ -347,8 +347,11 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
         var la = btn('Add to Lunta', 'lunta://cite?arxiv=' + ax[1], 'm-cite-lunta');
         la.addEventListener('click', function(){ setTimeout(function(){ if (pop && la.getAttribute('href')) la.textContent = 'Adding…'; }, 0); });
       } else {
-        var q = (ref.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-        btn('Search', 'https://scholar.google.com/scholar?q=' + encodeURIComponent(q));
+        // neither: the app looks the reference up (Crossref's bibliographic search) and adds what it finds
+        var full = (ref.textContent || '').replace(/\s+/g, ' ').trim();
+        var lr = btn('Add to Lunta', 'lunta://cite?ref=' + encodeURIComponent(full.slice(0, 600)), 'm-cite-lunta');
+        lr.addEventListener('click', function(){ setTimeout(function(){ if (pop && lr.getAttribute('href')) lr.textContent = 'Looking it up…'; }, 0); });
+        btn('Search', 'https://scholar.google.com/scholar?q=' + encodeURIComponent(full.slice(0, 200)));
       }
     }
     var go = btn('Show in References', '#');

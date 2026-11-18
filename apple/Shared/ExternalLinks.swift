@@ -1,4 +1,5 @@
 import WebKit
+import LuntaCore
 #if os(iOS)
 import UIKit
 #else
@@ -39,19 +40,41 @@ final class ExternalLinks: NSObject, WKNavigationDelegate {
 }
 
 extension LibraryModel {
-    /// The citation card's lunta://cite?doi=…: the paper's id if it is already in the library, else
-    /// it is added (with its open-access full text when there is one). Returns the id and what to
-    /// show on the card's button.
+    /// The citation card's lunta://cite?doi=… (or ?arxiv=…, or ?ref=<the reference's text> when it
+    /// has neither: its DOI is looked up by Crossref's bibliographic search): the paper's id if it
+    /// is already in the library, else it is added (with its open-access full text when there is
+    /// one). Returns the id and what to show on the card's button.
     func paperForCitation(_ url: URL) async -> (id: String?, label: String) {
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        let doi = items.first { $0.name == "doi" }?.value ?? ""
-        let arxiv = items.first { $0.name == "arxiv" }?.value ?? ""
+        var doi = items.first { $0.name == "doi" }?.value ?? ""
+        var arxiv = items.first { $0.name == "arxiv" }?.value ?? ""
+        let ref = items.first { $0.name == "ref" }?.value ?? ""
+        if doi.isEmpty, arxiv.isEmpty, !ref.isEmpty {
+            guard let ids = await Self.lookUpReference(ref) else { return (nil, "Couldn’t find its DOI") }
+            (doi, arxiv) = (ids.doi, ids.arxiv)
+        }
+        return await paperFor(doi: doi, arxiv: arxiv)
+    }
+
+    /// The paper with this DOI or arXiv number: found in the library, else added.
+    func paperFor(doi: String, arxiv: String) async -> (id: String?, label: String) {
         guard !doi.isEmpty || !arxiv.isEmpty else { return (nil, "Nothing to add") }
-        let key = doi.isEmpty ? "10.48550/arXiv.\(arxiv)" : doi
-        if let p = lib.findByDoi(doi: key) { return (p.id, "In your library") }
-        if !arxiv.isEmpty, let p = papers.first(where: { $0.meta.arxiv.hasPrefix(arxiv) }) { return (p.id, "In your library") }
+        if let id = paperInLibrary(doi: doi, arxiv: arxiv) { return (id, "In your library") }
         guard let id = await add(doi.isEmpty ? "arXiv:\(arxiv)" : doi) else { return (nil, "Couldn’t add it") }
         return (id, "Added to your library")
+    }
+
+    /// The paper with this DOI or arXiv number, if it is in the library (no network).
+    func paperInLibrary(doi: String, arxiv: String) -> String? {
+        let key = doi.isEmpty ? "10.48550/arXiv.\(arxiv)" : doi
+        if !key.isEmpty, let p = lib.findByDoi(doi: key) { return p.id }
+        if !arxiv.isEmpty, let p = papers.first(where: { $0.meta.arxiv.hasPrefix(arxiv) }) { return p.id }
+        return nil
+    }
+
+    /// A reference's DOI or arXiv number: printed in it, else Crossref's match (nil: not found).
+    nonisolated static func lookUpReference(_ text: String) async -> ReferenceIds? {
+        await Task.detached { (try? resolveReference(text: text)) ?? nil }.value
     }
 }
 
