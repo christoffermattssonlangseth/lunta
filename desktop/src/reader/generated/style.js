@@ -399,6 +399,65 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     var out = ns.map(function(n){ return items[at + (n - n0)]; }).filter(Boolean);
     return out.length ? out : [ref];
   }
+  // ---- author–year citations: "(Jaume et al., 2024)", "(Smith and Jones, 2019; Lee, 2020a)",
+  // "Jaume et al. (2024)" — matched to the reference list by the first author's surname and year
+  function fold(t){ return (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+  // the reference list's entries: its list items, else the paragraphs under a References heading
+  function refEntries(){
+    var hs = Array.prototype.filter.call(document.querySelectorAll('h1, h2, h3'), function(h){
+      return /^\s*(references|bibliography|literature cited|works cited|references and notes)\b/i.test(h.textContent || ''); });
+    var out = [];
+    hs.forEach(function(h){
+      var sec = h.closest('section');
+      var scope = sec || h.parentNode;
+      if (!scope) return;
+      Array.prototype.forEach.call(scope.querySelectorAll('li, p'), function(e){
+        if (e.closest('figure, table') || (e.tagName.toLowerCase() === 'p' && e.closest('li'))) return;
+        if ((e.textContent || '').length > 20) out.push(e);
+      });
+    });
+    if (!out.length) Array.prototype.forEach.call(document.querySelectorAll('ol.refs > li, ol.references > li, ul.references > li'), function(e){ out.push(e); });
+    return out;
+  }
+  function refByAuthor(entries, surname, year){
+    var who = fold(surname), y = year.replace(/[a-z]$/, ''), best = null;
+    for (var i = 0; i < entries.length; i++) {
+      var t = entries[i].textContent || '', ft = fold(t).replace(/^\s*(\[\d+\]|\d+\.)\s*/, '');
+      if (t.indexOf(y) < 0) continue;
+      // the first author: up to the first comma, or "and", in the entry's first words
+      var first = ft.slice(0, 80).split(/,| and | & |\(/)[0];
+      var re = new RegExp('(^|[^a-z])' + who.replace(/[^a-z]/g, '.') + '([^a-z]|$)');
+      if (re.test(first)) { if (t.indexOf(year) >= 0) return entries[i]; best = best || entries[i]; }
+    }
+    return best;
+  }
+  function authorYear(c){
+    var d = c.node.data || '', o = c.offset;
+    var l = d.lastIndexOf('(', o), r = d.indexOf(')', Math.max(o - 1, 0));
+    if (l < 0 || r < 0 || r < l || r - l > 200 || o < l || o > r + 1) return null;
+    var inner = d.slice(l + 1, r), YEAR = /((?:1[89]|20)\d\d[a-z]?)/;
+    var parts = [];
+    if (/^\s*(?:1[89]|20)\d\d[a-z]?\s*$/.test(inner)) {
+      // narrative: "Jaume et al. (2024)", "Smith and Jones (2019)"
+      var before = d.slice(Math.max(0, l - 60), l), m = before.match(/([A-Z][A-Za-z\u00C0-\u024F'\-]+)(?:\s+et\s+al\.?|\s+(?:and|&)\s+[A-Z][A-Za-z\u00C0-\u024F'\-]+)?\s*$/);
+      if (m) parts.push([m[1], inner.trim()]);
+    } else {
+      inner.split(/;/).forEach(function(p){
+        var m = p.match(/([A-Z][A-Za-z\u00C0-\u024F'\-]+)(?:\s+et\s+al\.?|\s+(?:and|&)\s+[A-Z][A-Za-z\u00C0-\u024F'\-]+)?,?\s+(?:e\.g\.,?\s*)?((?:1[89]|20)\d\d[a-z]?)/);
+        if (m) parts.push([m[1], m[2]]);
+      });
+    }
+    if (!parts.length) return null;
+    var p0 = c.node.parentNode;
+    if (p0 && p0.closest && p0.closest('ol.refs, ol.references, .references, figure, table')) return null;
+    var entries = refEntries();
+    if (!entries.length) return null;
+    var refs = [];
+    parts.forEach(function(pt){ var e = refByAuthor(entries, pt[0], pt[1]); if (e && refs.indexOf(e) < 0) refs.push(e); });
+    if (!refs.length) return null;
+    var range = document.createRange(); range.setStart(c.node, l); range.setEnd(c.node, r + 1);
+    return { anchor: { getBoundingClientRect: function(){ return range.getBoundingClientRect(); } }, ref: refs };
+  }
   function caretAt(ev){
     if (document.caretRangeFromPoint) { var r = document.caretRangeFromPoint(ev.clientX, ev.clientY); if (r) return { node: r.startContainer, offset: r.startOffset }; }
     if (document.caretPositionFromPoint) { var p = document.caretPositionFromPoint(ev.clientX, ev.clientY); if (p) return { node: p.offsetNode, offset: p.offset }; }
@@ -422,8 +481,10 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
       var all = citeNumbers(txt.replace(/[()\[\]]/g, '')).map(refNumbered).filter(Boolean);
       return all.length ? { anchor: sup, ref: all } : null;
     }
-    // "[1-3]" in running text
+    // "[1-3]" in running text; else an author–year citation
     if (!c || !c.node || c.node.nodeType !== 3) return null;
+    var ay = authorYear(c);
+    if (ay) return ay;
     var d = c.node.data || '', o = c.offset;
     var l = d.lastIndexOf('[', o), r = d.indexOf(']', Math.max(o - 1, 0));
     if (l < 0 || r < 0 || r < l || r - l > 40 || o < l || o > r + 1) return null;

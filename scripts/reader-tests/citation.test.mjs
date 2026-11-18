@@ -155,3 +155,36 @@ test('a citation range shows every reference in it: linked [1-3] (links on 1 and
     assert.deepEqual(texts(q), ['Alpha', 'Beta ', 'Gamma']);
   });
 });
+
+test('author–year citations: "(Jaume et al., 2024)", two in one, and "Jaume et al. (2024)" open the card with their references', () => {
+  const html = `<p id="t1">Datasets such as HEST-1k (Jaume et al., 2024) offer a path.</p>
+    <p id="t2">Models (Chen et al., 2024; Ogut and Lee, 2023a) do this.</p>
+    <p id="t3">As Jaume et al. (2024) showed.</p>
+    <section><h2>References</h2>
+      <p>Richard J Chen, Tong Ding, Guillaume Jaume, et al. Towards a general-purpose foundation model. Nature Medicine, 30(3):850–862, 2024.</p>
+      <p>Guillaume Jaume, Paul Doucet, Andrew H Song, et al. HEST-1k: A dataset for spatial transcriptomics and histology image analysis. NeurIPS, 2024.</p>
+      <p>Sevda Ogut and Kim Lee. A study. Journal, 2023.</p>
+    </section>`;
+  const open = (id, at) => {
+    const p = page(html);
+    const text = p.doc.getElementById(id).childNodes[0];
+    // what a browser gives: the text under the click and the offset in it
+    p.doc.caretRangeFromPoint = () => ({ startContainer: text, startOffset: text.data.indexOf(at) + 1 });
+    p.doc.createRange = () => ({ setStart() {}, setEnd() {}, getBoundingClientRect: () => ({ left: 10, top: 10, right: 30, bottom: 25, width: 20, height: 15 }) });
+    let refs = null;
+    withGlobals(p, () => {
+      globalThis.document = p.doc;
+      try {
+        if (click(p, text.parentNode)) {
+          refs = p.doc.documentElement.children.find((e) => e.className === 'm-cite').querySelectorAll('div').filter((d) => d.className === 'm-cite-ref').map((d) => d.textContent.trim().slice(0, 16));
+        }
+      } finally { delete globalThis.document; }
+    });
+    return refs;
+  };
+  assert.deepEqual(open('t1', 'Jaume'), ['Guillaume Jaume,']);
+  assert.deepEqual(open('t2', 'Chen'), ['Richard J Chen, ', 'Sevda Ogut and K']);
+  assert.deepEqual(open('t3', '2024'), ['Guillaume Jaume,']);
+  // a parenthesis that isn't a citation opens nothing
+  assert.equal(open('t1', 'HEST'), null);
+});
