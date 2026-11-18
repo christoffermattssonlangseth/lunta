@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import CoreText
 
 /// Rectangle in page coordinates with the origin at the top-left (like PyMuPDF), in points.
 struct R: Equatable {
@@ -58,6 +59,8 @@ final class PDFContentScanner {
         var cidWidths: [Int: CGFloat] = [:]
         var defaultWidth: CGFloat = 500
         var missingWidth: CGFloat = 500
+        /// Type 3 fonts: their FontMatrix's scale × 1000 (glyph widths are in its units, not 1/1000 em)
+        var widthScale: CGFloat = 1, sizeScale: CGFloat = 1
         func width(_ code: Int) -> CGFloat {
             if twoByte { return cidWidths[code] ?? defaultWidth }
             let i = code - firstChar
@@ -164,6 +167,47 @@ final class PDFContentScanner {
         return nil
     }
 
+    private static var standardCache: [String: [CGFloat]] = [:]
+    private static let standardLock = NSLock()
+
+    /// Glyph widths (per 1000 em, codes 0–255 in WinAnsi) of a standard font named without its
+    /// widths ("Helvetica", "Times-Bold", "Courier"), from the system's copy of the font.
+    static func standardWidths(_ base: String) -> [CGFloat]? {
+        let n = base.replacingOccurrences(of: ",", with: "-")
+        let family: String, style: String
+        if n.hasPrefix("Helvetica") || n.hasPrefix("Arial") { family = "Helvetica" }
+        else if n.hasPrefix("Times") { family = "Times" }
+        else if n.hasPrefix("Courier") { family = "Courier" }
+        else { return nil }
+        let bold = n.range(of: "Bold", options: .caseInsensitive) != nil
+        let italic = n.range(of: "Italic|Oblique", options: [.regularExpression, .caseInsensitive]) != nil
+        switch family {
+        case "Times": style = bold && italic ? "-BoldItalic" : bold ? "-Bold" : italic ? "-Italic" : "-Roman"
+        default: style = bold && italic ? "-BoldOblique" : bold ? "-Bold" : italic ? "-Oblique" : ""
+        }
+        let ps = family + style
+        standardLock.lock(); defer { standardLock.unlock() }
+        if let c = standardCache[ps] { return c }
+        var widths = [CGFloat](repeating: 0, count: 256)
+        if family == "Courier" {
+            widths = [CGFloat](repeating: 600, count: 256)
+        } else {
+            let font = CTFontCreateWithName(ps as CFString, 1000, nil)
+            guard (CTFontCopyPostScriptName(font) as String) == ps else { return nil }   // not on this system
+            for code in 32..<256 {
+                guard let ch = String(bytes: [UInt8(code)], encoding: .windowsCP1252) else { continue }
+                var chars = Array(ch.utf16)
+                var glyphs = [CGGlyph](repeating: 0, count: chars.count)
+                guard chars.count == 1, CTFontGetGlyphsForCharacters(font, &chars, &glyphs, 1) else { continue }
+                var adv = CGSize.zero
+                CTFontGetAdvancesForGlyphs(font, .horizontal, &glyphs, &adv, 1)
+                widths[code] = adv.width
+            }
+        }
+        standardCache[ps] = widths
+        return widths
+    }
+
     private static func fontInfo(_ f: CGPDFDictionaryRef) -> FontInfo {
         let info = FontInfo()
         let base = name(f, "BaseFont") ?? ""
@@ -195,6 +239,24 @@ final class PDFContentScanner {
                     var o: CGPDFObjectRef?
                     if CGPDFArrayGetObject(w, i, &o), let o { info.widths.append(number(o) ?? 0) } else { info.widths.append(0) }
                 }
+            }
+            var fm: CGPDFArrayRef?
+            if name(f, "Subtype") == "Type3", CGPDFDictionaryGetArray(f, "FontMatrix", &fm), let fm {
+                // glyph widths in the font's own units ("/FontMatrix [.01493 0 0 -.01493 0 0]"): read as
+                // thousandths of an em, "Nature" was drawn far narrower than it is and each next
+                // piece seemed to start a word
+                var a: CGPDFObjectRef?, d: CGPDFObjectRef?
+                if CGPDFArrayGetObject(fm, 0, &a), let a, let va = number(a), va != 0,
+                   CGPDFArrayGetObject(fm, 3, &d), let d, let vd = number(d), vd != 0 {
+                    info.widthScale = abs(va) * 1000
+                    info.sizeScale = abs(vd) * 1000
+                }
+            } else if info.widths.isEmpty, let std = standardWidths(clean) {
+                // one of the standard 14 fonts, which may come without widths: guessing 500 for every
+                // glyph puts the end of a run of wide letters ("mm") short of where the next run
+                // starts, which reads as a word gap
+                info.firstChar = 0
+                info.widths = std
             }
         }
         if CGPDFDictionaryGetDictionary(descFont, "FontDescriptor", &desc), let desc {
@@ -245,26 +307,30 @@ final class PDFContentScanner {
             let code: Int
             if font.twoByte, i + 1 < len { code = Int(bytes[i]) << 8 | Int(bytes[i + 1]); i += 2 }
             else { code = Int(bytes[i]); i += 1 }
-            var tx = font.width(code) / 1000 * ts.size + ts.tc
+            var tx = font.width(code) * font.widthScale / 1000 * ts.size + ts.tc
             if !font.twoByte && code == 32 { tx += ts.tw }
             adv += tx * ts.th
         }
         let endP = CGPoint(x: adv, y: 0).applying(trm)
         ts.tm = CGAffineTransform(translationX: adv, y: 0).concatenating(ts.tm)
-        let effSize = abs(ts.size) * sqrt(abs(trm.a * trm.d - trm.b * trm.c))
+        let effSize = abs(ts.size) * font.sizeScale * sqrt(abs(trm.a * trm.d - trm.b * trm.c))
         guard abs(trm.b) < 0.1 * abs(trm.a) + 0.001 else { return }   // rotated text: ignore
         let a = CGPoint(x: start.x - origin.x, y: pageHeight - (start.y - origin.y))
         let b = CGPoint(x: endP.x - origin.x, y: pageHeight - (endP.y - origin.y))
         out.runs.append(TextRun(x0: min(a.x, b.x), x1: max(a.x, b.x), baseline: a.y, size: effSize,
                                 bold: font.bold, italic: font.italic, math: font.math))
-        // a jump to the right on the same baseline since the last text = a word space nobody drew
-        if let e = lastEnd, abs(e.y - a.y) < 0.3 * max(effSize, 2), a.x - e.x > 0.15 * effSize, a.x - e.x < 3 * effSize {
+        // a jump to the right on the same baseline since the last text = a word space nobody drew;
+        // in text squeezed by horizontal scaling (OCR layers: "48.53 Tz") the spaces shrink with it
+        if let e = lastEnd, abs(e.y - a.y) < 0.3 * max(effSize, 2), a.x - e.x > 0.15 * effSize * min(1, abs(ts.th), lastScale),
+           a.x - e.x < 3 * effSize {
             out.gaps.append(CGPoint(x: (a.x + e.x) / 2, y: a.y))
         }
         lastEnd = CGPoint(x: max(a.x, b.x), y: a.y)
+        lastScale = abs(ts.th)
     }
 
     private var lastEnd: CGPoint?
+    private var lastScale: CGFloat = 1
 
     private func adjust(_ n: CGFloat) {   // TJ number: move left by n/1000 text-space units
         let tx = -n / 1000 * ts.size * ts.th

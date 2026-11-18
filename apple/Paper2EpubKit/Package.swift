@@ -12,5 +12,6 @@ let package = Package(
         .target(name: "Paper2EpubKit", path: "Sources/Paper2EpubKit"),
         // macOS command-line front end, used to test conversions without the simulator
         .executableTarget(name: "p2e", dependencies: ["Paper2EpubKit"], path: "Sources/p2e"),
+        .testTarget(name: "Paper2EpubKitTests", dependencies: ["Paper2EpubKit"], path: "Tests/Paper2EpubKitTests"),
     ]
 )
