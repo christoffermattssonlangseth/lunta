@@ -631,7 +631,10 @@ pub fn title_in(reference: &str, title: &str) -> bool {
     if want.is_empty() {
         return false;
     }
-    let found = want.iter().filter(|w| have.contains(*w)).count();
+    // the reference's letters run together too: a PDF's text can split words ("foundati on",
+    // "pa thology", "Nat ure"), and a title word is then still in it
+    let joined: String = words(&reference.replace("-\n", "")).concat();
+    let found = want.iter().filter(|w| have.contains(*w) || (w.chars().count() >= 4 && joined.contains(w.as_str()))).count();
     // short titles must be all there; long ones may differ in a word or two (hyphens, symbols)
     if want.len() <= 3 {
         found == want.len()
@@ -805,6 +808,14 @@ mod tests {
         assert!(title_in(r, "Hallmarks of Cancer: The Next Generation"));
         assert!(title_in("Smith J. Hallmarks of cancer. Cell 2000", "Hallmarks of Cancer"));
         assert!(!title_in(r, "The hallmarks of aging"));
+    }
+
+    #[test]
+    fn a_title_is_found_in_a_reference_with_split_words() {
+        // PDFKit's text of a reference list (CellBridge preprint): words split by letter spacing
+        let r = "Xu, H., et al. A whole-slide foundati on model for digital pa thology f rom real -world data. Nat ure 6 30, 181-188 (2024).";
+        assert!(title_in(r, "A whole-slide foundation model for digital pathology from real-world data"));
+        assert!(!title_in(r, "A pathology foundation model for cancer diagnosis and prognosis prediction"));
     }
 
     #[test]
