@@ -612,6 +612,30 @@ pub fn reference_for_citation(lines: &[TextLine], text: &str, offset: usize) -> 
     }
 }
 
+/// The whole reference list of a PDF, one entry each (for checking a paper's references): the
+/// entries after the last reference-list heading (or none, without one).
+pub fn reference_list(lines: &[TextLine]) -> Vec<String> {
+    let lines = &merge_rows(lines);
+    let Some(head) = lines.iter().rposition(|l| is_heading(&l.text)) else { return vec![] };
+    let mut out: Vec<String> = vec![];
+    for i in head + 1..lines.len() {
+        let t = &lines[i].text;
+        if !(label(t).is_some() || bare_label(t) || author_start(t)) {
+            continue;
+        }
+        // a line inside the entry before (an author list carried over) isn't a new entry
+        let line = t.split_whitespace().collect::<Vec<_>>().join(" ");
+        if out.last().is_some_and(|prev| prev.contains(&line)) {
+            continue;
+        }
+        let e = gather(lines, i);
+        if looks_like_reference(&e) && !out.contains(&e) {
+            out.push(e);
+        }
+    }
+    out
+}
+
 fn digits(t: &str) -> Option<u32> {
     t.chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse().ok()
 }
@@ -709,6 +733,15 @@ mod tests {
             line(7, "100–110.", 320.0, 110.0),
             line(7, "5. Next N. The next one. 2022.", 308.0, 121.0),
         ]
+    }
+
+    #[test]
+    fn the_whole_reference_list() {
+        let refs = reference_list(&numbered());
+        assert_eq!(refs.len(), 5, "{refs:?}");
+        assert!(refs[1].ends_with("https://doi.org/10.1038/s41586-019-1234-5"));
+        assert!(refs[3].starts_with("4. Long R") && refs[3].ends_with("100–110."), "{}", refs[3]);
+        assert!(reference_list(&numbered()[1..]).is_empty(), "no heading, no list");
     }
 
     #[test]

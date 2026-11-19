@@ -11,6 +11,8 @@ uniffi::setup_scaffolding!();
 #[cfg(feature = "convert")]
 pub mod adder;
 pub mod bibimport;
+/// Checks against the published record: reference lists, retractions, published preprints.
+pub mod checks;
 pub mod csl;
 #[cfg(feature = "convert")]
 pub mod convert;
@@ -961,6 +963,13 @@ pub fn pdf_is_citation_at(text: String, offset: u32) -> bool {
 #[uniffi::export]
 pub fn pdf_reference_for_citation(lines: Vec<refcite::TextLine>, text: String, offset: u32) -> Option<String> {
     refcite::reference_for_citation(&lines, &text, offset as usize)
+}
+
+/// A PDF's reference list, one entry each, from its lines (all pages, in reading order): for
+/// checking a paper's references when it has no reading view.
+#[uniffi::export]
+pub fn pdf_reference_list(lines: Vec<refcite::TextLine>) -> Vec<String> {
+    refcite::reference_list(&lines)
 }
 
 /// A reference's DOI or arXiv number: printed in it, else found by Crossref's bibliographic search

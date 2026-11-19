@@ -40,6 +40,10 @@ pub enum OpKind {
     Member { collection: String, paper: String, present: bool },
     AnnotationUpsert { annotation: Annotation },
     AnnotationDelete { paper: String, id: String },
+    /// What the checks found for a paper: retractions, corrections, a published version, and the
+    /// researcher's choices about it (`checks::PaperUpdates`; the latest wins; older versions skip
+    /// this op).
+    SetUpdates { paper: String, updates: crate::checks::PaperUpdates },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -77,6 +81,8 @@ pub struct State {
     pub fixed_keys: BTreeSet<String>,
     /// Folder id -> its extra BibTeX entries (`CollectionBib`).
     pub collection_bib: BTreeMap<String, String>,
+    /// Paper id -> what the checks found (`SetUpdates`).
+    pub updates: BTreeMap<String, crate::checks::PaperUpdates>,
 }
 
 impl State {
@@ -102,6 +108,7 @@ impl State {
             OpKind::DeletePaper { paper } => {
                 self.papers.remove(paper);
                 self.annotations.remove(paper);
+                self.updates.remove(paper);
                 self.deleted.insert(paper.clone());
             }
             OpKind::SetRead { paper, read } => {
@@ -170,6 +177,16 @@ impl State {
             OpKind::AnnotationDelete { paper, id } => {
                 if let Some(m) = self.annotations.get_mut(paper) {
                     m.remove(id);
+                }
+            }
+            OpKind::SetUpdates { paper, updates } => {
+                if !self.papers.contains_key(paper) {
+                    return;
+                }
+                if updates.is_empty() {
+                    self.updates.remove(paper);
+                } else {
+                    self.updates.insert(paper.clone(), updates.clone());
                 }
             }
         }

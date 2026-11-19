@@ -37,7 +37,7 @@ fn initials(given: &str, with_dots: bool, spaced: bool) -> String {
 }
 
 /// Latin letters with accents (and a few ligatures) as plain ASCII, the rest of the text as is.
-fn ascii_fold(s: &str) -> String {
+pub(crate) fn ascii_fold(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         let r = match c {

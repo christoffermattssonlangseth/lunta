@@ -141,6 +141,11 @@ pub fn crossref(doi: &str) -> Result<PaperMeta> {
     if m.is_null() {
         return Err(CoreError::NotFound(format!("Crossref has no record for {doi}")));
     }
+    Ok(crossref_item(m))
+}
+
+/// A Crossref work (a /works/{doi} message, or an item of a /works search) as details.
+pub(crate) fn crossref_item(m: &Value) -> PaperMeta {
     let authors = m["author"]
         .as_array()
         .map(|a| {
@@ -188,7 +193,7 @@ pub fn crossref(doi: &str) -> Result<PaperMeta> {
         "report" | "dissertation" if !s(&m["institution"]["name"]).is_empty() => s(&m["institution"]["name"]),
         _ => s(&m["publisher"]),
     };
-    Ok(PaperMeta {
+    PaperMeta {
         title,
         authors,
         date,
@@ -205,7 +210,7 @@ pub fn crossref(doi: &str) -> Result<PaperMeta> {
         keywords: m["subject"].as_array().map(|a| a.iter().map(s).collect()).unwrap_or_default(),
         license,
         ..Default::default()
-    })
+    }
 }
 
 pub fn europe_pmc(query: &str) -> Result<PaperMeta> {
@@ -565,7 +570,7 @@ fn works(url: &str) -> Result<Vec<DiscoverHit>> {
     Ok(parse_works(&get_json(url)?))
 }
 
-fn parse_works(j: &Value) -> Vec<DiscoverHit> {
+pub(crate) fn parse_works(j: &Value) -> Vec<DiscoverHit> {
     let mut out = vec![];
     for w in j["results"].as_array().cloned().unwrap_or_default() {
         let doi = s(&w["doi"]).trim_start_matches("https://doi.org/").to_string();
