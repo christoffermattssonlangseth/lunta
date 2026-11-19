@@ -121,6 +121,13 @@ title or authors, and is the same on all your devices. You see it, and can chang
 - **A .bib file that stays up to date (Mac, Windows, Linux):** right-click a folder or **All Papers**, **Keep
   BibTeX File Updated…**, and choose where to save it. Lunta rewrites the file whenever papers in the folder are
   added, removed or edited. To stop, right-click it again.
+- **An existing LaTeX project:** **File › Import BibTeX (Keep Citation Keys)…** (Mac, or a folder's menu;
+  on iPhone and iPad **+ › Import BibTeX (Keep Citation Keys)**) reads the project's .bib into a folder. Each
+  entry is looked up (DOI, arXiv, Crossref) and keeps its key, so `\cite{…}` in the document keeps working;
+  software and web pages are kept as written. Then keep the folder's BibTeX file updated and use it in the
+  project. A report lists what was found and where the .bib and the published record differ.
+- **Entry types:** conference papers are `@inproceedings`, preprints `@misc` with the arXiv id, reports
+  `@techreport`, and so on, as LaTeX users expect; titles in capitals come out in title case.
 - **Overleaf:** save the .bib file in Dropbox and link the project to Dropbox, or in the project's Git
   repository (Overleaf's Git sync) and push. Without either, upload the .bib file to the project
   (**Upload › From your computer**) and upload it again when it changes.

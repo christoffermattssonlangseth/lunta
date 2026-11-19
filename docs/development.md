@@ -249,9 +249,60 @@ its subfolders') sorted by key, written atomically, and only when the text chang
 Git or Overleaf). A folder that isn't in the library, or an empty library, leaves the file as it was. The
 links are per device (Mac: user defaults; desktop: `settings.json`), never in the synced library.
 
+**Entry types.** `PaperMeta::work_type` keeps what kind of work a paper is, in Crossref's words
+(`journal-article`, `proceedings-article`, `book-chapter`, `book`, `posted-content` for preprints,
+`report`, `dissertation`, `dataset`, `standard`…), and `series` the book series of a chapter or
+proceedings volume. Both are filled when details are fetched (Crossref's `type`; its container titles
+split into the book and the series, "Lecture Notes in Computer Science" being the series; arXiv:
+`posted-content`; Europe PMC: source PPR is a preprint; OpenAlex's type) and from BibTeX and RIS
+imports. Older logs have neither (serde default, `#[uniffi(default = "")]`), and older versions skip
+them. When it is empty `worktype::kind` infers the kind: an arXiv / bioRxiv… journal or a preprint DOI
+is a preprint; "Proceedings of…", "Conference", "Symposium", "Workshop" or "Lecture Notes…" a
+conference paper (PNAS, Proc. R. Soc., Proceedings of the IEEE and the PACM journals excepted);
+otherwise a journal makes an article. From the kind:
+
+| Kind | BibTeX | RIS | CSL |
+|---|---|---|---|
+| journal article | `@article` (journal) | JOUR | article-journal |
+| conference paper, LNCS chapter | `@inproceedings` (booktitle, series, publisher) | CPAPER / CHAP (T2, T3) | paper-conference / chapter |
+| other chapter | `@incollection` | CHAP | chapter |
+| preprint | `@misc` (howpublished = {arXiv preprint arXiv:…}, eprint, archivePrefix) | JOUR / GEN | article (publisher, number arXiv:…) |
+| report, standard | `@techreport` (institution) | RPRT / STAND | report / standard |
+| thesis | `@phdthesis` (school) | THES | thesis |
+| book | `@book` (series, publisher) | BOOK | book |
+
+The built-in styles cite conference papers and chapters "In *Proceedings…*" with pages and publisher.
+BibTeX is written with accented letters as LaTeX (`Pawe{\l}`, `Pregui{\c{c}}a`), which every engine and
+font prints; organizations ("World Wide Web Consortium") are braced whole.
+
+**Capitals and subtitles.** Crossref's subtitle is joined to the title with ": ". A title with at
+least 80% capitals (10+ letters, 3+ words: "A NEW MEASURE OF RANK CORRELATION") is put in title
+case, keeping words with digits (BRCA1, COVID-19), common acronyms and Roman numerals; name parts in
+capitals ("KENDALL") in proper case, initials kept. This happens when details come in (so **Fill In
+from the DOI** fixes a paper) and, for papers already in the library, in exports only (BibTeX, RIS,
+citations): the library is not rewritten.
+
+**Importing a .bib with its keys.** **File › Import BibTeX (Keep Citation Keys)…** (Mac; also in a
+folder's menu), **+ › Import BibTeX (Keep Citation Keys)** (iPhone, iPad), `Library::import_bibtex_keep_keys`
+(core/src/bibimport.rs) for the other apps. Each entry is found by its DOI, its arXiv id (eprint, or
+"arXiv:…" in the journal) or Crossref's bibliographic search (`refcite::resolve_reference`, title and
+year checked), else added from its own fields; gaps in the record are filled from the .bib (an LNCS
+volume). The paper (merged with one already in the library) goes into the folder with the entry's key
+as its citation key, so `\cite{oldkey}` keeps working; a key another paper has, an invalid key, or a
+second entry for the same paper is reported, not forced. Entries that aren't papers (`@misc`,
+`@online`, `@software` without DOI, arXiv id or journal) are kept as written with the folder (op
+`collection_bib`, the latest wins; older versions skip it) and written after the papers into the
+folder's kept .bib (`Library::kept_bibtex`, which the Mac and desktop .bib files use), so one file has
+every key. The report gives the counts (by DOI, arXiv, Crossref search, as is, kept as written) and
+lists where the .bib and the record found differ: year, title, pages, number of authors ("and others"
+allowed), first author. `cargo run --example bib_keep_keys -- refs.bib out.bib` does it in a
+throwaway library.
+
 Tests: `cargo test keys` and `cargo test thin_details` in `core` (stable keys across exports, uniqueness,
 edits and deletes, user keys, two library instances syncing through copied logs) and
-`cargo test bibfiles` in `desktop/src-tauri`.
+`cargo test bibfiles` in `desktop/src-tauri`; `cargo test worktype`, `cargo test bibimport`,
+`cargo test exports_by_work_type` and `cargo test bibtex_letters` in `core` (types, capitals, subtitles,
+the .bib import with stand-in lookups).
 
 ## Releases
 
