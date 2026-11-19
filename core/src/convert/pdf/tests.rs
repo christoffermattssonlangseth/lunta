@@ -1416,3 +1416,16 @@ fn pdfium_text_outside_a_forms_box_is_left_out() {
     // the image is 300–450 × 430–490 (PDF), cut by the box at 400; 302–362 from the top
     assert!((r.x0 - 300.0).abs() < 1.0 && (r.x1 - 400.0).abs() < 1.0 && (r.y0 - 302.0).abs() < 1.0, "{r:?}");
 }
+
+/// Elsevier's accent font has its dieresis at the code of "€", drawn after the line over the letter
+/// it goes on ("J€akel"): it goes on that letter, and the word spaces stay.
+#[test]
+#[ignore]
+fn pdfium_accent_drawn_after_the_line() {
+    // Times-Roman 10 pt: "Sarah J" is 29.16 pt wide, so the "a" of "akel" spans 101.16–105.6
+    let content = "BT /F2 10 Tf 72 700 Td (Sarah Jakel and Ruth Smith wrote it.) Tj ET\nBT /F2 10 Tf 100.9 700 Td (\\200) Tj ET\n".to_string();
+    let data = pdf_of(&[content], "Accents");
+    let (lines, _) = super::text_lines(&data).unwrap();
+    let text: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
+    assert!(text.iter().any(|t| t == "Sarah Jäkel and Ruth Smith wrote it."), "{text:?}");
+}

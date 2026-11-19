@@ -103,9 +103,12 @@ struct C {
     generated: bool,
 }
 
-/// Spacing accents TeX draws as glyphs of their own → the combining mark.
+/// Spacing accents TeX draws as glyphs of their own → the combining mark. Elsevier's accent font
+/// (AdvP4C4E59) has its dieresis at the code of "€" ("J€akel"): it counts only where it sits over a
+/// letter, as accents do (see `attach_accents`).
 fn combining(c: char) -> Option<char> {
     Some(match c {
+        '€' => '\u{308}',
         '`' => '\u{300}',
         '´' => '\u{301}',
         'ˆ' | '^' => '\u{302}',
@@ -145,11 +148,17 @@ fn attach_accents(cs: &mut Vec<C>) {
         let mut acc = cs.remove(i);
         acc.ch = mark;
         let b = if b > i { b - 1 } else { b };
-        // generated spaces between the accent's old place and its letter go
+        // generated spaces between the accent's old place and its letter go, unless the letters
+        // either side stand a word space apart
         let (lo, hi) = if b < i { (b + 1, i) } else { (i, b) };
         let mut removed_before_b = 0;
         for k in (lo..hi).rev() {
-            if cs[k].generated && is_space(cs[k].ch) {
+            let apart = k > 0
+                && k + 1 < cs.len()
+                && cs[k - 1].bx.w() > 0.0
+                && cs[k + 1].bx.w() > 0.0
+                && cs[k + 1].bx.x0 - cs[k - 1].bx.x1 > 0.15 * cs[k - 1].size.max(cs[k + 1].size);
+            if cs[k].generated && is_space(cs[k].ch) && !apart {
                 cs.remove(k);
                 if k < b {
                     removed_before_b += 1;
@@ -203,6 +212,11 @@ pub fn extract_lines(text: &PdfPageText, mb: &MediaBox, pno: usize, hidden: &Hid
     let mut pending_break = false;
     // inside a run of text the page does not show (and the spaces and breaks PDFium puts after it)
     let mut in_hidden = false;
+    // accents drawn away from where the text has got to (Elsevier draws them after the line, or
+    // after the word): set aside as lines of their own, for `fold_fragments` to put back over their
+    // letters; the spaces PDFium makes around them are decided again from where the letters stand
+    let mut stray: Vec<Vec<C>> = Vec::new();
+    let mut after_stray = false;
     let dbg_chars = std::env::var("P2E_DEBUG_CHARS").ok().and_then(|v| v.parse::<usize>().ok()) == Some(pno + 1);
     for c in text.chars().iter() {
         if dbg_chars {
@@ -218,6 +232,12 @@ pub fn extract_lines(text: &PdfPageText, mb: &MediaBox, pno: usize, hidden: &Hid
             );
         }
         let Some(ch) = c.unicode_char() else { continue };
+        if after_stray {
+            if c.is_generated().unwrap_or(false) && is_space(ch) {
+                continue;
+            }
+            after_stray = false;
+        }
         if !hidden.is_empty() {
             if c.is_generated().unwrap_or(false) {
                 if in_hidden {
@@ -300,6 +320,16 @@ pub fn extract_lines(text: &PdfPageText, mb: &MediaBox, pno: usize, hidden: &Hid
                     space = gap > 0.2 * size.min(p.size) && !raw_lines.last().unwrap().last().map(|c| is_space(c.ch)).unwrap_or(true);
                 }
             }
+            if cut && combining(ch).is_some() && !generated && raw_lines.last().unwrap().iter().any(|c| !is_space(c.ch)) {
+                let line = raw_lines.last_mut().unwrap();
+                if line.last().map(|c| c.generated && is_space(c.ch)).unwrap_or(false) {
+                    line.pop();
+                }
+                stray.push(vec![cc]);
+                after_stray = true;
+                pending_break = true;
+                continue;
+            }
             if cut {
                 raw_lines.push(vec![]);
             } else if space {
@@ -310,6 +340,7 @@ pub fn extract_lines(text: &PdfPageText, mb: &MediaBox, pno: usize, hidden: &Hid
         }
         push_char(&mut raw_lines, cc);
     }
+    raw_lines.extend(stray);
     fold_fragments(&mut raw_lines);
     let mut raw_lines: Vec<Vec<C>> = raw_lines.into_iter().flat_map(split_numbers).collect();
     join_labels(&mut raw_lines);
