@@ -19,6 +19,9 @@ pub mod epub;
 pub mod export;
 pub mod highlight;
 pub mod import;
+/// Import from what was picked (folder, ZIP, export), for the desktop and Android apps.
+#[cfg(feature = "pdf")]
+pub mod import_source;
 pub mod index;
 #[cfg(feature = "llm")]
 pub mod llm;
