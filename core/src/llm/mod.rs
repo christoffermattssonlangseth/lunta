@@ -183,6 +183,25 @@ impl AiEngine {
         Ok(prompt::summary_acceptable(&s).then_some(s))
     }
 
+    /// One answer to a plain prompt with these instructions (New for You's searches, screening,
+    /// summaries and digest: AskEngine.plainAnswer in the Apple apps), thinking off; the text
+    /// without a thinking trace. Prompts longer than the context are cut from the middle.
+    pub fn plain_answer(&self, instructions: &str, user: &str, max_tokens: u32) -> Result<String, AiError> {
+        let mut text = user.to_string();
+        let mut p = prompt::chatml(instructions, &[ChatTurn { role: "user".into(), text: text.clone() }], false);
+        while self.engine.count_tokens(&p) as u32 + max_tokens + 16 > self.context && text.chars().count() > 400 {
+            let n = text.chars().count();
+            let keep = n * 4 / 5;
+            // keep the start (the material) and the end (the request)
+            let head: String = text.chars().take(keep - keep / 4).collect();
+            let tail: String = text.chars().skip(n - keep / 4).collect();
+            text = format!("{head}\n…\n{tail}");
+            p = prompt::chatml(instructions, &[ChatTurn { role: "user".into(), text: text.clone() }], false);
+        }
+        let raw = self.run(&p, max_tokens, 0.2, &mut |_| true)?;
+        Ok(prompt::without_thinking(&raw).trim().to_string())
+    }
+
     /// Answers a question put together by Library::ask_paper_prompt / ask_library_prompt;
     /// `on_text` gets the answer so far.
     pub fn write_answer(&self, ask: &AskPrompt, on_text: &mut dyn FnMut(&str) -> bool) -> Result<String, AiError> {

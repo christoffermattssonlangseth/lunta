@@ -17,6 +17,8 @@ pub mod convert;
 pub mod drive;
 pub mod epub;
 pub mod export;
+/// New for You on Windows, Linux and Android (the Apple apps' feed, same files).
+pub mod foryou;
 pub mod highlight;
 pub mod import;
 /// Import from what was picked (folder, ZIP, export), for the desktop and Android apps.

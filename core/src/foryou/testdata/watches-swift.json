@@ -1,0 +1,23 @@
+[
+  {
+    "kind" : "author",
+    "value" : "0000-0001-2345-6789",
+    "created" : "2026-11-23T08:00:00Z",
+    "seen" : [
+
+    ],
+    "label" : "Jane Doe",
+    "id" : "W-1"
+  },
+  {
+    "id" : "W-2",
+    "lastChecked" : "2026-11-23T08:00:00Z",
+    "seen" : [
+      "10.1\/a"
+    ],
+    "value" : "Nature Methods",
+    "label" : "Nature Methods",
+    "kind" : "journal",
+    "created" : "2026-11-23T08:00:00Z"
+  }
+]

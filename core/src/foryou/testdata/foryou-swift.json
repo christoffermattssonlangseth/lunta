@@ -1,0 +1,113 @@
+{
+  "liked" : [
+    {
+      "text" : "Unified cell segmentation for spatial. …",
+      "key" : "unifiedcellsegmentationforspatial"
+    }
+  ],
+  "interests" : "I work on spatial transcriptomics: cell segmentation and cell-type maps of brain tissue.",
+  "perDay" : 6,
+  "orcid" : {
+    "papers" : [
+      {
+        "title" : "Psychoceramics",
+        "doi" : "10.5555\/12345678",
+        "authors" : [
+          "Josiah Carberry"
+        ],
+        "abstract" : "Cracked pots.",
+        "date" : "2008",
+        "citedBy" : 4,
+        "journal" : "J Psychoceramics"
+      }
+    ],
+    "author" : "A5000000001",
+    "orcid" : "0000-0002-1825-0097",
+    "updated" : "2026-11-23T08:00:00Z",
+    "name" : "Josiah Carberry",
+    "works" : 2,
+    "coauthors" : [
+      {
+        "shared" : 2,
+        "author" : "A5000000002",
+        "name" : "Jane Doe",
+        "orcid" : ""
+      }
+    ]
+  },
+  "digest" : "Segmentation dominates: [SpaCut](foryou:\/\/paper?key=10%2E1002%2Fadvs%2E78423) fuses morphology.",
+  "items" : [
+    {
+      "doi" : "10.1002\/advs.78423",
+      "authors" : [
+        "A. Author",
+        "B. Author"
+      ],
+      "citedBy" : 3,
+      "key" : "10.1002\/advs.78423",
+      "score" : 0.61,
+      "date" : "2026-10-29",
+      "openAccess" : true,
+      "boosted" : true,
+      "source" : "search “spatial transcriptomics cell segmentation”",
+      "abstract" : "We present SpaCut…",
+      "title" : "SpaCut: Transcript-Aware Morphology Fusion",
+      "journal" : "Advanced Science",
+      "found" : "2026-11-23T08:00:00Z",
+      "url" : "",
+      "summary" : "Fuses transcripts and morphology to segment cells.",
+      "reason" : "A segmentation method for Xenium data."
+    },
+    {
+      "url" : "",
+      "title" : "Unified cell segmentation for spatial",
+      "reason" : "A segmentation method for Xenium data.",
+      "source" : "search “spatial transcriptomics cell segmentation”",
+      "abstract" : "We present SpaCut…",
+      "found" : "2026-11-22T08:00:00Z",
+      "citedBy" : 3,
+      "openAccess" : true,
+      "date" : "2026-10-29",
+      "journal" : "Advanced Science",
+      "score" : 0.5,
+      "inLibrary" : "ABC-123",
+      "key" : "unifiedcellsegmentationforspatial",
+      "authors" : [
+        "A. Author",
+        "B. Author"
+      ],
+      "doi" : ""
+    }
+  ],
+  "keywords" : [
+    "xenium",
+    "merfish",
+    "segmentation"
+  ],
+  "morning" : 390,
+  "preprints" : "few",
+  "shown" : [
+    "10.1002\/advs.78423",
+    "unifiedcellsegmentationforspatial",
+    "10.1\/old"
+  ],
+  "digestFor" : "v2|10.1002\/advs.78423",
+  "lastRun" : "2026-11-23T08:01:00Z",
+  "queries" : [
+    "spatial transcriptomics cell segmentation",
+    "brain cell atlas spatial"
+  ],
+  "disliked" : [
+    {
+      "text" : "Soil. …",
+      "key" : "10.1\/x"
+    }
+  ],
+  "boosted" : [
+    {
+      "key" : "10.1002\/advs.78423",
+      "text" : "SpaCut. …"
+    }
+  ],
+  "queriesFor" : "I work on spatial transcriptomics: cell segmentation and cell-type maps of brain tissue."
+}
