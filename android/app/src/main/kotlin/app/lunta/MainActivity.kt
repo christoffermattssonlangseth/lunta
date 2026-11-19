@@ -40,6 +40,12 @@ class MainActivity : ComponentActivity() {
         if (BuildConfig.DEBUG && i.getStringExtra("lunta.setup") == "local" && model.mode == app.lunta.data.LibraryMode.None) {
             model.chooseLocal(i.getStringExtra("lunta.remoteDir") ?: "")
         }
+        // the New for You notification
+        if (i.getStringExtra(app.lunta.foryou.ForYouWorker.EXTRA_OPEN) == "foryou" && model.mode != app.lunta.data.LibraryMode.None) {
+            i.removeExtra(app.lunta.foryou.ForYouWorker.EXTRA_OPEN)
+            model.scope.launchWhenOpen(model) { model.resetTo(Screen.Home); model.push(Screen.Papers(Place.ForYou)) }
+            return
+        }
         when (i.action) {
             Intent.ACTION_VIEW -> {
                 val data = i.data ?: return

@@ -73,7 +73,7 @@ fun HomeScreen(model: AppModel) {
                 item { PlaceRow(Icons.Outlined.StarOutline, "Starred", model.count(Place.Starred)) { model.push(Screen.Papers(Place.Starred)) } }
                 item { PlaceRow(Icons.Outlined.BookmarkBorder, "Must Read", model.count(Place.MustRead)) { model.push(Screen.Papers(Place.MustRead)) } }
                 item { PlaceRow(Icons.Outlined.MarkEmailUnread, "Unread", model.count(Place.Unread)) { model.push(Screen.Papers(Place.Unread)) } }
-                item { PlaceRow(Icons.Outlined.AutoAwesome, "New for You", null, hint = "Soon") { model.push(Screen.Papers(Place.ForYou)) } }
+                item { PlaceRow(Icons.Outlined.AutoAwesome, "New for You", model.forYou.newCount.takeIf { it > 0 }) { model.push(Screen.Papers(Place.ForYou)) } }
 
                 item { SectionHeader("Folders") { IconButton({ newFolder = "" }) { Icon(Icons.Filled.CreateNewFolder, "New folder") } } }
                 val tree = folderTree(model.collections, collapsed.toSet())

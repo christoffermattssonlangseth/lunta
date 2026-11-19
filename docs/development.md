@@ -641,7 +641,7 @@ bindings. It follows the iPhone app's Mail-style layout.
   or PC) or **a local library** on the phone (for trying it out). Drive sync is lazy: it runs on start,
   on pull-to-refresh and about every 30 minutes (WorkManager), and fetches a paper's EPUB or PDF
   when you open it.
-- **Library:** places (All, Starred, Unread with counts, a New for You placeholder, folders as a tree,
+- **Library:** places (All, Starred, Unread with counts, New for You, folders as a tree,
   smart folders written by the Apple apps, tags) each opening a paper list with full-text search and
   sort; swipe from the right edge for star, read/unread and Folders & Tags. The paper page has the
   abstract, folders and tags, APA / Vancouver / Nature citations (copied), **Read**, Add PDF from Files
@@ -654,6 +654,18 @@ bindings. It follows the iPhone app's Mail-style layout.
   turning (swipe or tap the edges), highlights in four colours with notes, a highlights list, contents,
   and the reading position, synced through `positions/` like the other apps. The PDF opens in a
   PdfRenderer view (no PDF highlights yet; ones made elsewhere are listed).
+- **New for You** (`app/lunta/foryou/`, on the core's `NewForYou`; see [New for You](#new-for-you-on-windows-linux-and-android)):
+  the place in the library with the count of new papers; the feed (status and refresh, "In short" with links to its
+  papers, cards with Add (long-press: Add as Must Read), More Like This, Not for Me, share, Earlier), a paper's page
+  (abstract, why it's here, Add to Library / Must Read / Show in Library); the settings sheet (paragraph and Draft from
+  My Library with the on-device model, ORCID iD and people you publish with, the morning time, papers a day, preprints,
+  what you follow, journal names looked up on OpenAlex). Adding goes through Add Paper's DOI path (the feed's details
+  when there is no DOI or the lookup fails). In the app a due run starts when the library opens, with the on-device
+  model when it is downloaded and allowed (searches, screening), then summaries and the digest. In the background
+  `ForYouWorker` (WorkManager, every 6 hours with a network) syncs, makes the day's feed when it is due (without the
+  model), syncs again and posts "New for You · 5 papers" (channel "New for You", once per feed, not after the feed was
+  opened; tapping opens it). On Android 13+ the notification permission is asked when New for You is first shown with
+  something to follow, and again from Save; refused, there is the count in the library.
 
 Build and run (JDK 21, Android SDK with platform 36, build-tools 36.0.0 and NDK 28, Rust with the
 `aarch64-linux-android` target, `cargo install cargo-ndk`):
@@ -672,7 +684,7 @@ library, optionally synced with a plain folder as the "remote":
 (`cargo run --example seed_library -- <dir> <doi>...` makes a library of public papers for it).
 `.github/workflows/android.yml` builds the debug APK on GitHub Actions.
 
-Not in the Android app yet: highlighting in the PDF, New for You, Discover, Ask about the library, import,
+Not in the Android app yet: highlighting in the PDF, Discover, Ask about the library, import,
 Clean Up, creating or editing smart folders, editing metadata, Keystore-backed token storage (tokens
 are in the app's private, non-backed-up folder), a release build and signing.
 

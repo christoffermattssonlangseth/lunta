@@ -78,7 +78,8 @@ private fun AppNav(model: AppModel) {
     ) { s ->
         when (s) {
             Screen.Home -> HomeScreen(model)
-            is Screen.Papers -> PapersScreen(model, s.place)
+            is Screen.Papers -> if (s.place == Place.ForYou) app.lunta.foryou.ForYouScreen(model) else PapersScreen(model, s.place)
+            is Screen.ForYouFind -> app.lunta.foryou.ForYouFindScreen(model, s.key)
             is Screen.Info -> InfoScreen(model, s.id)
             is Screen.Reader -> ReaderScreen(model, s.id, s.pdf)
             is Screen.Journal -> JournalScreen(model, s.id)
@@ -86,4 +87,4 @@ private fun AppNav(model: AppModel) {
     }
 }
 
-private fun depth(s: Screen) = when (s) { Screen.Home -> 0; is Screen.Papers -> 1; is Screen.Info -> 2; is Screen.Reader -> 3; is Screen.Journal -> 4 }
+private fun depth(s: Screen) = when (s) { Screen.Home -> 0; is Screen.Papers -> 1; is Screen.Info -> 2; is Screen.Reader -> 3; is Screen.Journal -> 4; is Screen.ForYouFind -> 2 }

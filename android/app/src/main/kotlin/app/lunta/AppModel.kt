@@ -10,6 +10,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.lunta.data.LibraryMode
+import app.lunta.foryou.ForYouModel
+import app.lunta.foryou.ForYouWorker
 import app.lunta.data.Positions
 import app.lunta.data.Settings
 import app.lunta.data.SmartFolder
@@ -44,6 +46,8 @@ sealed interface Screen {
     data class Reader(val id: String, val pdf: Boolean = false) : Screen
     /** The paper's page on the journal's site, in the app (JournalScreen). */
     data class Journal(val id: String) : Screen
+    /** A paper in New for You's feed (foryou/ForYouScreen.kt). */
+    data class ForYouFind(val key: String) : Screen
 }
 
 /** One row of a paper list: the paper, and the matching text when it came from a search. */
@@ -104,6 +108,8 @@ class AppModel(val app: Application) {
     val clientIdMissing: Boolean get() = BuildConfig.GOOGLE_CLIENT_ID.isBlank()
     /** Import Library and Share as BibTeX / RIS (LibraryImport.kt). */
     val imports = LibraryImport(this)
+    /** New for You: the daily feed, shared with the other devices through the library folder. */
+    val forYou by lazy { ForYouModel(this) }
 
     // ---- navigation ----
 
@@ -112,6 +118,9 @@ class AppModel(val app: Application) {
     fun resetTo(s: Screen) { stack.clear(); stack.add(s) }
 
     // ---- opening the library ----
+
+    /** The open library's folder. */
+    fun libraryDir(): File = rootDir(mode)
 
     private fun rootDir(m: LibraryMode) = File(app.filesDir, if (m == LibraryMode.Drive) "library-drive" else "library-local")
 
@@ -150,6 +159,9 @@ class AppModel(val app: Application) {
                 reload()
                 SyncWorker.schedule(app, settings.syncMinutes, librarySync != null)
                 syncNow()
+                // New for You: the day's papers if due, and the morning check in the background
+                forYou.runIfDue()
+                ForYouWorker.schedule(app)
             } catch (e: Exception) {
                 error = "Couldn't open the library: ${e.message}"
             }
@@ -187,6 +199,7 @@ class AppModel(val app: Application) {
         scope.launch {
             withContext(Dispatchers.IO) { if (disconnect) runCatching { driveAuth?.disconnect() } }
             SyncWorker.cancel(app)
+            ForYouWorker.cancel(app)
             library = null; librarySync = null; driveAuth = null; positions = null
             opened = false
             papers = emptyList(); collections = emptyList(); tags = emptyList()

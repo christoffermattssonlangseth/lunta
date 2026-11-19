@@ -1,0 +1,240 @@
+package app.lunta.foryou
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import app.lunta.AppModel
+import app.lunta.ai.OnDeviceAi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import uniffi.lunta_core.*
+import java.io.File
+import java.util.TimeZone
+
+/**
+ * New for You on Android: the core's feed (core/src/foryou, `NewForYou`) on the open library. The
+ * state is in the library folder (foryou.json, watches.json), so it is the same New for You as on
+ * the Mac, iPhone and PCs: Drive sync carries it like the library's other shared files. What only
+ * this phone keeps (when the feed was last opened, the last notification) is in the app's folder.
+ *
+ * Runs: in the app when one is due (at the morning time; a phone leaves the first two hours to a
+ * computer) or on refresh; in the background by [ForYouWorker]. The on-device model writes the
+ * searches, screens and summarizes only in the app, when it is installed and this phone may run it.
+ */
+class ForYouModel(private val model: AppModel) {
+    var feed by mutableStateOf<FeedView?>(null)
+        private set
+    var settings by mutableStateOf<SettingsView?>(null)
+        private set
+    var running by mutableStateOf(false)
+        private set
+    var stage by mutableStateOf<String?>(null)
+        private set
+    var summarizing by mutableStateOf(false)
+        private set
+    /** keys of finds being added */
+    var adding by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    private var core: NewForYou? = null
+    private var coreLib: Library? = null
+
+    /** The core's New for You on the open library (made again when another library opens). */
+    @Synchronized
+    fun core(): NewForYou? {
+        val lib = model.library ?: return null
+        if (core == null || coreLib !== lib) {
+            core = NewForYou(lib, model.libraryDir().absolutePath, File(model.app.filesDir, "foryou").also { it.mkdirs() }.absolutePath)
+            coreLib = lib
+        }
+        return core
+    }
+
+    val newCount: Int get() = feed?.newCount?.toInt() ?: 0
+
+    /** Reads the feed and settings again (after a sync, a change, a run). */
+    fun refresh() {
+        model.scope.launch { reload() }
+    }
+
+    suspend fun reload() {
+        val fy = core() ?: return
+        val now = System.currentTimeMillis()
+        val (f, s) = withContext(Dispatchers.IO) { fy.feed(now, tz(now)) to fy.settings() }
+        feed = f; settings = s
+    }
+
+    /** The feed was looked at: the badge counts from now. */
+    fun markOpened() {
+        val fy = core() ?: return
+        model.scope.launch { withContext(Dispatchers.IO) { runCatching { fy.markOpened(System.currentTimeMillis()) } }; reload() }
+    }
+
+    /** At start-up: the day's papers if they are due. */
+    fun runIfDue() {
+        val fy = core() ?: return
+        model.scope.launch {
+            reload()
+            val now = System.currentTimeMillis()
+            if (withContext(Dispatchers.IO) { fy.isDue(now, tz(now), true) }) runNow() else summarizeIfNeeded()
+        }
+    }
+
+    /** Looks for new papers now (with the model when it may run here). */
+    fun runNow() {
+        val fy = core() ?: return
+        if (running) return
+        running = true
+        stage = "Looking for new papers…"
+        model.scope.launch {
+            try {
+                val engine = if (OnDeviceAi.usable) OnDeviceAi.engine() else null
+                val listener = object : ForYouListener {
+                    override fun onStage(stage: String) { model.scope.launch { this@ForYouModel.stage = stage } }
+                }
+                val now = System.currentTimeMillis()
+                withContext(Dispatchers.IO) { fy.run(now, tz(now), engine, listener) }
+                reload()
+                // foryou.json goes to the other devices
+                model.syncNow()
+            } catch (e: Exception) {
+                model.error = "Couldn't look for new papers: ${e.message ?: e}"
+            } finally {
+                running = false
+                stage = null
+            }
+            reload()
+            summarizeIfNeeded()
+        }
+    }
+
+    fun stop() { core()?.stop() }
+
+    /** One sentence for each paper without one, and the digest, when the model may run here. */
+    fun summarizeIfNeeded() {
+        val fy = core() ?: return
+        OnDeviceAi.init(model.app)
+        if (summarizing || running || !OnDeviceAi.usable) return
+        model.scope.launch {
+            if (!withContext(Dispatchers.IO) { fy.needsSummaries(tz(System.currentTimeMillis())) }) return@launch
+            summarizing = true
+            try {
+                val engine = OnDeviceAi.engine() ?: return@launch
+                withContext(Dispatchers.IO) { fy.summarize(engine, tz(System.currentTimeMillis())) }
+            } finally {
+                summarizing = false
+            }
+            reload()
+        }
+    }
+
+    // ---- feedback ----
+
+    private fun change(block: (NewForYou) -> Unit) {
+        val fy = core() ?: return
+        model.scope.launch {
+            try { withContext(Dispatchers.IO) { block(fy) } } catch (e: Exception) { model.error = e.message ?: e.toString() }
+            reload()
+        }
+    }
+
+    fun dismiss(key: String) = change { it.dismiss(key) }
+    fun boost(key: String) = change { it.boost(key) }
+
+    /**
+     * Add to Library: the paper by its DOI as "Add Paper" does (reading view and all), else (no DOI, or
+     * the lookup failed) with the details the feed has; then it counts as a paper you wanted.
+     */
+    fun add(f: FindView, mustRead: Boolean, then: (String) -> Unit = {}) {
+        val fy = core() ?: return
+        val lib = model.library ?: return
+        if (f.key in adding) return
+        adding = adding + f.key
+        model.scope.launch {
+            try {
+                val id = withContext(Dispatchers.IO) {
+                    f.inLibrary
+                        ?: f.doi.takeIf { it.isNotBlank() }?.let { lib.findByDoi(it)?.id }
+                        ?: f.doi.takeIf { it.isNotBlank() }?.let { runCatching { lib.addFromInput(it, model.progress).paper.id }.getOrNull() }
+                        ?: fy.findMeta(f.key)?.let { lib.addPaper(it, null, null, null).id }
+                } ?: throw IllegalStateException("Couldn't add “${f.title}”.")
+                withContext(Dispatchers.IO) {
+                    fy.added(f.key, id)
+                    if (mustRead) lib.setMustRead(id, true)
+                }
+                model.status = null
+                model.reload()
+                reload()
+                then(id)
+            } catch (e: Exception) {
+                model.status = null
+                model.error = e.message ?: e.toString()
+            } finally {
+                adding = adding - f.key
+            }
+        }
+    }
+
+    // ---- settings ----
+
+    /** Saves the settings; a changed paragraph (or a newly connected ORCID iD) starts a run. */
+    fun save(interests: String, perDay: Int, morning: Int, preprints: String, runAnyway: Boolean) {
+        val fy = core() ?: return
+        model.scope.launch {
+            val changed = try {
+                withContext(Dispatchers.IO) { fy.setSettings(interests, perDay.toUInt(), morning.toUInt(), preprints) }
+            } catch (e: Exception) { model.error = e.message; false }
+            reload()
+            if (changed || runAnyway) runNow()
+        }
+    }
+
+    /** Looks you up on OpenAlex; the problem to show, or null. */
+    suspend fun connectOrcid(input: String): String? {
+        val fy = core() ?: return "The library isn't open yet."
+        return try {
+            withContext(Dispatchers.IO) { fy.connectOrcid(input, System.currentTimeMillis()) }
+            reload()
+            null
+        } catch (e: Exception) {
+            (e.message ?: e.toString()).removePrefix("Invalid: ").removePrefix("invalid: ")
+        }
+    }
+
+    fun disconnectOrcid() = change { it.disconnectOrcid() }
+    fun follow(author: String) = change { it.follow(author, System.currentTimeMillis()) }
+    fun removeWatch(id: String) = change { it.removeWatch(id) }
+
+    /**
+     * Follows a journal (its name as OpenAlex has it: "nature neuro" → "Nature Neuroscience"), an
+     * author, a paper (a DOI: papers citing it) or a topic. The problem to show, or null.
+     */
+    suspend fun addWatch(kind: String, value: String): String? {
+        val fy = core() ?: return "The library isn't open yet."
+        val v = value.trim()
+        return try {
+            val name = if (kind == "journal") withContext(Dispatchers.IO) { journalName(v) } ?: return "No journal called “$v” found." else v
+            withContext(Dispatchers.IO) { fy.addWatch(kind, name, name, System.currentTimeMillis()) }
+            reload()
+            null
+        } catch (e: Exception) {
+            e.message ?: e.toString()
+        }
+    }
+
+    /** The model drafts the paragraph from your papers and library (null without the model). */
+    suspend fun draftInterests(): String? {
+        val fy = core() ?: return null
+        OnDeviceAi.init(model.app)
+        val engine = OnDeviceAi.engine() ?: return null
+        return withContext(Dispatchers.IO) { fy.draftInterests(engine) }
+    }
+
+    val canDraft: Boolean get() { OnDeviceAi.init(model.app); return OnDeviceAi.usable }
+
+    companion object {
+        /** Minutes east of UTC now (the core works out the local morning with it). */
+        fun tz(now: Long): Int = TimeZone.getDefault().getOffset(now) / 60000
+    }
+}

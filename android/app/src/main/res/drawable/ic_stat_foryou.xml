@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- New for You's notification icon: sparkles (white on transparent, as status bar icons are) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10,2 L11.8,8.2 L18,10 L11.8,11.8 L10,18 L8.2,11.8 L2,10 L8.2,8.2 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M18,13 L19,16 L22,17 L19,18 L18,21 L17,18 L14,17 L17,16 Z" />
+</vector>
