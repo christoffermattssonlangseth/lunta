@@ -1,0 +1,2298 @@
+{
+ "outside": {
+  "pdftotext": {
+   "n": 200,
+   "f1": {
+    "n": 200,
+    "mean": 0.70246555,
+    "median": 0.7158199999999999,
+    "q1": 0.658115,
+    "q3": 0.7672125,
+    "ci_lo": 0.699905,
+    "ci_hi": 0.72681,
+    "stat": "median"
+   },
+   "recall": {
+    "n": 200,
+    "mean": 0.9432650500000002,
+    "median": 0.975415,
+    "q1": 0.936115,
+    "q3": 0.9947125,
+    "ci_lo": 0.96914,
+    "ci_hi": 0.985095,
+    "stat": "median"
+   },
+   "precision": {
+    "n": 200,
+    "mean": 0.56489835,
+    "median": 0.5695300000000001,
+    "q1": 0.5073225,
+    "q3": 0.6312275,
+    "ci_lo": 0.54554,
+    "ci_hi": 0.5811,
+    "stat": "median"
+   },
+   "kendall_tau": {
+    "n": 200,
+    "mean": 0.9681738499999999,
+    "median": 0.9920249999999999,
+    "q1": 0.9607325,
+    "q3": 1.0,
+    "ci_lo": 0.98799,
+    "ci_hi": 0.99497,
+    "stat": "median"
+   },
+   "broken_per_1k": {
+    "n": 200,
+    "mean": 0.87442195,
+    "median": 0.290115,
+    "q1": 0.0,
+    "q3": 1.3467275,
+    "ci_lo": 0.6949936037499999,
+    "ci_hi": 1.0809036949999995,
+    "stat": "mean"
+   },
+   "interleaving_papers": {
+    "n": 200,
+    "mean": 0.605,
+    "median": 1.0,
+    "q1": 0.0,
+    "q3": 1.0,
+    "ci_lo": 0.535,
+    "ci_hi": 0.67,
+    "stat": "mean"
+   },
+   "leak_papers": {
+    "n": 200,
+    "mean": 1.0,
+    "median": 1.0,
+    "q1": 1.0,
+    "q3": 1.0,
+    "ci_lo": 1.0,
+    "ci_hi": 1.0,
+    "stat": "mean"
+   },
+   "fig_identified": {
+    "n": 173,
+    "pooled": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "num": 0.0,
+    "den": 849.0
+   },
+   "table_identified": {
+    "n": 149,
+    "pooled": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "num": 0.0,
+    "den": 484.0
+   },
+   "refs_ratio_median": 0.0,
+   "refs_none_papers": 199,
+   "s_per_page": 0.005
+  },
+  "pdftotext-layout": {
+   "n": 200,
+   "f1": {
+    "n": 200,
+    "mean": 0.52348675,
+    "median": 0.49096,
+    "q1": 0.4481125,
+    "q3": 0.5651349999999999,
+    "ci_lo": 0.4773,
+    "ci_hi": 0.502845,
+    "stat": "median"
+   },
+   "recall": {
+    "n": 200,
+    "mean": 0.7081935,
+    "median": 0.643285,
+    "q1": 0.6030625000000001,
+    "q3": 0.7338325,
+    "ci_lo": 0.6310899999999999,
+    "ci_hi": 0.66818,
+    "stat": "median"
+   },
+   "precision": {
+    "n": 200,
+    "mean": 0.41913485,
+    "median": 0.396555,
+    "q1": 0.348125,
+    "q3": 0.45809,
+    "ci_lo": 0.380355,
+    "ci_hi": 0.41049574999999994,
+    "stat": "median"
+   },
+   "kendall_tau": {
+    "n": 200,
+    "mean": 0.9236020500000001,
+    "median": 0.9366749999999999,
+    "q1": 0.90476,
+    "q3": 0.960245,
+    "ci_lo": 0.92812,
+    "ci_hi": 0.94444,
+    "stat": "median"
+   },
+   "broken_per_1k": {
+    "n": 200,
+    "mean": 2.4515396000000003,
+    "median": 1.609445,
+    "q1": 0.70407,
+    "q3": 3.382435,
+    "ci_lo": 2.1013084,
+    "ci_hi": 2.8169395312499996,
+    "stat": "mean"
+   },
+   "interleaving_papers": {
+    "n": 200,
+    "mean": 0.855,
+    "median": 1.0,
+    "q1": 1.0,
+    "q3": 1.0,
+    "ci_lo": 0.805,
+    "ci_hi": 0.9001249999999982,
+    "stat": "mean"
+   },
+   "leak_papers": {
+    "n": 200,
+    "mean": 1.0,
+    "median": 1.0,
+    "q1": 1.0,
+    "q3": 1.0,
+    "ci_lo": 1.0,
+    "ci_hi": 1.0,
+    "stat": "mean"
+   },
+   "fig_identified": {
+    "n": 173,
+    "pooled": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "num": 0.0,
+    "den": 849.0
+   },
+   "table_identified": {
+    "n": 149,
+    "pooled": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "num": 0.0,
+    "den": 484.0
+   },
+   "refs_ratio_median": 0.0,
+   "refs_none_papers": 199,
+   "s_per_page": null
+  },
+  "grobid": {
+   "n": 200,
+   "f1": {
+    "n": 200,
+    "mean": 0.9258808999999999,
+    "median": 0.9473750000000001,
+    "q1": 0.8952100000000001,
+    "q3": 0.974215,
+    "ci_lo": 0.939215,
+    "ci_hi": 0.96004,
+    "stat": "median"
+   },
+   "recall": {
+    "n": 200,
+    "mean": 0.9711871999999999,
+    "median": 0.9854849999999999,
+    "q1": 0.96116,
+    "q3": 0.99421,
+    "ci_lo": 0.9821995,
+    "ci_hi": 0.98871,
+    "stat": "median"
+   },
+   "precision": {
+    "n": 200,
+    "mean": 0.8917431,
+    "median": 0.93001,
+    "q1": 0.831215,
+    "q3": 0.9696075,
+    "ci_lo": 0.907505,
+    "ci_hi": 0.94455,
+    "stat": "median"
+   },
+   "kendall_tau": {
+    "n": 200,
+    "mean": 0.98796665,
+    "median": 0.998235,
+    "q1": 0.9923825,
+    "q3": 1.0,
+    "ci_lo": 0.99693,
+    "ci_hi": 1.0,
+    "stat": "median"
+   },
+   "broken_per_1k": {
+    "n": 200,
+    "mean": 0.4250804,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.358925,
+    "ci_lo": 0.27712169875000003,
+    "ci_hi": 0.6220729687499996,
+    "stat": "mean"
+   },
+   "interleaving_papers": {
+    "n": 200,
+    "mean": 0.145,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.1,
+    "ci_hi": 0.195,
+    "stat": "mean"
+   },
+   "leak_papers": {
+    "n": 200,
+    "mean": 0.47,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 1.0,
+    "ci_lo": 0.405,
+    "ci_hi": 0.54,
+    "stat": "mean"
+   },
+   "fig_identified": {
+    "n": 173,
+    "pooled": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "num": 0.0,
+    "den": 849.0
+   },
+   "table_identified": {
+    "n": 149,
+    "pooled": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "num": 0.0,
+    "den": 484.0
+   },
+   "refs_ratio_median": 1.0,
+   "refs_none_papers": 0,
+   "s_per_page": 0.173325
+  },
+  "swift": {
+   "n": 200,
+   "f1": {
+    "n": 200,
+    "mean": 0.9270838499999999,
+    "median": 0.95488,
+    "q1": 0.9176575,
+    "q3": 0.97916,
+    "ci_lo": 0.95023,
+    "ci_hi": 0.96372,
+    "stat": "median"
+   },
+   "recall": {
+    "n": 200,
+    "mean": 0.95871535,
+    "median": 0.987455,
+    "q1": 0.9665474999999999,
+    "q3": 0.995595,
+    "ci_lo": 0.98458,
+    "ci_hi": 0.9905,
+    "stat": "median"
+   },
+   "precision": {
+    "n": 200,
+    "mean": 0.9047669500000001,
+    "median": 0.9404049999999999,
+    "q1": 0.878065,
+    "q3": 0.97119,
+    "ci_lo": 0.9249700000000001,
+    "ci_hi": 0.9495750000000001,
+    "stat": "median"
+   },
+   "kendall_tau": {
+    "n": 200,
+    "mean": 0.9861705999999999,
+    "median": 1.0,
+    "q1": 0.99688,
+    "q3": 1.0,
+    "ci_lo": 1.0,
+    "ci_hi": 1.0,
+    "stat": "median"
+   },
+   "broken_per_1k": {
+    "n": 200,
+    "mean": 0.8038928999999999,
+    "median": 0.11429500000000001,
+    "q1": 0.0,
+    "q3": 0.5798075,
+    "ci_lo": 0.45737524874999996,
+    "ci_hi": 1.2742910650000001,
+    "stat": "mean"
+   },
+   "interleaving_papers": {
+    "n": 200,
+    "mean": 0.205,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.155,
+    "ci_hi": 0.265,
+    "stat": "mean"
+   },
+   "leak_papers": {
+    "n": 200,
+    "mean": 0.415,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 1.0,
+    "ci_lo": 0.345,
+    "ci_hi": 0.485,
+    "stat": "mean"
+   },
+   "fig_identified": {
+    "n": 173,
+    "pooled": 0.6595995288574794,
+    "ci_lo": 0.587034117591352,
+    "ci_hi": 0.7282373199279711,
+    "num": 560.0,
+    "den": 849.0
+   },
+   "table_identified": {
+    "n": 149,
+    "pooled": 0.6590909090909091,
+    "ci_lo": 0.5880075435203095,
+    "ci_hi": 0.7293084978077955,
+    "num": 319.0,
+    "den": 484.0
+   },
+   "refs_ratio_median": 1.0,
+   "refs_none_papers": 2,
+   "s_per_page": null
+  },
+  "rust": {
+   "n": 200,
+   "f1": {
+    "n": 200,
+    "mean": 0.9319869499999999,
+    "median": 0.9596800000000001,
+    "q1": 0.913315,
+    "q3": 0.9816875,
+    "ci_lo": 0.95343,
+    "ci_hi": 0.96679,
+    "stat": "median"
+   },
+   "recall": {
+    "n": 200,
+    "mean": 0.9712976499999999,
+    "median": 0.992715,
+    "q1": 0.975845,
+    "q3": 0.9973875,
+    "ci_lo": 0.98956,
+    "ci_hi": 0.994855,
+    "stat": "median"
+   },
+   "precision": {
+    "n": 200,
+    "mean": 0.9048525000000001,
+    "median": 0.9392499999999999,
+    "q1": 0.8779874999999999,
+    "q3": 0.9711749999999999,
+    "ci_lo": 0.933915,
+    "ci_hi": 0.95188,
+    "stat": "median"
+   },
+   "kendall_tau": {
+    "n": 200,
+    "mean": 0.9890076499999999,
+    "median": 1.0,
+    "q1": 1.0,
+    "q3": 1.0,
+    "ci_lo": 1.0,
+    "ci_hi": 1.0,
+    "stat": "median"
+   },
+   "broken_per_1k": {
+    "n": 200,
+    "mean": 0.47214474999999995,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.2991575,
+    "ci_lo": 0.2662539325,
+    "ci_hi": 0.7322442225000001,
+    "stat": "mean"
+   },
+   "interleaving_papers": {
+    "n": 200,
+    "mean": 0.125,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.08,
+    "ci_hi": 0.17,
+    "stat": "mean"
+   },
+   "leak_papers": {
+    "n": 200,
+    "mean": 0.42,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 1.0,
+    "ci_lo": 0.35,
+    "ci_hi": 0.49,
+    "stat": "mean"
+   },
+   "fig_identified": {
+    "n": 173,
+    "pooled": 0.7220259128386337,
+    "ci_lo": 0.6524590163934426,
+    "ci_hi": 0.7873853303175733,
+    "num": 613.0,
+    "den": 849.0
+   },
+   "table_identified": {
+    "n": 149,
+    "pooled": 0.6673553719008265,
+    "ci_lo": 0.5950966783557374,
+    "ci_hi": 0.740476589964845,
+    "num": 323.0,
+    "den": 484.0
+   },
+   "refs_ratio_median": 1.0,
+   "refs_none_papers": 2,
+   "s_per_page": null
+  },
+  "xml": {
+   "n": 200,
+   "f1": {
+    "n": 200,
+    "mean": 0.9985883999999998,
+    "median": 0.99957,
+    "q1": 0.9990175,
+    "q3": 0.99982,
+    "ci_lo": 0.99946,
+    "ci_hi": 0.99968,
+    "stat": "median"
+   },
+   "recall": {
+    "n": 200,
+    "mean": 0.9998638,
+    "median": 1.0,
+    "q1": 1.0,
+    "q3": 1.0,
+    "ci_lo": 1.0,
+    "ci_hi": 1.0,
+    "stat": "median"
+   },
+   "precision": {
+    "n": 200,
+    "mean": 0.9973301000000001,
+    "median": 0.99917,
+    "q1": 0.9980375,
+    "q3": 0.99964,
+    "ci_lo": 0.998924875,
+    "ci_hi": 0.999360125,
+    "stat": "median"
+   },
+   "kendall_tau": {
+    "n": 200,
+    "mean": 0.9999979999999999,
+    "median": 1.0,
+    "q1": 1.0,
+    "q3": 1.0,
+    "ci_lo": 1.0,
+    "ci_hi": 1.0,
+    "stat": "median"
+   },
+   "broken_per_1k": {
+    "n": 200,
+    "mean": 0.13536595,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.0654467575,
+    "ci_hi": 0.2319198774999999,
+    "stat": "mean"
+   },
+   "interleaving_papers": {
+    "n": 200,
+    "mean": 0.01,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.025,
+    "stat": "mean"
+   },
+   "leak_papers": {
+    "n": 200,
+    "mean": 0.005,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.015,
+    "stat": "mean"
+   },
+   "fig_identified": {
+    "n": 173,
+    "pooled": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "num": 0.0,
+    "den": 849.0
+   },
+   "table_identified": {
+    "n": 149,
+    "pooled": 0.9524793388429752,
+    "ci_lo": 0.9078664716589584,
+    "ci_hi": 0.9868730377699553,
+    "num": 461.0,
+    "den": 484.0
+   },
+   "refs_ratio_median": 1.0,
+   "refs_none_papers": 2,
+   "s_per_page": null
+  },
+  "swift_minus_grobid_f1": {
+   "n": 200,
+   "mean_diff": 0.0012029499999999993,
+   "median_diff": 0.0023099999999999787,
+   "ci_lo": -0.01171402,
+   "ci_hi": 0.01330676374999999,
+   "wilcoxon_p": 0.15499476125950196,
+   "improved": 106,
+   "worse": 94,
+   "same": 0
+  },
+  "rust_minus_grobid_f1": {
+   "n": 200,
+   "mean_diff": 0.006106049999999998,
+   "median_diff": 0.005539999999999989,
+   "ci_lo": -0.0055662625000000064,
+   "ci_hi": 0.017247654999999987,
+   "wilcoxon_p": 0.07277161223558641,
+   "improved": 108,
+   "worse": 92,
+   "same": 0
+  },
+  "by_reference_split": {
+   "swift_found_reference_list": {
+    "n": 197,
+    "swift": 0.95555,
+    "rust": 0.96012,
+    "grobid": 0.94755,
+    "pdftotext": 0.71498
+   },
+   "swift_no_reference_items": {
+    "n": 3,
+    "swift": 0.6144,
+    "rust": 0.62399,
+    "grobid": 0.83054,
+    "pdftotext": 0.74922
+   }
+  }
+ },
+ "pages": {
+  "attempted": 92,
+  "saved": 37,
+  "converted": 30,
+  "refused_abstract_only": 7,
+  "blocked_by_host": [
+   [
+    "link.springer.com",
+    10
+   ],
+   [
+    "mdpi.com",
+    6
+   ],
+   [
+    "academic.oup.com",
+    3
+   ],
+   [
+    "hindawi.com",
+    3
+   ],
+   [
+    "doi.org",
+    3
+   ],
+   [
+    "journals.asm.org",
+    3
+   ],
+   [
+    "pubs.acs.org",
+    2
+   ],
+   [
+    "onlinelibrary.wiley.com",
+    2
+   ],
+   [
+    "advanced.onlinelibrary.wiley.com",
+    1
+   ],
+   [
+    "aging-us.com",
+    1
+   ],
+   [
+    "journals.lww.com",
+    1
+   ],
+   [
+    "journals.iucr.org",
+    1
+   ],
+   [
+    "jbc.org",
+    1
+   ],
+   [
+    "cureus.com",
+    1
+   ],
+   [
+    "pubs.rsc.org",
+    1
+   ],
+   [
+    "ijccm.org",
+    1
+   ],
+   [
+    "thieme-connect.de",
+    1
+   ],
+   [
+    "ovid.com",
+    1
+   ],
+   [
+    "jmg.bmj.com",
+    1
+   ],
+   [
+    "jmir.org",
+    1
+   ],
+   [
+    "tandfonline.com",
+    1
+   ],
+   [
+    "oncotarget.com",
+    1
+   ],
+   [
+    "thelancet.com",
+    1
+   ],
+   [
+    "medicinaoral.com",
+    1
+   ],
+   [
+    "mental.jmir.org",
+    1
+   ],
+   [
+    "peerj.com",
+    1
+   ],
+   [
+    "journals.sagepub.com",
+    1
+   ],
+   [
+    "elifesciences.org",
+    1
+   ],
+   [
+    "cell.com",
+    1
+   ],
+   [
+    "researchprotocols.org",
+    1
+   ],
+   [
+    "sciencedirect.com",
+    1
+   ]
+  ],
+  "blocked_reasons": [
+   [
+    "HTTP 403",
+    34
+   ],
+   [
+    "robots.txt",
+    13
+   ],
+   [
+    "network error",
+    3
+   ],
+   [
+    "HTTP 202",
+    3
+   ],
+   [
+    "not an HTML page (the DOI leads to a PDF)",
+    1
+   ],
+   [
+    "bot check",
+    1
+   ]
+  ],
+  "readers": [
+   [
+    "generic",
+    25
+   ],
+   [
+    "Springer Nature",
+    5
+   ]
+  ],
+  "families": [
+   [
+    "Frontiers",
+    12
+   ],
+   [
+    "other",
+    7
+   ],
+   [
+    "PLOS",
+    6
+   ],
+   [
+    "Nature",
+    5
+   ]
+  ],
+  "page-swift": {
+   "n": 30,
+   "f1": {
+    "n": 30,
+    "mean": 0.9357399999999998,
+    "median": 0.956,
+    "q1": 0.9425475,
+    "q3": 0.96779,
+    "ci_lo": 0.9514499999999999,
+    "ci_hi": 0.964855,
+    "stat": "median"
+   },
+   "recall": {
+    "n": 30,
+    "mean": 0.9889789999999999,
+    "median": 0.99489,
+    "q1": 0.9827975,
+    "q3": 0.999935,
+    "ci_lo": 0.990265,
+    "ci_hi": 0.999725,
+    "stat": "median"
+   },
+   "precision": {
+    "n": 30,
+    "mean": 0.9007906666666666,
+    "median": 0.924315,
+    "q1": 0.90203,
+    "q3": 0.94702,
+    "ci_lo": 0.911755,
+    "ci_hi": 0.9396599999999999,
+    "stat": "median"
+   },
+   "kendall_tau": {
+    "n": 30,
+    "mean": 0.9855646666666668,
+    "median": 1.0,
+    "q1": 0.990845,
+    "q3": 1.0,
+    "ci_lo": 0.995089375,
+    "ci_hi": 1.0,
+    "stat": "median"
+   },
+   "broken_per_1k": {
+    "n": 30,
+    "mean": 0.05303499999999999,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.019715,
+    "ci_hi": 0.09249924999999998,
+    "stat": "mean"
+   },
+   "interleaving_papers": {
+    "n": 30,
+    "mean": 0.0,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "stat": "mean"
+   },
+   "leak_papers": {
+    "n": 30,
+    "mean": 0.7666666666666667,
+    "median": 1.0,
+    "q1": 1.0,
+    "q3": 1.0,
+    "ci_lo": 0.6,
+    "ci_hi": 0.9,
+    "stat": "mean"
+   },
+   "fig_identified": {
+    "n": 25,
+    "pooled": 0.8235294117647058,
+    "ci_lo": 0.6140216338391993,
+    "ci_hi": 1.0,
+    "num": 112.0,
+    "den": 136.0
+   },
+   "table_identified": {
+    "n": 22,
+    "pooled": 0.08433734939759036,
+    "ci_lo": 0.0,
+    "ci_hi": 0.22093023255813954,
+    "num": 7.0,
+    "den": 83.0
+   },
+   "refs_ratio_median": 1.0,
+   "refs_none_papers": 0
+  },
+  "page-rust": {
+   "n": 30,
+   "f1": {
+    "n": 30,
+    "mean": 0.9357399999999998,
+    "median": 0.956,
+    "q1": 0.9425475,
+    "q3": 0.96779,
+    "ci_lo": 0.9514499999999999,
+    "ci_hi": 0.964855,
+    "stat": "median"
+   },
+   "recall": {
+    "n": 30,
+    "mean": 0.9889789999999999,
+    "median": 0.99489,
+    "q1": 0.9827975,
+    "q3": 0.999935,
+    "ci_lo": 0.990265,
+    "ci_hi": 0.9997199999999999,
+    "stat": "median"
+   },
+   "precision": {
+    "n": 30,
+    "mean": 0.9007906666666666,
+    "median": 0.924315,
+    "q1": 0.90203,
+    "q3": 0.94702,
+    "ci_lo": 0.911755,
+    "ci_hi": 0.9396599999999999,
+    "stat": "median"
+   },
+   "kendall_tau": {
+    "n": 30,
+    "mean": 0.9855646666666668,
+    "median": 1.0,
+    "q1": 0.990845,
+    "q3": 1.0,
+    "ci_lo": 0.995485,
+    "ci_hi": 1.0,
+    "stat": "median"
+   },
+   "broken_per_1k": {
+    "n": 30,
+    "mean": 0.05303499999999999,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.019475333333333334,
+    "ci_hi": 0.09260463333333332,
+    "stat": "mean"
+   },
+   "interleaving_papers": {
+    "n": 30,
+    "mean": 0.0,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "stat": "mean"
+   },
+   "leak_papers": {
+    "n": 30,
+    "mean": 0.7666666666666667,
+    "median": 1.0,
+    "q1": 1.0,
+    "q3": 1.0,
+    "ci_lo": 0.6,
+    "ci_hi": 0.9,
+    "stat": "mean"
+   },
+   "fig_identified": {
+    "n": 25,
+    "pooled": 0.8235294117647058,
+    "ci_lo": 0.6062366071428571,
+    "ci_hi": 1.0,
+    "num": 112.0,
+    "den": 136.0
+   },
+   "table_identified": {
+    "n": 22,
+    "pooled": 0.08433734939759036,
+    "ci_lo": 0.0,
+    "ci_hi": 0.21428571428571427,
+    "num": 7.0,
+    "den": 83.0
+   },
+   "refs_ratio_median": 1.0,
+   "refs_none_papers": 0
+  },
+  "swift": {
+   "n": 30,
+   "f1": {
+    "n": 30,
+    "mean": 0.8876176666666666,
+    "median": 0.9083699999999999,
+    "q1": 0.8332525,
+    "q3": 0.956985,
+    "ci_lo": 0.8527549999999999,
+    "ci_hi": 0.9371,
+    "stat": "median"
+   },
+   "recall": {
+    "n": 30,
+    "mean": 0.9528983333333333,
+    "median": 0.97227,
+    "q1": 0.937805,
+    "q3": 0.9864425,
+    "ci_lo": 0.96044,
+    "ci_hi": 0.984325,
+    "stat": "median"
+   },
+   "precision": {
+    "n": 30,
+    "mean": 0.8401449999999999,
+    "median": 0.8619600000000001,
+    "q1": 0.7570049999999999,
+    "q3": 0.9489075,
+    "ci_lo": 0.7932295,
+    "ci_hi": 0.923915,
+    "stat": "median"
+   },
+   "kendall_tau": {
+    "n": 30,
+    "mean": 0.9595459999999999,
+    "median": 0.995505,
+    "q1": 0.9606174999999999,
+    "q3": 1.0,
+    "ci_lo": 0.976765,
+    "ci_hi": 1.0,
+    "stat": "median"
+   },
+   "broken_per_1k": {
+    "n": 30,
+    "mean": 0.550361,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.2772925,
+    "ci_lo": 0.08946640000000003,
+    "ci_hi": 1.3847767499999994,
+    "stat": "mean"
+   },
+   "interleaving_papers": {
+    "n": 30,
+    "mean": 0.26666666666666666,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.75,
+    "ci_lo": 0.13333333333333333,
+    "ci_hi": 0.43333333333333335,
+    "stat": "mean"
+   },
+   "leak_papers": {
+    "n": 30,
+    "mean": 0.43333333333333335,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 1.0,
+    "ci_lo": 0.26666666666666666,
+    "ci_hi": 0.6,
+    "stat": "mean"
+   },
+   "fig_identified": {
+    "n": 25,
+    "pooled": 0.8455882352941176,
+    "ci_lo": 0.75,
+    "ci_hi": 0.940007462686567,
+    "num": 115.0,
+    "den": 136.0
+   },
+   "table_identified": {
+    "n": 22,
+    "pooled": 0.5301204819277109,
+    "ci_lo": 0.3505025773195876,
+    "ci_hi": 0.7341821598101266,
+    "num": 44.0,
+    "den": 83.0
+   },
+   "refs_ratio_median": 1.0,
+   "refs_none_papers": 0
+  },
+  "rust": {
+   "n": 30,
+   "f1": {
+    "n": 30,
+    "mean": 0.9092543333333335,
+    "median": 0.934215,
+    "q1": 0.865435,
+    "q3": 0.9677825,
+    "ci_lo": 0.900965,
+    "ci_hi": 0.9556465000000001,
+    "stat": "median"
+   },
+   "recall": {
+    "n": 30,
+    "mean": 0.970537,
+    "median": 0.977915,
+    "q1": 0.9651875000000001,
+    "q3": 0.988345,
+    "ci_lo": 0.96786,
+    "ci_hi": 0.9876,
+    "stat": "median"
+   },
+   "precision": {
+    "n": 30,
+    "mean": 0.8641030000000002,
+    "median": 0.909105,
+    "q1": 0.7863199999999999,
+    "q3": 0.95019,
+    "ci_lo": 0.863645,
+    "ci_hi": 0.93525,
+    "stat": "median"
+   },
+   "kendall_tau": {
+    "n": 30,
+    "mean": 0.9692523333333333,
+    "median": 1.0,
+    "q1": 0.9842875,
+    "q3": 1.0,
+    "ci_lo": 0.995505,
+    "ci_hi": 1.0,
+    "stat": "median"
+   },
+   "broken_per_1k": {
+    "n": 30,
+    "mean": 0.45633833333333323,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.02983575,
+    "ci_hi": 1.255645958333333,
+    "stat": "mean"
+   },
+   "interleaving_papers": {
+    "n": 30,
+    "mean": 0.1,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.2,
+    "stat": "mean"
+   },
+   "leak_papers": {
+    "n": 30,
+    "mean": 0.43333333333333335,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 1.0,
+    "ci_lo": 0.26666666666666666,
+    "ci_hi": 0.6,
+    "stat": "mean"
+   },
+   "fig_identified": {
+    "n": 25,
+    "pooled": 0.8529411764705882,
+    "ci_lo": 0.7569397522522522,
+    "ci_hi": 0.9520095238095236,
+    "num": 116.0,
+    "den": 136.0
+   },
+   "table_identified": {
+    "n": 22,
+    "pooled": 0.5060240963855421,
+    "ci_lo": 0.31531286721504115,
+    "ci_hi": 0.7297297297297297,
+    "num": 42.0,
+    "den": 83.0
+   },
+   "refs_ratio_median": 1.0,
+   "refs_none_papers": 0
+  },
+  "xml": {
+   "n": 30,
+   "f1": {
+    "n": 30,
+    "mean": 0.9985456666666669,
+    "median": 0.99953,
+    "q1": 0.9977775,
+    "q3": 0.9998525,
+    "ci_lo": 0.99857,
+    "ci_hi": 0.999745,
+    "stat": "median"
+   },
+   "recall": {
+    "n": 30,
+    "mean": 0.9995793333333334,
+    "median": 1.0,
+    "q1": 1.0,
+    "q3": 1.0,
+    "ci_lo": 1.0,
+    "ci_hi": 1.0,
+    "stat": "median"
+   },
+   "precision": {
+    "n": 30,
+    "mean": 0.9975229999999998,
+    "median": 0.9990650000000001,
+    "q1": 0.9970875,
+    "q3": 0.9997075,
+    "ci_lo": 0.99735,
+    "ci_hi": 0.999485,
+    "stat": "median"
+   },
+   "kendall_tau": {
+    "n": 30,
+    "mean": 1.0,
+    "median": 1.0,
+    "q1": 1.0,
+    "q3": 1.0,
+    "ci_lo": 1.0,
+    "ci_hi": 1.0,
+    "stat": "median"
+   },
+   "broken_per_1k": {
+    "n": 30,
+    "mean": 0.013804333333333333,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.034873999999999995,
+    "stat": "mean"
+   },
+   "interleaving_papers": {
+    "n": 30,
+    "mean": 0.0,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "stat": "mean"
+   },
+   "leak_papers": {
+    "n": 30,
+    "mean": 0.0,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "stat": "mean"
+   },
+   "fig_identified": {
+    "n": 25,
+    "pooled": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "num": 0.0,
+    "den": 136.0
+   },
+   "table_identified": {
+    "n": 22,
+    "pooled": 1.0,
+    "ci_lo": 1.0,
+    "ci_hi": 1.0,
+    "num": 83.0,
+    "den": 83.0
+   },
+   "refs_ratio_median": 1.0,
+   "refs_none_papers": 0
+  },
+  "grobid": {
+   "n": 30,
+   "f1": {
+    "n": 30,
+    "mean": 0.9146880000000001,
+    "median": 0.938475,
+    "q1": 0.88912,
+    "q3": 0.964025,
+    "ci_lo": 0.90577,
+    "ci_hi": 0.9628049999999999,
+    "stat": "median"
+   },
+   "recall": {
+    "n": 30,
+    "mean": 0.9559683333333333,
+    "median": 0.966555,
+    "q1": 0.9563075,
+    "q3": 0.98531,
+    "ci_lo": 0.96014,
+    "ci_hi": 0.983745,
+    "stat": "median"
+   },
+   "precision": {
+    "n": 30,
+    "mean": 0.8852616666666665,
+    "median": 0.927755,
+    "q1": 0.8396025,
+    "q3": 0.9661275,
+    "ci_lo": 0.870483875,
+    "ci_hi": 0.9558500000000001,
+    "stat": "median"
+   },
+   "kendall_tau": {
+    "n": 30,
+    "mean": 0.9674406666666667,
+    "median": 0.98984,
+    "q1": 0.97419,
+    "q3": 0.99943,
+    "ci_lo": 0.981400125,
+    "ci_hi": 0.99377,
+    "stat": "median"
+   },
+   "broken_per_1k": {
+    "n": 30,
+    "mean": 0.737183,
+    "median": 0.144005,
+    "q1": 0.0,
+    "q3": 0.3737525,
+    "ci_lo": 0.14802301666666665,
+    "ci_hi": 1.6994002499999976,
+    "stat": "mean"
+   },
+   "interleaving_papers": {
+    "n": 30,
+    "mean": 0.16666666666666666,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 0.0,
+    "ci_lo": 0.06666666666666667,
+    "ci_hi": 0.3,
+    "stat": "mean"
+   },
+   "leak_papers": {
+    "n": 30,
+    "mean": 0.43333333333333335,
+    "median": 0.0,
+    "q1": 0.0,
+    "q3": 1.0,
+    "ci_lo": 0.26666666666666666,
+    "ci_hi": 0.6,
+    "stat": "mean"
+   },
+   "fig_identified": {
+    "n": 25,
+    "pooled": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "num": 0.0,
+    "den": 136.0
+   },
+   "table_identified": {
+    "n": 22,
+    "pooled": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "num": 0.0,
+    "den": 83.0
+   },
+   "refs_ratio_median": 1.0,
+   "refs_none_papers": 0
+  },
+  "pdftotext": {
+   "n": 30,
+   "f1": {
+    "n": 30,
+    "mean": 0.6280440000000002,
+    "median": 0.6277900000000001,
+    "q1": 0.544575,
+    "q3": 0.675405,
+    "ci_lo": 0.555925,
+    "ci_hi": 0.6613899999999999,
+    "stat": "median"
+   },
+   "recall": {
+    "n": 30,
+    "mean": 0.8664600000000001,
+    "median": 0.902955,
+    "q1": 0.740195,
+    "q3": 0.9699725,
+    "ci_lo": 0.7956049999999999,
+    "ci_hi": 0.950135,
+    "stat": "median"
+   },
+   "precision": {
+    "n": 30,
+    "mean": 0.496452,
+    "median": 0.48421000000000003,
+    "q1": 0.431105,
+    "q3": 0.5421175,
+    "ci_lo": 0.442315,
+    "ci_hi": 0.51243,
+    "stat": "median"
+   },
+   "kendall_tau": {
+    "n": 30,
+    "mean": 0.9181889999999999,
+    "median": 0.9591149999999999,
+    "q1": 0.8841650000000001,
+    "q3": 0.9851775,
+    "ci_lo": 0.91386,
+    "ci_hi": 0.98096,
+    "stat": "median"
+   },
+   "broken_per_1k": {
+    "n": 30,
+    "mean": 0.6373836666666667,
+    "median": 0.33448,
+    "q1": 0.0,
+    "q3": 1.212425,
+    "ci_lo": 0.39132930833333335,
+    "ci_hi": 0.8946703916666668,
+    "stat": "mean"
+   },
+   "interleaving_papers": {
+    "n": 30,
+    "mean": 0.6666666666666666,
+    "median": 1.0,
+    "q1": 0.0,
+    "q3": 1.0,
+    "ci_lo": 0.5,
+    "ci_hi": 0.8333333333333334,
+    "stat": "mean"
+   },
+   "leak_papers": {
+    "n": 30,
+    "mean": 1.0,
+    "median": 1.0,
+    "q1": 1.0,
+    "q3": 1.0,
+    "ci_lo": 1.0,
+    "ci_hi": 1.0,
+    "stat": "mean"
+   },
+   "fig_identified": {
+    "n": 25,
+    "pooled": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "num": 0.0,
+    "den": 136.0
+   },
+   "table_identified": {
+    "n": 22,
+    "pooled": 0.0,
+    "ci_lo": 0.0,
+    "ci_hi": 0.0,
+    "num": 0.0,
+    "den": 83.0
+   },
+   "refs_ratio_median": 0.0,
+   "refs_none_papers": 29
+  },
+  "page_minus_pdf_f1": {
+   "n": 30,
+   "mean_diff": 0.048122333333333336,
+   "median_diff": 0.03932999999999992,
+   "ci_lo": 0.012661966666666654,
+   "ci_hi": 0.08226114166666668,
+   "wilcoxon_p": 0.004031794145703316,
+   "improved": 23,
+   "worse": 7,
+   "same": 0
+  },
+  "by_family": {
+   "Frontiers": {
+    "page-swift": {
+     "n": 12,
+     "f1": {
+      "n": 12,
+      "mean": 0.9580649999999999,
+      "median": 0.956,
+      "q1": 0.95316,
+      "q3": 0.9647574999999999,
+      "ci_lo": 0.953,
+      "ci_hi": 0.964855,
+      "stat": "median"
+     },
+     "recall": {
+      "n": 12,
+      "mean": 0.9984408333333331,
+      "median": 0.99987,
+      "q1": 0.9987625,
+      "q3": 1.0,
+      "ci_lo": 0.997815,
+      "ci_hi": 1.0,
+      "stat": "median"
+     },
+     "precision": {
+      "n": 12,
+      "mean": 0.9209208333333335,
+      "median": 0.916085,
+      "q1": 0.9122275,
+      "q3": 0.9325749999999999,
+      "ci_lo": 0.911755,
+      "ci_hi": 0.93318,
+      "stat": "median"
+     },
+     "kendall_tau": {
+      "n": 12,
+      "mean": 0.9975691666666667,
+      "median": 1.0,
+      "q1": 0.9957925,
+      "q3": 1.0,
+      "ci_lo": 0.995485,
+      "ci_hi": 1.0,
+      "stat": "median"
+     },
+     "broken_per_1k": {
+      "n": 12,
+      "mean": 0.04136416666666667,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.10053833333333334,
+      "stat": "mean"
+     },
+     "interleaving_papers": {
+      "n": 12,
+      "mean": 0.0,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "stat": "mean"
+     },
+     "leak_papers": {
+      "n": 12,
+      "mean": 1.0,
+      "median": 1.0,
+      "q1": 1.0,
+      "q3": 1.0,
+      "ci_lo": 1.0,
+      "ci_hi": 1.0,
+      "stat": "mean"
+     },
+     "fig_identified": {
+      "n": 11,
+      "pooled": 1.0,
+      "ci_lo": 1.0,
+      "ci_hi": 1.0,
+      "num": 43.0,
+      "den": 43.0
+     },
+     "table_identified": {
+      "n": 8,
+      "pooled": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "num": 0.0,
+      "den": 28.0
+     },
+     "refs_ratio_median": 1.0,
+     "refs_none_papers": 0
+    },
+    "swift": {
+     "n": 12,
+     "f1": {
+      "n": 12,
+      "mean": 0.874375,
+      "median": 0.844235,
+      "q1": 0.8224600000000001,
+      "q3": 0.935045,
+      "ci_lo": 0.81938,
+      "ci_hi": 0.94631,
+      "stat": "median"
+     },
+     "recall": {
+      "n": 12,
+      "mean": 0.9426124999999997,
+      "median": 0.9751799999999999,
+      "q1": 0.928155,
+      "q3": 0.985445,
+      "ci_lo": 0.91144,
+      "ci_hi": 0.9856,
+      "stat": "median"
+     },
+     "precision": {
+      "n": 12,
+      "mean": 0.8266258333333333,
+      "median": 0.8126599999999999,
+      "q1": 0.7285925,
+      "q3": 0.9600425,
+      "ci_lo": 0.725125,
+      "ci_hi": 0.964835,
+      "stat": "median"
+     },
+     "kendall_tau": {
+      "n": 12,
+      "mean": 0.9850891666666667,
+      "median": 0.99587,
+      "q1": 0.9728375,
+      "q3": 1.0,
+      "ci_lo": 0.967185,
+      "ci_hi": 1.0,
+      "stat": "median"
+     },
+     "broken_per_1k": {
+      "n": 12,
+      "mean": 0.060276666666666666,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.0441075,
+      "ci_lo": 0.0,
+      "ci_hi": 0.12674162499999958,
+      "stat": "mean"
+     },
+     "interleaving_papers": {
+      "n": 12,
+      "mean": 0.5,
+      "median": 0.5,
+      "q1": 0.0,
+      "q3": 1.0,
+      "ci_lo": 0.25,
+      "ci_hi": 0.75,
+      "stat": "mean"
+     },
+     "leak_papers": {
+      "n": 12,
+      "mean": 0.5,
+      "median": 0.5,
+      "q1": 0.0,
+      "q3": 1.0,
+      "ci_lo": 0.25,
+      "ci_hi": 0.75,
+      "stat": "mean"
+     },
+     "fig_identified": {
+      "n": 11,
+      "pooled": 0.9534883720930233,
+      "ci_lo": 0.8235294117647058,
+      "ci_hi": 1.0,
+      "num": 41.0,
+      "den": 43.0
+     },
+     "table_identified": {
+      "n": 8,
+      "pooled": 0.8214285714285714,
+      "ci_lo": 0.68,
+      "ci_hi": 0.9444444444444444,
+      "num": 23.0,
+      "den": 28.0
+     },
+     "refs_ratio_median": 0.9695238095238095,
+     "refs_none_papers": 0
+    }
+   },
+   "PLOS": {
+    "page-swift": {
+     "n": 6,
+     "f1": {
+      "n": 6,
+      "mean": 0.9437266666666667,
+      "median": 0.9381550000000001,
+      "q1": 0.9301975,
+      "q3": 0.9498850000000001,
+      "ci_lo": 0.92531,
+      "ci_hi": 0.9677150000000001,
+      "stat": "median"
+     },
+     "recall": {
+      "n": 6,
+      "mean": 0.97092,
+      "median": 0.9816499999999999,
+      "q1": 0.9561999999999999,
+      "q3": 0.991395,
+      "ci_lo": 0.936625,
+      "ci_hi": 0.9944850000000001,
+      "stat": "median"
+     },
+     "precision": {
+      "n": 6,
+      "mean": 0.9186749999999999,
+      "median": 0.913095,
+      "q1": 0.898915,
+      "q3": 0.9290975,
+      "ci_lo": 0.89337,
+      "ci_hi": 0.94956,
+      "stat": "median"
+     },
+     "kendall_tau": {
+      "n": 6,
+      "mean": 0.9417883333333333,
+      "median": 0.92919,
+      "q1": 0.9154325,
+      "q3": 0.9841525,
+      "ci_lo": 0.8961749999999999,
+      "ci_hi": 1.0,
+      "stat": "median"
+     },
+     "broken_per_1k": {
+      "n": 6,
+      "mean": 0.047301666666666665,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.07131,
+      "ci_lo": 0.0,
+      "ci_hi": 0.11021166666666667,
+      "stat": "mean"
+     },
+     "interleaving_papers": {
+      "n": 6,
+      "mean": 0.0,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "stat": "mean"
+     },
+     "leak_papers": {
+      "n": 6,
+      "mean": 0.8333333333333334,
+      "median": 1.0,
+      "q1": 1.0,
+      "q3": 1.0,
+      "ci_lo": 0.5,
+      "ci_hi": 1.0,
+      "stat": "mean"
+     },
+     "fig_identified": {
+      "n": 6,
+      "pooled": 1.0,
+      "ci_lo": 1.0,
+      "ci_hi": 1.0,
+      "num": 32.0,
+      "den": 32.0
+     },
+     "table_identified": {
+      "n": 6,
+      "pooled": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "num": 0.0,
+      "den": 20.0
+     },
+     "refs_ratio_median": 1.0,
+     "refs_none_papers": 0
+    },
+    "swift": {
+     "n": 6,
+     "f1": {
+      "n": 6,
+      "mean": 0.9176483333333335,
+      "median": 0.9083699999999999,
+      "q1": 0.8905325000000001,
+      "q3": 0.9555475,
+      "ci_lo": 0.87182,
+      "ci_hi": 0.972755,
+      "stat": "median"
+     },
+     "recall": {
+      "n": 6,
+      "mean": 0.95947,
+      "median": 0.965735,
+      "q1": 0.9617575,
+      "q3": 0.9693375,
+      "ci_lo": 0.928505,
+      "ci_hi": 0.98417,
+      "stat": "median"
+     },
+     "precision": {
+      "n": 6,
+      "mean": 0.8825116666666667,
+      "median": 0.886835,
+      "q1": 0.8285875,
+      "q3": 0.94365,
+      "ci_lo": 0.7960750000000001,
+      "ci_hi": 0.9646250000000001,
+      "stat": "median"
+     },
+     "kendall_tau": {
+      "n": 6,
+      "mean": 0.986135,
+      "median": 0.9994700000000001,
+      "q1": 0.99696,
+      "q3": 1.0,
+      "ci_lo": 0.958935,
+      "ci_hi": 1.0,
+      "stat": "median"
+     },
+     "broken_per_1k": {
+      "n": 6,
+      "mean": 0.2859966666666667,
+      "median": 0.04719,
+      "q1": 0.0,
+      "q3": 0.257625,
+      "ci_lo": 0.01573,
+      "ci_hi": 0.7067866666666668,
+      "stat": "mean"
+     },
+     "interleaving_papers": {
+      "n": 6,
+      "mean": 0.0,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "stat": "mean"
+     },
+     "leak_papers": {
+      "n": 6,
+      "mean": 0.16666666666666666,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.5,
+      "stat": "mean"
+     },
+     "fig_identified": {
+      "n": 6,
+      "pooled": 0.96875,
+      "ci_lo": 0.918918918918919,
+      "ci_hi": 1.0,
+      "num": 31.0,
+      "den": 32.0
+     },
+     "table_identified": {
+      "n": 6,
+      "pooled": 0.4,
+      "ci_lo": 0.047619047619047616,
+      "ci_hi": 0.8,
+      "num": 8.0,
+      "den": 20.0
+     },
+     "refs_ratio_median": 0.6698113207547169,
+     "refs_none_papers": 0
+    }
+   },
+   "other": {
+    "page-swift": {
+     "n": 7,
+     "f1": {
+      "n": 7,
+      "mean": 0.8833514285714286,
+      "median": 0.96427,
+      "q1": 0.9219550000000001,
+      "q3": 0.980055,
+      "ci_lo": 0.90278,
+      "ci_hi": 0.99175,
+      "stat": "median"
+     },
+     "recall": {
+      "n": 7,
+      "mean": 0.9858114285714284,
+      "median": 0.98414,
+      "q1": 0.9789399999999999,
+      "q3": 0.9954000000000001,
+      "ci_lo": 0.97763,
+      "ci_hi": 1.0,
+      "stat": "median"
+     },
+     "precision": {
+      "n": 7,
+      "mean": 0.8425271428571428,
+      "median": 0.94693,
+      "q1": 0.8636900000000001,
+      "q3": 0.9801,
+      "ci_lo": 0.83857,
+      "ci_hi": 0.99949,
+      "stat": "median"
+     },
+     "kendall_tau": {
+      "n": 7,
+      "mean": 0.9976185714285715,
+      "median": 1.0,
+      "q1": 1.0,
+      "q3": 1.0,
+      "ci_lo": 1.0,
+      "ci_hi": 1.0,
+      "stat": "median"
+     },
+     "broken_per_1k": {
+      "n": 7,
+      "mean": 0.05293428571428571,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.1588028571428571,
+      "stat": "mean"
+     },
+     "interleaving_papers": {
+      "n": 7,
+      "mean": 0.0,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "stat": "mean"
+     },
+     "leak_papers": {
+      "n": 7,
+      "mean": 0.5714285714285714,
+      "median": 1.0,
+      "q1": 0.0,
+      "q3": 1.0,
+      "ci_lo": 0.14285714285714285,
+      "ci_hi": 0.8571428571428571,
+      "stat": "mean"
+     },
+     "fig_identified": {
+      "n": 3,
+      "pooled": 0.85,
+      "ci_lo": 0.0,
+      "ci_hi": 1.0,
+      "num": 17.0,
+      "den": 20.0
+     },
+     "table_identified": {
+      "n": 5,
+      "pooled": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "num": 0.0,
+      "den": 28.0
+     },
+     "refs_ratio_median": 1.0465391621129325,
+     "refs_none_papers": 0
+    },
+    "swift": {
+     "n": 7,
+     "f1": {
+      "n": 7,
+      "mean": 0.8638314285714287,
+      "median": 0.9264,
+      "q1": 0.771875,
+      "q3": 0.955735,
+      "ci_lo": 0.746,
+      "ci_hi": 0.96367,
+      "stat": "median"
+     },
+     "recall": {
+      "n": 7,
+      "mean": 0.94612,
+      "median": 0.97147,
+      "q1": 0.917335,
+      "q3": 0.9926200000000001,
+      "ci_lo": 0.89986,
+      "ci_hi": 0.99689,
+      "stat": "median"
+     },
+     "precision": {
+      "n": 7,
+      "mean": 0.8098785714285713,
+      "median": 0.8631,
+      "q1": 0.701755,
+      "q3": 0.9468749999999999,
+      "ci_lo": 0.63707,
+      "ci_hi": 0.96117,
+      "stat": "median"
+     },
+     "kendall_tau": {
+      "n": 7,
+      "mean": 0.8846042857142857,
+      "median": 1.0,
+      "q1": 0.842195,
+      "q3": 1.0,
+      "ci_lo": 0.83333,
+      "ci_hi": 1.0,
+      "stat": "median"
+     },
+     "broken_per_1k": {
+      "n": 7,
+      "mean": 1.7118099999999998,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.10898,
+      "ci_lo": 0.0,
+      "ci_hi": 5.073155714285714,
+      "stat": "mean"
+     },
+     "interleaving_papers": {
+      "n": 7,
+      "mean": 0.2857142857142857,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.5,
+      "ci_lo": 0.0,
+      "ci_hi": 0.5714285714285714,
+      "stat": "mean"
+     },
+     "leak_papers": {
+      "n": 7,
+      "mean": 0.2857142857142857,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.5,
+      "ci_lo": 0.0,
+      "ci_hi": 0.5714285714285714,
+      "stat": "mean"
+     },
+     "fig_identified": {
+      "n": 3,
+      "pooled": 0.65,
+      "ci_lo": 0.2857142857142857,
+      "ci_hi": 0.9,
+      "num": 13.0,
+      "den": 20.0
+     },
+     "table_identified": {
+      "n": 5,
+      "pooled": 0.35714285714285715,
+      "ci_lo": 0.12121212121212122,
+      "ci_hi": 0.7368421052631579,
+      "num": 10.0,
+      "den": 28.0
+     },
+     "refs_ratio_median": 1.062547288776797,
+     "refs_none_papers": 0
+    }
+   },
+   "Nature": {
+    "page-swift": {
+     "n": 5,
+     "f1": {
+      "n": 5,
+      "mean": 0.9459200000000001,
+      "median": 0.9857,
+      "q1": 0.96076,
+      "q3": 0.98658,
+      "ci_lo": 0.79816,
+      "ci_hi": 0.9984,
+      "stat": "median"
+     },
+     "recall": {
+      "n": 5,
+      "mean": 0.9923759999999999,
+      "median": 0.99424,
+      "q1": 0.98973,
+      "q3": 0.99947,
+      "ci_lo": 0.97887,
+      "ci_hi": 0.99957,
+      "stat": "median"
+     },
+     "precision": {
+      "n": 5,
+      "mean": 0.9125859999999999,
+      "median": 0.97402,
+      "q1": 0.9433,
+      "q3": 0.9817,
+      "ci_lo": 0.66668,
+      "ci_hi": 0.99723,
+      "stat": "median"
+     },
+     "kendall_tau": {
+      "n": 5,
+      "mean": 0.9924100000000001,
+      "median": 0.99825,
+      "q1": 0.98485,
+      "q3": 1.0,
+      "ci_lo": 0.97895,
+      "ci_hi": 1.0,
+      "stat": "median"
+     },
+     "broken_per_1k": {
+      "n": 5,
+      "mean": 0.088066,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.21891,
+      "ci_lo": 0.0,
+      "ci_hi": 0.176634,
+      "stat": "mean"
+     },
+     "interleaving_papers": {
+      "n": 5,
+      "mean": 0.0,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "stat": "mean"
+     },
+     "leak_papers": {
+      "n": 5,
+      "mean": 0.4,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 1.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.8,
+      "stat": "mean"
+     },
+     "fig_identified": {
+      "n": 5,
+      "pooled": 0.4878048780487805,
+      "ci_lo": 0.27586206896551724,
+      "ci_hi": 1.0,
+      "num": 20.0,
+      "den": 41.0
+     },
+     "table_identified": {
+      "n": 3,
+      "pooled": 1.0,
+      "ci_lo": 1.0,
+      "ci_hi": 1.0,
+      "num": 7.0,
+      "den": 7.0
+     },
+     "refs_ratio_median": 1.0,
+     "refs_none_papers": 0
+    },
+    "swift": {
+     "n": 5,
+     "f1": {
+      "n": 5,
+      "mean": 0.9166639999999999,
+      "median": 0.91839,
+      "q1": 0.89383,
+      "q3": 0.95496,
+      "ci_lo": 0.85848,
+      "ci_hi": 0.95766,
+      "stat": "median"
+     },
+     "recall": {
+      "n": 5,
+      "mean": 0.9791880000000001,
+      "median": 0.98336,
+      "q1": 0.98204,
+      "q3": 0.99682,
+      "ci_lo": 0.93545,
+      "ci_hi": 0.99827,
+      "stat": "median"
+     },
+     "precision": {
+      "n": 5,
+      "mean": 0.864124,
+      "median": 0.86249,
+      "q1": 0.85575,
+      "q3": 0.91525,
+      "ci_lo": 0.75386,
+      "ci_hi": 0.93327,
+      "stat": "median"
+     },
+     "kendall_tau": {
+      "n": 5,
+      "mean": 0.9712540000000001,
+      "median": 0.97504,
+      "q1": 0.97483,
+      "q3": 0.98095,
+      "ci_lo": 0.93074,
+      "ci_hi": 0.99471,
+      "stat": "median"
+     },
+     "broken_per_1k": {
+      "n": 5,
+      "mean": 0.4177720000000001,
+      "median": 0.38499,
+      "q1": 0.30444,
+      "q3": 0.60938,
+      "ci_lo": 0.182764,
+      "ci_hi": 0.6367700000000001,
+      "stat": "mean"
+     },
+     "interleaving_papers": {
+      "n": 5,
+      "mean": 0.0,
+      "median": 0.0,
+      "q1": 0.0,
+      "q3": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "stat": "mean"
+     },
+     "leak_papers": {
+      "n": 5,
+      "mean": 0.8,
+      "median": 1.0,
+      "q1": 1.0,
+      "q3": 1.0,
+      "ci_lo": 0.4,
+      "ci_hi": 1.0,
+      "stat": "mean"
+     },
+     "fig_identified": {
+      "n": 5,
+      "pooled": 0.7317073170731707,
+      "ci_lo": 0.3333333333333333,
+      "ci_hi": 0.9375,
+      "num": 30.0,
+      "den": 41.0
+     },
+     "table_identified": {
+      "n": 3,
+      "pooled": 0.42857142857142855,
+      "ci_lo": 0.0,
+      "ci_hi": 1.0,
+      "num": 3.0,
+      "den": 7.0
+     },
+     "refs_ratio_median": 1.0,
+     "refs_none_papers": 0
+    }
+   }
+  }
+ },
+ "highlights": {
+  "swift->page-swift": {
+   "exact": 0.6933333333333334,
+   "whitespace": 0.085,
+   "fold": 0.06166666666666667,
+   "startend": 0.05,
+   "lost": 0.11,
+   "correct": 0.8783333333333333,
+   "misplaced": 0.011666666666666667,
+   "correct_ci": {
+    "n": 30,
+    "pooled": 0.8783333333333333,
+    "ci_lo": 0.8433333333333334,
+    "ci_hi": 0.91,
+    "num": 527.0,
+    "den": 600.0
+   },
+   "n": 600,
+   "papers": 30,
+   "guard": {
+    "1": 0.8899999999999999,
+    "3": 0.7126608187134503,
+    "5": 0.5795472136222911,
+    "10": 0.36780185758513934,
+    "20": 0.16666666666666666
+   }
+  },
+  "rust->page-rust": {
+   "exact": 0.73,
+   "whitespace": 0.08,
+   "fold": 0.058333333333333334,
+   "startend": 0.025,
+   "lost": 0.10666666666666667,
+   "correct": 0.8833333333333333,
+   "misplaced": 0.01,
+   "correct_ci": {
+    "n": 30,
+    "pooled": 0.8833333333333333,
+    "ci_lo": 0.84,
+    "ci_hi": 0.9216666666666666,
+    "num": 530.0,
+    "den": 600.0
+   },
+   "n": 600,
+   "papers": 30,
+   "guard": {
+    "1": 0.8933333333333333,
+    "3": 0.7333333333333335,
+    "5": 0.6181544547643619,
+    "10": 0.434546104050748,
+    "20": 0.26666666666666666
+   }
+  },
+  "swift->xml": {
+   "exact": 0.64,
+   "whitespace": 0.08833333333333333,
+   "fold": 0.09,
+   "startend": 0.05,
+   "lost": 0.13166666666666665,
+   "correct": 0.86,
+   "misplaced": 0.008333333333333333,
+   "correct_ci": {
+    "n": 30,
+    "pooled": 0.86,
+    "ci_lo": 0.815,
+    "ci_hi": 0.9,
+    "num": 516.0,
+    "den": 600.0
+   },
+   "n": 600,
+   "papers": 30,
+   "guard": {
+    "1": 0.8683333333333331,
+    "3": 0.6785380116959066,
+    "5": 0.553310973512212,
+    "10": 0.3757601016114948,
+    "20": 0.2
+   }
+  },
+  "xml->page-swift": {
+   "exact": 0.8616666666666667,
+   "whitespace": 0.08166666666666667,
+   "fold": 0.041666666666666664,
+   "startend": 0.005,
+   "lost": 0.01,
+   "correct": 0.9883333333333333,
+   "misplaced": 0.0016666666666666668,
+   "correct_ci": {
+    "n": 30,
+    "pooled": 0.9883333333333333,
+    "ci_lo": 0.9766666666666667,
+    "ci_hi": 0.9966666666666667,
+    "num": 593.0,
+    "den": 600.0
+   },
+   "n": 600,
+   "papers": 30,
+   "guard": {
+    "1": 0.9900000000000001,
+    "3": 0.9705263157894737,
+    "5": 0.9517543859649124,
+    "10": 0.9078947368421052,
+    "20": 0.8333333333333334
+   }
+  },
+  "swift->xml (all 199)": {
+   "exact": 0.72825,
+   "whitespace": 0.06375,
+   "fold": 0.0835,
+   "startend": 0.027,
+   "lost": 0.0975,
+   "correct": 0.88925,
+   "misplaced": 0.01325,
+   "correct_ci": {
+    "n": 200,
+    "pooled": 0.88925,
+    "ci_lo": 0.87174375,
+    "ci_hi": 0.9047562499999999,
+    "num": 3557.0,
+    "den": 4000.0
+   },
+   "n": 4000,
+   "papers": 200,
+   "guard": {
+    "1": 0.9025,
+    "3": 0.7575526315789474,
+    "5": 0.6477837977296181,
+    "10": 0.46220945463205526,
+    "20": 0.27
+   }
+  }
+ }
+}

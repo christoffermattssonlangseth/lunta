@@ -1,0 +1,93 @@
+pmcid,group,year,journal,doi,host,status,blocked,converted,refused,reader
+PMC10460845,Wiley,2023,Adv Sci (Weinh),10.1002/advs.202301759,advanced.onlinelibrary.wiley.com,403,HTTP 403,False,False,
+PMC10674872,MDPI,2023,Viruses,10.3390/v15112159,www.mdpi.com,403,HTTP 403,False,False,
+PMC10713400,"Impact Journals, LLC",2023,Aging (Albany NY),10.18632/aging.205218,www.aging-us.com,403,HTTP 403,False,False,
+PMC10754574,Wolters Kluwer Health,2023,Medicine (Baltimore),10.1097/MD.0000000000036204,journals.lww.com,403,HTTP 403,False,False,
+PMC10898353,Frontiers,2024,Front Vet Sci,10.3389/fvets.2024.1248811,www.frontiersin.org,200,,True,False,generic
+PMC10993561,International Union of Crystallography,2024,IUCrdata,10.1107/S2414314624002347,journals.iucr.org,403,HTTP 403,False,False,
+PMC10999593,Frontiers,2024,Front Cell Infect Microbiol,10.3389/fcimb.2024.1363407,www.frontiersin.org,200,,True,False,generic
+PMC11007441,Elsevier,2024,J Biol Chem,10.1016/j.jbc.2024.107171,jbc.org,403,HTTP 403,False,False,
+PMC11066113,Nature,2024,EMBO J,10.1038/s44318-024-00056-x,link.springer.com,200,robots.txt,False,False,
+PMC11377889,Pensoft Publishers,2024,Zookeys,10.3897/zookeys.1210.124121,zookeys.pensoft.net,200,,False,True,generic
+PMC11721058,Cureus Inc.,2024,Cureus,10.7759/cureus.75530,www.cureus.com,403,HTTP 403,False,False,
+PMC12257303,Royal Society of Chemistry,2025,RSC Adv,10.1039/d5ra03803k,pubs.rsc.org,403,HTTP 403,False,False,
+PMC12468643,MDPI,2025,Diagnostics (Basel),10.3390/diagnostics15182292,www.mdpi.com,403,HTTP 403,False,False,
+PMC12527290,OUP,2025,Brain Commun,10.1093/braincomms/fcaf378,academic.oup.com,403,HTTP 403,False,False,
+PMC1262692,BMC,2005,BMC Biochem,10.1186/1471-2091-6-19,link.springer.com,200,robots.txt,False,False,
+PMC12714069,Instituto de Ensino e Pesquisa Albert Einstein,2025,Einstein (Sao Paulo),10.31744/einstein_journal/2026AO1543,journal.einstein.br,200,,False,True,generic
+PMC13203561,MDPI,2026,Behav Sci (Basel),10.3390/bs16050832,www.mdpi.com,403,HTTP 403,False,False,
+PMC13448941,American Chemical Society,2026,ACS Omega,10.1021/acsomega.6c03350,pubs.acs.org,403,HTTP 403,False,False,
+PMC1851961,BMC,2007,BMC Fam Pract,10.1186/1471-2296-8-12,link.springer.com,200,robots.txt,False,False,
+PMC2238736,BMC,2007,BMC Med Inform Decis Mak,10.1186/1472-6947-7-38,link.springer.com,200,robots.txt,False,False,
+PMC2702416,American Chemical Society,2009,Environ Health Perspect,10.1289/ehp.0800291,pubs.acs.org,403,HTTP 403,False,False,
+PMC2712078,PLOS,2009,PLoS Genet,10.1371/journal.pgen.1000584,journals.plos.org,200,,True,False,generic
+PMC2729926,PLOS,2009,PLoS Pathog,10.1371/journal.ppat.1000572,journals.plos.org,200,,True,False,generic
+PMC2749013,BMC,2009,Diagn Pathol,10.1186/1746-1596-4-31,link.springer.com,200,robots.txt,False,False,
+PMC2772244,Indian Society of Critical Care Medicine,2009,Indian J Crit Care Med,10.4103/0972-5229.56054,ijccm.org,429,robots.txt,False,False,
+PMC2845368,Thieme Medical Publishers,2009,Indian J Plast Surg,10.4103/0970-0358.59285,www.thieme-connect.de,200,robots.txt,False,False,
+PMC2945643,Wiley,2010,Archaea,10.1155/2010/410975,www.hindawi.com,403,HTTP 403,False,False,
+PMC3099082,Wolters Kluwer -- Medknow Publications,2011,Saudi J Gastroenterol,10.4103/1319-3767.74483,www.ovid.com,200,robots.txt,False,False,
+PMC3161900,PLOS,2011,PLoS Comput Biol,10.1371/journal.pcbi.1002126,journals.plos.org,200,,True,False,generic
+PMC3234071,ecancer Global Foundation,2008,Ecancermedicalscience,10.3332/ecancer.2008.126,ecancer.org:443,200,,False,True,generic
+PMC3272665,unnamed,2009,J Med Genet,10.1136/jmg.2008.065029,jmg.bmj.com,403,HTTP 403,False,False,
+PMC3381374,Centers for Disease Control and Prevention,2011,Emerg Infect Dis,10.3201/eid1707.100661,wwwnc.cdc.gov,200,,True,False,generic
+PMC3464890,BMC,2012,Child Adolesc Psychiatry Ment Health,10.1186/1753-2000-6-19,link.springer.com,200,robots.txt,False,False,
+PMC3603376,Wiley,2013,Malar Res Treat,10.1155/2013/716805,www.hindawi.com,403,HTTP 403,False,False,
+PMC3790607,Faculty of 1000 Ltd,2012,F1000Res,10.12688/f1000research.1-1.v1,f1000research.com,200,,True,False,generic
+PMC3869048,Frontiers,2013,Front Endocrinol (Lausanne),10.3389/fendo.2013.00196,www.frontiersin.org,200,,True,False,generic
+PMC3955502,Brieflands,2013,Iran Red Crescent Med J,10.5812/ircmj.11934,doi.org,,"network error: <urlopen error [Errno 8] nodename nor servname provided, or not known>",False,False,
+PMC4032908,Frontiers,2014,Front Immunol,10.3389/fimmu.2014.00221,www.frontiersin.org,200,,True,False,generic
+PMC4079434,Spandidos Publications,2014,Exp Ther Med,10.3892/etm.2014.1742,www.spandidos-publications.com,200,,True,False,generic
+PMC4213389,Springer,2014,Transl Stroke Res,10.1007/s12975-014-0366-6,link.springer.com,200,robots.txt,False,False,
+PMC4250580,OUP,2014,Database (Oxford),10.1093/database/bau118,academic.oup.com,403,HTTP 403,False,False,
+PMC4260081,JMIR Publications Inc.,2014,J Med Internet Res,10.2196/jmir.3457,www.jmir.org,202,HTTP 202,False,False,
+PMC4273299,Beilstein-Institut,2014,Beilstein J Nanotechnol,10.3762/bjnano.5.219,www.beilstein-journals.org,200,,True,False,generic
+PMC4333867,Frontiers,2015,Front Microbiol,10.3389/fmicb.2015.00117,www.frontiersin.org,200,,True,False,generic
+PMC4433864,unnamed,2014,Biotechnol Biotechnol Equip,10.1080/13102818.2014.946700,www.tandfonline.com,403,HTTP 403,False,False,
+PMC4448151,BMC,2015,Alzheimers Res Ther,10.1186/s13195-015-0128-z,link.springer.com,200,robots.txt,False,False,
+PMC4496397,"Impact Journals, LLC",2015,Oncotarget,10.18632/oncotarget.3382,www.oncotarget.com,403,HTTP 403,False,False,
+PMC4648509,PLOS,2015,PLoS Med,10.1371/journal.pmed.1001903,journals.plos.org,200,,True,False,generic
+PMC4760068,OUP,2015,Gastroenterol Rep (Oxf),10.1093/gastro/gov040,academic.oup.com,403,HTTP 403,False,False,
+PMC4909326,Elsevier,2016,eBioMedicine,10.1016/j.ebiom.2016.03.020,www.thelancet.com,403,HTTP 403,False,False,
+PMC4932879,Nature,2016,Sci Data,10.1038/sdata.2016.50,www.nature.com,200,,True,False,Springer Nature
+PMC5189943,PLOS,2016,PLoS Negl Trop Dis,10.1371/journal.pntd.0005191,journals.plos.org,200,,True,False,generic
+PMC5315376,PLOS,2017,PLoS One,10.1371/journal.pone.0170981,journals.plos.org,200,,True,False,generic
+PMC5396485,"Escola de Enfermagem de Ribeirao Preto, Universidade de Sao Paulo",2017,Rev Lat Am Enfermagem,10.1590/1518-8345.1495.2860,www.scielo.br,200,,True,False,generic
+PMC5561297,American Society for Microbiology (ASM),2017,Appl Environ Microbiol,10.1128/AEM.00729-17,journals.asm.org,403,HTTP 403,False,False,
+PMC5619507,Academia Brasileira de Neurologia,2013,Dement Neuropsychol,10.1590/S1980-57642013DN74000013,www.scielo.br,200,,False,True,generic
+PMC5930299,American Society for Microbiology (ASM),2018,mBio,10.1128/mBio.00390-18,journals.asm.org,403,HTTP 403,False,False,
+PMC5971078,Medicina Oral S.L,2018,J Clin Exp Dent,10.4317/jced.54470,www.medicinaoral.com,200,not an HTML page (the DOI leads to a PDF),False,False,
+PMC5978948,Wiley,2017,Evol Appl,10.1111/eva.12566,onlinelibrary.wiley.com,403,HTTP 403,False,False,
+PMC6083737,Wiley,2018,Prostate Cancer,10.1155/2018/5821616,www.hindawi.com,403,HTTP 403,False,False,
+PMC6123364,Frontiers,2018,Front Neurosci,10.3389/fnins.2018.00613,www.frontiersin.org,200,,True,False,generic
+PMC6210305,MDPI,2018,Animals (Basel),10.3390/ani8100165,www.mdpi.com,403,HTTP 403,False,False,
+PMC6244743,Springer,2018,Curr Nutr Rep,10.1007/s13668-018-0244-z,link.springer.com,200,robots.txt,False,False,
+PMC6284766,JKL International LLC,2018,Aging Dis,10.14336/AD.2018.0221,www.aginganddisease.org,200,,False,True,generic
+PMC6305672,Wiley,2018,Mol Genet Genomic Med,10.1002/mgg3.498,onlinelibrary.wiley.com,403,HTTP 403,False,False,
+PMC6707140,Nature,2019,Nat Commun,10.1038/s41467-019-11818-1,www.nature.com,200,,True,False,Springer Nature
+PMC6763771,American Society for Microbiology (ASM),2019,mSphere,10.1128/mSphere.00622-19,journals.asm.org,403,HTTP 403,False,False,
+PMC6898888,JMIR Publications Inc.,2019,JMIR Ment Health,10.2196/14776,mental.jmir.org,202,HTTP 202,False,False,
+PMC6919997,Medical Library Association,2020,J Med Libr Assoc,10.5195/jmla.2020.762,doi.org,,network error: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1011)>,False,False,
+PMC7150536,PeerJ,2020,PeerJ,10.7717/peerj.8861,peerj.com,403,HTTP 403,False,False,
+PMC7347018,SAGE Publications,2020,Transgend Health,10.1089/trgh.2019.0069,journals.sagepub.com,403,HTTP 403,False,False,
+PMC7509473,Frontiers,2020,Front Nutr,10.3389/fnut.2020.00155,www.frontiersin.org,200,,True,False,generic
+PMC7553953,Nature,2020,Transl Psychiatry,10.1038/s41398-020-01024-9,www.nature.com,200,,True,False,Springer Nature
+PMC7563148,MDPI,2020,Biomolecules,10.3390/biom10091265,www.mdpi.com,403,HTTP 403,False,False,
+PMC7577192,Frontiers,2020,Front Physiol,10.3389/fphys.2020.587994,www.frontiersin.org,200,,True,False,generic
+PMC7782066,Oxford University Press,2020,Forensic Sci Res,10.1080/20961790.2020.1811513,doi.org,,network error: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1011)>,False,False,
+PMC7922556,MDPI,2021,Int J Environ Res Public Health,10.3390/ijerph18041960,www.mdpi.com,403,HTTP 403,False,False,
+PMC7963486,eLife,2021,eLife,10.7554/eLife.63167,elifesciences.org,200,bot check,False,False,
+PMC8039727,Elsevier,2021,STAR Protoc,10.1016/j.xpro.2021.100415,cell.com,403,HTTP 403,False,False,
+PMC8144118,Springer,2021,Reprod Sci,10.1007/s43032-021-00528-z,link.springer.com,200,robots.txt,False,False,
+PMC8282988,Bill & Melinda Gates Foundation,2021,Gates Open Res,10.12688/gatesopenres.13188.2,gatesopenresearch.org,200,,True,False,generic
+PMC8494646,Nature,2021,Nature,10.1038/s41586-021-03970-w,www.nature.com,200,,True,False,Springer Nature
+PMC8527374,JMIR Publications Inc.,2021,JMIR Res Protoc,10.2196/32085,www.researchprotocols.org,202,HTTP 202,False,False,
+PMC8669635,Frontiers,2021,Front Bioeng Biotechnol,10.3389/fbioe.2021.777774,www.frontiersin.org,200,,True,False,generic
+PMC8671708,Pensoft Publishers,2021,Biodivers Data J,10.3897/BDJ.9.e75358,bdj.pensoft.net,200,,False,True,generic
+PMC8789677,Frontiers,2022,Front Psychol,10.3389/fpsyg.2021.756328,www.frontiersin.org,200,,True,False,generic
+PMC8823923,Sociedade Brasileira de Nefrologia,2021,J Bras Nefrol,10.1590/2175-8239-JBN-2021-S114,www.scielo.br,200,,True,False,generic
+PMC8861578,Elsevier,2022,Biochem Biophys Rep,10.1016/j.bbrep.2022.101233,www.sciencedirect.com,403,HTTP 403,False,False,
+PMC9168123,Frontiers,2022,Front Med (Lausanne),10.3389/fmed.2022.854779,www.frontiersin.org,200,,True,False,generic
+PMC9701693,Nature,2022,Sci Rep,10.1038/s41598-022-24806-1,www.nature.com,200,,True,False,Springer Nature
+PMC9832851,Sociedade Brasileira de Endocrinologia e Metabologia,2022,Arch Endocrinol Metab,10.20945/2359-3997000000478,www.aem-sbem.com,200,,False,True,generic
+PMC9852304,Frontiers,2023,Front Surg,10.3389/fsurg.2022.1012947,www.frontiersin.org,200,,True,False,generic
