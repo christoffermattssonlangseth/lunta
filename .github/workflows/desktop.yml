@@ -39,6 +39,13 @@ jobs:
           # (both are on the runner image already; Windows has CMake, MSVC and LLVM there too)
           sudo apt-get install -y cmake libclang-dev
 
+      # our own CMake for llama.cpp: the Windows runner image's CMake was once caught half-updated
+      # (cmake 4.5 looking for 4.4's modules), which broke the build
+      - name: CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "~3.31.0"
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
