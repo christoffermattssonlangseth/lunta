@@ -119,7 +119,8 @@ pub fn text_lines(data: &[u8]) -> Result<(Vec<crate::refcite::TextLine>, Vec<(f6
         let mb = extract::media_box(&page);
         boxes.push(mb.origin());
         let Ok(text) = page.text() else { continue };
-        for l in extract::extract_lines(&text, &mb, pno) {
+        let (_, hidden) = extract::graphics(&page, &mb);
+        for l in extract::extract_lines(&text, &mb, pno, &hidden) {
             out.push(crate::refcite::TextLine {
                 page: pno as u32,
                 text: l.text,

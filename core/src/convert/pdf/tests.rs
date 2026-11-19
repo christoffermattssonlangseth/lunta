@@ -1341,3 +1341,78 @@ fn network_pdf_prefers_xml_via_doi() {
     assert_eq!(r.source, "PMC open-access XML");
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// A page of article text with a figure included as a whole manuscript page (MDPI): a form
+/// XObject whose box shows only the figure, while the manuscript's own lines lie under the
+/// article's, a point lower; and in the box, text the figure's image covers.
+fn figure_form_pdf() -> Vec<u8> {
+    let mut body = String::new();
+    let mut hidden = String::new();
+    for i in 0..8 {
+        let y = 700 - i * 13;
+        body += &format!("BT /F1 10 Tf 72 {y} Td (Line {i} of the article text, set in its own way.) Tj ET\n");
+        hidden += &format!("BT /F1 10 Tf 75 {} Td (Manuscript line {i} with other words here.) Tj ET\n", y - 1);
+    }
+    hidden += "BT /F1 12 Tf 75 760 Td (Cells 2023, 12, x FOR PEER REVIEW) Tj ET\n";
+    hidden += "BT /F1 10 Tf 310 470 Td (Under the picture) Tj ET\n";
+    hidden += "q 150 0 0 60 300 430 cm /Im1 Do Q\n";
+    hidden += "BT /F1 10 Tf 250 410 Td (Figure label A) Tj ET\n";
+    let content = body + "q 1 0 0 1 0 0 cm /Fm1 Do Q\n";
+    let objs: Vec<String> = vec![
+        "<< /Type /Catalog /Pages 2 0 R >>".into(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".into(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> /XObject << /Fm1 6 0 R >> >> /Contents 5 0 R >>".into(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>".into(),
+        format!("<< /Length {} >>\nstream\n{content}endstream", content.len()),
+        format!(
+            "<< /Type /XObject /Subtype /Form /BBox [200 400 400 500] /Resources << /Font << /F1 4 0 R >> /XObject << /Im1 7 0 R >> >> /Length {} >>\nstream\n{hidden}endstream",
+            hidden.len()
+        ),
+        "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 1 >>\nstream\nAendstream".into(),
+        "<< /Title (Figure form) >>".into(),
+    ];
+    let mut out = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, o) in objs.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend(format!("{} 0 obj\n{o}\nendobj\n", i + 1).bytes());
+    }
+    let xref = out.len();
+    out.extend(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).bytes());
+    for o in offsets {
+        out.extend(format!("{o:010} 00000 n \n").bytes());
+    }
+    let k = objs.len();
+    out.extend(format!("trailer\n<< /Size {} /Root 1 0 R /Info {k} 0 R >>\nstartxref\n{xref}\n%%EOF\n", k + 1).bytes());
+    out
+}
+
+/// Text a form draws outside its box, or under an image it draws later, is not shown and is left
+/// out; the figure's own label stays, and the figure's image counts only where it shows.
+#[test]
+#[ignore]
+fn pdfium_text_outside_a_forms_box_is_left_out() {
+    let data = figure_form_pdf();
+    if let Some(d) = std::env::var_os("P2E_TEST_PDF_DIR") {
+        std::fs::write(PathBuf::from(d).join("figure-form.pdf"), &data).unwrap();
+    }
+    let (lines, _) = super::text_lines(&data).unwrap();
+    let text: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
+    for i in 0..8 {
+        let want = format!("Line {i} of the article text, set in its own way.");
+        assert!(text.contains(&want), "{want} not in {text:?}");
+    }
+    let all = text.join("\n");
+    assert!(!all.contains("Manuscript") && !all.contains("PEER REVIEW"), "{all}");
+    assert!(!all.contains("Under the picture"), "{all}");
+    assert!(all.contains("Figure label A"), "{all}");
+    let p = super::pdfium().unwrap();
+    let doc = p.load_pdf_from_byte_slice(&data, None).unwrap();
+    let page = doc.pages().get(0).unwrap();
+    let mb = super::extract::media_box(&page);
+    let (g, _) = super::extract::graphics(&page, &mb);
+    assert_eq!(g.images.len(), 1, "{:?}", g.images);
+    let r = g.images[0];
+    // the image is 300–450 × 430–490 (PDF), cut by the box at 400; 302–362 from the top
+    assert!((r.x0 - 300.0).abs() < 1.0 && (r.x1 - 400.0).abs() < 1.0 && (r.y0 - 302.0).abs() < 1.0, "{r:?}");
+}

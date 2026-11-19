@@ -6,7 +6,7 @@
 
 use super::layout::{DocInfo, PLine, Page, PageGraphics, Renderer, Span, R};
 use pdfium_render::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// A page's media box in PDF user space.
 #[derive(Debug, Clone, Copy)]
@@ -197,10 +197,12 @@ fn is_space(c: char) -> bool {
 
 /// Text lines of a page. PDFium gives characters in content order with generated line breaks;
 /// a line is also cut where the text jumps back left or across a column gutter.
-pub fn extract_lines(text: &PdfPageText, mb: &MediaBox, pno: usize) -> Vec<PLine> {
+pub fn extract_lines(text: &PdfPageText, mb: &MediaBox, pno: usize, hidden: &Hidden) -> Vec<PLine> {
     let mut styles: HashMap<(String, bool, bool), Style> = HashMap::new();
     let mut raw_lines: Vec<Vec<C>> = vec![vec![]];
     let mut pending_break = false;
+    // inside a run of text the page does not show (and the spaces and breaks PDFium puts after it)
+    let mut in_hidden = false;
     let dbg_chars = std::env::var("P2E_DEBUG_CHARS").ok().and_then(|v| v.parse::<usize>().ok()) == Some(pno + 1);
     for c in text.chars().iter() {
         if dbg_chars {
@@ -216,6 +218,20 @@ pub fn extract_lines(text: &PdfPageText, mb: &MediaBox, pno: usize) -> Vec<PLine
             );
         }
         let Some(ch) = c.unicode_char() else { continue };
+        if !hidden.is_empty() {
+            if c.is_generated().unwrap_or(false) {
+                if in_hidden {
+                    continue;
+                }
+            } else {
+                in_hidden = c.text_object().ok().and_then(|o| o.bounds().ok()).map(|q| hidden.contains(&q)).unwrap_or(false);
+                if in_hidden {
+                    // what follows is decided like the start of a new line
+                    pending_break |= !raw_lines.last().unwrap().is_empty();
+                    continue;
+                }
+            }
+        }
         if ch == '\r' || ch == '\n' {
             // decided at the next character: PDFium also breaks around inline super-/subscripts
             pending_break = !raw_lines.last().unwrap().is_empty();
@@ -563,14 +579,65 @@ fn make_line(chars: Vec<C>, pno: usize) -> Option<PLine> {
     Some(PLine { text, bbox, size: dom, bold: n_bold as f64 / nn, math: n_math as f64 / nn, spans, page: pno })
 }
 
-/// Images and painted paths on a page, descending into form XObjects.
-pub fn graphics(page: &PdfPage, mb: &MediaBox) -> PageGraphics {
-    let mut g = PageGraphics::default();
+/// Text objects a page holds but does not show, by their bounds as PDFium reports them (in the
+/// space of the form they are in): text in a form XObject outside the form's box or clip, or under
+/// an image the form draws after it. MDPI includes each figure as a whole page of the manuscript
+/// ("cells-2381855-g001.pdf", the figure and the manuscript's text around it) cut to the figure by
+/// the form's box; PDFium reads the cut-away text too ("Cells 2023, 12, x FOR PEER REVIEW", a
+/// second copy of the caption).
+#[derive(Debug, Default)]
+pub struct Hidden {
+    hidden: HashSet<[u32; 4]>,
+    /// objects drawn on the page itself, in case one has the same bounds as a hidden one
+    shown: HashSet<[u32; 4]>,
+}
+
+fn quad_key(q: &PdfQuadPoints) -> [u32; 4] {
+    [q.left().value, q.bottom().value, q.right().value, q.top().value].map(f32::to_bits)
+}
+
+impl Hidden {
+    pub fn is_empty(&self) -> bool {
+        self.hidden.is_empty()
+    }
+
+    fn contains(&self, q: &PdfQuadPoints) -> bool {
+        let k = quad_key(q);
+        self.hidden.contains(&k) && !self.shown.contains(&k)
+    }
+}
+
+/// Images and painted paths on a page, descending into form XObjects, and the text the page does
+/// not show (see [`Hidden`]).
+pub fn graphics(page: &PdfPage, mb: &MediaBox) -> (PageGraphics, Hidden) {
+    let mut w = Walk::default();
     let identity = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
     for o in page.objects().iter() {
-        walk(&o, identity, mb, &mut g, 0);
+        walk(&o, identity, None, mb, &mut w, 0);
     }
-    g
+    // text in a form that an image the form draws later covers is not shown either (the
+    // manuscript page's text under the figure it was included for); not under an image of the
+    // whole page, which may be a scan drawn over its own text layer
+    let page_area = mb.width * mb.height;
+    let covers = w.form_images.iter().filter(|(img, _)| img.area() < 0.8 * page_area).collect::<Vec<_>>();
+    for (key, r, at) in &w.form_texts {
+        let (cx, cy) = (r.cx(), (r.y0 + r.y1) / 2.0);
+        if covers.iter().any(|(img, k)| k > at && img.contains(&R::new(cx, cy, cx, cy), 0.0)) {
+            w.hidden.hidden.insert(*key);
+        }
+    }
+    (w.g, w.hidden)
+}
+
+#[derive(Default)]
+struct Walk {
+    g: PageGraphics,
+    hidden: Hidden,
+    /// text objects shown in forms: key, page rectangle, number of objects drawn before
+    form_texts: Vec<([u32; 4], R, usize)>,
+    /// images drawn in forms (the part that shows), with the number of objects drawn before
+    form_images: Vec<(R, usize)>,
+    drawn: usize,
 }
 
 type Affine = [f64; 6];
@@ -591,41 +658,85 @@ fn concat(inner: &Affine, outer: &Affine) -> Affine {
     ]
 }
 
+/// Bounding box of points in the object's space, in top-left page coordinates.
+fn rect_of(pts: impl IntoIterator<Item = (f64, f64)>, ctm: &Affine, mb: &MediaBox) -> Option<R> {
+    let (mut l, mut b, mut r, mut t) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    for (x, y) in pts {
+        let (x, y) = apply(ctm, x, y);
+        l = l.min(x);
+        r = r.max(x);
+        b = b.min(y);
+        t = t.max(y);
+    }
+    (l.is_finite() && b.is_finite() && r.is_finite() && t.is_finite()).then(|| mb.to_top(l, b, r, t))
+}
+
 /// Bounding box of a path's points (control points included), in top-left page coordinates.
 fn path_rect(p: &PdfPagePathObject, ctm: &Affine, mb: &MediaBox) -> Option<R> {
     let m = p.matrix().ok()?;
     let pm = [m.a() as f64, m.b() as f64, m.c() as f64, m.d() as f64, m.e() as f64, m.f() as f64];
     let full = concat(&pm, ctm);
     let segs = p.segments();
-    let n = segs.len();
-    if n == 0 {
-        return None;
-    }
-    let (mut l, mut b, mut r, mut t) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
-    for i in 0..n {
-        let Ok(sg) = segs.get(i) else { continue };
-        let (x, y) = apply(&full, sg.x().value as f64, sg.y().value as f64);
-        l = l.min(x);
-        r = r.max(x);
-        b = b.min(y);
-        t = t.max(y);
-    }
-    (l.is_finite() && b.is_finite()).then(|| mb.to_top(l, b, r, t))
+    let pts = (0..segs.len()).filter_map(|i| segs.get(i).ok()).map(|sg| (sg.x().value as f64, sg.y().value as f64));
+    rect_of(pts, &full, mb)
 }
 
-fn walk(o: &PdfPageObject, ctm: Affine, mb: &MediaBox, g: &mut PageGraphics, depth: usize) {
+/// The box an object's clip path keeps (the intersection of its paths' boxes), in top-left page
+/// coordinates. In a form, PDFium clips each object to the form's bounding box.
+fn clip_rect(o: &PdfPageObject, ctm: &Affine, mb: &MediaBox) -> Option<R> {
+    let cp = o.get_clip_path()?;
+    let mut out: Option<R> = None;
+    for path in cp.iter() {
+        let pts: Vec<(f64, f64)> = path.iter().map(|sg| (sg.x().value as f64, sg.y().value as f64)).collect();
+        let Some(r) = rect_of(pts, ctm, mb) else { continue };
+        out = Some(out.map(|o| o.intersection(&r)).unwrap_or(r));
+    }
+    out
+}
+
+/// `clip` is what the enclosing forms let show (top-left page coordinates); None on the page itself.
+fn walk(o: &PdfPageObject, ctm: Affine, clip: Option<R>, mb: &MediaBox, w: &mut Walk, depth: usize) {
     let rect = |o: &PdfPageObject| -> Option<R> {
         let q = o.bounds().ok()?;
-        let pts = [(q.x1(), q.y1()), (q.x2(), q.y2()), (q.x3(), q.y3()), (q.x4(), q.y4())]
-            .map(|(x, y)| apply(&ctm, x.value as f64, y.value as f64));
-        let (l, r) = pts.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| (a.0.min(p.0), a.1.max(p.0)));
-        let (b, t) = pts.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, p| (a.0.min(p.1), a.1.max(p.1)));
-        Some(mb.to_top(l, b, r, t))
+        rect_of([(q.x1(), q.y1()), (q.x2(), q.y2()), (q.x3(), q.y3()), (q.x4(), q.y4())].map(|(x, y)| (x.value as f64, y.value as f64)), &ctm, mb)
     };
+    // in a form, only what lies in the form's box (and the object's own clip) shows
+    let clip = if depth > 0 {
+        match (clip, clip_rect(o, &ctm, mb)) {
+            (Some(a), Some(b)) => Some(a.intersection(&b)),
+            (a, b) => a.or(b),
+        }
+    } else {
+        None
+    };
+    let visible = |r: R| -> Option<R> {
+        let r = clip.map(|c| r.intersection(&c)).unwrap_or(r);
+        (r.w() >= 0.0 && r.h() >= 0.0).then_some(r)
+    };
+    w.drawn += 1;
     match o {
+        PdfPageObject::Text(_) => {
+            let (Ok(q), Some(r)) = (o.bounds(), rect(o)) else { return };
+            let key = quad_key(&q);
+            let cy = (r.y0 + r.y1) / 2.0;
+            if depth == 0 {
+                w.hidden.shown.insert(key);
+            } else if clip.is_some_and(|c| cy < c.y0 || cy > c.y1 || r.x1 < c.x0 || r.x0 > c.x1) {
+                // its middle above or below the box, or all of it to one side: not shown
+                w.hidden.hidden.insert(key);
+            } else {
+                // (PDFium leaves out the clip of an object that lies wholly inside it)
+                w.form_texts.push((key, r, w.drawn));
+            }
+        }
         PdfPageObject::Image(_) => {
-            if let Some(r) = rect(o) {
-                g.images.push(r);
+            if let Some(r) = rect(o).and_then(visible) {
+                if r.w() > 0.0 && r.h() > 0.0 {
+                    if depth > 0 {
+                        w.form_images.push((r, w.drawn));
+                    }
+                    w.g.images.push(r);
+                }
             }
         }
         PdfPageObject::Path(p) => {
@@ -643,8 +754,8 @@ fn walk(o: &PdfPageObject, ctm: Affine, mb: &MediaBox, g: &mut PageGraphics, dep
                     }
                     (b, pts) => b.or(pts),
                 };
-                if let Some(r) = r {
-                    g.drawings.push(r);
+                if let Some(r) = r.and_then(visible) {
+                    w.g.drawings.push(r);
                 }
             }
         }
@@ -655,7 +766,7 @@ fn walk(o: &PdfPageObject, ctm: Affine, mb: &MediaBox, g: &mut PageGraphics, dep
                 .unwrap_or([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
             let m = concat(&inner, &ctm);
             for child in f.iter() {
-                walk(&child, m, mb, g, depth + 1);
+                walk(&child, m, clip, mb, w, depth + 1);
             }
         }
         _ => {}
@@ -671,12 +782,13 @@ pub fn pages(doc: &PdfDocument, log: &dyn Fn(&str)) -> Vec<Page> {
         let mut p = Page { width: mb.width, height: mb.height, ..Default::default() };
         if let Ok(text) = page.text() {
             if !is_cover_sheet(&text.all()) {
-                p.graphics = graphics(&page, &mb);
+                let (g, hidden) = graphics(&page, &mb);
+                p.graphics = g;
                 if std::env::var("P2E_DEBUG_GFX").ok().and_then(|v| v.parse::<usize>().ok()) == Some(pno + 1) {
                     for r in &p.graphics.images { eprintln!("IMG {:?}", r); }
                     for r in &p.graphics.drawings { if r.area() > 2000.0 { eprintln!("DRAW {:?}", r); } }
                 }
-                p.lines = extract_lines(&text, &mb, pno);
+                p.lines = extract_lines(&text, &mb, pno, &hidden);
             }
         }
         out.push(p);

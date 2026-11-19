@@ -100,11 +100,13 @@ final class PDFContentScanner {
     private var depth = 0
     private var out = PageGraphics()
     private let pageHeight: CGFloat
+    private let pageArea: CGFloat
     private let origin: CGPoint
 
     /// `box` is the page's media box; output rects are relative to its top-left corner.
     init(box: CGRect) {
         pageHeight = box.height
+        pageArea = box.width * box.height
         origin = box.origin
     }
 
@@ -118,8 +120,9 @@ final class PDFContentScanner {
         streams.removeLast()
         CGPDFContentStreamRelease(stream)
         // text in a form that an image drawn after it in the form covers is not shown either (the
-        // manuscript page's text under the figure it was included for)
-        for (img, at) in formImages {
+        // manuscript page's text under the figure it was included for); not under an image of the
+        // whole page, which may be a scan drawn over its own text layer
+        for (img, at) in formImages where img.w * img.h < 0.8 * pageArea {
             for k in out.runs.indices where k < at && out.runs[k].clip != nil && !out.runs[k].hidden {
                 let r = out.runs[k]
                 let c = R(x0: (r.x0 + r.x1) / 2, y0: r.baseline - 0.3 * r.size, x1: (r.x0 + r.x1) / 2, y1: r.baseline - 0.3 * r.size)
