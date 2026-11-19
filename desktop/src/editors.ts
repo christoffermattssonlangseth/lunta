@@ -36,8 +36,10 @@ export function editDetails(p: Paper): Promise<boolean> {
     const abstract = area(m.abstract_text, 6), keywords = text(m.keywords.join(', '));
     let saved = false;
     const lookup = h('button', { type: 'button', text: 'Fill In from the DOI (online)' }) as HTMLButtonElement;
+    let found: Partial<PaperMeta> = {};
     const read = (): PaperMeta => ({
       ...m,
+      ...found,
       title: title.value.trim(),
       authors: authors.value.split('\n').map((s) => s.trim()).filter(Boolean),
       journal: journal.value, date: date.value.trim(), volume: volume.value, issue: issue.value, pages: pages.value,
@@ -77,6 +79,8 @@ export function editDetails(p: Paper): Promise<boolean> {
         volume.value = r.volume; issue.value = r.issue; pages.value = r.pages; publisher.value = r.publisher;
         doi.value = r.doi || doi.value; pmid.value = r.pmid || pmid.value; pmcid.value = r.pmcid || pmcid.value;
         arxiv.value = r.arxiv || arxiv.value; url.value = r.url || url.value;
+        // what kind of work it is and its series come with the record (not edited here)
+        found = { work_type: r.work_type ?? '', series: r.series ?? '' };
         abstract.value = r.abstract_text || keep; if (r.keywords.length) keywords.value = r.keywords.join(', ');
         note.textContent = 'Filled in from the DOI. Check, then Save.';
       } catch (e) { note.textContent = `No record found: ${e}`; }

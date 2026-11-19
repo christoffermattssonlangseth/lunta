@@ -4,7 +4,6 @@
 //! As on the Mac (apple/Mac/BibFiles.swift): papers sorted by citation key, the file written
 //! atomically and only when its text changed.
 
-use lunta_core::model::{PaperFilter, SortKey};
 use lunta_core::Library;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -13,15 +12,9 @@ use std::path::Path;
 pub const ALL_PAPERS: &str = "*";
 
 /// The file's text, or None for an empty library (still opening or syncing: the file is left).
+/// Entries kept from a .bib imported with its keys (software, web pages) come after the papers.
 pub fn text(lib: &Library, source: &str) -> Option<String> {
-    let filter = PaperFilter { collection: (source != ALL_PAPERS).then(|| source.to_string()), ..Default::default() };
-    let mut papers = lib.papers(filter, SortKey::Added);
-    if papers.is_empty() && source == ALL_PAPERS {
-        return None;
-    }
-    papers.sort_by_key(|p| p.cite_key.to_lowercase());
-    let ids = papers.into_iter().map(|p| p.id).collect();
-    Some(format!("% Kept up to date by Lunta: changes made here are overwritten.\n\n{}", lib.export_bibtex(ids)))
+    lib.kept_bibtex((source != ALL_PAPERS).then(|| source.to_string()))
 }
 
 /// Writes `text` to `path` if it differs from what is there (temp file + rename).

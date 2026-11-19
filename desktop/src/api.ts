@@ -5,6 +5,10 @@ export interface PaperMeta {
   title: string; authors: string[]; date: string; journal: string; volume: string; issue: string;
   pages: string; publisher: string; doi: string; pmid: string; pmcid: string; arxiv: string; url: string;
   abstract_text: string; keywords: string[]; license: string;
+  /** Crossref's work type ("journal-article", "proceedings-article", "book-chapter", "posted-content"…), "" if unknown. */
+  work_type?: string;
+  /** The book series of a chapter or proceedings paper ("Lecture Notes in Computer Science"). */
+  series?: string;
 }
 export interface Paper {
   id: string; meta: PaperMeta; year: string; added: number; has_pdf: boolean; has_epub: boolean;
