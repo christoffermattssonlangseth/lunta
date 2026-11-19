@@ -12,6 +12,7 @@ import { openReader, readerPaper, closeReader } from './reader';
 import { startUpdateChecks, checkNow, updatesApi } from './updates';
 import { aiSettingsDialog, libraryAskButton, setAskOpener } from './ai';
 import { setOpenPaper, voiceDialog } from './listen';
+import { showForYou, hideForYou, forYouCount, setForYouHooks, startForYou, watchItems } from './foryou';
 import { importLibrary, importPdfFolder, makeMissingReadingViews, setImportReload } from './importer';
 
 let source: Source = { kind: 'all' };
@@ -49,6 +50,12 @@ async function showLibrary() {
   $('#library').hidden = false;
   $<HTMLSelectElement>('#sort').value = sort;
   await reload();
+  // New for You: the day's papers at the morning time; a paper opened from it shows in All Papers
+  setForYouHooks({ badge: renderSidebar, libraryChanged: () => { reload(); }, openPaper: async (id) => {
+    source = { kind: 'all' }; query = ''; $<HTMLInputElement>('#search').value = '';
+    await reload(); select(id);
+  } });
+  startForYou();
   // changes synced from other devices (their op logs) show up within ten seconds
   setInterval(async () => { if (await api.refresh().catch(() => false)) reload(); }, 10000);
   startUpdateChecks();
@@ -105,6 +112,8 @@ function bibLabel(name: string, source: string): string {
 let listSerial = 0;
 async function reloadList() {
   const serial = ++listSerial;
+  if (source.kind === 'foryou') { rows = []; picked.clear(); selected = null; showForYou(); return; }
+  hideForYou();
   const r = await api.list(source, query, sort).catch((e) => { status(String(e), 'error'); return [] as Row[]; });
   if (serial !== listSerial) return;
   rows = r;
@@ -156,6 +165,7 @@ function renderSidebar() {
     place('Starred', { kind: 'starred' }, s.starred, '★'),
     place('Must Read', { kind: 'must_read' }, s.must_read, '🔖'),
     place('Unread', { kind: 'unread' }, s.unread, '●'),
+    place('New for You', { kind: 'foryou' }, forYouCount() || undefined, '✦'),
     h('h4', { 'data-drop': 'folders-root' }, 'Folders', h('button.mini', { title: 'New folder', text: '＋', onclick: () => newFolder(null) })),
     ...tree(null, 0),
     s.folders.length ? null : h('p.hint', { text: 'No folders yet' }),
@@ -321,6 +331,8 @@ function paperMenu(e: MouseEvent, p: Paper) {
     { label: 'Find PDF', action: () => findPdf(p), disabled: p.has_pdf },
     { label: 'Make Reading View', action: () => makeReadingView(p), disabled: p.has_epub },
     '-',
+    ...watchItems(p),
+    '-',
     { label: 'Delete', danger: true, action: () => deletePaper(p) },
   ]);
 }
@@ -351,6 +363,7 @@ function citeKeyField(p: Paper): HTMLElement {
 // ---- details ----
 
 function renderDetail() {
+  if (source.kind === 'foryou') return;
   const box = $('#detail');
   const p = rows.find((r) => r.paper.id === selected)?.paper;
   if (p && picked.size > 1) {

@@ -591,7 +591,7 @@ For scripted UI checks, debug builds run any `*.js` dropped into `$LUNTA_DEV_EVA
 
 Not in the desktop app yet (the Mac app has them): highlighting in the PDF (PDF highlights made on the
 Mac or iPhone are listed, not drawn), reading views from PDFs, adding a paper from a PDF alone,
-import (Papers, BibTeX, RIS), Discover, New for You,
+import (Papers, BibTeX, RIS), Discover,
 Clean Up, Ask's proposals (tag, add…), the MCP server and the Word / Google Docs add-ins; Make Natural Narration (no AAC encoder
 everywhere: a narration made on the Mac or Android plays).
 
@@ -720,7 +720,7 @@ run in the desktop and Android apps on an open-weights model through llama.cpp, 
   with the passages listed under it. About the library (desktop): the papers a search for the question's
   words finds (all words, else each word, fused), with their abstracts, and the library's counts, tags and
   folders. Not ported: the Apple apps' tools and proposals (tag, add to folder, add a paper), which need a
-  model that calls tools reliably; New for You's summaries (no New for You on these platforms yet).
+  model that calls tools reliably. New for You's searches, screening, summaries and digest: see New for You below.
 - **Android's memory rule:** `ActivityManager.MemoryInfo.totalMem` (a 6 GB phone reports about 5.3–5.6 GiB):
   6 GB or more, offered; 4–6 GB, offered after a warning ("needs at least 6 GB; this phone has 4 GB… try
   anyway"); less, or not arm64-v8a, or no dot-product instructions: shown with the reason, no download.
@@ -738,6 +738,48 @@ LUNTA_TEST_GGUF=<model.gguf> cargo test --release --features llm llm::tests::rea
 `LUNTA_LLM_CPU=1` keeps llama.cpp off the GPU (to time the CPU on a Mac); `LUNTA_LLM_LOG=1` keeps its log.
 Google's on-device Gemini Nano (ML Kit GenAI) was not used on Android: its API is in beta and runs on
 few phones.
+
+## New for You on Windows, Linux and Android
+
+The Apple apps' daily feed (`apple/Shared/Watches.swift`), ported to the core (`core/src/foryou/`) so the
+desktop and Android apps have it too, on **the same files**:
+
+- **Shared state:** `<library>/foryou.json` (the paragraph, settings, ORCID iD, the feed, Add / More Like This /
+  Not for Me feedback, what was offered) and `<library>/watches.json` (journals, authors, papers, topics you follow),
+  read and written in Swift's Codable format (`state.rs`: every non-optional key written, a nil optional left out,
+  dates as `.iso8601` without fractions, keys a newer app adds kept). Each change re-reads the file, changes it and
+  writes it back whole (through a temporary file), as the Swift does; the file itself is last-writer-wins (iCloud
+  Drive, a synced folder, or the Drive syncer's rule for root `*.json`). So a feed made on the Mac shows on Android
+  and the other way round, and a paper turned down anywhere is gone everywhere. What only one device keeps (when
+  the feed was last opened there, the last notification) is `foryou-local.json` in the app's own folder, as the Apple
+  apps keep it in UserDefaults. The Apple apps need no change to share it.
+- **The run** (`run.rs`, WatchCenter.run): searches written from the paragraph; OpenAlex for those, for your watches,
+  for papers citing your papers (with your ORCID iD, leaving out your own) and the newest papers in the library;
+  bioRxiv and medRxiv's last days by keyword; then only papers new to you (not in the library by DOI or title, never
+  offered, not yours, an abstract, no data deposits or theses); ranking; screening; the feed (newest picks on top,
+  80 kept, 3,000 offered keys remembered). Due at the morning time, local time; whichever device runs first makes the
+  day's feed (a phone leaves the first two hours to a computer, as the iPhone does).
+- **Ranking** (`rank.rs`): the Swift formula (0.55 × paragraph + 0.35 × the three closest library papers, ± 0.25 for
+  papers you added or turned down, + 0.3 for More Like This; + 0.15 for what you follow, + 0.06 for journals you
+  follow, up to + 0.04 for new papers), on TF-IDF vectors of words and word pairs: Apple's sentence embeddings
+  (NLEmbedding) have no counterpart here. The closeness is on another scale, so a feed made here ranks a little
+  differently from one made on a Mac.
+- **The model** (`core/src/llm`, `AiEngine::plain_answer`, when it is downloaded): the Swift prompts, word for word,
+  for the searches, the screening (score ≥ 7, journals you follow ≥ 5, near misses on a quiet day), the one-sentence
+  summaries and the digest with its `foryou://` links. Without it: the paragraph's own phrases as searches, the
+  ranking trusted ("Close to your interests (from …)"), and rows show the abstract's first sentences.
+- **Desktop** (`desktop/src/foryou.ts`, `src-tauri/src/foryou.rs`): ✦ New for You in the sidebar with the count of
+  new papers; the feed in the list (status and ↻, "In short", rows with Add / Add as Must Read, More Like This, Not for
+  Me, Earlier), a find in the details (abstract, why it's here); ⚙ the settings (paragraph and Draft from My Library
+  with the model, ORCID iD and people you publish with, the morning time, papers a day, preprints, what you follow); a
+  library paper's menu follows its authors or papers citing it. Checked at start and every ten minutes; the run, the
+  model's screening and summaries in the background. No system notification (no notification plugin): the count and
+  a line in the status bar.
+- **Android:** see the Android app below.
+- Tests: `cargo test foryou` in `core` (Swift's files read and written, dates, due times, the prompts' answers read,
+  digest links, ranking, whole runs on recorded OpenAlex and bioRxiv answers with and without a model, ORCID iD,
+  feedback, two devices on one library, the notification). `LUNTA_FORYOU_DUMP=<dir> cargo test foryou::tests::dump_for_swift
+  -- --ignored` writes a full foryou.json and watches.json for checking with the Apple apps' decoder.
 
 ## Roadmap
 

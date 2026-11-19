@@ -1,0 +1,41 @@
+/* New for You (foryou.ts): the feed in the list pane, a find in the detail pane, the settings */
+.fy-status { display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--line); background: var(--side); position: sticky; top: 0; z-index: 2; }
+.fy-status-text { flex: 1; min-width: 0; }
+.fy-status-text > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fy-dim { color: var(--dim); font-size: 12px; }
+.fy-spin { width: 14px; height: 14px; margin: 0 7px; border: 2px solid var(--dim); border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+.fy-intro { margin: 14px; padding: 14px 16px; border-radius: 12px; background: rgba(180,83,42,.07); border: 1px dashed rgba(180,83,42,.35); }
+.fy-intro h3 { margin: 0 0 6px; color: var(--accent); font-size: 14px; }
+.fy-intro p { margin: 0 0 10px; color: var(--dim); }
+.fy-digest { margin: 10px 12px; padding: 10px 12px; border-radius: 10px; background: var(--paper); border: 1px solid var(--line); }
+.fy-digest-head { display: flex; align-items: center; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--accent); }
+.fy-digest-text { margin: 4px 0 0; line-height: 1.5; }
+.fy-digest-text a, .fy-detail a { color: var(--accent); text-decoration: none; }
+.fy-digest-text a:hover { text-decoration: underline; }
+.fy-row { padding: 10px 14px; border-bottom: 1px solid var(--line); cursor: default; display: flex; flex-direction: column; gap: 4px; }
+.fy-row:hover { background: var(--hover); }
+.fy-row.on { background: var(--sel); }
+.fy-title { font-weight: 600; font-size: 14px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.fy-byline { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fy-oa { margin-right: 4px; font-size: 11px; }
+.fy-summary { line-height: 1.45; }
+.fy-abstract { color: var(--dim); font-size: 12px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.fy-reason { color: var(--accent); font-size: 12px; line-height: 1.4; }
+.fy-actions { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+.fy-actions button.primary { border-radius: 14px; padding: 3px 14px; font-weight: 600; }
+button.icon.fy-on { background: var(--sel); }
+.fy-empty { color: var(--dim); padding: 14px; margin: 0; }
+.fy-earlier { width: 100%; text-align: left; border: none; border-radius: 0; border-bottom: 1px solid var(--line); background: var(--side); padding: 7px 14px; color: var(--dim); font-weight: 600; }
+.fy-beyond { font-size: 12px; color: var(--dim); padding: 7px 10px; border-radius: 8px; border: 1px dashed var(--line); margin-bottom: 10px; }
+.fy-settings { max-height: 88vh; overflow-y: auto; width: 560px; gap: 6px; }
+.fy-settings .row { display: flex; gap: 8px; align-items: center; }
+.fy-settings .row input[type=text] { flex: 1; }
+.fy-settings p { margin: 0; }
+.fy-interests { width: 100%; line-height: 1.45; }
+.fy-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; }
+.fy-grid input, .fy-grid select { justify-self: start; }
+.fy-person, .fy-watch { padding: 3px 0; border-bottom: 1px solid var(--line); }
+.fy-watch button.mini { border: none; background: transparent; color: var(--dim); }
+.fy-seg { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.fy-seg button { flex: 1; border: none; border-radius: 0; }
+.fy-seg button.on { background: var(--accent); color: #fff; }

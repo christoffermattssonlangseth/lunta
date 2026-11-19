@@ -173,8 +173,13 @@ fn stop_all(ai: &Ai) {
     }
 }
 
+/// Whether the model is downloaded (New for You uses it when it is).
+pub(crate) fn model_installed(app: &AppHandle) -> bool {
+    model_dir(app).is_ok_and(|d| llm::download::installed(&model(), &d).is_some()) && llm::engine::unsupported_reason().is_none()
+}
+
 /// The loaded model, loading it first if needed (seconds). None if it isn't downloaded.
-fn engine(app: &AppHandle) -> Result<Option<Arc<AiEngine>>, String> {
+pub(crate) fn engine(app: &AppHandle) -> Result<Option<Arc<AiEngine>>, String> {
     let ai = app.state::<Ai>();
     if let Some(e) = ai.engine.lock().unwrap().clone() {
         return Ok(Some(e));

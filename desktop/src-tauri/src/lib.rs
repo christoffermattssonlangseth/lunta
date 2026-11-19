@@ -15,6 +15,7 @@ mod citeapi;
 mod devsnap;
 mod pdfcite;
 mod extension;
+mod foryou;
 mod importer;
 mod listen;
 mod positions;
@@ -800,6 +801,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updates::Pending::default())
         .manage(ai::Ai::default())
+        .manage(foryou::Feed::default())
         .manage(listen::Listen::new())
         .register_asynchronous_uri_scheme_protocol("lunta", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
@@ -915,6 +917,23 @@ pub fn run() {
             listen::listen_clip,
             listen::listen_paper_timings,
             listen::listen_paper_audio,
+            foryou::foryou_feed,
+            foryou::foryou_count,
+            foryou::foryou_settings,
+            foryou::foryou_save_settings,
+            foryou::foryou_add_watch,
+            foryou::foryou_remove_watch,
+            foryou::foryou_follow,
+            foryou::foryou_connect_orcid,
+            foryou::foryou_disconnect_orcid,
+            foryou::foryou_dismiss,
+            foryou::foryou_boost,
+            foryou::foryou_mark_opened,
+            foryou::foryou_add,
+            foryou::foryou_draft,
+            foryou::foryou_run,
+            foryou::foryou_stop,
+            foryou::foryou_tick,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lunta");

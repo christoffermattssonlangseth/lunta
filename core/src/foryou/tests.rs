@@ -732,3 +732,28 @@ fn dump_for_swift() {
     std::fs::copy(files.state_path(), std::path::Path::new(&dir).join("foryou.json")).unwrap();
     std::fs::copy(files.watches_path(), std::path::Path::new(&dir).join("watches.json")).unwrap();
 }
+
+/// A real run on OpenAlex and bioRxiv (network), without a model, on a throwaway library:
+/// LUNTA_FORYOU_LIVE=1 cargo test foryou::tests::live_run -- --ignored --nocapture
+#[test]
+#[ignore]
+fn live_run() {
+    if std::env::var("LUNTA_FORYOU_LIVE").is_err() {
+        return;
+    }
+    let (_root, lib, files) = setup();
+    let fy = ForYou::new(lib, files.library.clone(), files.local.clone());
+    fy.set_settings("I work on spatial transcriptomics: imaging-based cell segmentation and cell-type maps of brain tissue.", 8, 420, "few").unwrap();
+    fy.add_watch("journal", "Nature Methods", "Nature Methods", now_ms()).unwrap();
+    let started = std::time::Instant::now();
+    let r = fy.run(&run::NetFinder, None, now_ms(), CET, &|s| eprintln!("{s}")).unwrap().unwrap();
+    eprintln!("{} found in {:.1} s; {}", r.found, started.elapsed().as_secs_f64(), r.stats);
+    for f in fy.feed(now_ms(), CET).latest {
+        eprintln!("- {:.3} {} [{}]\n  {}\n  {}", fy.state().items.iter().find(|i| i.key == f.key).unwrap().score, f.title, f.byline, f.reason, f.preview);
+    }
+    assert!(r.candidates > 0);
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64
+}
