@@ -108,6 +108,14 @@ library (and you, with Lunta closed) can still update them.
   an "unverified app" warning: click **Continue**. The older Apps Script route (**Extensions › Apps Script**, the
   two files from Lunta's Citations window) keeps working, also in Safari.
 
+**Write first, cite later.** Type a placeholder where a citation goes and keep writing: `(Langseth et al. 2025)`,
+`(Langseth et al., 2025; Smith 2019)`, `[Langseth 2025 spatial]` (words after the year help find the paper) or
+`{Langseth 2025}`. Then **Resolve Citations…** in the panel lists them, each with the papers Lunta proposes: from
+your library first, else from Crossref. Lunta proposes, you decide: **Confirm** (or pick another, **Search…**,
+**Skip**) one by one, or **Confirm All Exact Matches** for those with exactly one paper in your library that
+fits. Only then does a placeholder become a citation (a paper not yet in your library is added to it), and the
+reference list updates. Ordinary brackets like "(see Fig. 2)" or "(n = 2025)" are left alone.
+
 More: [Lunta Citations](https://christoffermattssonlangseth.github.io/lunta/support.html).
 
 ### LaTeX and Overleaf
@@ -126,6 +134,13 @@ title or authors, and is the same on all your devices. You see it, and can chang
   entry is looked up (DOI, arXiv, Crossref) and keeps its key, so `\cite{…}` in the document keeps working;
   software and web pages are kept as written. Then keep the folder's BibTeX file updated and use it in the
   project. A report lists what was found and where the .bib and the published record differ.
+- **Write first, cite later:** write `\cite{?langseth2025}` (or `\cite{langseth2025?}`; words after the year as
+  hints: `\cite{?langseth2025spatial}`), `(Langseth et al. 2025)` or `[Langseth 2025 spatial]` where a citation
+  goes. Then **File › Resolve Citations in a .tex File…** (Mac, or a folder's menu; Windows and Linux: **+** or a
+  folder's menu) lists them with the papers Lunta proposes. Confirm or skip each one, choose the folder whose
+  BibTeX file Lunta keeps, and **Write**: the papers go into that folder (added to your library if they weren't),
+  the .tex gets their keys (`\cite{Langseth2025spatial}`), the original is kept as `.tex.bak`, and the .bib is
+  updated. With Overleaf: download the project (or use its Git or Dropbox sync), resolve the .tex, upload it.
 - **Entry types:** conference papers are `@inproceedings`, preprints `@misc` with the arXiv id, reports
   `@techreport`, and so on, as LaTeX users expect; titles in capitals come out in title case.
 - **Overleaf:** save the .bib file in Dropbox and link the project to Dropbox, or in the project's Git

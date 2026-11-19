@@ -149,3 +149,24 @@ Lunta for Mac with the Desktop client in `GoogleDocsAuth.swift` (see [google-doc
       Update All as in Chrome.
 - [ ] The same document in Chrome with the extension: the same citations, style and papers.
 - [ ] Safari on iPhone or iPad: the panel points to the Apps Script.
+
+## Resolve Citations (Word, Google Docs, LaTeX)
+
+A document with: "(Name et al. 2024)" for a paper in the library (only one by that first author that year),
+"(Name 2019; Other 2018)" where Other isn't in the library, "[Name 2024 hint]" with two such papers, "(see Fig. 2)",
+"(n = 2025)", and one Lunta citation already in it.
+
+- [ ] Word and Google Docs (each browser, Safari through Lunta for Mac): Resolve Citations… lists the three
+      placeholders, not the ordinary brackets nor the existing citation. Nothing in the document changes and nothing
+      is added to the library until a Confirm.
+- [ ] Confirm All Exact Matches confirms only the first; it becomes a citation in the current style and the
+      bibliography updates. Track Changes (Word) shows only that change.
+- [ ] For "(Name 2019; Other 2018)": confirm Name, Skip Other: one citation followed by "(Other 2018)" as plain text.
+      Choose Again, then confirm a Crossref candidate for Other: the paper appears in Lunta (with its PDF if open)
+      and in the citation.
+- [ ] Search… finds another paper by title words; Confirm cites it.
+- [ ] Type before a placeholder after the scan, then confirm it: it is still replaced in the right place; delete a
+      placeholder, then confirm it: the panel says it isn't there any more.
+- [ ] LaTeX: File › Resolve Citations in a .tex File… on a file with `\cite{?name2024}`, `\citep[p.~2]{a,name2024?}`,
+      a commented `% \cite{?x2020}` and "(Name et al. 2024)": three listed; Write puts the keys in, keeps `a` and the
+      options, leaves the comment, writes `.tex.bak`, and the folder's kept .bib has the papers. The project compiles.

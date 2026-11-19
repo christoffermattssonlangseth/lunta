@@ -91,7 +91,8 @@ claude mcp add --scope user lunta -- /Applications/Lunta.app/Contents/MacOS/lunt
 
 Tools: `search_papers`, `list_papers`, `get_paper`, `read_paper` (full text, or the passages matching a query), `cite`
 (APA, Vancouver, Nature, …, BibTeX with the fixed keys, `latex` for `\cite{…}`, RIS), `library_overview`, `find_new_papers` (OpenAlex), `add_paper`, `find_pdf`,
-`tag_papers`, `add_to_collection`, `set_status`, `add_note`, `update_paper`, and for highlights `list_highlights` (across the library; filter by paper, colour, tag, collection or words), `add_highlight` (quote a passage; it shows in the reading view and the PDF) and `update_highlight` (note, colour, delete).
+`tag_papers`, `add_to_collection`, `set_status`, `add_note`, `update_paper`, `resolve_citations` (the placeholders in a text the
+user is writing, "(Smith et al. 2019)" or `\cite{?smith2019}`, each with up to five candidate papers; read-only, see Resolve Citations), and for highlights `list_highlights` (across the library; filter by paper, colour, tag, collection or words), `add_highlight` (quote a passage; it shows in the reading view and the PDF) and `update_highlight` (note, colour, delete).
 
 The agent writes through its own change log (`ops/agent-….jsonl`), exactly like another device, so it can work while the
 apps are open and its changes sync to the Mac and iPhone. The same binary is a command-line tool:
@@ -153,6 +154,56 @@ as Lunta for Mac runs it for Safari: `gdocs-safari.test.js`, and `gdocs-safari-s
 `GoogleDocsScript.swift` with a test driver), `swift test --filter CitationAPITests` in `apple/LuntaCore` (the API on a
 scratch library, the access rules, certificates), and the citation tests in `core` (`cargo test cit`).
 What only Word and Google Docs can show is in [citations-testing.md](citations-testing.md).
+
+### Resolve Citations: write first, cite later
+
+Writers type placeholders while writing and let Lunta turn them into citations, **confirming each one**: Lunta
+proposes, the writer decides. Nothing is written into a document or added to the library without that.
+
+- **What is a placeholder** (`core/src/placeholders`, `find_placeholders`): "(Langseth et al. 2025)",
+  "(Langseth et al., 2025; Smith 2019)", "[Langseth 2025 spatial]" (words after the year are hints), "{Langseth
+  2025}"; family names with accents, hyphens, particles ("van der Berg"), "O'Brien", "and" / "&", "et al.", a year
+  1800–2100 with a letter ("2019a"), "Smith 2019, 2020" as two works, a "see" / "e.g." in front. Every part
+  between the brackets must be names and a year, so "(see Fig. 2)", "(n = 2025)", "(p < 0.05)", "(2019–2020)",
+  "(Table 1)", "(January 2020)", "[1-3]", a Markdown link or a sentence in brackets are not. LaTeX
+  (`find_tex_placeholders`): `\cite{?key}` / `\cite{key?}` in any `\cite…` command (options and the other keys
+  kept; the key read as name, year and hints: `?langseth2025spatial`), and the "(…)" and "[…]" forms ("{…}" is
+  LaTeX's), not in comments. Offsets are UTF-16 (JavaScript, Word, Google Docs, NSString). Not recognised:
+  narrative citations ("Langseth et al. (2025)"), placeholders without a year (except LaTeX keys), names in
+  scripts without capitals.
+- **Candidates** (`Library::suggest_citation`, up to 5): the library's first, scored by the first family name
+  (first author 0.5, another author 0.15), the other names, "et al." against the number of authors, the year
+  (exact +0.35, one off +0.1 for online-first and preprints, otherwise −0.3) and the hint words (in the title,
+  else journal, keywords, abstract); a LaTeX key that is a paper's own key is certain. **Exact** when exactly one
+  library paper has the first author, the year and every hint word: only those may be confirmed together
+  (Confirm All Exact Matches). Without an exact match, Crossref (`query.author` with the names, the hints, the
+  years around), or OpenAlex when Crossref has nothing; a work the library has (DOI or title) shows as the
+  library's. `search_citation` is the panels' Search; `add_found_paper` adds a confirmed outside paper (its record
+  from the DOI).
+- **The citation API** (version 3; `CitationAPI.swift`, `desktop/src-tauri/src/citeapi.rs`): `POST
+  placeholders {texts, latex?}`, `POST suggest {cite} | {query}`, `POST add {meta}` (the app then shows the paper
+  and looks for its PDF).
+- **Word and Google Docs** share `apple/citations/resolve.js` (the extension's `gdocs/citations-resolve.js` is a
+  copy; a test checks): the list, Confirm / Skip / Search… per part, and writing a placeholder once all its parts
+  are decided (outside papers added first, the parts skipped left as written after the citation, then Update
+  All). Word scans the paragraphs' text and finds each placeholder with Word's search outside content controls
+  (Lunta's citations), the n-th of the same text, and makes it a citation as Insert Citation does. Google Docs:
+  `LuntaDocs.plainSegments` (plain runs in every tab, table and footnote, split at any link, footnote mark or
+  image), `flow.js` `scanPlaceholders` / `writePlaceholder` (found again where it is now, one `batchUpdate` for the
+  revision read, "(…)" linked as a citation, then Update All); in Safari Lunta for Mac runs them.
+- **LaTeX** (Mac `apple/Mac/TexResolve.swift`; Windows and Linux `src/texresolve.ts`, `src-tauri/src/texresolve.rs`):
+  Resolve Citations in a .tex File… lists the placeholders; on Write the outside papers are added, every confirmed
+  paper goes into the chosen folder (the one whose .bib is kept), `rewrite_tex_placeholders` writes the keys,
+  the original stays as `.tex.bak`, and the kept .bib is rewritten.
+- **Limits.** The Apps Script sidebar has no Resolve Citations; Word only looks in the main text (not footnotes);
+  Crossref without hint words returns the author's papers by relevance, so a common name needs a hint or a
+  Search; a placeholder edited between the scan and the confirmation is found again by its text (Docs: nearest
+  to where it was) or reported.
+
+Tests: `cargo test placeholders` in `core` (recognised and not, LaTeX rewriting, ranking on a temporary library,
+recorded Crossref and OpenAlex answers), `cargo test resolve_citations` and `cargo test texresolve` in
+`desktop/src-tauri`, `swift test --filter CitationAPITests`, and the Word, Google Docs and Safari flows in
+`node --test apple/citations-tests/`.
 
 ### Citing in Google Docs from the browser extension
 
