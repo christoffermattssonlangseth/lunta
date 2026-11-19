@@ -113,6 +113,32 @@ final class CitationAPITests: XCTestCase {
         }
     }
 
+    func testResolveCitations() throws {
+        let p = try lib.addPaper(meta: meta("Alpha cells in the islet", ["Ada Lee", "Per Wu", "Kim Ng"], "2020", doi: "10.1234/alpha"),
+                                 pdf: nil, epub: nil, fulltext: nil)
+        let added = Locked<[String]>([])
+        api.paperAdded = { id in added.mutate { $0.append(id) } }
+        let found = try XCTUnwrap(send(request("POST", "/api/placeholders", json: ["texts": ["Shown (Lee et al., 2020; Smith 2019) (n = 2020)."]])).1 as? [String: Any])
+        let ph = try XCTUnwrap((found["placeholders"] as? [[[String: Any]]])?.first?.first)
+        XCTAssertEqual(ph["start"] as? Int, 6)
+        XCTAssertEqual(ph["text"] as? String, "(Lee et al., 2020; Smith 2019)")
+        let cites = try XCTUnwrap(ph["cites"] as? [[String: Any]])
+        XCTAssertEqual(cites.count, 2)
+        XCTAssertEqual(cites[0]["etAl"] as? Bool, true)
+        let s = try XCTUnwrap(send(request("POST", "/api/suggest", json: ["cite": cites[0], "external": false])).1 as? [String: Any])
+        XCTAssertEqual(s["exact"] as? Bool, true)
+        XCTAssertEqual((s["candidates"] as? [[String: Any]])?.first?["id"] as? String, p.id)
+        // the library's own paper isn't added again; one without a DOI is added from its details
+        let same = try XCTUnwrap(send(request("POST", "/api/add", json: ["meta": ["title": "Alpha cells in the islet", "doi": "10.1234/ALPHA"]])).1 as? [String: Any])
+        XCTAssertEqual(same["id"] as? String, p.id)
+        XCTAssertEqual(same["added"] as? Bool, false)
+        let new = try XCTUnwrap(send(request("POST", "/api/add", json: ["meta": ["title": "Beta waves", "authors": ["Kim Ng"], "year": "2021"]])).1 as? [String: Any])
+        XCTAssertEqual(new["added"] as? Bool, true)
+        XCTAssertNotNil(lib.paper(id: new["id"] as? String ?? ""))
+        XCTAssertEqual(added.value, [new["id"] as? String ?? ""])
+        XCTAssertEqual(send(request("POST", "/api/suggest", json: [:])).0, 400)
+    }
+
     func testBibliography() throws {
         let a = try lib.addPaper(meta: meta("Alpha study of cells and more", ["Jane Smith"], "2020", doi: "10.1/a"), pdf: nil, epub: nil, fulltext: nil)
         let res = try XCTUnwrap(send(request("POST", "/api/bibliography", json: ["style": "apa", "ids": [a.id, a.id, "gone"]])).1 as? [String: Any])
@@ -251,4 +277,13 @@ final class CitationAPITests: XCTestCase {
       <bibliography><layout suffix="."><names variable="author"><name name-as-sort-order="all" initialize-with=". "/></names><text prefix=" (" suffix=")" macro="year"/><text prefix=". " variable="title"/></layout></bibliography>
     </style>
     """
+}
+
+/// A value several threads may change.
+final class Locked<T>: @unchecked Sendable {
+    private var v: T
+    private let lock = NSLock()
+    init(_ v: T) { self.v = v }
+    var value: T { lock.lock(); defer { lock.unlock() }; return v }
+    func mutate(_ f: (inout T) -> Void) { lock.lock(); f(&v); lock.unlock() }
 }

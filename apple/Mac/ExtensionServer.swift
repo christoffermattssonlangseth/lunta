@@ -18,7 +18,8 @@ import Paper2EpubKit
 ///        → status JSON + {outcome: added|attached|replaced|kept|unchanged, message, words, images,
 ///          highlights, unmatched:[quotes], backup?, notes, reader, dryRun}; 422 + {error} if the
 ///          page can't be made into a reading view.
-///   GET  /cite/status, /cite/search?q=…, /cite/styles?q=…; POST /cite/bibliography, /cite/render
+///   GET  /cite/status, /cite/search?q=…, /cite/styles?q=…; POST /cite/bibliography, /cite/render,
+///        and for Resolve Citations /cite/placeholders, /cite/suggest, /cite/add
 ///        Citing in Google Docs from the extension: the citation API's answers (CitationAPI, as
 ///        the Word and Google Docs add-ins get them on https://localhost:47481/api/…).
 ///   POST /gdocs {op, docId, …}  Citing in Google Docs from Safari, which can't sign in to Google
@@ -217,6 +218,7 @@ final class ExtensionServer {
 
     private func citeAnswer(_ model: LibraryModel, method: String, path: String, query: [String: String] = [:], body: Data) async -> CitationResponse {
         let api = citationAPI ?? CitationAPI(library: model.lib, cacheDir: CitationServer.cslCache, token: "")
+        if citationAPI == nil { api.paperAdded = CitationServer.paperAdded(model) }
         citationAPI = api
         let req = CitationRequest(method: method, path: "/api/" + path, query: query, body: body)
         let count = model.counts.all
@@ -234,6 +236,7 @@ final class ExtensionServer {
                 return (out.status, out.body)
             },
             papers: { [weak model] in model?.counts.all ?? 0 })
+        g.luntaAPI = CitationAPI.version
         googleDocs = g
         return g
     }

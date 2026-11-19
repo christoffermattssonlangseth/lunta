@@ -226,7 +226,11 @@ fn route(cx: &Ctx, r: &Request) -> (u16, Value) {
     }
     let Some(lib) = cx.lib.clone() else { return (503, json!({"error": "library not open"})) };
     if r.path.starts_with("/cite/") {
-        return crate::citeapi::route(&lib, &cx.csl_cache.to_string_lossy(), &r.method, &r.path, &r.query, &r.body);
+        let out = crate::citeapi::route(&lib, &cx.csl_cache.to_string_lossy(), &r.method, &r.path, &r.query, &r.body);
+        if r.path == "/cite/add" && out.1.get("added").and_then(Value::as_bool) == Some(true) {
+            changed(cx, "Added a paper you cited (Resolve Citations).");
+        }
+        return out;
     }
     let q = |k: &str| r.query.get(k).cloned().unwrap_or_default();
     match (r.method.as_str(), r.path.as_str()) {

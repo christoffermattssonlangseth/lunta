@@ -14,6 +14,14 @@ import Foundation
 //   POST /api/render {style, citations, papers?}
 //        → a journal style: {title, citations: [{text, superscript}], bibliography: [{id, text}],
 //          items: [item], missing: [id]}
+//   Resolve Citations (api 3; core/src/placeholders):
+//   POST /api/placeholders {texts: [text], latex?}
+//        → {placeholders: [[{start, end, text, kind, cites: [cite]}]]} (UTF-16 offsets; cite: text,
+//          surnames, etAl, year, hints, key)
+//   POST /api/suggest {cite} | {query}, external? (default true)
+//        → {candidates: [item + {source, confidence, exact, inLibrary, citeKey}], exact, note}; a
+//          candidate from outside the library has id "" and its details in meta
+//   POST /api/add {meta} → item + {added}: a paper the writer confirmed, added (or the library's)
 //
 // Who may ask: pages from this server, the hosted Word panel, and the Google Docs sidebar (served
 // from *.googleusercontent.com, so it must also present the pairing key). Requests a web page
@@ -117,7 +125,7 @@ public enum CitationHTTP {
 public final class CitationAPI: @unchecked Sendable {
     public static let port: UInt16 = 47481
     /// Bumped when the API grows; the add-ins read it from /api/status.
-    public static let version = 2
+    public static let version = 3
     /// Where the hosted Word panel lives (see .github/workflows/pages.yml).
     public static let hostedPanelOrigin = "https://christoffermattssonlangseth.github.io"
     static let ownOrigins: Set<String> = ["https://localhost:\(port)", "https://127.0.0.1:\(port)"]
@@ -125,6 +133,9 @@ public final class CitationAPI: @unchecked Sendable {
     private let library: Library?
     private let cacheDir: String
     private let token: String
+    /// Called (off the main thread) with the id of a paper /api/add put in the library, so the app
+    /// can show it and look for its PDF.
+    public var paperAdded: (@Sendable (String) -> Void)?
 
     /// `cacheDir`: where journal styles are kept. `token`: the Google Docs pairing key.
     public init(library: Library?, cacheDir: String, token: String) {
@@ -311,9 +322,75 @@ public final class CitationAPI: @unchecked Sendable {
             } catch {
                 return .error(502, "Couldn’t format in this journal style (\(Self.describe(error))). The first time a style is used it is downloaded: check the internet connection.")
             }
+        case ("POST", "/api/placeholders"):
+            guard let j = Self.object(r.body), let texts = j["texts"] as? [String], texts.count <= 100_000 else {
+                return .error(400, "Expected {texts}.")
+            }
+            let latex = j["latex"] as? Bool ?? false
+            let all = texts.map { t in (latex ? findTexPlaceholders(text: t) : findPlaceholders(text: t)).map(Self.placeholderJSON) }
+            return .json(200, ["placeholders": all])
+        case ("POST", "/api/suggest"):
+            guard let j = Self.object(r.body) else { return .error(400, "Expected {cite} or {query}.") }
+            let external = j["external"] as? Bool ?? true
+            let found: CitationSuggestions
+            if let c = j["cite"] as? [String: Any] {
+                found = lib.suggestCitation(cite: Self.cite(c), external: external)
+            } else if let q = j["query"] as? String {
+                found = lib.searchCitation(query: String(q.prefix(500)), external: external)
+            } else {
+                return .error(400, "Expected {cite} or {query}.")
+            }
+            return .json(200, ["candidates": found.candidates.map(Self.candidateJSON), "exact": found.exact, "note": found.note])
+        case ("POST", "/api/add"):
+            guard let m = (Self.object(r.body)?["meta"] as? [String: Any]).flatMap(Self.meta) else {
+                return .error(400, "Expected {meta}.")
+            }
+            let had = lib.findCited(doi: m.doi, title: m.title) != nil
+            do {
+                let p = try lib.addFoundPaper(meta: m)
+                if !had { paperAdded?(p.id) }
+                var d = Self.item(p)
+                d["added"] = !had
+                return .json(200, d)
+            } catch {
+                return .error(502, "Couldn’t add the paper (\(Self.describe(error))).")
+            }
         default:
             return .error(404, "Not found.")
         }
+    }
+
+    // MARK: - Resolve Citations
+
+    static func placeholderJSON(_ p: Placeholder) -> [String: Any] {
+        let kind: String
+        switch p.kind {
+        case .parentheses: kind = "parentheses"
+        case .brackets: kind = "brackets"
+        case .braces: kind = "braces"
+        case .latex: kind = "latex"
+        }
+        return ["start": p.start, "end": p.end, "text": p.text, "kind": kind, "cites": p.cites.map {
+            ["text": $0.text, "surnames": $0.surnames, "etAl": $0.etAl, "year": $0.year, "hints": $0.hints, "key": $0.key] as [String: Any]
+        }]
+    }
+
+    /// A placeholder's cite as the panel sends it back.
+    static func cite(_ c: [String: Any]) -> PlaceholderCite {
+        let st = { (k: String) in String(((c[k] as? String) ?? "").prefix(500)) }
+        let list = { (k: String) in ((c[k] as? [Any]) ?? []).compactMap { $0 as? String }.prefix(20).map { String($0.prefix(200)) } }
+        return PlaceholderCite(text: st("text"), surnames: Array(list("surnames")), etAl: c["etAl"] as? Bool ?? false, year: st("year"),
+                               hints: Array(list("hints")), key: st("key"))
+    }
+
+    static func candidateJSON(_ c: CitationCandidate) -> [String: Any] {
+        var d = item(id: c.paperId, meta: c.meta)
+        d["source"] = c.source
+        d["confidence"] = (c.confidence * 100).rounded() / 100
+        d["exact"] = c.exact
+        d["inLibrary"] = !c.paperId.isEmpty
+        d["citeKey"] = c.citeKey
+        return d
     }
 
     // MARK: - Papers as JSON

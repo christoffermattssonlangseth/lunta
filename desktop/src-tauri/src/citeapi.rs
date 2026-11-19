@@ -13,14 +13,22 @@
 //!   POST /cite/render {style, citations, papers?}
 //!        → a journal style: {title, citations: [{text, superscript}], bibliography: [{id, text}],
 //!          items: [item], missing: [id]}
+//!   Resolve Citations (api 3; core/src/placeholders):
+//!   POST /cite/placeholders {texts: [text], latex?}
+//!        → {placeholders: [[{start, end, text, kind, cites: [cite]}]]} (UTF-16 offsets; cite:
+//!          text, surnames, etAl, year, hints, key)
+//!   POST /cite/suggest {cite} | {query}, external? (default true)
+//!        → {candidates: [item + {source, confidence, exact, inLibrary, citeKey}], exact, note};
+//!          a candidate from outside the library has id "" and its details in meta
+//!   POST /cite/add {meta} → item + {added}: a paper the writer confirmed, added (or the library's)
 
 use lunta_core::model::{CitationStyle, CitedPaper, Paper, PaperFilter, PaperMeta, SortKey};
-use lunta_core::Library;
+use lunta_core::{placeholders, Library};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 
 /// The API's version, as /cite/status says it (CitationAPI.version on the Mac).
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 /// Answers one `/cite/…` request. `cache_dir`: where journal styles are kept.
 pub(crate) fn route(lib: &Library, cache_dir: &str, method: &str, path: &str, query: &HashMap<String, String>, body: &[u8]) -> (u16, Value) {
@@ -126,8 +134,79 @@ pub(crate) fn route(lib: &Library, cache_dir: &str, method: &str, path: &str, qu
                 Err(e) => error(502, &format!("Couldn’t format in this journal style ({e}). The first time a style is used it is downloaded: check the internet connection.")),
             }
         }
+        ("POST", "/cite/placeholders") => {
+            let Some(j) = object(body) else { return error(400, "Expected {texts}.") };
+            let Some(texts) = strings(j.get("texts")).filter(|v| v.len() <= 100_000) else { return error(400, "Expected {texts}.") };
+            let latex = j.get("latex").and_then(Value::as_bool).unwrap_or(false);
+            let all: Vec<Value> = texts
+                .into_iter()
+                .map(|t| {
+                    let found = if latex { placeholders::find_tex_placeholders(t) } else { placeholders::find_placeholders(t) };
+                    Value::Array(found.iter().map(placeholder_json).collect())
+                })
+                .collect();
+            (200, json!({"placeholders": all}))
+        }
+        ("POST", "/cite/suggest") => {
+            let Some(j) = object(body) else { return error(400, "Expected {cite} or {query}.") };
+            let external = j.get("external").and_then(Value::as_bool).unwrap_or(true);
+            let found = if let Some(c) = j.get("cite").and_then(Value::as_object) {
+                lib.suggest_citation(cite_of(c), external)
+            } else if let Some(q) = j.get("query").and_then(Value::as_str) {
+                lib.search_citation(cap(q, 500), external)
+            } else {
+                return error(400, "Expected {cite} or {query}.");
+            };
+            (200, json!({"candidates": found.candidates.iter().map(candidate_json).collect::<Vec<_>>(), "exact": found.exact, "note": found.note}))
+        }
+        ("POST", "/cite/add") => {
+            let Some(m) = object(body).and_then(|j| j.get("meta").and_then(Value::as_object).cloned()).and_then(|m| meta(&m)) else {
+                return error(400, "Expected {meta}.");
+            };
+            let had = lib.find_cited(m.doi.clone(), m.title.clone()).is_some();
+            match lib.add_found_paper(m) {
+                Ok(p) => {
+                    let mut d = item(&p);
+                    d["added"] = json!(!had);
+                    (200, d)
+                }
+                Err(e) => error(502, &format!("Couldn’t add the paper ({e}).")),
+            }
+        }
         _ => error(404, "Not found."),
     }
+}
+
+pub(crate) fn placeholder_json(p: &placeholders::Placeholder) -> Value {
+    let kind = match p.kind {
+        placeholders::PlaceholderKind::Parentheses => "parentheses",
+        placeholders::PlaceholderKind::Brackets => "brackets",
+        placeholders::PlaceholderKind::Braces => "braces",
+        placeholders::PlaceholderKind::Latex => "latex",
+    };
+    json!({"start": p.start, "end": p.end, "text": p.text, "kind": kind, "cites": p.cites.iter().map(|c| json!({
+        "text": c.text, "surnames": c.surnames, "etAl": c.et_al, "year": c.year, "hints": c.hints, "key": c.key,
+    })).collect::<Vec<_>>()})
+}
+
+/// A placeholder's cite as the panel sends it back.
+pub(crate) fn cite_of(c: &Map<String, Value>) -> placeholders::PlaceholderCite {
+    let st = |k: &str| c.get(k).and_then(Value::as_str).map(|s| cap(s, 500)).unwrap_or_default();
+    let list = |k: &str| strings(c.get(k)).unwrap_or_default().into_iter().take(20).map(|s| cap(&s, 200)).collect();
+    placeholders::PlaceholderCite {
+        text: st("text"), surnames: list("surnames"), et_al: c.get("etAl").and_then(Value::as_bool).unwrap_or(false),
+        year: st("year"), hints: list("hints"), key: st("key"),
+    }
+}
+
+pub(crate) fn candidate_json(c: &placeholders::CitationCandidate) -> Value {
+    let mut d = item_of(&c.paper_id, &c.meta);
+    d["source"] = json!(c.source);
+    d["confidence"] = json!((c.confidence * 100.0).round() / 100.0);
+    d["exact"] = json!(c.exact);
+    d["inLibrary"] = json!(!c.paper_id.is_empty());
+    d["citeKey"] = json!(c.cite_key);
+    d
 }
 
 fn error(status: u16, message: &str) -> (u16, Value) {
@@ -189,7 +268,7 @@ fn meta_json(m: &PaperMeta) -> Value {
 }
 
 /// A paper's details as a document sent them (None without a title or authors to cite by).
-fn meta(d: &Map<String, Value>) -> Option<PaperMeta> {
+pub(crate) fn meta(d: &Map<String, Value>) -> Option<PaperMeta> {
     let s = |k: &str| match d.get(k) {
         Some(Value::String(v)) => cap(v, 2000),
         Some(Value::Number(n)) => n.to_string(),
@@ -258,6 +337,43 @@ mod tests {
         assert_eq!(call("POST", "/cite/bibliography", &none, json!({"style": "nope", "ids": []})).0, 400);
         assert_eq!(call("POST", "/cite/render", &none, json!({"style": 1})).0, 400);
         assert_eq!(call("GET", "/cite/elsewhere", &none, json!(null)).0, 404);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_citations() {
+        let (lib, dir) = lib();
+        let meta = PaperMeta { title: "Alpha cells in the islet".into(), authors: vec!["Ada Lee".into(), "Per Wu".into(), "Kim Ng".into()],
+                               date: "2020-03".into(), doi: "10.1234/alpha".into(), ..Default::default() };
+        let p = lib.add_paper(meta, None, None, None).unwrap();
+        let cache = dir.join("csl").to_string_lossy().to_string();
+        let none = HashMap::new();
+        let call = |path: &str, body: Value| route(&lib, &cache, "POST", path, &none, &serde_json::to_vec(&body).unwrap());
+
+        let (st, j) = call("/cite/placeholders", json!({"texts": ["As shown (Lee et al., 2020; Smith 2019) (n = 2020).", "none here"]}));
+        assert_eq!(st, 200, "{j}");
+        let ph = &j["placeholders"][0][0];
+        assert_eq!((ph["start"].clone(), ph["end"].clone(), ph["kind"].clone()), (json!(9), json!(39), json!("parentheses")));
+        assert_eq!(ph["cites"][0]["surnames"], json!(["Lee"]));
+        assert_eq!(ph["cites"][0]["etAl"], json!(true));
+        assert_eq!(j["placeholders"][1], json!([]));
+        let (_, j) = call("/cite/placeholders", json!({"texts": ["\\cite{?lee2020alpha}"], "latex": true}));
+        assert_eq!(j["placeholders"][0][0]["cites"][0]["hints"], json!(["alpha"]));
+
+        let (st, j) = call("/cite/suggest", json!({"cite": ph["cites"][0], "external": false}));
+        assert_eq!(st, 200, "{j}");
+        assert_eq!((j["candidates"][0]["id"].clone(), j["exact"].clone(), j["candidates"][0]["inLibrary"].clone()), (json!(p.id), json!(true), json!(true)));
+        let (_, j) = call("/cite/suggest", json!({"query": "islet", "external": false}));
+        assert_eq!(j["candidates"][0]["id"], json!(p.id));
+        assert_eq!(call("/cite/suggest", json!({})).0, 400);
+        // a paper the library has is not added again
+        let (st, j) = call("/cite/add", json!({"meta": {"title": "Alpha cells in the islet", "doi": "10.1234/ALPHA"}}));
+        assert_eq!((st, j["id"].clone(), j["added"].clone()), (200, json!(p.id), json!(false)));
+        // one without a DOI is added from its details
+        let (st, j) = call("/cite/add", json!({"meta": {"title": "Beta waves", "authors": ["Kim Ng"], "year": "2021"}}));
+        assert_eq!((st, j["added"].clone(), j["year"].clone()), (200, json!(true), json!("2021")));
+        assert!(lib.paper(j["id"].as_str().unwrap().into()).is_some());
+        assert_eq!(call("/cite/add", json!({"meta": {}})).0, 400);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

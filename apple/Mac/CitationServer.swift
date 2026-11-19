@@ -41,10 +41,23 @@ final class CitationServer {
     func start() {
         guard let model else { return }
         api = CitationAPI(library: model.lib, cacheDir: Self.cslCache, token: token)
+        api?.paperAdded = Self.paperAdded(model)
         listen()
         // the certificate is renewed a month before it runs out; the app may run that long
         renewal = Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.renewIfNeeded() }
+        }
+    }
+
+    /// Resolve Citations added a paper the writer confirmed (POST /api/add): it shows in the
+    /// library, and its open-access PDF and reading view are looked for, as when adding by DOI.
+    nonisolated static func paperAdded(_ model: LibraryModel) -> @Sendable (String) -> Void {
+        { [weak model] id in
+            Task { @MainActor in
+                guard let model else { return }
+                model.reload()
+                if model.paper(id)?.hasPdf == false { await model.findPDF(id) }
+            }
         }
     }
 

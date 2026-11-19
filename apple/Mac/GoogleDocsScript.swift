@@ -46,6 +46,8 @@ final class GoogleDocsSafari {
     private let lunta: @MainActor (String, Data?) async -> (Int, Data)
     private let papers: @MainActor () -> Int
     private var script: GoogleDocsScript?
+    /// The citation API's version, for the panel (3: Resolve Citations); set by the app.
+    var luntaAPI = 0
 
     /// `scripts`: the folder with the extension's gdocs/*.js; `lunta(path, body)`: Lunta's citation
     /// API (/bibliography, /render); `papers`: how many papers the library has.
@@ -63,7 +65,7 @@ final class GoogleDocsSafari {
         case "status":
             var out: [String: Any] = ["viaApp": true, "configured": account.configured, "supported": true,
                                       "connected": account.configured && account.connected, "connecting": account.connecting,
-                                      "lunta": ["papers": papers()]]
+                                      "lunta": ["papers": papers(), "api": luntaAPI]]
             if let e = account.lastError { out["authError"] = e }
             return out
         case "connect":
@@ -77,7 +79,7 @@ final class GoogleDocsSafari {
         case "disconnect":
             await account.disconnect()
             return ["connected": false]
-        case "state", "update", "prepareInsert", "finishInsert", "details", "editCitation":
+        case "state", "update", "prepareInsert", "finishInsert", "details", "editCitation", "scanPlaceholders", "writePlaceholder":
             guard account.configured else { return ["error": Self.setupMessage, "kind": "setup"] }
             guard account.connected else { return ["error": "Connect your Google account to cite in this document.", "kind": "auth"] }
             do {
