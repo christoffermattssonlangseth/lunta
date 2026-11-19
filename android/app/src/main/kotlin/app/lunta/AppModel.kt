@@ -108,6 +108,8 @@ class AppModel(val app: Application) {
     val clientIdMissing: Boolean get() = BuildConfig.GOOGLE_CLIENT_ID.isBlank()
     /** Import Library and Share as BibTeX / RIS (LibraryImport.kt). */
     val imports = LibraryImport(this)
+    /** Check a Reference List, retractions and published versions (Checks.kt). */
+    val checks = ReferenceChecks(this)
     /** New for You: the daily feed, shared with the other devices through the library folder. */
     val forYou by lazy { ForYouModel(this) }
 

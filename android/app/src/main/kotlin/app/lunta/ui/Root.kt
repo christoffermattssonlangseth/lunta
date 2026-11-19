@@ -25,6 +25,7 @@ fun LuntaRoot(model: AppModel) {
                 else -> AppNav(model)
             }
             if (model.opened && model.mode != LibraryMode.None) ImportDialogs(model)
+            if (model.opened && model.mode != LibraryMode.None) ChecksDialogs(model)
             model.status?.let { s ->
                 Surface(
                     Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp),

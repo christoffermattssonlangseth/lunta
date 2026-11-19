@@ -6,6 +6,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FactCheck
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -55,6 +56,9 @@ fun HomeScreen(model: AppModel) {
                             DropdownMenuItem({ Text("PDF from Files…") }, { menu = false; pickPdf.launch(arrayOf("application/pdf")) }, leadingIcon = { Icon(Icons.Filled.PictureAsPdf, null) })
                             HorizontalDivider()
                             DropdownMenuItem({ Text("Import library (Zotero, Mendeley…)…") }, { menu = false; model.imports.ask() }, leadingIcon = { Icon(Icons.Filled.LibraryAdd, null) })
+                            HorizontalDivider()
+                            DropdownMenuItem({ Text("Check a reference list…") }, { menu = false; model.checks.asking = true }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.FactCheck, null) })
+                            DropdownMenuItem({ Text("Check for retractions and published versions") }, { menu = false; model.checks.checkLibrary() }, leadingIcon = { Icon(Icons.Filled.Report, null) })
                         }
                     }
                     IconButton({ settings = true }) { Icon(Icons.Filled.Settings, "Settings") }
