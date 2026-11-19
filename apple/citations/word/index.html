@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lunta Citations</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="../common.js?v=11"></script>
-<link rel="stylesheet" href="../panel.css?v=11">
+<script src="../common.js?v=12"></script>
+<script src="../resolve.js?v=12"></script>
+<link rel="stylesheet" href="../panel.css?v=12">
 </head>
 <body>
 <header>
@@ -33,7 +34,15 @@
   <button id="bib">Insert Bibliography Here</button>
   <button id="refresh">Update All</button>
 </div>
+<div class="buttons">
+  <button id="resolve" title="Turn placeholders typed while writing, like (Langseth et al. 2025) or [Smith 2019 cortex], into citations: you confirm each one">Resolve Citations…</button>
+</div>
+<div id="resolveBox" class="resolve" hidden>
+  <div class="current-h">Resolve Citations <button id="rsclose" class="cite-x" title="Close">✕</button></div>
+  <p class="hint">Lunta proposes, you decide: each placeholder becomes a citation only when you confirm it. Papers not in your library are added when confirmed.</p>
+  <div id="rslist"></div>
+</div>
 <p id="status" class="status"></p>
-<script src="app.js?v=11"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

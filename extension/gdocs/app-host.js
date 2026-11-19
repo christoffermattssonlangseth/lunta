@@ -7,7 +7,7 @@
 // answered with LuntaAppHost.settle(id, ok, payloadJSON):
 //   "docs"   {method, url, body} → {status, json}: the Docs API with the app's Google token
 //            (rejects {message, kind: "auth"} when not connected; the token never comes here)
-//   "lunta"  {path, body} → {status, json}: Lunta's citation API (/bibliography, /render)
+//   "lunta"  {path, body} → {status, json}: Lunta's citation API (/bibliography, /render, /placeholders)
 //   "gzip"   text → base64 of its gzip;  "gunzip" base64 → text;  "sleep" ms → null
 // A request: LuntaAppHost.handle(id, msgJSON) → LuntaNative.done(id, answerJSON) ({error, kind} if it failed).
 // Tested in node with stand-ins for the app: apple/citations-tests/gdocs-safari.test.js.
@@ -91,7 +91,7 @@ var LuntaAppHost = (function () {
   var flow = makeLuntaGDocs({
     cite: LuntaCite, model: LuntaDocs,
     docs: makeLuntaGDocs.docsAPI(function (method, url, body) { return native('docs', { method: method, url: url, body: body || null }); }),
-    lunta: { bibliography: lunta('/bibliography'), render: lunta('/render') },
+    lunta: { bibliography: lunta('/bibliography'), render: lunta('/render'), placeholders: lunta('/placeholders') },
     sleep: function (ms) { return native('sleep', ms); },
     gzip: function (text) { return native('gzip', text).then(b64ToBytes); },
     gunzip: function (bytes) { return native('gunzip', bytesToB64(bytes)); }

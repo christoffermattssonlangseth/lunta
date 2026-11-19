@@ -121,6 +121,7 @@ const gdocsFlow = makeLuntaGDocs({
   lunta: {
     bibliography: (b) => luntaCite("/bibliography", b),
     render: (b) => luntaCite("/render", b, 90000),
+    placeholders: (b) => luntaCite("/placeholders", b),
   },
 });
 
@@ -130,7 +131,8 @@ const gdocsFlow = makeLuntaGDocs({
 // this same flow.js (apple/Mac/GoogleDocsScript.swift). The extension only passes them on.
 
 const LUNTA_APP_GDOCS = "http://127.0.0.1:47480/gdocs";
-const APP_OPS = new Set(["status", "connect", "disconnect", "state", "update", "prepareInsert", "finishInsert", "details", "editCitation"]);
+const APP_OPS = new Set(["status", "connect", "disconnect", "state", "update", "prepareInsert", "finishInsert", "details", "editCitation",
+  "scanPlaceholders", "writePlaceholder"]);
 
 /** Safari on the Mac (no sign-in for extensions; Lunta for Mac nearby). Not on iPhone and iPad. */
 async function docsThroughApp() {
@@ -167,7 +169,7 @@ async function handleGDocs(msg) {
         const iOS = !identityAPI();   // here without the identity API: Safari on iPhone and iPad
         const out = { configured: !!LUNTA_GOOGLE_CLIENT_ID, supported: !iOS, connected: false, ...(iOS ? { iOS: true } : {}) };
         if (out.configured && out.supported) out.connected = await googleToken(false).then(() => true, () => false);
-        out.lunta = await luntaCite("/status", null, 8000).then((s) => ({ papers: s.papers }), (e) => ({ error: e.message }));
+        out.lunta = await luntaCite("/status", null, 8000).then((s) => ({ papers: s.papers, api: s.api }), (e) => ({ error: e.message }));
         return out;
       }
       case "connect":
@@ -180,6 +182,11 @@ async function handleGDocs(msg) {
         return { hits: await luntaCite("/search?q=" + encodeURIComponent(msg.q || "")) };
       case "styles":
         return { hits: await luntaCite("/styles?q=" + encodeURIComponent(msg.q || ""), null, 60000) };
+      // Resolve Citations: Lunta's candidates for a placeholder, and adding one the writer confirmed
+      case "suggest":
+        return await luntaCite("/suggest", msg.query ? { query: String(msg.query) } : { cite: msg.cite || {} }, 60000);
+      case "addPaper":
+        return await luntaCite("/add", { meta: msg.meta || {} }, 60000);
       default:
         return await gdocsFlow.op(msg);
     }

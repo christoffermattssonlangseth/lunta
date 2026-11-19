@@ -8,6 +8,7 @@
 //   deps.docs.batchUpdate(docId, requests, revisionId) → rejects with err.kind "revision" if the
 //     document changed since that revision
 //   deps.lunta.bibliography(body), deps.lunta.render(body) → Lunta's /api/bibliography, /api/render
+//   deps.lunta.placeholders(body) → /api/placeholders (Resolve Citations)
 //   deps.cite, deps.model: LuntaCite and LuntaDocs; deps.sleep(ms) optional
 //   deps.gzip(text) → Uint8Array, deps.gunzip(bytes) → text: optional (default: the browser's
 //     CompressionStream; Lunta for Mac, which runs this file for Safari, brings its own)
@@ -325,6 +326,63 @@ function makeLuntaGDocs(deps) {
     return out;
   }
 
+  // ---- Resolve Citations: placeholders typed while writing, made citations once confirmed ----
+
+  /** The placeholders in the document's plain text (not in citations), in order: [{text, cites, kind, tabId, segmentId, start, end}]. */
+  async function scanPlaceholders(docId) {
+    var doc = await deps.docs.get(docId), segs = D.plainSegments(doc);
+    if (!segs.length) return { placeholders: [] };
+    var res = await deps.lunta.placeholders({ texts: segs.map(function (g) { return g.text; }) });
+    var out = [];
+    (res.placeholders || []).forEach(function (list, i) {
+      var g = segs[i];
+      (list || []).forEach(function (ph) {
+        out.push({ text: ph.text, cites: ph.cites, kind: ph.kind, tabId: g.tabId, segmentId: g.segmentId, start: g.start + ph.start, end: g.start + ph.end });
+      });
+    });
+    return { placeholders: out };
+  }
+
+  /** Where the placeholder is now: where it was, else the same text in the same tab and part nearest to it (text typed before it). */
+  function locate(doc, ph) {
+    var best = null;
+    D.plainSegments(doc).forEach(function (g) {
+      if ((g.tabId || '') !== (ph.tabId || '') || (g.segmentId || '') !== (ph.segmentId || '')) return;
+      for (var i = g.text.indexOf(ph.text); i >= 0; i = g.text.indexOf(ph.text, i + 1)) {
+        var at = g.start + i;
+        if (!best || Math.abs(at - ph.start) < Math.abs(best.start - ph.start)) best = { tabId: g.tabId, segmentId: g.segmentId, start: at, end: at + ph.text.length };
+      }
+    });
+    return best;
+  }
+
+  /**
+   * The citation of opts.ids in place of opts.placeholder (as scanPlaceholders found it), with
+   * opts.leftover (the parts left as written) after it, then Update All.
+   */
+  async function writePlaceholder(docId, opts) {
+    var ph = opts.placeholder || {}, ids = C.unique(opts.ids || []);
+    if (!ph.text || !ids.length) throw fail('Nothing to cite.', 'http');
+    for (var attempt = 0; ; attempt++) {
+      var doc = await deps.docs.get(docId), at = locate(doc, ph);
+      if (!at) throw fail('“' + ph.text + '” isn’t in the document any more (edited meanwhile?). Click Resolve Citations to look again.', 'moved');
+      try {
+        await deps.docs.batchUpdate(docId, D.placeholderRequests(at, ids, opts.leftover || ''), doc.revisionId);
+        break;
+      } catch (e) {
+        if (e.kind !== 'revision') throw e;
+        if (attempt < 3) { await sleep(300 * (attempt + 1)); continue; }
+        throw fail('The document kept changing (someone typing?). Try again.', 'revision');
+      }
+    }
+    try {
+      return await update(docId, opts);
+    } catch (e) {
+      if (e.kind !== 'unknown') e.message += ' The citation is in the document as “(…)”; Update All fills it in.';
+      throw e;
+    }
+  }
+
   /**
    * The document requests of the panel ({op, docId, …}, see gdocs/panel.js), the same in every
    * browser: the background script answers them in Chrome, Edge and Firefox, Lunta for Mac in Safari.
@@ -355,12 +413,22 @@ function makeLuntaGDocs(deps) {
         return details(msg.docId, (msg.ids || []).map(String));
       case 'editCitation':
         return editCitation(msg.docId, Object.assign(style, { index: Number(msg.index), expect: msg.expect || [], ids: (msg.ids || []).map(String) }));
+      case 'scanPlaceholders':
+        return scanPlaceholders(msg.docId);
+      case 'writePlaceholder': {
+        var p = msg.placeholder || {};
+        return writePlaceholder(msg.docId, Object.assign(style, {
+          placeholder: { text: String(p.text || ''), tabId: p.tabId || undefined, segmentId: p.segmentId || undefined, start: Number(p.start), end: Number(p.end) },
+          ids: (msg.ids || []).map(String), leftover: String(msg.leftover || '')
+        }));
+      }
       default:
         throw fail('unknown request', 'http');
     }
   }
 
   return { state: state, update: update, finishInsert: finishInsert, details: details, editCitation: editCitation,
+           scanPlaceholders: scanPlaceholders, writePlaceholder: writePlaceholder,
            decodeStore: decodeStore, encodeStore: encodeStore, bareCount: bareCount, op: op };
 }
 

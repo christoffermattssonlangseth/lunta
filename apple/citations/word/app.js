@@ -7,7 +7,7 @@
 // Microsoft store listing): either way the library comes from the Lunta app on this computer.
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
-var VERSION = '11';   // bump with the ?v= in index.html, so Word loads the new files
+var VERSION = '12';   // bump with the ?v= in index.html, so Word loads the new files
 var NS = 'https://lunta.app/ns/word-citations/1';
 var picked = [];          // [{id, title, ...}]
 var style = 'apa';
@@ -32,6 +32,7 @@ function getJSON(path, body, timeout) {
 }
 
 function setButtons() {
+  if ($('resolve')) $('resolve').disabled = busy || !ready;
   $('insert').disabled = busy || !ready || picked.length === 0;
   $('insert').textContent = current ? 'Add to This Citation' : 'Insert Citation';
   $('bib').disabled = $('refresh').disabled = busy || !ready;
@@ -159,12 +160,8 @@ var insertCitation = exclusive(function () {
         parent.tag = LuntaCite.makeTag(had.concat(ids));
         return ctx.sync();
       }
-      // text first, then the content control around it: Word on the web won't wrap an empty
-      // range; at the end of the selection, so selected text isn't replaced
-      var cc = sel.getRange('End').insertText('(…)', 'Replace').insertContentControl();
-      cc.tag = LuntaCite.makeTag(ids);
-      cc.title = 'Citation';
-      cc.appearance = 'Hidden';
+      // at the end of the selection, so selected text isn't replaced
+      wrapCitation(sel.getRange('End'), ids);
       return ctx.sync();
     });
   }).then(function () {
@@ -176,6 +173,16 @@ var insertCitation = exclusive(function () {
     });
   });
 });
+
+/** A new citation of `ids` in place of the range: text first, then the content control around
+ *  it (Word on the web won't wrap an empty range). Update All fills in its text. */
+function wrapCitation(range, ids) {
+  var cc = range.insertText('(…)', 'Replace').insertContentControl();
+  cc.tag = LuntaCite.makeTag(ids);
+  cc.title = 'Citation';
+  cc.appearance = 'Hidden';
+  return cc;
+}
 
 var insertBibliography = exclusive(function () {
   var existed = false;
@@ -375,6 +382,111 @@ function update() {
 
 var updateAll = exclusive(function () { return update(); });
 
+// ---- Resolve Citations: placeholders typed while writing, made citations one by one ----
+// The panel lists the placeholders in the text (not in citations: Lunta's citations are content
+// controls) with Lunta's candidates; nothing is written until the writer confirms (resolve.js).
+
+var resolver = null;
+var resolved = [];   // placeholders written: {text, occurrence}, so the next of the same text is found
+
+/** The placeholders in the document's text, in order: {text, cites, occurrence (among the same text, outside citations)}. */
+function scanPlaceholders() {
+  return Word.run(function (ctx) {
+    var paras = ctx.document.body.paragraphs;
+    paras.load('items/text');
+    return ctx.sync().then(function () {
+      return getJSON('/placeholders', { texts: paras.items.map(function (p) { return p.text; }) });
+    }).then(function (res) {
+      var found = [], byText = {};
+      (res.placeholders || []).forEach(function (list) {
+        (list || []).forEach(function (ph) { found.push(ph); if (!byText[ph.text]) byText[ph.text] = ph; });
+      });
+      // where each text is outside a citation: Word's search, then the content control around each hit
+      var texts = Object.keys(byText).filter(function (t) { return t.length <= 255; });
+      var searches = texts.map(function (t) {
+        var hits = ctx.document.body.search(t, { matchCase: true });
+        hits.load('items/text');
+        return hits;
+      });
+      return ctx.sync().then(function () {
+        var parents = searches.map(function (hits) {
+          return hits.items.map(function (h) { var p = h.parentContentControlOrNullObject; p.load('isNullObject'); return p; });
+        });
+        return ctx.sync().then(function () {
+          var plain = {};
+          texts.forEach(function (t, n) { plain[t] = parents[n].filter(function (p) { return p.isNullObject; }).length; });
+          var used = {}, out = [];
+          found.forEach(function (ph) {
+            var u = used[ph.text] || 0;
+            if (u >= (plain[ph.text] || 0)) return;   // a citation's own text
+            used[ph.text] = u + 1;
+            out.push({ text: ph.text, cites: ph.cites, kind: ph.kind, occurrence: u });
+          });
+          return out;
+        });
+      });
+    });
+  });
+}
+
+/** Writes the citation of `ids` where the placeholder is (and the parts left as written after it), then Update All. */
+function writePlaceholder(ph, ids, leftover) {
+  if (busy) return Promise.reject(new Error('Lunta is updating the document. Try again in a moment.'));
+  busy = true; setButtons();
+  var before = resolved.filter(function (r) { return r.text === ph.text && r.occurrence < ph.occurrence; }).length;
+  return Word.run(function (ctx) {
+    var hits = ctx.document.body.search(ph.text, { matchCase: true });
+    hits.load('items/text');
+    return ctx.sync().then(function () {
+      var parents = hits.items.map(function (h) { var p = h.parentContentControlOrNullObject; p.load('isNullObject'); return p; });
+      return ctx.sync().then(function () {
+        var plain = hits.items.filter(function (h, n) { return parents[n].isNullObject; });
+        var r = plain[ph.occurrence - before];
+        if (!r) throw new Error('“' + ph.text + '” isn’t in the document as it was (edited meanwhile?). Click Resolve Citations to look again.');
+        if (leftover) r.insertText(' ' + leftover, 'After');
+        wrapCitation(r, ids);
+        return ctx.sync();
+      });
+    });
+  }).then(function () {
+    resolved.push({ text: ph.text, occurrence: ph.occurrence });
+    return update();
+  }).then(function () { busy = false; setButtons(); }, function (e) {
+    busy = false; setButtons();
+    if (e && e.kind) e = new Error(LuntaCite.describe(e, 'word'));
+    throw e;
+  });
+}
+
+var resolveCitations = exclusive(function () {
+  status('Looking for placeholders…');
+  return getJSON('/status').then(function (s) {
+    if ((s.api || 0) < 3) throw new Error('This version of Lunta can’t resolve citations. Update Lunta and try again.');
+    return scanPlaceholders();
+  }).then(function (list) {
+    $('resolveBox').hidden = false;
+    resolved = [];
+    resolver = resolver || LuntaResolve.create({
+      box: $('rslist'), doc: document,
+      status: function (m, err) { status(m, err); },
+      api: {
+        suggest: function (cite) { return getJSON('/suggest', { cite: cite }, 60000); },
+        search: function (q) { return getJSON('/suggest', { query: q }, 60000); },
+        add: function (cand) { return getJSON('/add', { meta: cand.meta || cand }, 60000); },
+        apply: writePlaceholder
+      }
+    });
+    // shown while Lunta looks: the panel stays free for confirming
+    resolver.load(list);
+  });
+});
+
+function closeResolve() {
+  $('resolveBox').hidden = true;
+  if (resolver) resolver.load([]);
+  $('rslist').innerHTML = '';
+}
+
 // ---- styles ----
 
 function remember(s) { try { localStorage.setItem('luntaLastStyle', s); } catch (e) {} }
@@ -427,6 +539,8 @@ Office.onReady(function () {
   $('insert').onclick = insertCitation;
   $('bib').onclick = insertBibliography;
   $('refresh').onclick = updateAll;
+  $('resolve').onclick = resolveCitations;
+  $('rsclose').onclick = closeResolve;
   // clicking a citation in the text shows its papers here
   try {
     Office.context.document.addHandlerAsync(Office.EventType.DocumentSelectionChanged, onSelection, function () {});

@@ -210,6 +210,62 @@ var LuntaDocs = (function () {
     };
   }
 
+  // ---- Resolve Citations: the document's own text ----
+
+  /**
+   * The text Lunta looks for placeholders in ("(Langseth et al. 2025)"): every paragraph's runs of
+   * plain text (in every tab, tables, footnotes where their marks are), split where linked text (a
+   * Lunta citation, the bibliography, a web link), a footnote mark or an image is, so a citation's
+   * own text is never taken for a placeholder: [{tabId, segmentId, start, text}].
+   */
+  function plainSegments(doc) {
+    var out = [];
+    tabsOf(doc).forEach(function (tab) {
+      var dt = tab.documentTab, footnotes = dt.footnotes || {};
+      function walk(list, segmentId) {
+        (list || []).forEach(function (el) {
+          if (el.paragraph) {
+            var cur = null;
+            var flush = function () { if (cur && cur.text) out.push(cur); cur = null; };
+            (el.paragraph.elements || []).forEach(function (pe) {
+              var t = pe.textRun && pe.textRun.content;
+              if (pe.footnoteReference) {
+                flush();
+                var fn = footnotes[pe.footnoteReference.footnoteId];
+                if (fn) walk(fn.content, pe.footnoteReference.footnoteId);
+                return;
+              }
+              if (!t || linkOf(pe.textRun)) { flush(); return; }
+              if (t.charAt(t.length - 1) === '\n') t = t.slice(0, -1);
+              if (cur && cur.start + cur.text.length === pe.startIndex) cur.text += t;
+              else { flush(); cur = { tabId: tab.tabId, segmentId: segmentId, start: pe.startIndex, text: t }; }
+            });
+            flush();
+          } else if (el.table) {
+            (el.table.tableRows || []).forEach(function (row) { (row.tableCells || []).forEach(function (c) { walk(c.content, segmentId); }); });
+          }
+        });
+      }
+      walk((dt.body || {}).content, undefined);
+    });
+    return out;
+  }
+
+  /**
+   * The requests that make a placeholder at [start, end) a citation of `ids`: its text deleted,
+   * "(…)" linked as the citation (Update All writes its text) and the parts left as written after it.
+   */
+  function placeholderRequests(ph, ids, leftover) {
+    var text = '(…)' + (leftover ? ' ' + leftover : '');
+    var at = loc(ph.tabId, ph.segmentId, ph.start);
+    return [
+      { deleteContentRange: { range: range(ph.tabId, ph.segmentId, ph.start, ph.end) } },
+      { insertText: { location: at, text: text } },
+      { updateTextStyle: { range: range(ph.tabId, ph.segmentId, ph.start, ph.start + text.length), textStyle: {}, fields: 'link' } },
+      { updateTextStyle: { range: range(ph.tabId, ph.segmentId, ph.start, ph.start + 3), textStyle: { link: { url: makeLink(ids) } }, fields: 'link' } }
+    ];
+  }
+
   // ---- the document's store ----
 
   function storePart(name) {
@@ -412,7 +468,7 @@ var LuntaDocs = (function () {
     parseLink: parseLink, makeLink: makeLink, placeholderUrl: placeholderUrl, parsePlaceholder: parsePlaceholder,
     placeholderHTML: placeholderHTML, newToken: newToken,
     read: read, storePart: storePart, storeGenerations: storeGenerations, storeNames: storeNames, newGeneration: newGeneration,
-    sameStore: sameStore, planRequests: planRequests
+    sameStore: sameStore, planRequests: planRequests, plainSegments: plainSegments, placeholderRequests: placeholderRequests
   };
 })();
 if (typeof module !== 'undefined') module.exports = LuntaDocs;

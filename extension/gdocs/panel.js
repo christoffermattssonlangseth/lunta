@@ -4,7 +4,7 @@
 // (gdocs/background-gdocs.js; in Safari, by Lunta for Mac); this page script only shows the panel
 // and, to insert at the cursor (which the API doesn't know), pastes a placeholder through Docs' own
 // paste handling (Safari: puts it on the clipboard for the reader's ⌘V, gdocs/clipboard.js).
-/* global LuntaCite, LuntaClipboard */
+/* global LuntaCite, LuntaClipboard, LuntaResolve */
 (() => {
   if (window.top !== window || document.getElementById("lunta-gdocs-root")) return;
   const docId = () => (location.pathname.match(/\/document\/(?:u\/\d+\/)?d\/([A-Za-z0-9_-]{20,})/) || [])[1] || "";
@@ -66,6 +66,15 @@
       button.cx:hover { opacity: 1; background: #eee; }
       .row input { flex: 1; margin: 0; }
       .pasteBox p { margin: 4px 0; }
+      .rs-ph { border-top: 1px solid #eee; padding: 8px 0 4px; }
+      .rs-ph:first-child { border-top: 0; }
+      .rs-text { font-weight: 600; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+      .rs-label { font-size: 12px; color: #2a6478; margin: 6px 0 2px; }
+      .rs-note, .rs-state, .rs-chosen { font-size: 12px; color: #6e6e73; margin: 4px 0; }
+      .rs-state.err { color: #b3261e; }
+      .rs-done .rs-state { color: #2a6478; }
+      .rs-q { flex: 1; min-width: 0; }
+      .rlist .hit .m.rs-src { font-size: 11px; }
       [hidden] { display: none !important; }
       @media (prefers-color-scheme: dark) {
         .card, .tab { background: #2a2a2c; color: #eee; } header strong { color: #9ec9d8; }
@@ -93,7 +102,12 @@
           <div class="picked"></div>
           <div class="buttons"><button class="btn primary insert" disabled>Insert Citation</button></div>
           <div class="buttons"><button class="btn bib" disabled>Insert Bibliography</button><button class="btn refresh" disabled>Update All</button></div>
-          <div class="buttons"><button class="btn edit" disabled>Edit Citation…</button></div>
+          <div class="buttons"><button class="btn edit" disabled>Edit Citation…</button><button class="btn resolve" disabled title="Turn placeholders typed while writing, like (Langseth et al. 2025) or [Smith 2019 cortex], into citations: you confirm each one">Resolve Citations…</button></div>
+          <div class="rbox box" hidden>
+            <div class="row"><strong>Resolve Citations</strong><button class="link rclose">Close</button></div>
+            <p class="note">Lunta proposes, you decide: each placeholder becomes a citation only when you confirm it. Papers not in your library are added when confirmed.</p>
+            <div class="rlist"></div>
+          </div>
           <div class="pasteBox box" hidden>
             <p class="pasteText"><strong>Press ⌘V in the document where the citation goes.</strong></p>
             <p class="note">Lunta put it on the clipboard (Safari doesn’t let extensions paste). It becomes the citation once it’s in the document. <button class="link pasteCancel">Cancel</button></p>
@@ -131,6 +145,7 @@
   let current = null;   // the citation being edited: {index, ids, text}
   let picked = [], style = "apa", styleTitle = "", styleSaved = false, needsStyle = false, ready = false, busy = false, lastSearch = 0, opened = false;
   let viaApp = false;   // Safari on the Mac: Lunta for Mac signs in to Google and edits the document
+  let luntaApi = 0;     // the citation API's version (3: Resolve Citations)
   let pasting = null;   // Safari, waiting for the reader's ⌘V: {cancelled}
 
   function status(m, err) { const s = $(".status"); s.textContent = m || ""; s.className = "status" + (err ? " err" : ""); }
@@ -140,6 +155,7 @@
     $(".bib").disabled = $(".refresh").disabled = !can || needsStyle;
     $(".style").disabled = !can;
     $(".edit").disabled = !can || needsStyle;
+    $(".resolve").disabled = !can || needsStyle;
     $(".cadd").disabled = !can || !current || !picked.length;
   }
   function show(which) {
@@ -506,6 +522,39 @@
     changeCitation(ids);
   };
 
+  // ---- Resolve Citations: placeholders typed while writing (gdocs/citations-resolve.js) ----
+
+  let resolver = null;
+  function openResolve() {
+    if (!ready || busy) return;
+    if (luntaApi < 3) { status("This version of Lunta can’t resolve citations. Update Lunta and try again.", true); return; }
+    exclusive(async () => {
+      status("Looking for placeholders…");
+      const r = check(await send({ op: "scanPlaceholders", docId: docId() }));
+      $(".rbox").hidden = false;
+      resolver = resolver || LuntaResolve.create({
+        box: $(".rlist"), doc: document, status,
+        api: {
+          suggest: async (cite) => check(await send({ op: "suggest", cite })),
+          search: async (query) => check(await send({ op: "suggest", query })),
+          add: async (cand) => check(await send({ op: "addPaper", meta: cand.meta || cand })),
+          // one change to the document at a time, as the other buttons
+          apply: async (placeholder, ids, leftover) => {
+            while (busy) await delay(200);
+            busy = true; setButtons();
+            try {
+              const w = check(await send({ op: "writePlaceholder", docId: docId(), placeholder, ids, leftover, ...(styleSaved ? {} : { style, styleTitle }) }));
+              style = w.style || style; styleTitle = w.styleTitle || ""; styleSaved = true; fillStyles();
+            } finally { busy = false; setButtons(); }
+          },
+        },
+      });
+      resolver.load(r.placeholders || []);
+    });
+  }
+  $(".resolve").onclick = openResolve;
+  $(".rclose").onclick = () => { $(".rbox").hidden = true; if (resolver) resolver.load([]); $(".rlist").innerHTML = ""; status(""); };
+
   async function connect(selectAccount) {
     status(viaApp ? "Lunta for Mac opened Google’s sign-in in your browser: sign in there and allow Lunta to edit your documents, then come back here…" : "Waiting for Google…");
     const r = await send({ op: "connect", selectAccount });
@@ -536,6 +585,7 @@
     const s = await send({ op: "status" });
     if (s.error) { status(s.error, true); return; }
     viaApp = !!s.viaApp;
+    luntaApi = (s.lunta && s.lunta.api) || 0;
     if (viaApp) {
       $(".connectText").textContent = "In Safari, Lunta for Mac writes the citations into this document through Google Docs. Connect it to your Google account once (your browser opens Google’s page), with permission to edit your Google Docs documents; only the document you cite in is read or changed.";
     }

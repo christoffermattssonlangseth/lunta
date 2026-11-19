@@ -61,6 +61,11 @@ function appHost(api, opts) {
           case 'lunta':
             calls.lunta.push(args.path);
             if (args.path === '/bibliography') return answer(200, entries(args.body));
+            if (args.path === '/placeholders') {
+              // "(Name Year)" only: the real finder is core/src/placeholders
+              return answer(200, { placeholders: args.body.texts.map((t) => [...t.matchAll(/\(([A-Z]\w+) (\d{4})\)/g)].map((m) => (
+                { start: m.index, end: m.index + m[0].length, text: m[0], kind: 'parentheses', cites: [{ text: m[1] + ' ' + m[2], surnames: [m[1]], year: m[2], hints: [], etAl: false, key: '' }] }))) });
+            }
             return answer(404, { error: 'not found' });
           case 'gzip': calls.gzip++; return zlib.gzipSync(Buffer.from(args, 'utf8')).toString('base64');
           case 'gunzip': return zlib.gunzipSync(Buffer.from(args, 'base64')).toString('utf8');
@@ -279,4 +284,17 @@ test('Safari’s Insert: waiting for the reader’s ⌘V; plain text said once; 
   // never pasted
   a = { send: async () => ({ error: 'no', kind: 'notInserted' }) };
   await assert.rejects(LuntaClipboard.wait(a.send, { docId: DOC, token: 't', limit: -1 }), /didn’t reach the document/);
+});
+
+test('Resolve Citations in Safari: the app finds the placeholders and writes the confirmed citation', async () => {
+  const api = new FakeDocsAPI({ paragraphs: [P('As shown (Lee 2020).'), P(link('Refs', BIB))] });
+  const app = appHost(api);
+  const r = await app.handle({ op: 'scanPlaceholders', docId: DOC });
+  assert.equal(r.error, undefined, r.error);
+  assert.deepEqual(r.placeholders.map((p) => p.text), ['(Lee 2020)']);
+  assert.deepEqual(api.paragraphs(), ['As shown (Lee 2020).', 'Refs'], 'nothing written until confirmed');
+  const w = await app.handle({ op: 'writePlaceholder', docId: DOC, placeholder: r.placeholders[0], ids: ['a'], leftover: '', style: 'apa' });
+  assert.equal(w.error, undefined, w.error);
+  assert.deepEqual(api.paragraphs(), ['As shown (Lee, 2020).', 'Lee (2020). Alpha cells. Cell.']);
+  assert.deepEqual(app.calls.lunta, ['/placeholders', '/bibliography']);
 });

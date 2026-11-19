@@ -61,6 +61,12 @@ test('the extension uses the same citation code as the add-ins (citations-common
   assert.ok(a === b, 'copy apple/citations/common.js to extension/gdocs/citations-common.js');
 });
 
+test('Resolve Citations: the extension uses the add-ins’ resolve.js (citations-resolve.js is a copy)', () => {
+  const a = fs.readFileSync(path.join(__dirname, '..', 'citations', 'resolve.js'), 'utf8');
+  const b = fs.readFileSync(path.join(__dirname, '..', '..', 'extension', 'gdocs', 'citations-resolve.js'), 'utf8');
+  assert.ok(a === b, 'copy apple/citations/resolve.js to extension/gdocs/citations-resolve.js');
+});
+
 test('reading: citations in order, footnotes where their marks are, split runs joined, tables, the bibliography', () => {
   const api = new FakeDocsAPI({ paragraphs: [
     P('Intro ', link('(A)', CITE(['a'])), ' text', { footnote: [P('See ', link('(N)', CITE(['n'])))] }, ' ', link('(B', CITE(['b', 'c'])), link(', C)', CITE(['b', 'c']), { bold: true })),
@@ -437,4 +443,60 @@ test('Edit Citation: the papers of one citation; remove one, add some, remove th
   const g2 = flow(api, fakeLunta(LIB, { offline: true }));
   const d2 = await g2.details('doc', ['b']);
   assert.equal(d2.entries[0].title, 'Beta waves');
+});
+
+// ---- Resolve Citations ----
+
+// Lunta's placeholders, roughly (the real ones: core/src/placeholders, tested there)
+function placeholdersIn(text) {
+  const out = [];
+  for (const m of text.matchAll(/[([{]([^()[\]{}]*)[)\]}]/g)) {
+    const cites = m[1].split(';').map((part) => {
+      const c = /^\s*([A-Z][\w-]*)( et al\.)?,? (\d{4})\s*(.*)$/.exec(part);
+      return c && { text: part.trim(), surnames: [c[1]], etAl: !!c[2], year: c[3], hints: [], key: '' };
+    });
+    if (cites.every(Boolean)) out.push({ start: m.index, end: m.index + m[0].length, text: m[0], kind: 'parentheses', cites });
+  }
+  return out;
+}
+
+test('Resolve Citations in Google Docs: placeholders in the plain text only; each written when confirmed, where it is now', async () => {
+  const api = new FakeDocsAPI({ paragraphs: [
+    P('Cells (Lee 2020) differ ', link('(Wu & Ng, 2021)', CITE(['b'])), ' and (Smith 2019; Nobody 1999).', { footnote: [P('See (Ek 2018).')] }),
+    P('A link (Lee 2020) is ', link('a web page (Ek 2018)', 'https://example.org'), '.'),
+    P(link('References', BIB))
+  ] });
+  const lunta = fakeLunta(LIB);
+  lunta.placeholders = async (body) => { lunta.calls.push(['placeholders', body]); return { placeholders: body.texts.map(placeholdersIn) }; };
+  const g = flow(api, lunta);
+  await g.update('doc', { style: 'apa' });
+  const before = api.calls.batchUpdate;
+  const r = await g.op({ op: 'scanPlaceholders', docId: 'abcdefghijklmnopqrstuvwxyz' });
+  assert.equal(api.calls.batchUpdate, before, 'scanning writes nothing');
+  const found = r.placeholders;
+  // not Lunta's citation "(Wu & Ng, 2021)", nor the bibliography, nor a web link's text; the footnote where its mark is
+  assert.deepEqual(found.map((p) => p.text), ['(Lee 2020)', '(Smith 2019; Nobody 1999)', '(Ek 2018)', '(Lee 2020)']);
+  assert.equal(found[0].start, api.indexOf('(Lee 2020)'));
+  assert.equal(found[2].segmentId, api.footnoteIds()[0]);
+  assert.equal(found[2].start, api.indexOf('(Ek 2018)', undefined, found[2].segmentId));
+  // confirmed: the citation where the placeholder was, the bibliography updated
+  let w = await g.writePlaceholder('doc', { placeholder: found[0], ids: ['a'] });
+  assert.match(w.summary, /2 citations/);
+  assert.equal(api.paragraphs()[0], 'Cells (Lee, 2020) differ (Wu & Ng, 2021) and (Smith 2019; Nobody 1999).^');
+  assert.equal(api.linkAt(api.indexOf('(Lee, 2020)')), CITE(['a']));
+  assert.ok(api.paragraphs().some((t) => t.startsWith('Lee (2020). Alpha cells.')));
+  // someone types before the next one meanwhile: found where it is now; the skipped part stays, unlinked
+  api.type(1, 'So. ');
+  w = await g.writePlaceholder('doc', { placeholder: found[1], ids: ['c'], leftover: '(Nobody 1999)' });
+  assert.equal(api.paragraphs()[0], 'So. Cells (Lee, 2020) differ (Wu & Ng, 2021) and (Smith, 2019) (Nobody 1999).^');
+  assert.equal(api.linkAt(api.indexOf('(Smith, 2019)')), CITE(['c']));
+  assert.equal(api.linkAt(api.indexOf('(Nobody 1999)')), null);
+  // in a footnote
+  await g.writePlaceholder('doc', { placeholder: found[2], ids: ['d'] });
+  assert.equal(api.text(undefined, api.footnoteIds()[0]).trim(), 'See (Ek, 2018).');
+  // gone meanwhile: said so, nothing written
+  const n = api.calls.batchUpdate;
+  await assert.rejects(g.writePlaceholder('doc', { placeholder: { text: '(Gone 2001)', start: 3, end: 14 }, ids: ['a'] }), (e) => e.kind === 'moved');
+  assert.equal(api.calls.batchUpdate, n);
+  assert.match(api.paragraphs().join('\n'), /Ek \(2018\)\. Delta rivers/);
 });

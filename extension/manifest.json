@@ -17,6 +17,6 @@
   },
   "content_scripts": [
     { "matches": ["http://*/*", "https://*/*"], "js": ["content.js"], "run_at": "document_idle" },
-    { "matches": ["https://docs.google.com/document/*"], "js": ["gdocs/citations-common.js", "gdocs/clipboard.js", "gdocs/panel.js"], "run_at": "document_idle" }
+    { "matches": ["https://docs.google.com/document/*"], "js": ["gdocs/citations-common.js", "gdocs/citations-resolve.js", "gdocs/clipboard.js", "gdocs/panel.js"], "run_at": "document_idle" }
   ]
 }

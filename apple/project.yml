@@ -233,6 +233,7 @@ targets:
           - $(SRCROOT)/../extension/content.js
           - $(SRCROOT)/../extension/gdocs/config.js
           - $(SRCROOT)/../extension/gdocs/citations-common.js
+          - $(SRCROOT)/../extension/gdocs/citations-resolve.js
           - $(SRCROOT)/../extension/gdocs/docs-model.js
           - $(SRCROOT)/../extension/gdocs/flow.js
           - $(SRCROOT)/../extension/gdocs/background-gdocs.js
@@ -249,6 +250,7 @@ targets:
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/content.js
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/config.js
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/citations-common.js
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/citations-resolve.js
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/docs-model.js
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/flow.js
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/gdocs/background-gdocs.js
