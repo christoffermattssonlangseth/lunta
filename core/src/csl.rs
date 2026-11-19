@@ -183,13 +183,35 @@ fn unguard(s: &str) -> String {
 }
 
 /// A paper as CSL-JSON.
+/// The CSL item type for a paper's kind.
+pub fn csl_type(m: &crate::model::PaperMeta) -> &'static str {
+    use crate::worktype::Kind::*;
+    match crate::worktype::kind(m) {
+        Article => "article-journal",
+        Conference => "paper-conference",
+        Chapter => "chapter",
+        Book => "book",
+        Preprint => "article",
+        Report => "report",
+        Standard => "standard",
+        Thesis => "thesis",
+        Dataset => "dataset",
+        Other => if m.journal.is_empty() { "document" } else { "article-journal" },
+    }
+}
+
 fn item(p: &Paper) -> Item {
-    let m = &p.meta;
-    let mut j = serde_json::json!({ "id": p.id, "type": "article-journal", "title": guard(&m.title) });
+    // titles and names in capitals in proper case (the library keeps them as they are)
+    let m = &crate::worktype::for_export(&p.meta);
+    let kind = csl_type(m);
+    let mut j = serde_json::json!({ "id": p.id, "type": kind, "title": guard(&m.title) });
     let authors: Vec<serde_json::Value> = m
         .authors
         .iter()
         .map(|a| {
+            if crate::worktype::is_organization(a) {
+                return serde_json::json!({ "literal": guard(a) });
+            }
             let a = guard(a);
             let (family, given) = split_name(&a);
             if given.is_empty() { serde_json::json!({ "family": family }) } else { serde_json::json!({ "family": family, "given": given }) }
@@ -212,10 +234,25 @@ fn item(p: &Paper) -> Item {
         ("PMCID", &m.pmcid),
         ("URL", &m.url),
         ("publisher", &m.publisher),
+        ("collection-title", &m.series),
     ] {
         if !v.trim().is_empty() {
             j[k] = guard(v.trim()).into();
         }
+    }
+    // a preprint: the server as publisher and the arXiv id as its number ("arXiv:2308.13418"),
+    // as citation styles write preprints
+    if kind == "article" {
+        if !m.journal.is_empty() && m.publisher.is_empty() {
+            j["publisher"] = guard(&m.journal).into();
+        }
+        if !m.arxiv.is_empty() {
+            j["number"] = format!("arXiv:{}", m.arxiv).into();
+        }
+        j["genre"] = "Preprint".into();
+    }
+    if kind == "report" && !m.issue.is_empty() {
+        j["number"] = guard(&m.issue).into();
     }
     serde_json::from_value(j).expect("CSL-JSON item")
 }

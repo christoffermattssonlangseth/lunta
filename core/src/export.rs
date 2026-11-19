@@ -147,39 +147,83 @@ fn bib_escape(s: &str) -> String {
         .replace('}', "\\}")
 }
 
+/// The BibTeX entry type for a paper's kind, as BibTeX and biblatex users expect: conference
+/// papers (also LNCS chapters) `@inproceedings`, other chapters `@incollection`, preprints
+/// `@misc` with the eprint, reports and standards `@techreport`, theses `@phdthesis`.
+pub fn bibtex_type(m: &PaperMeta) -> &'static str {
+    use crate::worktype::Kind::*;
+    match crate::worktype::kind(m) {
+        Article => "article",
+        Conference => "inproceedings",
+        Chapter if crate::worktype::chapter_in_proceedings(m) => "inproceedings",
+        Chapter => "incollection",
+        Book => "book",
+        Report | Standard => "techreport",
+        Thesis => "phdthesis",
+        Preprint | Dataset | Other => "misc",
+    }
+}
+
+/// An author as BibTeX takes it: "Family, Given", an organization whole in braces.
+fn bib_name(a: &str) -> String {
+    if crate::worktype::is_organization(a) {
+        return format!("{{{}}}", bib_escape(a));
+    }
+    let (f, g) = split_name(a);
+    if g.is_empty() { bib_escape(&f) } else { format!("{}, {}", bib_escape(&f), bib_escape(&g)) }
+}
+
 pub fn bibtex(papers: &[Paper]) -> String {
+    use crate::worktype::Kind;
     // papers from the library carry their fixed key; others (cited in a document only) get one
     // from their details, made unique within this export
     let mut taken: std::collections::HashSet<String> =
         papers.iter().filter(|p| !p.cite_key.is_empty()).map(|p| p.cite_key.to_lowercase()).collect();
     let mut out = String::new();
     for p in papers {
-        let m = &p.meta;
         let key = if p.cite_key.is_empty() {
-            let k = unique_key(&cite_key(m), &taken);
+            let k = unique_key(&cite_key(&p.meta), &taken);
             taken.insert(k.to_lowercase());
             k
         } else {
             p.cite_key.clone()
         };
-        let kind = if m.journal.is_empty() || m.arxiv == m.journal { "misc" } else { "article" };
-        out += &format!("@{kind}{{{key},\n");
+        let m = &crate::worktype::for_export(&p.meta);
+        let kind = crate::worktype::kind(m);
+        let entry = bibtex_type(m);
+        out += &format!("@{entry}{{{key},\n");
         let mut field = |k: &str, v: &str| {
             if !v.trim().is_empty() {
                 out += &format!("  {k} = {{{v}}},\n");
             }
         };
         field("title", &format!("{{{}}}", bib_escape(&m.title)));
-        let authors: Vec<String> = m.authors.iter().map(|a| {
-            let (f, g) = split_name(a);
-            if g.is_empty() { bib_escape(&f) } else { format!("{}, {}", bib_escape(&f), bib_escape(&g)) }
-        }).collect();
+        let authors: Vec<String> = m.authors.iter().map(|a| bib_name(a)).collect();
         field("author", &authors.join(" and "));
-        field("journal", &bib_escape(&m.journal));
+        let journal = bib_escape(&m.journal);
+        match entry {
+            "article" => field("journal", &journal),
+            "inproceedings" | "incollection" => {
+                field("booktitle", &journal);
+                field("series", &bib_escape(&m.series));
+            }
+            "book" => field("series", &bib_escape(if m.series.is_empty() { &m.journal } else { &m.series })),
+            "techreport" => field("institution", &bib_escape(if m.publisher.is_empty() { &m.journal } else { &m.publisher })),
+            "phdthesis" => field("school", &bib_escape(if m.publisher.is_empty() { &m.journal } else { &m.publisher })),
+            _ => match kind {
+                // plain BibTeX styles (plain, unsrt) show howpublished, not the eprint
+                Kind::Preprint if !m.arxiv.is_empty() => field("howpublished", &format!("arXiv preprint arXiv:{}", m.arxiv)),
+                Kind::Preprint if !m.journal.is_empty() => field("howpublished", &format!("{journal} preprint")),
+                _ => field("howpublished", &journal),
+            },
+        }
         field("year", &m.year());
         field("volume", &m.volume);
         field("number", &m.issue);
         field("pages", &m.pages.replace('-', "--").replace('–', "--"));
+        if !matches!(entry, "article" | "misc" | "techreport" | "phdthesis") {
+            field("publisher", &bib_escape(&m.publisher));
+        }
         field("doi", &m.doi);
         field("pmid", &m.pmid);
         if !m.arxiv.is_empty() {
@@ -192,22 +236,48 @@ pub fn bibtex(papers: &[Paper]) -> String {
     out
 }
 
+/// The RIS type for a paper's kind.
+pub fn ris_type(m: &PaperMeta) -> &'static str {
+    use crate::worktype::Kind::*;
+    match crate::worktype::kind(m) {
+        Article => "JOUR",
+        Conference => "CPAPER",
+        Chapter => "CHAP",
+        Book => "BOOK",
+        Report => "RPRT",
+        Standard => "STAND",
+        Thesis => "THES",
+        Dataset => "DATA",
+        Preprint | Other => if m.journal.is_empty() { "GEN" } else { "JOUR" },
+    }
+}
+
 pub fn ris(papers: &[Paper]) -> String {
     let mut out = String::new();
     for p in papers {
-        let m = &p.meta;
+        let m = &crate::worktype::for_export(&p.meta);
+        let ty = ris_type(m);
         let mut line = |k: &str, v: &str| {
             if !v.trim().is_empty() {
                 out += &format!("{k}  - {}\r\n", v.trim());
             }
         };
-        line("TY", if m.journal.is_empty() { "GEN" } else { "JOUR" });
+        line("TY", ty);
         for a in &m.authors {
             let (f, g) = split_name(a);
-            line("AU", &if g.is_empty() { f } else { format!("{f}, {g}") });
+            line("AU", &if g.is_empty() || crate::worktype::is_organization(a) { a.clone() } else { format!("{f}, {g}") });
         }
         line("TI", &m.title);
-        line("JO", &m.journal);
+        match ty {
+            // the book or proceedings title, and its series
+            "CPAPER" | "CHAP" => {
+                line("T2", &m.journal);
+                line("T3", &m.series);
+            }
+            "BOOK" => line("T3", if m.series.is_empty() { &m.journal } else { &m.series }),
+            "RPRT" | "STAND" | "THES" | "DATA" | "GEN" => line("T2", &m.journal),
+            _ => line("JO", &m.journal),
+        }
         line("PY", &m.year());
         line("DA", &m.date.replace('-', "/"));
         line("VL", &m.volume);
@@ -215,6 +285,7 @@ pub fn ris(papers: &[Paper]) -> String {
         let (sp, ep) = m.pages.split_once(['-', '–']).unwrap_or((m.pages.as_str(), ""));
         line("SP", sp);
         line("EP", ep);
+        line("PB", &m.publisher);
         line("DO", &m.doi);
         line("UR", &m.url);
         line("AB", &m.abstract_text);
@@ -226,8 +297,20 @@ pub fn ris(papers: &[Paper]) -> String {
     out
 }
 
+/// A conference paper or chapter: cited "In *Book title*", without volume and issue.
+fn in_book(m: &PaperMeta) -> bool {
+    matches!(crate::worktype::kind(m), crate::worktype::Kind::Conference | crate::worktype::Kind::Chapter)
+}
+
 pub fn citation(p: &Paper, style: CitationStyle) -> String {
+    // titles and names in capitals in proper case (the library keeps them as they are)
+    let fixed = Paper { meta: crate::worktype::for_export(&p.meta), ..p.clone() };
+    styled(&fixed, style)
+}
+
+fn styled(p: &Paper, style: CitationStyle) -> String {
     let m = &p.meta;
+    let book = in_book(m);
     let names: Vec<(String, String)> = m.authors.iter().map(|a| split_name(a)).collect();
     let doi = if m.doi.is_empty() { String::new() } else { format!("https://doi.org/{}", m.doi) };
     let pages = m.pages.replace('-', "–");
@@ -247,7 +330,16 @@ pub fn citation(p: &Paper, style: CitationStyle) -> String {
                 }
             };
             let mut s = format!("{} ({}). {}.", authors, if m.year().is_empty() { "n.d.".into() } else { m.year() }, m.title.trim_end_matches('.'));
-            if !m.journal.is_empty() {
+            if book && !m.journal.is_empty() {
+                s += &format!(" In *{}*", m.journal);
+                if !pages.is_empty() {
+                    s += &format!(" (pp. {pages})");
+                }
+                s += ".";
+                if !m.publisher.is_empty() {
+                    s += &format!(" {}.", m.publisher);
+                }
+            } else if !m.journal.is_empty() {
                 s += &format!(" *{}*", m.journal);
                 if !m.volume.is_empty() {
                     s += &format!(", *{}*", m.volume);
@@ -269,7 +361,16 @@ pub fn citation(p: &Paper, style: CitationStyle) -> String {
             let list: Vec<String> = names.iter().take(6).map(|(f, g)| format!("{f} {}", initials(g, false, false)).trim().to_string()).collect();
             let authors = if names.len() > 6 { format!("{}, et al", list.join(", ")) } else { list.join(", ") };
             let mut s = format!("{}. {}.", authors, m.title.trim_end_matches('.'));
-            if !m.journal.is_empty() {
+            if book && !m.journal.is_empty() {
+                s += &format!(" In: {}.", m.journal);
+                if !m.publisher.is_empty() {
+                    s += &format!(" {};", m.publisher);
+                }
+                s += &format!(" {}.", m.year());
+                if !pages.is_empty() {
+                    s += &format!(" p. {}.", m.pages);
+                }
+            } else if !m.journal.is_empty() {
                 s += &format!(" {}. {}", m.journal, m.year());
                 if !m.volume.is_empty() {
                     s += &format!(";{}", m.volume);
@@ -299,6 +400,15 @@ pub fn citation(p: &Paper, style: CitationStyle) -> String {
                 _ => format!("{} et al.", fmt(&names[0])),
             };
             let mut s = format!("{} {}.", authors, m.title.trim_end_matches('.'));
+            if book && !m.journal.is_empty() {
+                s += &format!(" in *{}*", m.journal);
+                if !pages.is_empty() {
+                    s += &format!(" {pages}");
+                }
+                let by = [m.publisher.clone(), m.year()].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(", ");
+                s += &format!(" ({by}).");
+                return s;
+            }
             if !m.journal.is_empty() {
                 s += &format!(" *{}*", m.journal);
                 if !m.volume.is_empty() {
@@ -311,7 +421,7 @@ pub fn citation(p: &Paper, style: CitationStyle) -> String {
             s += &format!(" ({}).", m.year());
             s
         }
-        _ => more_citation(p, style),
+        _ => more_citation(p, style, book),
     }
 }
 
@@ -326,7 +436,7 @@ fn and_list(items: &[String], and: &str, serial: bool) -> String {
 }
 
 /// The styles added after APA, Vancouver and Nature. Markdown *italic* and **bold**, as above.
-fn more_citation(p: &Paper, style: CitationStyle) -> String {
+fn more_citation(p: &Paper, style: CitationStyle, book: bool) -> String {
     let m = &p.meta;
     let names: Vec<(String, String)> = m.authors.iter().map(|a| split_name(a)).collect();
     let year = if m.year().is_empty() { "n.d.".to_string() } else { m.year() };
@@ -357,7 +467,11 @@ fn more_citation(p: &Paper, style: CitationStyle) -> String {
                 and_list(&names.iter().map(|n| fam_init(n, false)).collect::<Vec<_>>(), "and", false)
             };
             let mut s = format!("{authors} ({year}) ‘{title}’");
-            if !m.journal.is_empty() {
+            if book && !m.journal.is_empty() {
+                s += &format!(", in *{}*", m.journal);
+                if !m.publisher.is_empty() { s += &format!(". {}", m.publisher); }
+                if !pages.is_empty() { s += &format!(", pp. {pages}"); }
+            } else if !m.journal.is_empty() {
                 s += &format!(", *{}*", m.journal);
                 if !m.volume.is_empty() {
                     s += &format!(", {}", m.volume);
@@ -376,7 +490,12 @@ fn more_citation(p: &Paper, style: CitationStyle) -> String {
             let mut authors = if names.len() > 10 { format!("{}, et al", list.join(", ")) } else { and_list(&list, "and", true) };
             end(&mut authors);
             let mut s = format!("{authors} {year}. “{title}.”");
-            if !m.journal.is_empty() {
+            if book && !m.journal.is_empty() {
+                s += &format!(" In *{}*", m.journal);
+                if !pages.is_empty() { s += &format!(", {pages}"); }
+                s += ".";
+                if !m.publisher.is_empty() { s += &format!(" {}.", m.publisher); }
+            } else if !m.journal.is_empty() {
                 s += &format!(" *{}*", m.journal);
                 if !m.volume.is_empty() {
                     s += &format!(" {}", m.volume);
@@ -398,7 +517,12 @@ fn more_citation(p: &Paper, style: CitationStyle) -> String {
             };
             if !authors.is_empty() { end(&mut authors); authors.push(' '); }
             let mut s = format!("{authors}“{title}.”");
-            if !m.journal.is_empty() {
+            if book && !m.journal.is_empty() {
+                s += &format!(" *{}*", m.journal);
+                if !m.publisher.is_empty() { s += &format!(", {}", m.publisher); }
+                s += &format!(", {year}");
+                if !pages.is_empty() { s += &format!(", pp. {pages}"); }
+            } else if !m.journal.is_empty() {
                 s += &format!(" *{}*", m.journal);
                 if !m.volume.is_empty() { s += &format!(", vol. {}", m.volume); }
                 if !m.issue.is_empty() { s += &format!(", no. {}", m.issue); }
@@ -416,7 +540,12 @@ fn more_citation(p: &Paper, style: CitationStyle) -> String {
             let list: Vec<String> = names.iter().take(10).map(|n| fam_init(n, false)).collect();
             let authors = if names.len() > 10 { format!("{}, et al.", list.join(", ")) } else { and_list(&list, "and", true) };
             let mut s = format!("{authors} ({year}). {title}.");
-            if !m.journal.is_empty() {
+            if book && !m.journal.is_empty() {
+                s += &format!(" In {}", m.journal);
+                if !pages.is_empty() { s += &format!(", pp. {pages}"); }
+                s += ".";
+                if !m.publisher.is_empty() { s += &format!(" {}.", m.publisher); }
+            } else if !m.journal.is_empty() {
                 s += &format!(" {}", m.journal);
                 if !m.volume.is_empty() { s += &format!(" *{}*", m.volume); }
                 if !pages.is_empty() { s += &format!(", {pages}"); }
@@ -433,6 +562,15 @@ fn more_citation(p: &Paper, style: CitationStyle) -> String {
                 and_list(&names.iter().map(init_fam).collect::<Vec<_>>(), "and", true)
             };
             let mut s = format!("{authors}, “{title},”");
+            if book && !m.journal.is_empty() {
+                s += &format!(" in *{}*", m.journal);
+                if !m.publisher.is_empty() { s += &format!(", {}", m.publisher); }
+                s += &format!(", {year}");
+                if !pages.is_empty() { s += &format!(", pp. {pages}"); }
+                if !m.doi.is_empty() { s += &format!(", doi: {}", m.doi); }
+                s += ".";
+                return s;
+            }
             if !m.journal.is_empty() {
                 s += &format!(" *{}*", m.journal);
                 if !m.volume.is_empty() { s += &format!(", vol. {}", m.volume); }
@@ -454,7 +592,13 @@ fn more_citation(p: &Paper, style: CitationStyle) -> String {
                 names.iter().map(fmt).collect::<Vec<_>>().join(", ")
             };
             let mut s = if authors.is_empty() { format!("{title}.") } else { format!("{authors}. {title}.") };
-            if !m.journal.is_empty() {
+            if book && !m.journal.is_empty() {
+                s += &format!(" In: *{}*.", m.journal);
+                if !m.publisher.is_empty() { s += &format!(" {};", m.publisher); }
+                s += &format!(" {year}");
+                if !m.pages.is_empty() { s += &format!(":{}", m.pages); }
+                s += ".";
+            } else if !m.journal.is_empty() {
                 s += &format!(" *{}*. {year}", m.journal);
                 if !m.volume.is_empty() {
                     s += &format!(";{}", m.volume);
@@ -474,6 +618,14 @@ fn more_citation(p: &Paper, style: CitationStyle) -> String {
                 names.iter().map(init_fam).collect::<Vec<_>>().join(", ")
             };
             let mut s = format!("{authors}, {title}.");
+            if book && !m.journal.is_empty() {
+                s += &format!(" in *{}*", m.journal);
+                let by = [m.publisher.clone(), year.clone()].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(", ");
+                s += &format!(" ({by})");
+                if !pages.is_empty() { s += &format!(", pp. {pages}"); }
+                s += ".";
+                return s;
+            }
             if !m.journal.is_empty() {
                 s += &format!(" *{}*", m.journal);
                 if !m.volume.is_empty() { s += &format!(" **{}**", m.volume); }
@@ -487,7 +639,13 @@ fn more_citation(p: &Paper, style: CitationStyle) -> String {
             let list: Vec<String> = names.iter().take(10).map(|n| fam_init(n, true)).collect();
             let authors = if names.len() > 10 { format!("{}; et al.", list.join("; ")) } else { list.join("; ") };
             let mut s = if authors.is_empty() { format!("{title}.") } else { format!("{authors} {title}.") };
-            if !m.journal.is_empty() {
+            if book && !m.journal.is_empty() {
+                s += &format!(" In *{}*;", m.journal);
+                if !m.publisher.is_empty() { s += &format!(" {},", m.publisher); }
+                s += &format!(" {year}");
+                if !pages.is_empty() { s += &format!("; pp {pages}"); }
+                s += ".";
+            } else if !m.journal.is_empty() {
                 s += &format!(" *{}* **{year}**", m.journal);
                 if !m.volume.is_empty() {
                     s += &format!(", *{}*", m.volume);
@@ -499,6 +657,6 @@ fn more_citation(p: &Paper, style: CitationStyle) -> String {
             if !m.doi.is_empty() { s += &format!(" DOI: {}.", m.doi); }
             s
         }
-        CitationStyle::Apa | CitationStyle::Vancouver | CitationStyle::Nature => citation(p, style),
+        CitationStyle::Apa | CitationStyle::Vancouver | CitationStyle::Nature => styled(p, style),
     }
 }

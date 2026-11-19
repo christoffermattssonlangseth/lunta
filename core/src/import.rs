@@ -25,6 +25,27 @@ pub struct ImportReport {
 // ---------------------------------------------------------------- BibTeX
 
 pub fn parse_bibtex(text: &str) -> Vec<ImportEntry> {
+    parse_bibtex_raw(text).iter().map(|e| entry_from_bib(&e.kind, &e.fields)).collect()
+}
+
+/// One BibTeX entry as written: its type ("article"), key, fields (LaTeX turned into text) and
+/// its text in the file, from "@" to the closing brace.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RawBibEntry {
+    pub kind: String,
+    pub key: String,
+    pub fields: Vec<(String, String)>,
+    pub raw: String,
+}
+
+impl RawBibEntry {
+    pub fn get(&self, k: &str) -> String {
+        self.fields.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap_or_default()
+    }
+}
+
+/// The entries of a .bib file (not @string, @comment or @preamble), with their keys.
+pub fn parse_bibtex_raw(text: &str) -> Vec<RawBibEntry> {
     let chars: Vec<char> = text.chars().collect();
     let mut i = 0;
     let mut strings: Vec<(String, String)> = vec![];
@@ -34,6 +55,7 @@ pub fn parse_bibtex(text: &str) -> Vec<ImportEntry> {
             i += 1;
             continue;
         }
+        let at = i;
         i += 1;
         let start = i;
         while i < chars.len() && chars[i].is_alphanumeric() {
@@ -84,7 +106,9 @@ pub fn parse_bibtex(text: &str) -> Vec<ImportEntry> {
             _ => {}
         }
         let fields = parse_fields(&body, &strings);
-        out.push(entry_from_bib(&kind, &fields));
+        let key = body.split(',').next().unwrap_or("").trim().to_string();
+        let raw: String = chars[at..(j + 1).min(chars.len())].iter().collect();
+        out.push(RawBibEntry { kind, key, fields, raw });
     }
     out
 }
@@ -304,7 +328,29 @@ fn nfc(s: &str) -> String {
     table.iter().find(|(k, _)| *k == s).map(|(_, v)| v.to_string()).unwrap_or_else(|| s.to_string())
 }
 
-fn entry_from_bib(kind: &str, f: &[(String, String)]) -> ImportEntry {
+/// The work type a BibTeX entry type says (with an arXiv "journal" a preprint).
+pub fn bib_work_type(kind: &str, f: &[(String, String)]) -> String {
+    let get = |k: &str| f.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap_or_default();
+    let venue = format!("{} {} {}", get("journal"), get("howpublished"), get("archiveprefix")).to_lowercase();
+    let preprint = venue.contains("arxiv") || venue.contains("biorxiv") || venue.contains("medrxiv") || venue.contains("preprint")
+        || get("eprinttype").eq_ignore_ascii_case("arxiv");
+    match kind {
+        "article" if preprint => "posted-content",
+        "article" => "journal-article",
+        "inproceedings" | "conference" => "proceedings-article",
+        "incollection" | "inbook" => "book-chapter",
+        "book" | "mvbook" | "collection" | "proceedings" => "book",
+        "techreport" | "report" => "report",
+        "phdthesis" | "mastersthesis" | "thesis" => "dissertation",
+        "dataset" => "dataset",
+        "standard" => "standard",
+        "misc" | "online" | "unpublished" if preprint => "posted-content",
+        _ => "",
+    }
+    .to_string()
+}
+
+pub(crate) fn entry_from_bib(kind: &str, f: &[(String, String)]) -> ImportEntry {
     let get = |k: &str| f.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap_or_default();
     let authors = split_bib_authors(&get("author"));
     let year = get("year");
@@ -317,8 +363,24 @@ fn entry_from_bib(kind: &str, f: &[(String, String)]) -> ImportEntry {
     if journal.is_empty() && kind != "article" {
         journal = get("booktitle");
     }
+    let work_type = bib_work_type(kind, f);
+    // "arXiv preprint arXiv:2308.13418" is where it is, not a journal
+    let mut arxiv_venue = String::new();
+    if work_type == "posted-content" {
+        let venue = if journal.is_empty() { get("howpublished") } else { journal.clone() };
+        if let Some(c) = regex::Regex::new(r"(?i)arxiv[:\s]*(\d{4}\.\d{4,5})").unwrap().captures(&venue) {
+            arxiv_venue = c[1].to_string();
+        }
+        if venue.to_lowercase().contains("arxiv") {
+            journal = "arXiv".into();
+        }
+    }
+    let mut publisher = get("publisher");
+    if publisher.is_empty() {
+        publisher = if !get("institution").is_empty() { get("institution") } else { get("school") };
+    }
     let eprint = get("eprint");
-    let arxiv = if get("archiveprefix").eq_ignore_ascii_case("arxiv") || get("eprinttype").eq_ignore_ascii_case("arxiv") { eprint } else { String::new() };
+    let arxiv = if get("archiveprefix").eq_ignore_ascii_case("arxiv") || get("eprinttype").eq_ignore_ascii_case("arxiv") { eprint } else { arxiv_venue };
     let doi = crate::metadata::doi_in(&get("doi")).unwrap_or_else(|| crate::metadata::doi_in(&get("url")).unwrap_or_default());
     let meta = PaperMeta {
         title: get("title"),
@@ -328,7 +390,7 @@ fn entry_from_bib(kind: &str, f: &[(String, String)]) -> ImportEntry {
         volume: get("volume"),
         issue: get("number"),
         pages: get("pages").replace('–', "-"),
-        publisher: get("publisher"),
+        publisher,
         doi,
         pmid: get("pmid"),
         pmcid: get("pmcid"),
@@ -337,6 +399,8 @@ fn entry_from_bib(kind: &str, f: &[(String, String)]) -> ImportEntry {
         abstract_text: get("abstract"),
         keywords: split_list(&get("keywords")),
         license: String::new(),
+        work_type,
+        series: get("series"),
     };
     let mut files = vec![];
     for (n, v) in f {
@@ -597,12 +661,25 @@ fn entry_from_ris(f: &[(String, String)]) -> ImportEntry {
             files.extend(pdf_paths(&v));
         }
     }
+    let work_type = match get(&["TY"]).as_str() {
+        "JOUR" | "JFULL" | "MGZN" | "NEWS" => "journal-article",
+        "CPAPER" | "CONF" => "proceedings-article",
+        "CHAP" => "book-chapter",
+        "BOOK" | "EDBOOK" => "book",
+        "RPRT" => "report",
+        "THES" => "dissertation",
+        "DATA" => "dataset",
+        "STAND" => "standard",
+        _ => "",
+    };
     ImportEntry {
         meta: PaperMeta {
             title: get(&["TI", "T1", "CT"]),
             authors,
             date,
-            journal: get(&["JO", "T2", "JF", "JA"]),
+            work_type: work_type.into(),
+            series: get(&["T3"]),
+            journal: get(&["JO", "T2", "JF", "JA", "BT"]),
             volume: get(&["VL"]),
             issue: get(&["IS"]),
             pages,

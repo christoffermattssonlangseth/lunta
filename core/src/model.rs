@@ -21,6 +21,16 @@ pub struct PaperMeta {
     pub abstract_text: String,
     pub keywords: Vec<String>,
     pub license: String,
+    /// What kind of work it is, in Crossref's words: "journal-article", "proceedings-article",
+    /// "book-chapter", "book", "posted-content" (a preprint), "report", "dissertation",
+    /// "dataset", "standard"… Empty when unknown (papers added before 1.0.9, or typed in):
+    /// `worktype::kind` then infers it from the other details. For a book chapter or conference
+    /// paper `journal` is the book's (proceedings') title.
+    #[uniffi(default = "")]
+    pub work_type: String,
+    /// The book series a chapter or proceedings volume is in ("Lecture Notes in Computer Science").
+    #[uniffi(default = "")]
+    pub series: String,
 }
 
 impl PaperMeta {

@@ -960,3 +960,167 @@ fn concurrent_keys_resolve_the_same_everywhere() {
     assert_eq!(mac.paper(q.id.clone()).unwrap().cite_key, "castelo2024");
     assert!(mac.set_cite_key(p.id.clone(), "Castelo2024".into()).is_err());
 }
+
+fn keyed_paper(meta: PaperMeta, key: &str) -> Paper {
+    Paper {
+        id: key.into(),
+        meta,
+        added: 0,
+        modified: 0,
+        has_pdf: false,
+        has_epub: false,
+        has_audio: false,
+        read: false,
+        starred: false,
+        must_read: false,
+        collections: vec![],
+        tags: vec![],
+        annotation_count: 0,
+        cite_key: key.into(),
+    }
+}
+
+#[test]
+fn exports_by_work_type() {
+    let grobid = PaperMeta {
+        title: "GROBID: Combining Automatic Bibliographic Data Recognition and Term Extraction for Scholarship Publications".into(),
+        authors: vec!["Patrice Lopez".into()],
+        date: "2009".into(),
+        journal: "Research and Advanced Technology for Digital Libraries".into(),
+        series: "Lecture Notes in Computer Science".into(),
+        pages: "473-474".into(),
+        publisher: "Springer Berlin Heidelberg".into(),
+        doi: "10.1007/978-3-642-04346-8_62".into(),
+        work_type: "book-chapter".into(),
+        ..Default::default()
+    };
+    let figures = PaperMeta {
+        title: "PDFFigures 2.0: Mining Figures from Research Papers".into(),
+        authors: vec!["Christopher Clark".into(), "Santosh Divvala".into()],
+        date: "2016-06-19".into(),
+        journal: "Proceedings of the 16th ACM/IEEE-CS on Joint Conference on Digital Libraries".into(),
+        pages: "143-152".into(),
+        publisher: "ACM".into(),
+        doi: "10.1145/2910896.2910904".into(),
+        work_type: "proceedings-article".into(),
+        ..Default::default()
+    };
+    // as an older version stored it: no type, in capitals
+    let kendall = PaperMeta {
+        title: "A NEW MEASURE OF RANK CORRELATION".into(),
+        authors: vec!["M. G. KENDALL".into()],
+        date: "1938-06-01".into(),
+        journal: "Biometrika".into(),
+        volume: "30".into(),
+        issue: "1-2".into(),
+        pages: "81-93".into(),
+        doi: "10.1093/biomet/30.1-2.81".into(),
+        ..Default::default()
+    };
+    let nougat = PaperMeta {
+        title: "Nougat: Neural Optical Understanding for Academic Documents".into(),
+        authors: vec!["Lukas Blecher".into(), "Robert Stojnic".into()],
+        date: "2023-08-25".into(),
+        journal: "arXiv".into(),
+        doi: "10.48550/arXiv.2308.13418".into(),
+        arxiv: "2308.13418".into(),
+        url: "https://arxiv.org/abs/2308.13418".into(),
+        work_type: "posted-content".into(),
+        ..Default::default()
+    };
+    // an older LNCS paper: the series as its journal, no type
+    let crdt = PaperMeta {
+        title: "Conflict-Free Replicated Data Types".into(),
+        authors: vec!["Marc Shapiro".into()],
+        date: "2011".into(),
+        journal: "Lecture Notes in Computer Science".into(),
+        ..Default::default()
+    };
+    let report = PaperMeta {
+        title: "Web Annotation Data Model".into(),
+        authors: vec!["World Wide Web Consortium".into()],
+        date: "2017".into(),
+        publisher: "W3C".into(),
+        work_type: "report".into(),
+        ..Default::default()
+    };
+    let papers: Vec<Paper> = [(grobid, "g"), (figures, "f"), (kendall, "k"), (nougat, "n"), (crdt, "c"), (report, "r")]
+        .into_iter()
+        .map(|(m, k)| keyed_paper(m, k))
+        .collect();
+    let bib = export::bibtex(&papers);
+    let entry = |key: &str| bib.split("\n\n").find(|e| e.contains(&format!("{{{key},"))).unwrap().to_string();
+    assert_eq!(
+        entry("g"),
+        "@inproceedings{g,\n  title = {{GROBID: Combining Automatic Bibliographic Data Recognition and Term Extraction for Scholarship Publications}},\n  author = {Lopez, Patrice},\n  booktitle = {Research and Advanced Technology for Digital Libraries},\n  series = {Lecture Notes in Computer Science},\n  year = {2009},\n  pages = {473--474},\n  publisher = {Springer Berlin Heidelberg},\n  doi = {10.1007/978-3-642-04346-8_62},\n}"
+    );
+    assert!(entry("f").starts_with("@inproceedings{f,\n  title = {{PDFFigures 2.0: Mining Figures from Research Papers}},"), "{}", entry("f"));
+    assert!(entry("f").contains("booktitle = {Proceedings of the 16th ACM/IEEE-CS on Joint Conference on Digital Libraries}"));
+    assert_eq!(
+        entry("k"),
+        "@article{k,\n  title = {{A New Measure of Rank Correlation}},\n  author = {Kendall, M. G.},\n  journal = {Biometrika},\n  year = {1938},\n  volume = {30},\n  number = {1-2},\n  pages = {81--93},\n  doi = {10.1093/biomet/30.1-2.81},\n}"
+    );
+    assert_eq!(
+        entry("n"),
+        "@misc{n,\n  title = {{Nougat: Neural Optical Understanding for Academic Documents}},\n  author = {Blecher, Lukas and Stojnic, Robert},\n  howpublished = {arXiv preprint arXiv:2308.13418},\n  year = {2023},\n  doi = {10.48550/arXiv.2308.13418},\n  eprint = {2308.13418},\n  archivePrefix = {arXiv},\n  url = {https://arxiv.org/abs/2308.13418},\n}"
+    );
+    assert!(entry("c").starts_with("@inproceedings{c,") && entry("c").contains("booktitle = {Lecture Notes in Computer Science}"), "{}", entry("c"));
+    assert!(entry("r").starts_with("@techreport{r,") && entry("r").contains("author = {{World Wide Web Consortium}}") && entry("r").contains("institution = {W3C}"), "{}", entry("r"));
+
+    let ris = export::ris(&papers);
+    assert!(ris.contains("TY  - CHAP\r\nAU  - Lopez, Patrice\r\nTI  - GROBID"), "{ris}");
+    assert!(ris.contains("T2  - Research and Advanced Technology for Digital Libraries\r\nT3  - Lecture Notes in Computer Science\r\n"));
+    assert!(ris.contains("TY  - CPAPER\r\n") && ris.contains("TY  - RPRT\r\nAU  - World Wide Web Consortium\r\n"));
+    assert!(ris.contains("TI  - A New Measure of Rank Correlation\r\n"));
+    // RIS and BibTeX read back with their types
+    let back = import::parse_any(&ris);
+    assert_eq!(back.iter().map(|e| e.meta.work_type.as_str()).collect::<Vec<_>>(), vec!["book-chapter", "proceedings-article", "journal-article", "journal-article", "proceedings-article", "report"]);
+    assert_eq!(back[0].meta.series, "Lecture Notes in Computer Science");
+    let back = import::parse_bibtex(&bib);
+    assert_eq!(back.iter().map(|e| e.meta.work_type.as_str()).collect::<Vec<_>>(), vec!["proceedings-article", "proceedings-article", "journal-article", "posted-content", "proceedings-article", "report"]);
+    assert_eq!((back[3].meta.arxiv.as_str(), back[3].meta.journal.as_str()), ("2308.13418", "arXiv"));
+
+    // citations: conference papers "In" their proceedings, capitals fixed
+    let apa = export::citation(&papers[1], CitationStyle::Apa);
+    assert_eq!(apa, "Clark, C., & Divvala, S. (2016). PDFFigures 2.0: Mining Figures from Research Papers. In *Proceedings of the 16th ACM/IEEE-CS on Joint Conference on Digital Libraries* (pp. 143–152). ACM. https://doi.org/10.1145/2910896.2910904");
+    let van = export::citation(&papers[0], CitationStyle::Vancouver);
+    assert_eq!(van, "Lopez P. GROBID: Combining Automatic Bibliographic Data Recognition and Term Extraction for Scholarship Publications. In: Research and Advanced Technology for Digital Libraries. Springer Berlin Heidelberg; 2009. p. 473-474. doi:10.1007/978-3-642-04346-8_62");
+    let ieee = export::citation(&papers[1], CitationStyle::Ieee);
+    assert!(ieee.contains("“PDFFigures 2.0: Mining Figures from Research Papers,” in *Proceedings of the 16th"), "{ieee}");
+    assert!(!ieee.contains("vol."), "{ieee}");
+    let k = export::citation(&papers[2], CitationStyle::Apa);
+    assert!(k.starts_with("Kendall, M. G. (1938). A New Measure of Rank Correlation. *Biometrika*, *30*(1-2), 81–93."), "{k}");
+    for style in CitationStyle::ALL {
+        let c = export::citation(&papers[0], style);
+        assert!(c.contains("Research and Advanced Technology for Digital Libraries"), "{style:?}: {c}");
+    }
+    // CSL item types
+    let types: Vec<&str> = papers.iter().map(|p| csl::csl_type(&p.meta)).collect();
+    assert_eq!(types, vec!["chapter", "paper-conference", "article-journal", "article", "paper-conference", "report"]);
+}
+
+#[test]
+fn work_type_in_the_log_is_compatible() {
+    // a log line from an older version (no work_type or series) reads with them empty
+    let old = r#"{"at":1,"device":"old","op":"add_paper","paper":"p1","meta":{"title":"T","authors":["A B"],"date":"2020","journal":"Proceedings of the 2020 CHI Conference"}}"#;
+    let op: store::Op = serde_json::from_str(old).unwrap();
+    let store::OpKind::AddPaper { meta, .. } = op.kind else { panic!() };
+    assert_eq!((meta.work_type.as_str(), meta.series.as_str()), ("", ""));
+    assert_eq!(worktype::kind(&meta), worktype::Kind::Conference);
+    // and a newer version's fields are skipped by a reader that doesn't know them (serde
+    // ignores unknown fields, as older versions do with work_type and series)
+    let newer = r#"{"title":"T","work_type":"report","series":"S","some_future_field":"x"}"#;
+    let m: PaperMeta = serde_json::from_str(newer).unwrap();
+    assert_eq!(m.work_type, "report");
+    // a log with the new op and fields replays; the folder's extra entries are kept
+    let root = tmp().join("lib");
+    let lib = open(&root, "mac");
+    let c = lib.create_collection("F".into(), None).unwrap();
+    lib.set_collection_bib(c.id.clone(), "@misc{x, title={X}}".into()).unwrap();
+    let again = open(&root, "phone");
+    assert_eq!(again.collection_bib(c.id.clone()), "@misc{x, title={X}}");
+    assert!(again.kept_bibtex(Some(c.id.clone())).unwrap().contains("@misc{x, title={X}}"));
+    // a deleted folder has no .bib (its file is left as it was)
+    again.delete_collection(c.id.clone()).unwrap();
+    assert!(again.kept_bibtex(Some(c.id)).is_none());
+}

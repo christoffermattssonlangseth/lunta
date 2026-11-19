@@ -10,6 +10,7 @@ uniffi::setup_scaffolding!();
 
 #[cfg(feature = "convert")]
 pub mod adder;
+pub mod bibimport;
 pub mod csl;
 #[cfg(feature = "convert")]
 pub mod convert;
@@ -35,6 +36,7 @@ pub mod pagetext;
 pub mod store;
 #[cfg(feature = "tts")]
 pub mod tts;
+pub mod worktype;
 
 use model::*;
 use std::collections::BTreeSet;
@@ -839,7 +841,7 @@ fn paper_of(g: &Inner, id: &str) -> Paper {
 
 fn merge_meta(m: &mut PaperMeta, o: &PaperMeta) {
     macro_rules! f { ($($x:ident),*) => { $( if m.$x.is_empty() { m.$x = o.$x.clone(); } )* } }
-    f!(title, authors, date, journal, volume, issue, pages, publisher, doi, pmid, pmcid, arxiv, url, abstract_text, keywords, license);
+    f!(title, authors, date, journal, volume, issue, pages, publisher, doi, pmid, pmcid, arxiv, url, abstract_text, keywords, license, work_type, series);
 }
 
 // ---- free functions exported to Swift ----

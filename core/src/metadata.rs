@@ -114,7 +114,7 @@ pub fn resolve(input: &str) -> Result<PaperMeta> {
 
 fn fill(m: &mut PaperMeta, o: PaperMeta) {
     macro_rules! f { ($($x:ident),*) => { $( if m.$x.is_empty() { m.$x = o.$x.clone(); } )* } }
-    f!(title, authors, date, journal, volume, issue, pages, publisher, doi, pmid, pmcid, arxiv, url, abstract_text, keywords, license);
+    f!(title, authors, date, journal, volume, issue, pages, publisher, doi, pmid, pmcid, arxiv, url, abstract_text, keywords, license, work_type, series);
 }
 
 fn s(v: &Value) -> String {
@@ -146,7 +146,10 @@ pub fn crossref(doi: &str) -> Result<PaperMeta> {
         .map(|a| {
             a.iter()
                 .map(|x| {
-                    let n = format!("{} {}", s(&x["given"]), s(&x["family"])).trim().to_string();
+                    // some publishers send names in capitals ("M. G.", "KENDALL")
+                    let given = crate::worktype::fix_name_part(&s(&x["given"]), false);
+                    let family = crate::worktype::fix_name_part(&s(&x["family"]), true);
+                    let n = format!("{given} {family}").trim().to_string();
                     if n.is_empty() { s(&x["name"]) } else { n }
                 })
                 .filter(|n| !n.is_empty())
@@ -165,15 +168,37 @@ pub fn crossref(doi: &str) -> Result<PaperMeta> {
         .as_array()
         .and_then(|a| a.iter().map(|l| s(&l["URL"])).find(|u| u.contains("creativecommons")))
         .unwrap_or_default();
+    let work_type = s(&m["type"]);
+    let containers: Vec<String> = match &m["container-title"] {
+        Value::Array(a) => a.iter().map(|t| strip_tags(&s(t))).collect(),
+        v => vec![strip_tags(&s(v))],
+    };
+    let (mut journal, mut series) = crate::worktype::containers(&containers);
+    if work_type == "book" || work_type == "monograph" || work_type == "edited-book" {
+        // a book's container is its series
+        if series.is_empty() {
+            series = std::mem::take(&mut journal);
+        }
+    }
+    // "PDFFigures 2.0" + "Mining Figures from Research Papers"; a title in capitals in title case
+    let title = crate::worktype::join_subtitle(&strip_tags(&s(&m["title"])), &strip_tags(&s(&m["subtitle"])));
+    let title = crate::worktype::fix_title_case(&title);
+    let publisher = match work_type.as_str() {
+        // reports and theses: the institution, when Crossref names it
+        "report" | "dissertation" if !s(&m["institution"]["name"]).is_empty() => s(&m["institution"]["name"]),
+        _ => s(&m["publisher"]),
+    };
     Ok(PaperMeta {
-        title: strip_tags(&s(&m["title"])),
+        title,
         authors,
         date,
-        journal: s(&m["container-title"]),
+        journal,
+        series,
+        work_type,
         volume: s(&m["volume"]),
         issue: s(&m["issue"]),
         pages: s(&m["page"]),
-        publisher: s(&m["publisher"]),
+        publisher,
         doi: s(&m["DOI"]),
         url: s(&m["URL"]),
         abstract_text: strip_tags(&s(&m["abstract"])).trim_start_matches("Abstract").trim().to_string(),
@@ -206,9 +231,12 @@ pub fn europe_pmc(query: &str) -> Result<PaperMeta> {
         })
         .unwrap_or_default();
     let ji = &r["journalInfo"];
-    Ok(PaperMeta {
-        title: strip_tags(&s(&r["title"])).trim_end_matches('.').to_string(),
+    // preprints (bioRxiv, Research Square…) come from the source PPR
+    let work_type = if s(&r["source"]) == "PPR" { "posted-content" } else if s(&ji["journal"]["title"]).is_empty() { "" } else { "journal-article" };
+    let mut meta = PaperMeta {
+        title: crate::worktype::fix_title_case(strip_tags(&s(&r["title"])).trim_end_matches('.')),
         authors,
+        work_type: work_type.into(),
         date: {
             let d = s(&r["firstPublicationDate"]);
             if d.is_empty() { s(&r["pubYear"]) } else { d }
@@ -223,7 +251,12 @@ pub fn europe_pmc(query: &str) -> Result<PaperMeta> {
         abstract_text: strip_tags(&s(&r["abstractText"])),
         keywords: r["keywordList"]["keyword"].as_array().map(|a| a.iter().map(s).collect()).unwrap_or_default(),
         ..Default::default()
-    })
+    };
+    if work_type == "posted-content" && meta.journal.is_empty() {
+        meta.journal = s(&r["bookOrReportDetails"]["publisher"]);
+    }
+    crate::worktype::tidy(&mut meta);
+    Ok(meta)
 }
 
 fn xml_field(block: &str, tag: &str) -> Vec<String> {
@@ -245,6 +278,7 @@ pub fn arxiv(id: &str) -> Result<PaperMeta> {
         authors,
         date: xml_field(entry, "published").into_iter().next().unwrap_or_default().chars().take(10).collect(),
         journal: "arXiv".into(),
+        work_type: "posted-content".into(),
         doi: if doi.is_empty() { format!("10.48550/arXiv.{id}") } else { doi },
         arxiv: id.to_string(),
         url: format!("https://arxiv.org/abs/{id}"),
@@ -410,14 +444,14 @@ pub fn discover(query: &str, limit: u32) -> Result<Vec<DiscoverHit>> {
         return Ok(vec![]);
     }
     let url = format!(
-        "https://api.openalex.org/works?search={}&per_page={}&select=title,authorships,publication_date,primary_location,doi,ids,cited_by_count,open_access,abstract_inverted_index,biblio",
+        "https://api.openalex.org/works?search={}&per_page={}&select=title,authorships,publication_date,primary_location,doi,ids,cited_by_count,open_access,abstract_inverted_index,biblio,type,type_crossref",
         enc(q).replace('/', "%2F"),
         limit.clamp(1, 50)
     );
     works(&url)
 }
 
-const WORK_FIELDS: &str = "title,authorships,publication_date,primary_location,doi,ids,cited_by_count,open_access,abstract_inverted_index,biblio";
+const WORK_FIELDS: &str = "title,authorships,publication_date,primary_location,doi,ids,cited_by_count,open_access,abstract_inverted_index,biblio,type,type_crossref";
 
 /// What a watch follows.
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -546,9 +580,20 @@ fn parse_works(j: &Value) -> Vec<DiscoverHit> {
             (f, l) if !f.is_empty() && !l.is_empty() && f != l => format!("{f}-{l}"),
             (f, _) => f,
         };
-        let meta = PaperMeta {
+        // OpenAlex's own types lump conference papers in with articles; type_crossref doesn't
+        let work_type = match s(&w["type_crossref"]) {
+            t if !t.is_empty() => t,
+            _ => match s(&w["type"]).as_str() {
+                "preprint" => "posted-content".to_string(),
+                "conference-paper" => "proceedings-article".to_string(),
+                "article" => String::new(),
+                t => t.to_string(),
+            },
+        };
+        let mut meta = PaperMeta {
             title: strip_tags(&s(&w["title"])),
             authors,
+            work_type,
             date: s(&w["publication_date"]),
             journal: s(&w["primary_location"]["source"]["display_name"]),
             volume: s(&b["volume"]),
@@ -563,6 +608,7 @@ fn parse_works(j: &Value) -> Vec<DiscoverHit> {
         if meta.title.is_empty() {
             continue;
         }
+        crate::worktype::tidy(&mut meta);
         out.push(DiscoverHit {
             meta,
             cited_by: w["cited_by_count"].as_u64().unwrap_or(0) as u32,

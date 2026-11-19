@@ -33,6 +33,10 @@ pub enum OpKind {
     Tag { paper: String, tag: String, present: bool },
     CollectionUpsert { id: String, name: String, parent: Option<String> },
     CollectionDelete { id: String },
+    /// BibTeX entries that aren't papers (software, web pages), kept with a folder from an
+    /// imported .bib and written into its kept .bib file as they are; the latest wins (older
+    /// versions skip this op).
+    CollectionBib { collection: String, bib: String },
     Member { collection: String, paper: String, present: bool },
     AnnotationUpsert { annotation: Annotation },
     AnnotationDelete { paper: String, id: String },
@@ -71,6 +75,8 @@ pub struct State {
     /// Papers whose key is fixed: their own `SetCiteKey`. The others have a key worked out from
     /// their details until one is written (see `assign_cite_keys`).
     pub fixed_keys: BTreeSet<String>,
+    /// Folder id -> its extra BibTeX entries (`CollectionBib`).
+    pub collection_bib: BTreeMap<String, String>,
 }
 
 impl State {
@@ -130,8 +136,16 @@ impl State {
             OpKind::CollectionUpsert { id, name, parent } => {
                 self.collections.insert(id.clone(), (name.clone(), parent.clone()));
             }
+            OpKind::CollectionBib { collection, bib } => {
+                if bib.trim().is_empty() {
+                    self.collection_bib.remove(collection);
+                } else {
+                    self.collection_bib.insert(collection.clone(), bib.clone());
+                }
+            }
             OpKind::CollectionDelete { id } => {
                 self.collections.remove(id);
+                self.collection_bib.remove(id);
                 for p in self.papers.values_mut() {
                     p.collections.remove(id);
                 }
