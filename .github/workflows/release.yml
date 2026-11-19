@@ -28,7 +28,10 @@ jobs:
           # the update feeds of the release that is the latest until now (none before the first)
           mkdir -p feeds
           gh release download -R "$GITHUB_REPOSITORY" -D feeds -p latest.json -p appcast.xml 2>/dev/null || true
-          gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Lunta $GITHUB_REF_NAME" \
+          # a tag with a pre-release part (v1.1.0-1) is a test version: a pre-release, never the latest,
+          # so the apps' update checks (which read the latest release) don't offer it
+          pre=(); [[ "$GITHUB_REF_NAME" == *-* ]] && pre=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Lunta $GITHUB_REF_NAME" "${pre[@]}" \
             --notes "$(sed "s/VERSION/${GITHUB_REF_NAME#v}/g" .github/release-notes.md)"
           if ls feeds/* >/dev/null 2>&1; then gh release upload "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --clobber feeds/*; fi
 
