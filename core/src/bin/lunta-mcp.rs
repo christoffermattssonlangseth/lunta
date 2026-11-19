@@ -267,7 +267,7 @@ fn tools() -> Value {
             "name": name,
             "description": desc,
             "inputSchema": {"type": "object", "properties": props, "required": required},
-            "annotations": {"readOnlyHint": read_only, "openWorldHint": name == "find_new_papers" || name == "add_paper" || name == "find_pdf" || name == "resolve_citations"},
+            "annotations": {"readOnlyHint": read_only, "openWorldHint": name == "find_new_papers" || name == "add_paper" || name == "find_pdf" || name == "resolve_citations" || name == "check_references"},
         })
     }
     let ids = json!({"type": "array", "items": {"type": "string"}, "description": "Paper ids"});
@@ -319,6 +319,12 @@ fn tools() -> Value {
           json!({"id": {"type": "string"}, "title": {"type": "string"}, "authors": {"type": "array", "items": {"type": "string"}},
                  "date": {"type": "string"}, "journal": {"type": "string"}, "doi": {"type": "string"}, "abstract": {"type": "string"},
                  "keywords": {"type": "array", "items": {"type": "string"}}}), &["id"], false),
+        t("check_references", "Check a reference list (a manuscript's, or one being reviewed) against the published record: each reference looked up by DOI (Crossref, DataCite), else by its details (Crossref, OpenAlex, PubMed), and its title, first author, number of authors, year, venue, volume, pages and DOI compared. Results per reference: verified, minor differences (which fields), not found (\"could not be found in Crossref, OpenAlex or PubMed\": report it as that, not as invented), DOI points to a different work, or not a paper. Retracted or corrected works are flagged. Pass `text` (a pasted list, numbered or author-year, or RIS) or `bibtex`. Read-only; about a second per reference.",
+          json!({"text": {"type": "string", "description": "The references: a pasted list (one per line or numbered) or RIS"},
+                 "bibtex": {"type": "string", "description": "A .bib file's contents"},
+                 "markdown": {"type": "boolean", "default": false, "description": "Also return the report as Markdown with links"}}), &[], true),
+        t("library_status", "Papers in the library flagged by Lunta's checks: retracted, withdrawn, corrected or with an expression of concern (Crossref and Retraction Watch notices), and preprints that have been published (with the published version), linked to it, or switched to it. Read-only; the apps check weekly.",
+          json!({"id": {"type": "string", "description": "Only this paper"}}), &[], true),
     ])
 }
 
@@ -552,6 +558,75 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
             if let Some(v) = a.get("keywords").and_then(|v| v.as_array()) { m.keywords = v.iter().filter_map(|x| x.as_str().map(String::from)).collect(); }
             lib.update_meta(id.clone(), m).map_err(|e| e.to_string())?;
             Ok(summary(&need(&id)?))
+        }
+        "check_references" => {
+            let text = arg_str(a, "bibtex").or_else(|| arg_str(a, "text")).ok_or("text or bibtex is required")?;
+            let cache = home().join("Library/Caches/Lunta/agent");
+            let r = lunta_core::checks::refcheck::check_references(text, cache.display().to_string(), None);
+            let r = lib.mark_references_in_library(r);
+            let items: Vec<Value> = r
+                .items
+                .iter()
+                .map(|i| {
+                    let mut v = json!({
+                        "number": i.number, "key": i.key, "reference": i.reference,
+                        "result": lunta_core::checks::refcheck::verdict_name(i.verdict),
+                        "source": i.source, "link": i.link, "note": i.note,
+                        "differences": i.differences.iter().map(|d| json!({"field": d.field, "in_reference": d.given, "in_record": d.found})).collect::<Vec<_>>(),
+                        "notices": i.notices.iter().map(|n| json!({"kind": n.kind, "date": n.date, "notice": if n.doi.is_empty() { Value::Null } else { json!(format!("https://doi.org/{}", n.doi)) }, "source": n.source})).collect::<Vec<_>>(),
+                    });
+                    if let Some(f) = &i.found {
+                        v["found"] = json!({"title": f.title, "authors": short_authors(&f.authors), "year": f.year(), "venue": f.journal, "doi": f.doi});
+                    }
+                    if !i.suggested_doi.is_empty() {
+                        v["suggested_doi"] = json!(i.suggested_doi);
+                    }
+                    if let Some(id) = &i.in_library {
+                        v["in_library"] = json!(id);
+                    }
+                    v
+                })
+                .collect();
+            let mut out = json!({"summary": r.summary, "verified": r.verified, "minor_differences": r.minor, "not_found": r.not_found,
+                                 "wrong_doi": r.wrong_doi, "not_papers": r.not_checked, "could_not_check": r.failed, "retracted": r.retracted, "references": items});
+            if a.get("markdown").and_then(|v| v.as_bool()).unwrap_or(false) {
+                out["markdown"] = json!(r.markdown);
+            }
+            Ok(out)
+        }
+        "library_status" => {
+            let only = arg_str(a, "id");
+            let mut list: Vec<Value> = vec![];
+            for (id, u) in lib.all_paper_updates() {
+                if only.as_ref().is_some_and(|o| o != &id) {
+                    continue;
+                }
+                let Some(p) = lib.paper(id.clone()) else { continue };
+                let mut v = summary(&p);
+                let level = format!("{:?}", lunta_core::checks::updates_level(u.clone())).to_lowercase();
+                if level != "none" {
+                    v["status"] = json!(level);
+                    v["headline"] = json!(lunta_core::checks::updates_headline(u.clone()));
+                    v["notices"] = json!(u.notices.iter().map(|n| json!({"kind": n.kind, "label": n.label, "date": n.date, "notice": if n.doi.is_empty() { Value::Null } else { json!(format!("https://doi.org/{}", n.doi)) }, "source": n.source})).collect::<Vec<_>>());
+                }
+                let version = |pv: &lunta_core::checks::PublishedVersion| json!({"doi": pv.doi, "title": pv.title, "journal": pv.journal, "date": pv.date, "found_by": pv.found_by, "link": format!("https://doi.org/{}", pv.doi)});
+                if let Some(pv) = &u.published {
+                    v["published_version"] = version(pv);
+                    v["published_note"] = json!("A preprint with a published version; the user can switch to it in Lunta (not done automatically).");
+                }
+                if let Some(pv) = &u.linked {
+                    v["linked_published_version"] = version(pv);
+                }
+                if let Some(pre) = &u.preprint {
+                    v["switched_from_preprint"] = json!({"doi": pre.doi, "journal": pre.journal});
+                }
+                if v.get("status").is_none() && v.get("published_version").is_none() && v.get("linked_published_version").is_none() && v.get("switched_from_preprint").is_none() {
+                    continue;
+                }
+                list.push(v);
+            }
+            list.sort_by_key(|v| v["title"].as_str().unwrap_or("").to_lowercase());
+            Ok(json!({"papers": list, "note": "From Lunta's checks of Crossref (with Retraction Watch), bioRxiv, arXiv and OpenAlex, run weekly by the apps."}))
         }
         _ => Err(format!("unknown tool {name}")),
     }
