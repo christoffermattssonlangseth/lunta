@@ -26,6 +26,8 @@ pub mod refcite;
 #[cfg(feature = "convert")]
 pub mod pagetext;
 pub mod store;
+#[cfg(feature = "tts")]
+pub mod tts;
 
 use model::*;
 use std::collections::BTreeSet;

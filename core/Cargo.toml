@@ -49,6 +49,10 @@ md-5 = { version = "0.10", optional = true }
 base64 = { version = "0.22", optional = true }
 getrandom = { version = "0.3", optional = true }
 hayagriva = { version = "0.10.1", default-features = false, features = ["csl-json", "archive"] }
+# Listen (core/src/tts): the natural voice's download (tar.bz2) and its engine, loaded at run time
+bzip2 = { version = "0.6", optional = true }
+tar = { version = "0.4", default-features = false, optional = true }
+libloading = { version = "0.9", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
@@ -61,7 +65,7 @@ lto = true
 # The paper -> EPUB converter (core/src/convert). On by default for `cargo build/test/run`;
 # scripts/build-core.sh builds the Apple static library with --no-default-features, so the
 # apps' LuntaCore stays as it was (they keep using the Swift Paper2EpubKit).
-default = ["convert", "pdf", "drive"]
+default = ["convert", "pdf", "drive", "tts"]
 convert = ["dep:quick-xml", "dep:image", "dep:ab_glyph", "dep:ttf-parser", "dep:url"]
 # PDF -> EPUB layout analysis (core/src/convert/pdf) on PDFium, loaded at run time (see README).
 # Off in the Apple build, which converts PDFs with PDFKit.
@@ -69,3 +73,7 @@ pdf = ["convert", "dep:pdfium-render", "dep:icu_normalizer"]
 # Google Drive sync (core/src/drive): RemoteStore trait, Google Drive REST client with OAuth (PKCE),
 # local-folder remote and the Syncer. Not part of the Apple static library (--no-default-features).
 drive = ["dep:sha2", "dep:md-5", "dep:base64", "dep:getrandom"]
+# Listen (core/src/tts): text made ready for speech, the natural voice (Kokoro-82M through
+# sherpa-onnx's C API, loaded at run time: downloaded with the model on Windows, Linux and macOS,
+# in the APK on Android) and its download. For the desktop and Android apps; not in the Apple build.
+tts = ["dep:bzip2", "dep:tar", "dep:libloading", "dep:sha2"]
