@@ -122,6 +122,8 @@ struct ReaderWindow: View {
                     }
                 }
             }
+            // retracted, corrected, or a preprint since published (Checks.swift)
+            .safeAreaInset(edge: .top, spacing: 0) { UpdatesBanner(paperID: paperID) }
             // another paper being read aloud (or this one, in the PDF): its Now Playing bar
             .overlay(alignment: .bottom) {
                 NowPlayingBar(style: .capsule, except: listening && mode == .reading ? narrator : nil)

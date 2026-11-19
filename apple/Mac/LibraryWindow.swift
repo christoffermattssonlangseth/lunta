@@ -111,6 +111,7 @@ struct LibraryWindow: View {
         .sheet(item: $model.bibImport) { r in
             BibImportReportView(result: r) { BibFiles.shared.choose(source: r.folderID, name: r.folder, model: model) }
         }
+        .referenceChecks()   // Check a Reference List, retractions, published versions (Checks.swift)
         .modifier(EditSheet(editing: $editing))
         .onReceive(NotificationCenter.default.publisher(for: .luntaAddPaper)) { _ in addingPaper = true }
         .onReceive(NotificationCenter.default.publisher(for: .luntaAskCompare)) { n in
@@ -406,6 +407,7 @@ struct PaperTable: View {
             TableColumn("Year") { p in Text(p.meta.year).monospacedDigit().foregroundStyle(.secondary) }.width(42)
             TableColumn("") { p in
                 HStack(spacing: 4) {
+                    UpdatesPill(updates: model.paperUpdates[p.id])
                     if p.hasEpub { Pill(text: "", icon: "book", color: .luntaTeal).help("Has a reading view") }
                     if p.hasPdf { Pill(text: "PDF", color: .luntaCopper) }
                     if p.hasAudio { Pill(text: "Audio", icon: "waveform", color: .purple) }
@@ -524,6 +526,11 @@ struct PaperMenu: View {
         Button("Find PDF") { Task { for id in ids { await model.findPDF(id) } } }
         Button("Make Reading View") { Task { await model.makeReadingViews(Array(ids)) } }
         Button("Make Natural Narration") { NarrationRenderer.shared.enqueue(ids.filter { model.paper($0)?.hasEpub == true }) }
+        Divider()
+        Button("Check for Retractions and Published Versions") { Task { await model.checkUpdates(ids) } }
+        if ids.count == 1, let p = model.paper(ids[0]), p.hasEpub || p.hasPdf {
+            Button("Check This Paper's References") { Task { await model.checkPaperReferences(p.id) } }
+        }
         Divider()
         Button("Delete", role: .destructive) { model.delete(ids) }
     }

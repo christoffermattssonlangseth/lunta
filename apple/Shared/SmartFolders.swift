@@ -18,6 +18,9 @@ struct SmartFolder: Codable, Identifiable, Hashable {
     var addedDays = 0        // 0 = any time
     var pdf: PDF = .any
     var highlightsOnly = false
+    /// What the checks found (Checks.swift); optional, so folders saved before it still read.
+    enum Updates: String, Codable, CaseIterable { case flagged, published }
+    var updates: Updates? = nil
 
     /// Short description of the rules, e.g. "unread · #vbt · 2020–".
     var summary: String {
@@ -31,6 +34,8 @@ struct SmartFolder: Codable, Identifiable, Hashable {
         if pdf == .has { parts.append("with PDF") }
         if pdf == .missing { parts.append("no PDF") }
         if highlightsOnly { parts.append("highlighted") }
+        if updates == .flagged { parts.append("retracted or corrected") }
+        if updates == .published { parts.append("published since added") }
         return parts.isEmpty ? "all papers" : parts.joined(separator: " · ")
     }
 
@@ -55,6 +60,10 @@ struct SmartFolder: Codable, Identifiable, Hashable {
         case .missing: list = list.filter { !$0.hasPdf }
         }
         if highlightsOnly { list = list.filter { $0.annotationCount > 0 } }
+        if let updates {
+            let found = lib.allPaperUpdates()
+            list = list.filter { p in found[p.id].map { updates == .flagged ? $0.flagged : $0.publishedSinceAdded } ?? false }
+        }
         return list
     }
 }
@@ -97,6 +106,8 @@ extension LibraryModel {
         SmartFolder(name: "Unread, last 3 years", unreadOnly: true, yearFrom: String(Calendar.current.component(.year, from: Date()) - 2)),
         SmartFolder(name: "No PDF yet", pdf: .missing),
         SmartFolder(name: "Highlighted", highlightsOnly: true),
+        SmartFolder(name: "Retracted or corrected", updates: .flagged),
+        SmartFolder(name: "Published since you added them", updates: .published),
     ]
 }
 
@@ -163,6 +174,11 @@ struct SmartFolderEditor: View {
                         Text("Any").tag(SmartFolder.PDF.any)
                         Text("Has a PDF").tag(SmartFolder.PDF.has)
                         Text("No PDF yet").tag(SmartFolder.PDF.missing)
+                    }
+                    Picker("Checks", selection: $folder.updates) {
+                        Text("Any").tag(SmartFolder.Updates?.none)
+                        Text("Retracted or corrected").tag(SmartFolder.Updates?.some(.flagged))
+                        Text("Published since you added them").tag(SmartFolder.Updates?.some(.published))
                     }
                 }
                 Section {

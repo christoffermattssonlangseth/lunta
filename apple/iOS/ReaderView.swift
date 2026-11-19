@@ -94,6 +94,8 @@ struct ReaderView: View {
                 PaperInfoView(paperID: paperID, embedded: true)
             }
         }
+        // retracted, corrected, or a preprint since published (Checks.swift)
+        .safeAreaInset(edge: .top, spacing: 0) { if !chromeHidden { UpdatesBanner(paperID: paperID) } }
         // find in paper: over the page, so the page keeps its size (and its pages)
         .modifier(FindOverlay(find: find, theme: mode == .reading ? theme : nil))
         .modifier(goToPageModifier)

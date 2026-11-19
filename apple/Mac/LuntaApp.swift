@@ -243,6 +243,9 @@ struct LuntaCommands: Commands {
             Button("Import BibTeX (Keep Citation Keys)…") { importBibKeepingKeys(model: model) }
             Button("Resolve Citations in a .tex File…") { resolveTexCitations(model: model) }
             Divider()
+            Button("Check a Reference List…") { ChecksUI.shared.askingForList = true }
+            Button("Check Library for Retractions and Published Versions") { Task { await model?.checkUpdates([]) } }
+            Divider()
             Button("Find Missing PDFs") { Task { await model?.findMissingPDFs() } }
             Button("Make Missing Reading Views") { Task { await model?.makeReadingViews() } }
         }

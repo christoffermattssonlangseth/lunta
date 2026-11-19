@@ -148,7 +148,7 @@ struct LibraryView: View {
           ScrollViewReader { proxy in
             List {
               ForEach(model.papers) { p in
-                NavigationLink(value: p.id) { PaperRow(paper: p, snippet: model.snippets[p.id]) }
+                NavigationLink(value: p.id) { PaperRow(paper: p, snippet: model.snippets[p.id], updates: model.paperUpdates[p.id]) }
                     .id(p.id)
                     .listRowBackground(reveal == p.id ? Color.luntaTeal.opacity(0.18) : nil)
                     .modifier(PaperRowActions(paper: p, deleting: $deleting, organizing: $organizing, sharing: $sharing, prompt: $prompt))
@@ -308,6 +308,8 @@ struct LibraryHome: View {
 struct PaperRow: View {
     let paper: Paper
     var snippet: String?
+    /// What the checks found (retracted, corrected, published): a badge.
+    var updates: PaperUpdates? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -334,6 +336,7 @@ struct PaperRow: View {
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
                 HStack(spacing: 4) {
+                    UpdatesPill(updates: updates)
                     if paper.hasEpub { Pill(text: "Read", icon: "book", color: .luntaTeal) }
                     if paper.hasPdf { Pill(text: "PDF", color: .luntaCopper) }
                     if paper.hasAudio { Pill(text: "Audio", icon: "waveform", color: .purple) }
@@ -414,6 +417,12 @@ struct PaperRowActions: ViewModifier {
                 Button("Share…", systemImage: "square.and.arrow.up") { sharing = ShareTargetIOS(id: p.id) }
                 Button("Copy \\cite", systemImage: "doc.on.doc") { model.copyLatexCite([p.id]) }
                 Menu("Watch", systemImage: "bell") { WatchMenu(paper: p) }
+                Menu("Check", systemImage: "checkmark.seal") {
+                    Button("Retractions and Published Version", systemImage: "exclamationmark.shield") { Task { await model.checkUpdates([p.id]) } }
+                    if p.hasEpub || p.hasPdf {
+                        Button("This Paper's References", systemImage: "list.number") { Task { await model.checkPaperReferences(p.id) } }
+                    }
+                }
                 Divider()
                 Button("Delete Paper…", systemImage: "trash", role: .destructive) { deleting = p }
             }

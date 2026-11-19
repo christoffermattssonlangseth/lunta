@@ -152,6 +152,9 @@ struct BibFileMenu: View {
         } else {
             Button("Keep BibTeX File Updated…") { files.choose(source: source, name: name, model: model) }
         }
+        Button("Check References") {
+            Task { await model.checkFolderReferences(source == BibFiles.allPapers ? nil : source, name: name) }
+        }
         if source != BibFiles.allPapers {
             Button("Import BibTeX (Keep Citation Keys)…") { importBibKeepingKeys(model: model, folder: source) }
             Button("Resolve Citations in a .tex File…") { resolveTexCitations(model: model, folder: source) }

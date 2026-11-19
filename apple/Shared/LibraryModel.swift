@@ -40,6 +40,12 @@ final class LibraryModel: ObservableObject {
     @Published var errorMessage: String?
     /// A .bib imported with its citation keys: its report (BibImport.swift).
     @Published var bibImport: BibImportResult?
+    /// Checks against the published record (Checks.swift): a checked reference list, a check of
+    /// the library, and what the checks found per paper (retractions, published versions).
+    @Published var refCheck: RefCheckResult?
+    @Published var updatesReport: UpdatesResult?
+    @Published var paperUpdates: [String: PaperUpdates] = [:]
+    var updateChecksScheduled = false
     @Published var counts = (all: 0, starred: 0, mustRead: 0, unread: 0)
     // Discover: searching beyond the library (OpenAlex)
     @Published var discoverQuery = ""
@@ -143,6 +149,7 @@ final class LibraryModel: ObservableObject {
         collections = lib.collections()
         tags = lib.tags()
         loadSmartFolders()
+        paperUpdates = lib.allPaperUpdates()
         let every = lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
         counts = (every.count, every.filter(\.starred).count, every.filter(\.mustRead).count, every.filter { !$0.read }.count)
         #if os(iOS)

@@ -18,6 +18,7 @@ struct AdaptiveLibrary: View {
             }
         }
         .libraryImport()   // import from Zotero, Mendeley… (+ › Import Library)
+        .referenceChecks()   // Check a Reference List, retractions, published versions (Checks.swift)
     }
 }
 
@@ -195,7 +196,7 @@ struct iPadLibrary: View {
         ScrollViewReader { proxy in
             List(selection: $selected) {
                 ForEach(model.papers) { p in
-                    PaperRow(paper: p, snippet: model.snippets[p.id])
+                    PaperRow(paper: p, snippet: model.snippets[p.id], updates: model.paperUpdates[p.id])
                         .tag(p.id)
                         .id(p.id)
                         .listRowBackground(reveal == p.id ? Color.luntaTeal.opacity(0.18) : nil)

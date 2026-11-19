@@ -234,6 +234,8 @@ struct ImportMenuItems: View {
         Button("Import Folder of PDFs", systemImage: "folder.badge.plus") { LibraryImporter.shared.start(.pdfFolder) }
         Button("Import BibTeX (Keep Citation Keys)", systemImage: "curlybraces") { LibraryImporter.shared.start(.bibKeys) }
         Button("Moving from Zotero, Mendeley…", systemImage: "questionmark.circle") { LibraryImporter.shared.showingHelp = true }
+        Divider()
+        CheckMenuItems(check: { NotificationCenter.default.post(name: .luntaCheckLibrary, object: nil) })
     }
 }
 
