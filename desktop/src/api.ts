@@ -80,6 +80,8 @@ export const api = {
 export interface SmartFolder {
   id: string; name: string; text: string; tag: string; folder: string; unreadOnly: boolean; starredOnly: boolean;
   yearFrom: string; yearTo: string; addedDays: number; pdf: 'any' | 'has' | 'missing'; highlightsOnly: boolean;
+  /** What Lunta's checks found: retracted or corrected, or a preprint published since it was added. */
+  updates?: 'flagged' | 'published';
 }
 export const smartApi = {
   list: () => invoke<SmartFolder[]>('smart_folders'),

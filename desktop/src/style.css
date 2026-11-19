@@ -313,3 +313,19 @@ h4 .mini { margin-left: auto; }
 .modal .buttons.left { justify-content: flex-start; margin-top: 4px; }
 .modal .buttons.left input { flex: 1; }
 .modal button.link { all: unset; cursor: pointer; color: var(--accent, #2a7a8c); text-decoration: underline; font-size: 12px; }
+
+/* checks against the published record (checks.ts) */
+.badge.flag-red { border-color: transparent; background: rgba(220,38,38,.14); color: #b91c1c; font-weight: 600; }
+.badge.flag-orange { border-color: transparent; background: rgba(234,140,0,.16); color: #a35a00; font-weight: 600; }
+.check-banner { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: rgba(42,100,120,.10); font-size: 13px; line-height: 1.5; }
+.check-banner.red { background: rgba(220,38,38,.12); }
+.check-banner.orange { background: rgba(234,140,0,.13); }
+.check-banner.quiet { background: transparent; border: 1px solid var(--line); }
+.check-modal { width: min(760px, 92vw); max-height: 86vh; }
+.check-modal textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 12px; }
+.check-list { overflow: auto; min-height: 0; flex: 1; }
+.check-section h4 { margin: 12px 0 4px; }
+.check-item { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
+.check-key { font-family: ui-monospace, monospace; color: var(--dim); display: flex; gap: 6px; align-items: center; }
+.check-red { color: #b91c1c; font-weight: 600; }
+.check-links { display: flex; gap: 12px; font-size: 12px; }

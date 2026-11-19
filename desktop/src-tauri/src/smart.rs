@@ -24,6 +24,10 @@ pub struct SmartFolder {
     /// "any", "has" or "missing"
     pub pdf: String,
     pub highlights_only: bool,
+    /// What the checks found: "flagged" (retracted or corrected) or "published" (since added).
+    /// Optional in the Swift (left out when none), so folders from before it still read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updates: Option<String>,
 }
 
 pub fn load(root: &Path) -> Vec<SmartFolder> {
@@ -105,6 +109,18 @@ pub fn papers(f: &SmartFolder, lib: &Library, sort: SortKey) -> Vec<Paper> {
     }
     if f.highlights_only {
         list.retain(|p| p.annotation_count > 0);
+    }
+    if let Some(u) = f.updates.as_deref().filter(|u| matches!(*u, "flagged" | "published")) {
+        let found = lib.all_paper_updates();
+        list.retain(|p| {
+            found.get(&p.id).is_some_and(|x| {
+                if u == "flagged" {
+                    lunta_core::checks::level(&x.notices) != lunta_core::checks::NoticeLevel::None
+                } else {
+                    x.published.is_some() || x.linked.is_some() || x.preprint.is_some()
+                }
+            })
+        });
     }
     list
 }

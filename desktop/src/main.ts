@@ -15,6 +15,7 @@ import { setOpenPaper, voiceDialog } from './listen';
 import { showForYou, hideForYou, forYouCount, setForYouHooks, startForYou, watchItems } from './foryou';
 import { importLibrary, importPdfFolder, makeMissingReadingViews, setImportReload } from './importer';
 import { resolveTexCitations } from './texresolve';
+import { loadUpdates, updatesBadge, updatesBanner, checkMenuItems, paperCheckItems, folderCheckItem, setChecksReload } from './checks';
 
 let source: Source = { kind: 'all' };
 let query = '';
@@ -65,6 +66,7 @@ async function showLibrary() {
 // ---- loading ----
 
 async function reload() {
+  await loadUpdates();   // what the checks found: badges, the details' banner (checks.ts)
   side = await api.sidebar();
   bibFiles = await api.bibFiles().catch(() => ({}));
   renderSidebar();
@@ -169,7 +171,7 @@ function renderSidebar() {
     ]);
   fill($('#sidebar'),
     h('h4', { text: 'Library' }),
-    place(bibLabel('All Papers', '*'), { kind: 'all' }, s.all, '📚', { onmenu: (e) => menu(e.clientX, e.clientY, bibItems('*', 'All Papers')) }),
+    place(bibLabel('All Papers', '*'), { kind: 'all' }, s.all, '📚', { onmenu: (e) => menu(e.clientX, e.clientY, [...bibItems('*', 'All Papers'), folderCheckItem(null, 'All Papers')]) }),
     place('Starred', { kind: 'starred' }, s.starred, '★'),
     place('Must Read', { kind: 'must_read' }, s.must_read, '🔖'),
     place('Unread', { kind: 'unread' }, s.unread, '●'),
@@ -216,7 +218,7 @@ function folderMenu(e: MouseEvent, f: Folder) {
     { label: 'Rename…', action: async () => { const n = await prompt('Rename folder', f.name, '', 'Rename'); if (n) after(api.renameFolder(f.id, n)); } },
   ];
   if (f.parent) items.push({ label: 'Move to Top Level', action: () => after(api.moveFolder(f.id, null)) });
-  items.push('-', ...bibItems(f.id, f.name));
+  items.push('-', ...bibItems(f.id, f.name), folderCheckItem(f.id, f.name));
   const others = side!.folders.filter((x) => x.id !== f.id && x.id !== f.parent);
   if (others.length) items.push('-', ...others.map((o) => ({ label: `Move into “${o.name}”`, action: () => after(api.moveFolder(f.id, o.id)) })));
   items.push('-', {
@@ -268,6 +270,7 @@ function renderList() {
         h('div.sub', { text: [authorsShort(m.authors), m.journal, p.year].filter(Boolean).join(' · ') }),
         sn ? snippet(sn) : null),
       h('div.files', {},
+        updatesBadge(p.id),
         p.has_epub ? h('span.badge', { text: 'Reading view', title: 'Has a reading view' }) : null,
         p.has_pdf ? h('span.badge', { text: 'PDF', title: 'Has a PDF' }) : null,
         p.annotation_count ? h('span.badge.hl', { text: `✎${p.annotation_count}`, title: 'Highlights and notes' }) : null));
@@ -341,6 +344,8 @@ function paperMenu(e: MouseEvent, p: Paper) {
     '-',
     ...watchItems(p),
     '-',
+    ...paperCheckItems(p),
+    '-',
     { label: 'Delete', danger: true, action: () => deletePaper(p) },
   ]);
 }
@@ -411,6 +416,7 @@ function renderDetail() {
       h('button.icon' + (p.starred ? '.starred' : ''), { text: p.starred ? '★' : '☆', title: p.starred ? 'Unstar' : 'Star', onclick: () => after(api.setStarred(p.id, !p.starred)) }),
       h('button.icon' + (p.must_read ? '.starred' : ''), { text: '🔖', title: p.must_read ? 'Remove from Must Read' : 'Must Read: to read soon', style: p.must_read ? '' : 'opacity:.35', onclick: () => after(api.setMustRead(p.id, !p.must_read)) }),
       h('button.icon', { text: p.read ? '◯' : '●', title: p.read ? 'Mark as unread' : 'Mark as read', onclick: () => after(api.setRead(p.id, !p.read)) })),
+    updatesBanner(p),
     h('h2', { text: m.title || '(untitled)' }),
     h('p.authors', { text: m.authors.join(', ') }),
     h('p.venue', { text: [m.journal, [m.volume, m.issue && `(${m.issue})`].filter(Boolean).join(''), m.pages, m.date || p.year].filter(Boolean).join(' · ') }),
@@ -542,10 +548,13 @@ const importItems = (): MenuItem[] => [
   '-',
   { label: 'Resolve Citations in a .tex File…', action: () => resolveTex(null) },
   '-',
+  ...checkMenuItems(),
+  '-',
   { label: 'Make Missing Reading Views', action: makeMissingReadingViews },
 ];
 $('#add-more').onclick = () => menuBelow($('#add-more'), importItems());
 setImportReload(() => { reload(); });
+setChecksReload(() => { reload(); });
 // Ask about the library (ai.ts), next to Settings; a paper it cites opens in the reader
 $('#settings').before(libraryAskButton());
 setAskOpener(async (id) => {

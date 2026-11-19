@@ -43,7 +43,8 @@ pub struct EditorialNotice {
 }
 
 /// How serious a paper's notices are, the most serious first.
-#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(uniffi::Enum, Serialize, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
 pub enum NoticeLevel {
     None,
     /// Corrected (correction, erratum, corrigendum, addendum, clarification).

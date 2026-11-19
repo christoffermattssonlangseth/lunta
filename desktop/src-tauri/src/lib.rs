@@ -10,6 +10,7 @@
 mod add;
 mod ai;
 mod bibfiles;
+mod checks;
 mod citeapi;
 #[cfg(all(debug_assertions, target_os = "macos"))]
 mod devsnap;
@@ -829,6 +830,8 @@ pub fn run() {
             app.manage(state);
             // the browser extension's endpoint (127.0.0.1:47480), as Lunta for Mac has it
             extension::start(app.handle().clone());
+            // the weekly check for retractions and published versions (checks.rs)
+            checks::start(app.handle().clone());
             // the window starts hidden (no white flash while the page loads); scripted debug
             // runs keep it hidden so they don't pop up over other work (LUNTA_DEV_SHOW=1 shows it)
             let scripted = cfg!(debug_assertions) && std::env::var("LUNTA_DEV_EVAL_DIR").is_ok() && std::env::var("LUNTA_DEV_SHOW").is_err();
@@ -888,6 +891,18 @@ pub fn run() {
             pdfcite::pdf_reference_at,
             pdfcite::pdf_reference_for_citation,
             pdfcite::lookup_reference,
+            checks::check_references,
+            checks::check_references_file,
+            checks::check_folder_references,
+            checks::check_paper_references,
+            checks::paper_updates_all,
+            checks::updates_headline,
+            checks::check_updates,
+            checks::use_published_version,
+            checks::undo_published_version,
+            checks::link_published_version,
+            checks::keep_preprint,
+            checks::save_report,
             open_book,
             annotations,
             add_highlight,

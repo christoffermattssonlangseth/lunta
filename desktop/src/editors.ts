@@ -99,6 +99,8 @@ const examples = (): SmartFolder[] => [
   { ...blankSmart(), name: 'Unread, last 3 years', unreadOnly: true, yearFrom: String(new Date().getFullYear() - 2) },
   { ...blankSmart(), name: 'No PDF yet', pdf: 'missing' },
   { ...blankSmart(), name: 'Highlighted', highlightsOnly: true },
+  { ...blankSmart(), name: 'Retracted or corrected', updates: 'flagged' },
+  { ...blankSmart(), name: 'Published since you added them', updates: 'published' },
 ];
 
 /** "unread · #vbt · 2020–" (SmartFolder.summary). */
@@ -113,6 +115,8 @@ export function summary(f: SmartFolder): string {
   if (f.pdf === 'has') parts.push('with PDF');
   if (f.pdf === 'missing') parts.push('no PDF');
   if (f.highlightsOnly) parts.push('highlighted');
+  if (f.updates === 'flagged') parts.push('retracted or corrected');
+  if (f.updates === 'published') parts.push('published since added');
   return parts.length ? parts.join(' · ') : 'all papers';
 }
 
@@ -147,10 +151,13 @@ export function editSmart(f0: SmartFolder, tags: string[], folders: Folder[]): P
     const inFolder = select([['', 'Any'], ...order.map((x) => [x.id, '  '.repeat(depth(x)) + x.name] as [string, string])], f.folder);
     const added = select([['0', 'Any time'], ['7', 'Last 7 days'], ['31', 'Last 31 days'], ['90', 'Last 90 days'], ['365', 'Last year']], String(f.addedDays));
     const pdf = select([['any', 'Any'], ['has', 'Has a PDF'], ['missing', 'No PDF yet']], f.pdf);
+    // what Lunta's checks found (checks.ts)
+    const checks = select([['', 'Any'], ['flagged', 'Retracted or corrected'], ['published', 'Published since you added them']], f.updates ?? '');
     const count = h('div.count');
     const collect = () => {
       f = { ...f, name: name.value, text: words.value, tag: tag.value, folder: inFolder.value, yearFrom: yearFrom.value.trim(),
-        yearTo: yearTo.value.trim(), addedDays: parseInt(added.value, 10) || 0, pdf: pdf.value as SmartFolder['pdf'] };
+        yearTo: yearTo.value.trim(), addedDays: parseInt(added.value, 10) || 0, pdf: pdf.value as SmartFolder['pdf'],
+        updates: (checks.value || undefined) as SmartFolder['updates'] };
     };
     let serial = 0, timer: number | undefined;
     function refresh() {
@@ -167,7 +174,7 @@ export function editSmart(f0: SmartFolder, tags: string[], folders: Folder[]): P
       type: 'button', text: ex.name, onclick: () => {
         f = { ...ex, id: f.id };
         name.value = f.name; words.value = f.text; yearFrom.value = f.yearFrom; yearTo.value = f.yearTo;
-        tag.value = f.tag; inFolder.value = f.folder; added.value = String(f.addedDays); pdf.value = f.pdf;
+        tag.value = f.tag; inFolder.value = f.folder; added.value = String(f.addedDays); pdf.value = f.pdf; checks.value = f.updates ?? '';
         for (const k of [unread, starred, hl]) k.c.checked = k.get();
         refresh();
       } }))) : null;
@@ -180,6 +187,7 @@ export function editSmart(f0: SmartFolder, tags: string[], folders: Folder[]): P
       h('div.cols', {}, field('Tag', tag), field('In folder', inFolder)),
       h('div.cols', {}, field('Year from', yearFrom), field('Year to', yearTo)),
       h('div.cols', {}, field('Added', added), field('PDF', pdf)),
+      field('Checks', checks),
       count,
     ].filter(Boolean) as HTMLElement[], async () => {
       collect();

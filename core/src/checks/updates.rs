@@ -31,7 +31,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// What a check of the library found.
-#[derive(uniffi::Record, Clone, Debug, Default, PartialEq)]
+#[derive(uniffi::Record, serde::Serialize, Clone, Debug, Default, PartialEq)]
 pub struct UpdatesSummary {
     /// Papers asked about.
     pub checked: u32,

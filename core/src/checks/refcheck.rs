@@ -25,7 +25,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// What became of a reference.
-#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(uniffi::Enum, serde::Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum RefVerdict {
     /// Found, and its details match.
     Verified,
@@ -42,14 +43,14 @@ pub enum RefVerdict {
 }
 
 /// A detail that differs: "year", "2016" in the reference, "2015" in Crossref.
-#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+#[derive(uniffi::Record, serde::Serialize, Clone, Debug, PartialEq)]
 pub struct FieldDifference {
     pub field: String,
     pub given: String,
     pub found: String,
 }
 
-#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+#[derive(uniffi::Record, serde::Serialize, Clone, Debug, PartialEq)]
 pub struct RefCheckItem {
     /// 1, 2, 3… in the order given.
     pub number: u32,
@@ -75,7 +76,7 @@ pub struct RefCheckItem {
     pub in_library: Option<String>,
 }
 
-#[derive(uniffi::Record, Clone, Debug, Default, PartialEq)]
+#[derive(uniffi::Record, serde::Serialize, Clone, Debug, Default, PartialEq)]
 pub struct RefCheckReport {
     pub items: Vec<RefCheckItem>,
     pub verified: u32,
