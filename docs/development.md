@@ -28,6 +28,8 @@ apple/SafariExtension/ Safari extension targets (Mac, iPhone/iPad): extension/ a
 apple/Shared/          code shared by the Mac and iPhone apps (reader, Ask, highlights, folders, …)
 apple/citations/       Word add-in, Google Docs Apps Script and the formatting code they share
 tts/                   Kokoro narration helper for the Mac (mlx-audio)
+core/src/tts/          Listen for Windows, Linux and Android: text for speech, Kokoro through sherpa-onnx (loaded at
+                       run time), its download; feature "tts", not in the Apple build (see Listen below)
 extension/             browser extension (Chrome, Firefox, Safari): save papers and PDFs from article pages
 converter/             the original Python paper2epub tool (pandoc-based) and its Claude skill
 design/                logo (SVG + 1024 px PNG) and its dark / tinted variants; Mac icon = Icon Composer bundle apple/Lunta.icon (macOS 26 light/dark/tinted), iPhone icon has dark + tinted appearances
@@ -587,7 +589,43 @@ For scripted UI checks, debug builds run any `*.js` dropped into `$LUNTA_DEV_EVA
 Not in the desktop app yet (the Mac app has them): highlighting in the PDF (PDF highlights made on the
 Mac or iPhone are listed, not drawn), reading views from PDFs, adding a paper from a PDF alone,
 import (Papers, BibTeX, RIS), Discover, New for You,
-Clean Up, Listen, Ask, the MCP server and the Word / Google Docs add-ins.
+Clean Up, Ask, the MCP server and the Word / Google Docs add-ins; Make Natural Narration (no AAC encoder
+everywhere: a narration made on the Mac or Android plays).
+
+## Listen on Windows, Linux and Android
+
+As in the Apple apps (`apple/Shared/Narrator.swift`): the reading view's narration items (`narration.js`) are read in
+order, the one being read highlighted and followed, a tapped paragraph read from; previous / next paragraph, next
+section, speed (0.8–2×), voice; it goes on when the reader closes (Now Playing in the library).
+
+- **Text** (`core/src/tts/text.rs`): Apple's `Narrator.spoken` rules, plus author–year citations, then cut into sentence
+  pieces (≤ 300 characters; the first of a paragraph ≤ 60 so speech starts soon).
+- **Natural voice:** Kokoro-82M v1.0 (Apache-2.0) as packaged by sherpa-onnx, through sherpa-onnx's C API loaded at
+  run time (`core/src/tts/engine.rs`, libloading): nothing is linked at build time, so CI builds as before. sherpa-onnx
+  **v1.13.8**, the last that reads words its lexicon lacks (numbers, acronyms) with espeak-ng (v2 skips them); the
+  full-precision model (the int8 one is 2.5× slower on Apple silicon). The Apple apps' eight voices, `af_heart` default.
+  Download (`install.rs`, only from sherpa-onnx's GitHub releases, pinned by size and SHA-256, checked before unpacking):
+  the model, 350 MB (about 380 MB on disk, English files and espeak-ng-data only), into the app's local data folder;
+  on Windows and Linux (and macOS, for testing) also sherpa-onnx's library, 8–13 MB. On Android the library comes in
+  the APK (`scripts/fetch-sherpa-onnx-android.sh`, run by `build-core-android.sh`: libsherpa-onnx-c-api.so and
+  libonnxruntime.so, about 27 MB per ABI before compression). Settings deletes it.
+- **Speed** (M1 Pro, 4 threads; `cargo run --release --example tts_bench -- <folder>` measures it): model loaded in
+  1.2 s, a 79-character first sentence in 1.4 s, then 4× faster than real time (RTF 0.25). Pieces are made three
+  ahead of the one playing. Phones: not measured; expect slower (RTF around 0.5–1 on recent ones).
+- **Without the natural voice:** the system's voice (desktop: the web view's speech synthesis, Windows' voices;
+  WebKitGTK's where it has one; Android: TextToSpeech), with an offer to download it.
+- **Desktop** (`desktop/src/listen.ts`, `src-tauri/src/listen.rs`): 🎧 in the reader; WAV pieces in an `<audio>`
+  element (speed by playbackRate); media keys through the web view's media session. Linux plays audio through
+  GStreamer (the .deb depends on gstreamer1.0-plugins-good).
+- **Android** (`app/lunta/listen/`): ⋯ › Listen; pieces streamed into one AudioTrack (no gaps; the highlight follows
+  the frames heard); `ListenService`, a media3 `MediaSessionService` (foreground service type `mediaPlayback`), gives
+  the media notification, lock screen and headset controls and background playback; audio focus, pausing when
+  headphones are unplugged. ⋯ › Make Natural Narration renders the paper (`NaturalVoice.render`) and encodes it as
+  AAC (MediaCodec) into `narration.m4a` + `narration.json`, the Mac's format, so it syncs and plays everywhere.
+- **Made on the Mac:** a paper with `narration.m4a` + `narration.json` plays that, following its timing map, on
+  every platform.
+- Tests: `cargo test tts` in `core` (text, pieces, download checks with a fake archive, timings);
+  `LUNTA_TTS_DIR=<folder> cargo test tts -- --ignored` speaks with a downloaded voice.
 
 ## Android app
 
@@ -631,7 +669,7 @@ library, optionally synced with a plain folder as the "remote":
 (`cargo run --example seed_library -- <dir> <doi>...` makes a library of public papers for it).
 `.github/workflows/android.yml` builds the debug APK on GitHub Actions.
 
-Not in the Android app yet: highlighting in the PDF, New for You, Discover, Ask, Listen, import,
+Not in the Android app yet: highlighting in the PDF, New for You, Discover, Ask, import,
 Clean Up, creating or editing smart folders, editing metadata, Keystore-backed token storage (tokens
 are in the app's private, non-backed-up folder), a release build and signing.
 

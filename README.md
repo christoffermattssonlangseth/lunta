@@ -44,7 +44,8 @@ which setup fits your devices, and how to move your library from Zotero, Mendele
   stars and a Must Read list, with full-text search.
 - **New for You:** every morning, new papers picked for your research, with a short summary. Add your ORCID
   iD and it also learns from your own papers and shows new papers citing them.
-- **Listen and ask:** papers read aloud in a natural voice, and an assistant that answers questions about a
+- **Listen and ask:** papers read aloud in a natural voice (Kokoro, on every platform: the paragraph being read
+  follows along, and it keeps playing from the lock screen), and an assistant that answers questions about a
   paper or your library, both running on your device.
 - **Cite:** 12 citation styles and ~10,000 journal styles, BibTeX and RIS, citing in Word and Google Docs, and for LaTeX fixed
   citation keys and a .bib file that keeps itself up to date.

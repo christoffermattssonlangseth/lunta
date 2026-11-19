@@ -28,7 +28,9 @@ no personal information, but like any web request they reveal your IP address to
   <li><strong>Ask (the assistant)</strong> runs on your device: with Apple Intelligence, or with a free open model
       that Lunta downloads once (from Hugging Face) and then runs offline. Your questions and papers are not sent
       to any server.</li>
-  <li><strong>Natural voices</strong> for listening are downloaded once and then run on your device.</li>
+  <li><strong>Natural voices</strong> for listening are downloaded once and then run on your device. On Windows, Linux
+      and Android the voice (and on Windows and Linux its speech engine) comes from the sherpa-onnx project's releases on
+      GitHub; that download is the only request it makes, and nothing you listen to leaves the device.</li>
   <li><strong>Updates</strong> (Mac, Windows, Linux and Android, as downloaded from GitHub): once a day, unless you
       turn it off in Settings, and when you choose Check for Updates, Lunta asks GitHub, where it is published,
       for the latest version, and downloads it from GitHub if you install it. Only the app's version goes with the
