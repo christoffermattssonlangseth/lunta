@@ -10,6 +10,7 @@ import { setupDrag, type Payload } from './drag';
 import { fill, h, $, status, prompt, menu, menuBelow, copy, authorsShort, type MenuItem } from './ui';
 import { openReader, readerPaper, closeReader } from './reader';
 import { startUpdateChecks, checkNow, updatesApi } from './updates';
+import { aiSettingsDialog, libraryAskButton, setAskOpener } from './ai';
 import { setOpenPaper, voiceDialog } from './listen';
 
 let source: Source = { kind: 'all' };
@@ -512,6 +513,14 @@ listen<string>('open', async (e) => {
 });
 
 $('#add').onclick = addPaper;
+// Ask about the library (ai.ts), next to Settings; a paper it cites opens in the reader
+$('#settings').before(libraryAskButton());
+setAskOpener(async (id) => {
+  const p = await api.paper(id);
+  if (!p) return;
+  if (readerPaper()) await closeReader();
+  read(p, p.has_epub ? 'reading' : 'pdf');
+});
 $<HTMLSelectElement>('#sort').onchange = (e) => { sort = (e.target as HTMLSelectElement).value; localStorage.setItem('sort', sort); reloadList(); };
 let searchTimer: number | undefined;
 $<HTMLInputElement>('#search').oninput = (e) => {
@@ -534,6 +543,7 @@ $('#settings').onclick = async () => {
     '-',
     { label: 'Natural Voice for Listening…', action: voiceDialog },
     '-',
+    { label: 'On-Device AI…', action: aiSettingsDialog },
     { label: 'Check for Updates…', action: checkNow },
     { label: 'Check for Updates Automatically', checked: autoUpdate, action: () => {
       updatesApi.setAuto(!autoUpdate).catch((e) => status(String(e), 'error'));

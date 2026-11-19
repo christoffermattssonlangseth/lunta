@@ -35,6 +35,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev
+          # llama.cpp for on-device AI (the core's feature llm): CMake, and libclang for its bindings
+          # (both are on the runner image already; Windows has CMake, MSVC and LLVM there too)
+          sudo apt-get install -y cmake libclang-dev
 
       - uses: dtolnay/rust-toolchain@stable
 

@@ -50,7 +50,7 @@
 
   function send(name, body){ try { parent.postMessage({ lunta: 'message', name: name, body: body }, '*'); } catch (x) {} }
   var handlers = {};
-  ['pos', 'fig', 'narr', 'page', 'ann'].forEach(function(n){ handlers[n] = { postMessage: function(b){ send(n, b); } }; });
+  ['pos', 'fig', 'narr', 'page', 'ann', 'summary'].forEach(function(n){ handlers[n] = { postMessage: function(b){ send(n, b); } }; });
   window.webkit = { messageHandlers: handlers };
 
   window.addEventListener('message', function(e){

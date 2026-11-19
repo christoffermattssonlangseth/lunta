@@ -13,6 +13,7 @@ import { fill, h, $, status, copy, menu, type MenuItem } from './ui';
 import { showPdf, closePdf, pdfZoom, pdfFind, pdfFindStep, pdfFindClear } from './pdf';
 import { closeFigureOverlay, figureList, figureOpen, showFigureGrid, showFigureViewer, type Fig } from './figures';
 import { openFind, closeFind, findOpen, findStep, findUpdate, type FindResult, type FindTarget } from './find';
+import { summaryPageReady, summaryAction, summaryClosed, openAsk, askPaperClosed } from './ai';
 import { startNarration, attachReader, detachReader, narrationPaper, playFromId, playerBar, type NarrationItem, type ReaderLink } from './listen';
 
 const COLORS = ['yellow', 'green', 'blue', 'pink'] as const;
@@ -90,6 +91,9 @@ window.addEventListener('message', (e) => {
       if (o) { selectionBar(null); showFigureViewer(o, refocus, readerDark()); }
       break;
     }
+    case 'summary':  // the Summary card's menu: regenerate, hide (ai.ts)
+      summaryAction(String(body));
+      break;
     case '__selection':
       selectionBar(hlMode ? null : body);     // in highlight mode the selection is highlighted at once
       break;
@@ -133,6 +137,8 @@ export async function closeReader() {
   if (narrationPaper() === paper.id) detachReader();
   await savePosition();
   clearInterval(saver);
+  summaryClosed(paper.id);
+  askPaperClosed(paper.id);
   closeFind();
   closeAppearance();
   closePdf();
@@ -173,6 +179,7 @@ function render() {
           const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); highlightMenu(r.left, r.bottom + 4);
         } }) : null,
         hlBtn,
+        h('button.icon#ask-btn', { text: '✨', title: 'Ask about this paper (on-device AI)', 'aria-label': 'Ask about this paper', onclick: () => openAsk(p.id, p.meta.title) }),
         reading ? h('button.icon#refs-btn' + (showingRefs ? '.on' : ''), { text: '❝', title: 'References', 'aria-label': 'References', onclick: () => toggleRefs() }) : null,
         reading ? h('button.icon#appearance-btn', { text: 'Aa', title: 'Text size, theme and layout', 'aria-label': 'Text and theme', onclick: (e: MouseEvent) => toggleAppearance(e.currentTarget as HTMLElement) }) : null,
         reading ? null : h('button.icon', { text: '−', title: 'Zoom out (Ctrl+−)', onclick: () => pdfZoom(1 / 1.15) }),
@@ -250,6 +257,7 @@ async function pageReady() {
   if (paper) attachReader(paper.id, pageLink);
   if (showingRefs) loadRefs();
   await refreshHighlights();
+  if (paper) summaryPageReady(paper.id, paper.meta.title, paper.meta.abstract_text, run);
   if (restored || !paper) return;
   restored = true;
   const id = paper.id;

@@ -8,6 +8,7 @@
 //! on 127.0.0.1:47480 (`extension`).
 
 mod add;
+mod ai;
 mod bibfiles;
 mod citeapi;
 #[cfg(all(debug_assertions, target_os = "macos"))]
@@ -654,7 +655,7 @@ async fn position_save(state: State<'_, AppState>, id: String, offset: i64) -> R
 // ---- the lunta:// scheme ----
 
 const BRIDGE: &str = include_str!("../../src/reader/bridge.js");
-const READER: [(&str, &str); 8] = [
+const READER: [(&str, &str); 9] = [
     ("style.js", include_str!("../../src/reader/generated/style.js")),
     ("tracking.js", include_str!("../../src/reader/generated/tracking.js")),
     ("narration.js", include_str!("../../src/reader/generated/narration.js")),
@@ -662,6 +663,8 @@ const READER: [(&str, &str); 8] = [
     ("position.js", include_str!("../../src/reader/generated/position.js")),
     ("paged.js", include_str!("../../src/reader/generated/paged.js")),
     ("find.js", include_str!("../../src/reader/generated/find.js")),
+    // the Summary card (SummaryCard.swift; src/ai.ts writes it)
+    ("summary.js", include_str!("../../src/reader/generated/summary.js")),
     ("reader.css", include_str!("../../src/reader/generated/reader.css")),
 ];
 
@@ -795,6 +798,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updates::Pending::default())
+        .manage(ai::Ai::default())
         .manage(listen::Listen::new())
         .register_asynchronous_uri_scheme_protocol("lunta", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
@@ -885,6 +889,15 @@ pub fn run() {
             updates::set_update_auto,
             dev_log,
             dev_snapshot,
+            ai::ai_status,
+            ai::ai_download,
+            ai::ai_cancel_download,
+            ai::ai_delete_model,
+            ai::ai_set_summaries,
+            ai::ai_summary,
+            ai::ai_stop_summary,
+            ai::ai_ask,
+            ai::ai_stop_ask,
             listen::listen_voices,
             listen::listen_status,
             listen::listen_download,

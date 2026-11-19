@@ -13,7 +13,8 @@ crate-type = ["rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-lunta-core = { path = "../../core", features = ["convert"] }
+# "llm": on-device AI (summaries, Ask) with llama.cpp, built by CMake (src/ai.rs)
+lunta-core = { path = "../../core", features = ["convert", "llm"] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"

@@ -82,6 +82,8 @@ const positionJS = plain('apple/Shared/ReadingPosition.swift', 'positionJS');
 const annotationCSS = plain('apple/Shared/Highlights.swift', 'annotationCSS');
 // find in paper (FindInPage.swift): luntaFind / luntaFindNext / luntaFindPrev / luntaFindClear
 const findJS = plain('apple/Shared/FindInPage.swift', 'findJS');
+// the Summary card (SummaryCard.swift): luntaSummarySource / luntaSummaryShow / luntaSummaryHide
+const summaryJS = plain('apple/Shared/SummaryCard.swift', 'summaryJS');
 
 // annotationJS is a template: Swift fills in `CSS` with annotationCSS (backticks removed)
 const ann = literal('apple/Shared/Highlights.swift', 'annotationJS');
@@ -110,6 +112,7 @@ const files = {
   'position.js': [header('apple/Shared/ReadingPosition.swift (ReaderAssets.positionJS)'), positionJS],
   'paged.js': [header('apple/Shared/PageTurn.swift (ReaderAssets.pagedJS)'), pagedJS],
   'find.js': [header('apple/Shared/FindInPage.swift (ReaderAssets.findJS)'), findJS],
+  'summary.js': [header('apple/Shared/SummaryCard.swift (ReaderAssets.summaryJS)'), summaryJS],
   'reader.css': [header(`${cloud} (ReaderAssets.css)`), css],
 };
 

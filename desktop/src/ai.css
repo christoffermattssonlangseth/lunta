@@ -1,0 +1,26 @@
+/* On-device AI (ai.ts): its settings and the Ask panel */
+.ai-settings { display: flex; flex-direction: column; gap: 8px; }
+.ai-settings p { margin: 0; }
+.ai-settings .row { display: flex; gap: 8px; align-items: center; }
+.ai-settings progress { width: 100%; accent-color: var(--accent); }
+.ai-settings label.chk { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+
+.ask-panel { position: fixed; top: 48px; right: 12px; bottom: 40px; width: min(420px, 44vw); z-index: 70; display: flex; flex-direction: column;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.18); overflow: hidden; }
+.ask-panel header { display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--line); }
+.ask-list { flex: 1; overflow-y: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; }
+.ask-q { align-self: flex-end; max-width: 85%; background: var(--sel); border-radius: 12px; padding: 6px 10px; white-space: pre-wrap; }
+.ask-a { max-width: 100%; }
+.ask-text { white-space: pre-wrap; line-height: 1.5; user-select: text; }
+.ask-text.pending { color: var(--dim); animation: ask-pulse 1.6s ease-in-out infinite; }
+@keyframes ask-pulse { 50% { opacity: .4; } }
+.ask-cite { font-size: 10px; padding: 0 4px; margin: 0 1px; border-radius: 4px; vertical-align: super; line-height: 1.2; min-width: 0;
+  background: var(--sel); border: 0; color: var(--accent); }
+.ask-sources { margin-top: 6px; font-size: 12px; color: var(--dim); }
+.ask-sources summary { cursor: pointer; }
+.ask-source { margin: 4px 0 0; }
+.ask-source a { color: var(--accent); }
+.ask-notice { color: #c4302b; font-size: 12px; white-space: pre-wrap; }
+.ask-input { display: flex; gap: 6px; padding: 8px 10px 4px; border-top: 1px solid var(--line); align-items: flex-end; }
+.ask-input textarea { flex: 1; resize: none; }
+.ask-note { margin: 0; padding: 0 12px 8px; font-size: 11px; color: var(--dim); }
