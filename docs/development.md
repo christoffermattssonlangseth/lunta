@@ -92,7 +92,7 @@ claude mcp add --scope user lunta -- /Applications/Lunta.app/Contents/MacOS/lunt
 Tools: `search_papers`, `list_papers`, `get_paper`, `read_paper` (full text, or the passages matching a query), `cite`
 (APA, Vancouver, Nature, …, BibTeX with the fixed keys, `latex` for `\cite{…}`, RIS), `library_overview`, `find_new_papers` (OpenAlex), `add_paper`, `find_pdf`,
 `tag_papers`, `add_to_collection`, `set_status`, `add_note`, `update_paper`, `resolve_citations` (the placeholders in a text the
-user is writing, "(Smith et al. 2019)" or `\cite{?smith2019}`, each with up to five candidate papers; read-only, see Resolve Citations), and for highlights `list_highlights` (across the library; filter by paper, colour, tag, collection or words), `add_highlight` (quote a passage; it shows in the reading view and the PDF) and `update_highlight` (note, colour, delete).
+user is writing, "(Smith et al. 2019)" or `\cite{?smith2019}`, each with up to five candidate papers; read-only, see Resolve Citations), `check_references` (a reference list checked against the published record) and `library_status` (papers flagged retracted or corrected, preprints since published; both read-only, see Checks against the published record), and for highlights `list_highlights` (across the library; filter by paper, colour, tag, collection or words), `add_highlight` (quote a passage; it shows in the reading view and the PDF) and `update_highlight` (note, colour, delete).
 
 The agent writes through its own change log (`ops/agent-….jsonl`), exactly like another device, so it can work while the
 apps are open and its changes sync to the Mac and iPhone. The same binary is a command-line tool:
@@ -354,6 +354,101 @@ edits and deletes, user keys, two library instances syncing through copied logs)
 `cargo test bibfiles` in `desktop/src-tauri`; `cargo test worktype`, `cargo test bibimport`,
 `cargo test exports_by_work_type` and `cargo test bibtex_letters` in `core` (types, capitals, subtitles,
 the .bib import with stand-in lookups).
+
+## Checks against the published record
+
+Lunta proposes, the researcher decides: these checks report and suggest; the library changes only
+when a choice is confirmed, through the change log like any other edit (`core/src/checks`).
+
+**Check a Reference List** (`checks::refcheck`). Input: a .bib, a .ris, a pasted list (numbered, one
+paragraph each, or author–year lines; a line that is indented, unfinished or doesn't start with an
+author joins the one before), a paper's own reference list (its reading view's `ol.refs` and the other
+lists the References panel reads, `Library::paper_reference_list`; else the PDF's after its last
+References heading, `pdf_reference_list` from the app's PDF lines), or a folder's papers. Each
+reference is looked up:
+
+1. by its DOI: Crossref, then DataCite (arXiv, Zenodo…), then doi.org's handle API (registered with
+   another agency: exists, details not compared);
+2. by its arXiv id;
+3. else Crossref's bibliographic search, then OpenAlex (title, ±1 year), then PubMed (Europe PMC,
+   `SRC:MED`). A hit is taken only when the title is the reference's (nearly all its words, a
+   "RETRACTED:" mark ignored), the years are at most one apart and the first author agrees (or the
+   title is long and specific).
+
+The record is compared field by field: title (a left-out subtitle is fine), first author, number of
+authors ("and others" allowed; a group author such as "Qwen Team" not compared), year, venue
+(abbreviations and initials: "Nat. Neurosci.", "J Biol Chem", "PNAS"; a conference's short name in
+brackets), volume, first page, DOI. For a pasted reference the found record's author, year, volume and
+pages are looked for in its text. Results: **verified**; **minor differences** (the fields, as given and
+as found); **not found**, worded "Could not be found in Crossref, OpenAlex or PubMed" and nothing
+stronger (books, reports, theses and very new papers are often missing); **DOI points to a different
+work** (what it points to, and the reference's own DOI when its details find it) or nowhere; not
+looked up (software, web pages: `bibimport::is_extra`); couldn't be checked (a service couldn't be
+asked: never reported as not found). Retractions and corrections on the work found are listed. The
+report (`RefCheckReport`) has the totals, a summary line, Markdown with links and CSV.
+`cargo run --example check_refs -- refs.bib [out.md] [out.csv]` runs it from the command line.
+
+**Retractions and corrections** (`checks::updates`). Crossref keeps update relations: notices
+deposited by publishers and, since Crossref took over the Retraction Watch database (2023), each of its
+records, as `updated-by` on the work (`type`: retraction, partial_retraction, withdrawal, removal,
+expression_of_concern, correction, erratum, corrigendum, addendum, clarification…; `source`:
+`publisher` or `retraction-watch`; `updated` the date; the notice itself has `update-to`, and
+`filter=update-type:retraction` lists notices). The library's DOIs are asked 20 at a time
+(`/works?filter=doi:A,doi:B…&select=DOI,type,updated-by,relation`); the two sources' records of one
+notice are joined.
+
+**Published versions of preprints** (papers whose kind is a preprint: `posted-content`, an arXiv,
+bioRxiv, medRxiv… DOI or journal), in order: Crossref `is-preprint-of` on the preprint (in the same
+batch), `has-preprint` on the article asked in reverse (`filter=relation.object:…`), bioRxiv's and
+medRxiv's `api.biorxiv.org/pubs/<server>/<doi>` (`published_doi`), arXiv's `<arxiv:doi>` and
+`<arxiv:journal_ref>` (`id_list`, 20 at a time), OpenAlex locations (a `publishedVersion` in a journal or
+conference with a DOI), and last Crossref's search (the same title, the same first author, not
+earlier, an article, conference paper or chapter). A published paper is never offered its preprint,
+and a version found that is itself a preprint is not offered.
+
+**What is kept.** `PaperUpdates` (notices; the published version to suggest; a linked one; a declined
+DOI; after a switch the preprint's details and when) in a new op, `set_updates` (the latest wins),
+written only when something changed. Older versions skip the op (an unknown `op` doesn't parse), so
+they show nothing and lose nothing; a newer one reads it on every device. It is not in `PaperMeta`, so
+an edit of the details on an older device can't wipe it. `Library::all_paper_updates` gives it for the
+list's badges, the reader's banner and the smart folders "Retracted or corrected" and "Published since
+you added them" (`updates` in smart-folders.json: `flagged` / `published`, optional, so older
+folders still read).
+
+**Choices.** Switch to the Published Version (`use_published_version`, after a confirmation): the
+published record by its DOI becomes the paper's details (the preprint's abstract, keywords and arXiv id
+fill gaps); highlights, notes, tags, folders and the citation key stay (the key is guarded as for any
+edit); `undo_published_version` restores the preprint's details. Then, on the Mac, iPhone and iPad, the
+published version's full text when it is open access: its reading view replaces the preprint's only if
+every highlight is found in the new text (as Use This Page's Full Text does), a PDF only if the old one
+has no highlights; otherwise the new files are kept as a backup. Link Both keeps the preprint and shows
+the published version with it; Keep the Preprint stops suggesting that version.
+
+**When, and politely** (`checks::net`). On demand (a paper's menu; the library's File or + menu),
+and weekly: `check_paper_updates_if_due` (per device, the whole library) a minute after the app
+starts and every six hours after. One request at a time per service with a pause (arXiv 3 s, Crossref
+250 ms, bioRxiv 500 ms, OpenAlex 150 ms), User-Agent `Lunta (https://github.com/christoffermattssonlangseth/lunta)`
+without an e-mail address, 429 and 5xx answered by waiting (Retry-After, at most a minute). Answers
+are kept in the device's cache (`checks/answers.json` a day for reference lists,
+`checks/updates.json` six days for the weekly check, an hour on demand; "no such thing" is kept,
+errors are not), and batches are asked in a fixed order so the same library asks the same questions.
+
+| | Mac | iPhone, iPad | Windows, Linux | Android |
+|---|---|---|---|---|
+| Check a Reference List | File menu; a folder's menu (Check References); a paper's menu | + menu; a paper's menu (Check) | the import menu; a folder's menu; a paper's menu | + menu |
+| Report | sheet; Share, Save as Markdown / CSV | sheet; Share, Save | dialog; Save as Markdown / CSV | dialog; Share (Markdown, CSV) |
+| Retractions, published versions | badge, reader banner, smart folders, File › Check Library… | badge, reader banner, smart folders, + menu | badge, banner in the details, smart folders | + menu, summary with the choices |
+
+MCP: `check_references(text | bibtex, markdown?)` and `library_status(id?)`, both read-only.
+
+Tests: `cargo test checks` in `core`, on answers recorded from the services (`src/testdata/checks`, no
+network): a .bib with a verified reference, minor differences, one not found, a wrong DOI, a
+retracted paper and software; a pasted numbered list; a library's retraction and a bioRxiv preprint's
+journal version (and nothing for an arXiv preprint or a published paper with an arXiv id); a second
+check that writes nothing; another device reading the same; switch, undo, link both, keep the
+preprint; the answer cache and the pacing. `cargo test checks -- --ignored record_check_fixtures`
+asks the services and records the answers again (and is the live test). `cargo test refcite`: a PDF's
+whole reference list.
 
 ## Releases
 
