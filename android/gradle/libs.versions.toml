@@ -14,6 +14,7 @@ iconsExtended = "1.7.8"
 androidsvg = "1.4"
 junit = "4.13.2"
 orgJson = "20250517"
+media3 = "1.11.1"
 
 [libraries]
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
@@ -33,6 +34,7 @@ androidsvg = { module = "com.caverock:androidsvg-aar", version.ref = "androidsvg
 junit = { module = "junit:junit", version.ref = "junit" }
 json = { module = "org.json:json", version.ref = "orgJson" }
 coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+media3-session = { module = "androidx.media3:media3-session", version.ref = "media3" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -211,6 +211,8 @@ private fun SettingsSheet(model: AppModel, onDismiss: () -> Unit) {
             OnDeviceAiSettings()
             UpdateSettings(model.updater)
             Spacer(Modifier.height(20.dp))
+            app.lunta.listen.NaturalVoiceSettings()
+            Spacer(Modifier.height(20.dp))
             Text("Lunta for Android ${BuildConfig.VERSION_NAME} · Rust core, PDFium for PDFs (see licenses in the app’s assets).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

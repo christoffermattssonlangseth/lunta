@@ -3,6 +3,8 @@
 #   android/app/src/main/jniLibs/<abi>/liblunta_core.so   the core, with features convert, pdf, drive, llm
 #   android/app/src/main/jniLibs/<abi>/libpdfium.so       PDFium (bblanchon/pdfium-binaries), downloaded, not committed
 #   android/app/src/main/assets/licenses/pdfium*          PDFium's licences (pdfium-LICENSE.txt is committed, the rest not)
+#   android/app/src/main/jniLibs/<abi>/libsherpa-onnx-c-api.so, libonnxruntime.so   Listen's natural voice
+#                                                         (scripts/fetch-sherpa-onnx-android.sh), not committed
 #   android/app/src/main/generated/uniffi/                Kotlin bindings (UniFFI), not committed
 #
 # Usage: scripts/build-core-android.sh            arm64-v8a only (phones, the arm64 emulator)
@@ -82,6 +84,9 @@ for abi in $ABIS; do
     for f in "$dir"/licenses/*; do n=$(basename "$f"); n=${n%.txt}; cp "$f" "$licenses/pdfium/$n.txt"; done
   fi
 done
+
+echo "› sherpa-onnx (the natural voice's engine for Listen)"
+ABIS="$ABIS" "$ROOT/scripts/fetch-sherpa-onnx-android.sh"
 
 echo "› Kotlin bindings"
 GEN=$APP/src/main/generated/uniffi

@@ -48,6 +48,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import app.lunta.*
+import app.lunta.listen.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -155,6 +156,9 @@ private fun EpubReader(model: AppModel, paper: Paper) {
     fun jsString(code: String): suspend () -> String? = {
         js(code)?.takeIf { it != "null" }?.let { (JSONTokener(it).nextValue() as? String) }
     }
+    // Listen (app/lunta/listen): the paper read aloud, the page following the voice
+    val listen = remember(id) { ReaderListen(scope, model, paper) { code -> jsString(code)() } }
+    DisposableEffect(id) { onDispose { listen.detach() } }
 
     /** Highlight mode and its colour in the page (the page colours a selection at once while on). */
     fun hlModeJS() = "window.luntaHLMode = $hlMode; window.luntaHLColor = '$hlColor';" +
@@ -180,6 +184,7 @@ private fun EpubReader(model: AppModel, paper: Paper) {
     suspend fun pageReady() {
         js(hlModeJS())
         refreshHighlights()
+        listen.attach()
         summary.pageReady { js(it) }
         if (restored) return
         val spot = withContext(Dispatchers.IO) { model.positions?.latest(id) }
@@ -354,6 +359,7 @@ private fun EpubReader(model: AppModel, paper: Paper) {
                 "__chrome" -> chrome = !chrome
                 "__link" -> (v as? String)?.let { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
                 "__cite" -> (v as? String)?.let { cite(it) }
+                "narr" -> (v as? String)?.let { Narrator.playFromId(it) }     // a paragraph tapped while listening
                 "summary" -> (v as? String)?.let { summary.action(it) }
             }
         }
@@ -473,6 +479,10 @@ private fun EpubReader(model: AppModel, paper: Paper) {
                                 leadingIcon = { Icon(Icons.Outlined.Pages, null) })
                             DropdownMenuItem({ Text("Text & Theme…") }, { overflow = false; showAppearance = true },
                                 leadingIcon = { Icon(Icons.Filled.FormatSize, null) })
+                            DropdownMenuItem({ Text("Listen") }, { overflow = false; listen.start() }, leadingIcon = { Icon(Icons.Outlined.Headphones, null) })
+                            if (Narrator.voiceStatus?.installed == true && !paper.hasAudio && Narrator.rendering == null)
+                                DropdownMenuItem({ Text("Make Natural Narration") }, { overflow = false; listen.makeNarration() },
+                                    leadingIcon = { Icon(Icons.Outlined.RecordVoiceOver, null) })
                             DropdownMenuItem({ Text(if (annotations.isEmpty()) "Highlights & Notes" else "Highlights & Notes (${annotations.size})") },
                                 { overflow = false; showList = true; scope.launch { refreshHighlights() } },
                                 leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Notes, null) })
@@ -516,6 +526,13 @@ private fun EpubReader(model: AppModel, paper: Paper) {
                 }
             }
         }
+
+        // Listen: the player while this paper is read aloud
+        if (Narrator.items.isNotEmpty() && Narrator.paperId == id && Narrator.readerPaper == id) {
+            Box(Modifier.align(Alignment.BottomCenter)) { NarrationBar({ Narrator.stop() }, { listen.voiceDialog = true }) }
+        }
+        NarrationRenderNote(Modifier.align(Alignment.BottomCenter), id)
+        if (listen.voiceDialog) NaturalVoiceDialog { listen.voiceDialog = false }
 
         resumeNote?.let { n ->
             Surface(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(24.dp), shape = MaterialTheme.shapes.large, tonalElevation = 6.dp, shadowElevation = 3.dp) {

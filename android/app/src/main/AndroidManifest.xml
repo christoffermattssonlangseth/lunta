@@ -3,6 +3,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Listen: narration goes on with the screen off or in another app (a media playback service) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <queries>
         <intent>
@@ -56,5 +59,15 @@
                 <data android:scheme="${redirectScheme}" android:path="/oauth2redirect" />
             </intent-filter>
         </activity>
+
+        <!-- Listen: the paper read aloud in the background, with its media notification (app/lunta/listen) -->
+        <service
+            android:name=".listen.ListenService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

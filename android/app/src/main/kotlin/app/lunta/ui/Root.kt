@@ -45,6 +45,13 @@ fun LuntaRoot(model: AppModel) {
                 )
             }
             UpdateDialogs(model.updater)
+            // Listen: the paper being read aloud, wherever its reader isn't on screen
+            app.lunta.listen.NowPlayingBar(Modifier.align(Alignment.BottomCenter)) { id ->
+                if (model.screen != Screen.Reader(id, false)) {
+                    if (model.screen is Screen.Reader) model.pop()
+                    model.push(Screen.Reader(id, false))
+                }
+            }
             model.info?.let { e ->
                 AlertDialog(
                     onDismissRequest = { model.info = null },

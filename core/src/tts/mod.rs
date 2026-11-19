@@ -53,6 +53,8 @@ pub struct NaturalVoice {
     cancel: AtomicBool,
     engine: Mutex<Option<Kokoro>>,
     threads: i32,
+    /// Where sherpa-onnx's libraries are, when the app has them (Android: its native library folder).
+    lib_dir: Mutex<Option<PathBuf>>,
 }
 
 #[uniffi::export]
@@ -63,7 +65,13 @@ impl NaturalVoice {
         let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
         // leave a core or two for the app and the audio; Kokoro gains little past 4 threads
         let threads = (threads.saturating_sub(1)).clamp(1, 4) as i32;
-        Arc::new(NaturalVoice { root: PathBuf::from(root), cancel: AtomicBool::new(false), engine: Mutex::new(None), threads })
+        Arc::new(NaturalVoice { root: PathBuf::from(root), cancel: AtomicBool::new(false), engine: Mutex::new(None), threads, lib_dir: Mutex::new(None) })
+    }
+
+    /// The folder with sherpa-onnx's libraries when they come with the app (Android:
+    /// `applicationInfo.nativeLibraryDir`); otherwise they are downloaded with the model.
+    pub fn set_library_dir(&self, dir: String) {
+        *self.lib_dir.lock().unwrap() = Some(PathBuf::from(dir));
     }
 
     pub fn status(&self) -> VoiceStatus {
@@ -124,7 +132,7 @@ impl NaturalVoice {
             return Err(CoreError::NotFound("the natural voice is not downloaded".into()));
         }
         *g = None;
-        let lib_dir = install::engine_package().map(|p| install::package_dir(&self.root, &p));
+        let lib_dir = self.lib_dir.lock().unwrap().clone().or_else(|| install::engine_package().map(|p| install::package_dir(&self.root, &p)));
         let model_dir = install::package_dir(&self.root, &install::MODEL);
         *g = Some(Kokoro::load(lib_dir.as_deref(), &model_dir, voice, self.threads)?);
         Ok(())

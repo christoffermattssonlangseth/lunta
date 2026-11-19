@@ -116,6 +116,8 @@ dependencies {
     implementation(libs.coroutines.android)
     // SVG figures in the figure viewer and grid (BitmapFactory reads only raster images)
     implementation(libs.androidsvg)
+    // Listen: the media notification, lock screen and headset controls (MediaSession) for narration
+    implementation(libs.media3.session)
     implementation("${libs.jna.get()}@aar")
     testImplementation(libs.junit)
     testImplementation(libs.json)   // org.json for the JVM (Android's is a stub in unit tests)
