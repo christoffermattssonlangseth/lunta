@@ -1,18 +1,73 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lunta – Getting started</title><link rel="stylesheet" href="style.css"></head>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lunta – Getting started</title>
+<meta name="description" content="Getting started with Lunta: which setup fits your devices, how to install it, and how to bring your library from Zotero, Mendeley, ReadCube or EndNote.">
+<link rel="canonical" href="https://getlunta.app/getting-started.html">
+<meta name="theme-color" content="#1f4f60">
+<link rel="icon" href="images/icon.svg" type="image/svg+xml">
+<link rel="icon" href="images/icon-64.png" type="image/png" sizes="64x64">
+<link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Lunta">
+<meta property="og:title" content="Lunta – Getting started">
+<meta property="og:description" content="Getting started with Lunta: which setup fits your devices, how to install it, and how to bring your library from Zotero, Mendeley, ReadCube or EndNote.">
+<meta property="og:url" content="https://getlunta.app/getting-started.html">
+<meta property="og:image" content="https://getlunta.app/images/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preload" href="fonts/libre-franklin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+</head>
 <body>
-<h1>Getting started with Lunta</h1>
-<p class="muted">Lunta: reader and reference manager · for Mac, iPhone, iPad, Android, Windows and Linux</p>
+<a class="skip" href="#main">Skip to content</a>
+<div class="band">
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./"><img src="images/icon-64.png" alt="" width="32" height="32">Lunta</a>
+      <nav class="nav" aria-label="Main">
+        <a class="wide" href="./#features">Features</a>
+        <a class="wide" href="./#platforms">Platforms</a>
+        <a class="wide" href="./#privacy">Privacy</a>
+        <a href="getting-started.html" aria-current="page">Getting started</a>
+        <a class="btn btn-amber" href="download.html">Download</a>
+      </nav>
+    </div>
+  </header>
+  <div class="page-head">
+    <div class="wrap">
+      <p class="kicker">Getting started</p>
+      <h1>Getting started with Lunta</h1>
+      <p>Lunta: reader and reference manager · for Mac, iPhone, iPad, Android, Windows and Linux</p>
+    </div>
+  </div>
+</div>
 
-<p>Contents: <a href="#setup">1. Choose your setup</a> · <a href="#install">2. Install</a> ·
-<a href="#import">3. Bring your library</a> · <a href="#first">4. First steps</a> · <a href="#help">Help</a></p>
-
+<main id="main">
+  <div class="wrap doc-layout">
+    <aside class="toc">
+      <nav aria-labelledby="toc-title">
+        <h2 id="toc-title">On this page</h2>
+        <ol>
+        <li><a href="#setup">1. Choose your setup</a></li>
+        <li><a href="#install">2. Install</a></li>
+        <li><a href="#import">3. Bring your library</a></li>
+        <li><a href="#first">4. First steps</a></li>
+        <li><a href="#help">Help</a></li>
+        </ol>
+      </nav>
+    </aside>
+    <article class="prose">
+<section>
 <h2 id="setup">1. Choose your setup</h2>
 <p>Your library (papers, PDFs, reading views, highlights and notes) is kept in your own cloud storage, not on
 a Lunta server. Which storage depends on your devices:</p>
+<div class="table-scroll">
 <table>
-  <tr><th>Your devices</th><th>Where the library lives</th><th>What to do</th></tr>
+  <thead><tr><th scope="col">Your devices</th><th scope="col">Where the library lives</th><th scope="col">What to do</th></tr></thead>
+  <tbody>
   <tr><td>Mac, iPhone, iPad only</td><td>iCloud Drive</td><td>Nothing: be signed in to iCloud and the
     library syncs by itself.</td></tr>
   <tr><td>A Mac (and iPhone/iPad) plus Android, Windows or Linux</td><td>iCloud Drive, with a copy in Google
@@ -21,27 +76,38 @@ a Lunta server. Which storage depends on your devices:</p>
     between the two while Lunta is open on it, every few minutes.</td></tr>
   <tr><td>Android, Windows or Linux only</td><td>Google Drive</td><td>Sign in with your Google account in
     the app. Lunta keeps its library in a <em>Lunta</em> folder in your Drive.</td></tr>
+  </tbody>
 </table>
+</div>
+</section>
 
+<section>
 <h2 id="install">2. Install</h2>
 <ul>
   <li><strong>Mac, Windows, Linux, Android:</strong> download from the
     <a href="https://github.com/christoffermattssonlangseth/lunta/releases/latest">latest release</a>
-    (the page says which file you need). The Mac app is signed and notarized by Apple.</li>
-  <li><strong>iPhone and iPad:</strong> through TestFlight for now (ask for the invite link), and the App
-    Store soon.</li>
-  <li><strong>Chrome extension</strong> (Mac, Windows, Linux): saves the paper you're looking at, with its
-    PDF, using the access your browser already has, and turns a journal's article page into the reading view
-    (<em>Use this page's full text</em>). Download <code>Lunta-…-Chrome-Extension.zip</code> from the
+    (<a href="download.html">which file you need</a>). The Mac app is signed and notarized by Apple.</li>
+  <li><strong>iPhone and iPad:</strong> <a href="https://apps.apple.com/app/lunta/id6835403752">Lunta on the
+    App Store</a>.</li>
+  <li><strong>Browser extension</strong> (Chrome, Edge, Firefox; Mac, Windows, Linux): saves the paper you're
+    looking at, with its PDF, using the access your browser already has, and turns a journal's article page into
+    the reading view (<em>Use this page's full text</em>). Download <code>Lunta-…-Chrome-Extension.zip</code> from the
     <a href="https://github.com/christoffermattssonlangseth/lunta/releases/latest">latest release</a> and
     unzip it somewhere permanent; open <code>chrome://extensions</code>, turn on <strong>Developer
-    mode</strong>, click <strong>Load unpacked</strong> and choose the folder. Lunta must be open on the
-    same computer. On Android, use a paper's <strong>Journal page</strong> in Lunta instead.</li>
-  <li><strong>Word and Google Docs</strong> (Mac): cite from your library. In Lunta, choose
-    <strong>Lunta › Citations in Word &amp; Google Docs…</strong> and follow the steps there; see
-    <a href="support.html">Lunta Citations</a>.</li>
+    mode</strong>, click <strong>Load unpacked</strong> and choose the folder
+    (<a href="download.html#extension">Firefox and more</a>). Lunta must be open on the same computer.
+    On Android, use a paper's <strong>Journal page</strong> in Lunta instead.</li>
+  <li><strong>Safari extension</strong> (Mac, iPhone, iPad): comes with the app. On the Mac, open Lunta once,
+    then turn it on in <strong>Safari › Settings › Extensions</strong>; on iPhone and iPad, in the Settings app
+    under <strong>Apps › Safari › Extensions › Lunta</strong>. Allow it on all websites.</li>
+  <li><strong>Word</strong> (Mac) <strong>and Google Docs</strong> (with the browser extension and Lunta for
+    Mac, Windows or Linux): cite from your library. For Word, choose
+    <strong>Lunta › Citations in Word &amp; Google Docs…</strong> in Lunta for Mac and follow the steps there;
+    see <a href="support.html">Lunta Citations</a>.</li>
 </ul>
+</section>
 
+<section>
 <h2 id="import">3. Bring your library from Zotero, Mendeley, ReadCube, EndNote…</h2>
 <p>Lunta imports BibTeX (.bib) and RIS (.ris) exports from any reference manager. Titles, authors, DOIs,
 tags and notes come along, PDFs too where the export points to them, and duplicates are merged.</p>
@@ -95,13 +161,15 @@ your Google Drive. JabRef and BibDesk: choose the .bib file directly; linked PDF
 
 <p>Step-by-step details: <a href="https://github.com/christoffermattssonlangseth/lunta/blob/main/docs/importing.md">Bringing
 your library to Lunta</a>.</p>
+</section>
 
+<section>
 <h2 id="first">4. First steps</h2>
 <ul>
   <li><strong>Add a paper:</strong> the + button (⇧⌘N on the Mac) with a DOI, PubMed ID or arXiv link; drop PDFs on the list; or share a page from Safari or Chrome.</li>
   <li><strong>Read:</strong> open a paper for its reading view: text that fits the screen, tappable figures
     and citations, themes, scroll or turn pages. The PDF is one tap away.</li>
-  <li><strong>Highlight:</strong> select text and pick a colour, or turn on highlight mode (the highlighter
+  <li><strong>Highlight:</strong> select text and pick a color, or turn on highlight mode (the highlighter
     button) to highlight every selection at once. On iPad, draw with Apple Pencil.</li>
   <li><strong>Organize:</strong> folders, tags, stars, Smart Folders and the Must Read list.</li>
   <li><strong>New for You:</strong> describe your research once, and every morning Lunta picks new papers
@@ -109,8 +177,53 @@ your library to Lunta</a>.</p>
   <li><strong>Listen and ask:</strong> have a paper read aloud, or ask questions about it; both run on
     your device.</li>
 </ul>
+</section>
 
+<section>
 <h2 id="help">Help</h2>
 <p>Questions, problems or ideas: <a href="https://github.com/christoffermattssonlangseth/lunta/issues">GitHub
 Issues</a>. Privacy: <a href="app-privacy.html">Lunta collects nothing</a>.</p>
-</body></html>
+</section>
+    </article>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap footer-grid">
+    <div class="about">
+      <a class="brand" href="./"><img src="images/icon-64.png" alt="" width="32" height="32" loading="lazy">Lunta</a>
+      <p>A reader and reference manager for scientific papers. <em>Lunta</em> is Swedish for a thick bundle of papers.</p>
+    </div>
+    <nav aria-labelledby="f-get">
+      <h2 id="f-get">Get Lunta</h2>
+      <ul>
+        <li><a href="https://apps.apple.com/app/lunta/id6835403752">App Store</a></li>
+        <li><a href="download.html">Mac, Windows, Linux, Android</a></li>
+        <li><a href="download.html#extension">Browser extension</a></li>
+        <li><a href="https://github.com/christoffermattssonlangseth/lunta/releases">All releases</a></li>
+      </ul>
+    </nav>
+    <nav aria-labelledby="f-help">
+      <h2 id="f-help">Help</h2>
+      <ul>
+        <li><a href="getting-started.html">Getting started</a></li>
+        <li><a href="support.html">Lunta Citations for Word</a></li>
+        <li><a href="https://github.com/christoffermattssonlangseth/lunta/issues">Questions and problems</a></li>
+        <li><a href="https://github.com/christoffermattssonlangseth/lunta">Source code</a></li>
+      </ul>
+    </nav>
+    <nav aria-labelledby="f-privacy">
+      <h2 id="f-privacy">Privacy</h2>
+      <ul>
+        <li><a href="app-privacy.html">Privacy policy</a></li>
+        <li><a href="privacy.html">Word add-in privacy</a></li>
+      </ul>
+    </nav>
+  </div>
+  <div class="wrap footer-bottom">
+    <span>Made by Christoffer Mattsson Langseth · MIT license</span>
+    <span>No cookies, no analytics, no third-party requests on this site.</span>
+  </div>
+</footer>
+</body>
+</html>
