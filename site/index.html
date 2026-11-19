@@ -198,8 +198,8 @@
           </div>
           <div class="vg summary" aria-hidden="true">
             <b><svg width="14" height="14"><use href="#i-spark"/></svg>Summary</b>
-            <p>Geneformer is pretrained on about 30 million single-cell transcriptomes, then fine-tuned for tasks with little data; it pointed to candidate therapeutic targets for cardiomyopathy.</p>
-            <small>Written on this device. It can be wrong.</small>
+            <p>The paper develops Geneformer, a context-aware deep learning model pretrained on 30 million single-cell transcriptomes to enable predictions in network biology with limited data. During pretraining, Geneformer learns network dynamics and hierarchy through self-supervised attention weights. …</p>
+            <small>Made on device by the open model (Qwen3 4B). It can be wrong.</small>
           </div>
         </article>
 
@@ -275,7 +275,69 @@
     </div>
   </section>
 
-  <section class="section" id="platforms" aria-labelledby="platforms-title">
+  <section class="section" id="switch" aria-labelledby="switch-title">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <p class="kicker"><svg aria-hidden="true"><use href="#i-folder"/></svg>Bring your library</p>
+        <h2 id="switch-title">Switching from Zotero, Mendeley, ReadCube or EndNote</h2>
+        <p class="lead">Export once, import once. Your papers come along with their PDFs, tags and notes, and duplicates are merged rather than added twice.</p>
+      </div>
+      <ol class="steps">
+        <li class="step reveal">
+          <span class="num" aria-hidden="true">01</span>
+          <h3>Export from your reference manager</h3>
+          <p>As BibTeX or RIS, with the files where the app offers it.</p>
+          <dl class="sources">
+            <div><dt>Zotero</dt><dd><b>File › Export Library…</b>, BibTeX, tick <b>Export Files</b></dd></div>
+            <div><dt>Mendeley</dt><dd>Select the papers, <b>File › Export…</b> as BibTeX</dd></div>
+            <div><dt>ReadCube</dt><dd><b>Export › BibTeX</b>, and <b>Export PDFs</b> to a folder</dd></div>
+            <div><dt>EndNote</dt><dd><b>File › Export…</b>, style <b>RefMan (RIS) Export</b></dd></div>
+          </dl>
+          <p class="fine">Paperpile, JabRef, BibDesk and any app that writes .bib or .ris work too.</p>
+        </li>
+        <li class="step reveal">
+          <span class="num" aria-hidden="true">02</span>
+          <h3>Import into Lunta</h3>
+          <p>Choose the export's folder, a ZIP of it, or the .bib or .ris file.</p>
+          <dl class="sources">
+            <div><dt>Mac</dt><dd><b>File › Import from Zotero, Mendeley, ReadCube, EndNote…</b></dd></div>
+            <div><dt>iPhone, iPad</dt><dd><b>+ › Import Library</b>, the folder in iCloud Drive or an AirDropped ZIP</dd></div>
+            <div><dt>Windows, Linux</dt><dd><b>Import ▾ › Import Library…</b></dd></div>
+            <div><dt>Android</dt><dd><b>+ › Import library</b>, from the phone or Google Drive</dd></div>
+          </dl>
+        </li>
+        <li class="step reveal">
+          <span class="num" aria-hidden="true">03</span>
+          <h3>Lunta does the rest</h3>
+          <ul class="ticks">
+            <li>Finds the PDFs the export names, and matches other PDFs by DOI or title</li>
+            <li>Keeps tags and notes, and puts the papers in a folder if you like</li>
+            <li>Makes the reading views in the background; <b>Find Missing PDFs</b> gets legal open-access copies for the rest</li>
+          </ul>
+          <div class="import-mock" aria-hidden="true">
+            <div class="im-row"><b>Importing Thesis.bib</b><span>into “Thesis”</span></div>
+            <div class="im-bar"><i></i></div>
+            <p>Added 312 papers, merged 4 with papers already in Lunta, 280 PDFs.</p>
+            <p class="im-sub"><span class="spin"></span>Making reading views · 41 of 312</p>
+          </div>
+        </li>
+      </ol>
+      <div class="switch-foot">
+        <div class="latex reveal">
+          <p class="kicker"><svg aria-hidden="true"><use href="#i-cite"/></svg>Writing in LaTeX?</p>
+          <h3>Import your .bib and keep every citation key</h3>
+          <p><b>Import BibTeX (Keep Citation Keys)</b> on Mac, iPhone and iPad looks each entry up by DOI, arXiv id or Crossref and keeps its key, so every <code>\cite{…}</code> in your document still works. A report shows where your .bib and the published record differ.</p>
+        </div>
+        <div class="caveat reveal">
+          <h3>What stays behind</h3>
+          <p>Exports don't include your collections: export each one on its own and import it into a folder of the same name. Highlights and annotations made in another app don't become Lunta highlights.</p>
+          <a class="textlink" href="getting-started.html#import">The full guide, app by app</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-alt" id="platforms" aria-labelledby="platforms-title">
     <div class="wrap">
       <div class="section-head reveal">
         <p class="kicker">Platforms</p>
@@ -348,7 +410,7 @@
     </div>
   </section>
 
-  <section class="section section-alt" id="privacy" aria-labelledby="privacy-title">
+  <section class="section" id="privacy" aria-labelledby="privacy-title">
     <div class="wrap">
       <div class="section-head reveal">
         <p class="kicker">Privacy</p>
@@ -373,7 +435,7 @@
     </div>
   </section>
 
-  <section class="section" id="open-source" aria-labelledby="oss-title">
+  <section class="section section-alt" id="open-source" aria-labelledby="oss-title">
     <div class="wrap split">
       <div class="reveal">
         <p class="kicker"><svg aria-hidden="true"><use href="#i-code"/></svg>Open source</p>
