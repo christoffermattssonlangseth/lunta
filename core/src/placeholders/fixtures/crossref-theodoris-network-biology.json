@@ -1,0 +1,245 @@
+{
+ "status": "ok",
+ "message": {
+  "items": [
+   {
+    "publisher": "Wiley",
+    "issue": "4",
+    "DOI": "10.1002/qub2.68",
+    "type": "journal-article",
+    "page": "335-338",
+    "title": [
+     "Perspectives on benchmarking foundation models for network biology"
+    ],
+    "volume": "12",
+    "author": [
+     {
+      "given": "Christina V.",
+      "family": "Theodoris",
+      "sequence": "first"
+     }
+    ],
+    "container-title": [
+     "Quantitative Biology"
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       11
+      ]
+     ]
+    }
+   },
+   {
+    "publisher": "Springer Science and Business Media LLC",
+    "issue": "7965",
+    "DOI": "10.1038/s41586-023-06139-9",
+    "type": "journal-article",
+    "page": "616-624",
+    "title": [
+     "Transfer learning enables predictions in network biology"
+    ],
+    "volume": "618",
+    "author": [
+     {
+      "given": "Christina V.",
+      "family": "Theodoris",
+      "sequence": "first"
+     },
+     {
+      "given": "Ling",
+      "family": "Xiao",
+      "sequence": "additional"
+     },
+     {
+      "given": "Anant",
+      "family": "Chopra",
+      "sequence": "additional"
+     },
+     {
+      "given": "Mark D.",
+      "family": "Chaffin",
+      "sequence": "additional"
+     },
+     {
+      "given": "Zeina R.",
+      "family": "Al Sayed",
+      "sequence": "additional"
+     },
+     {
+      "given": "Matthew C.",
+      "family": "Hill",
+      "sequence": "additional"
+     },
+     {
+      "given": "Helene",
+      "family": "Mantineo",
+      "sequence": "additional"
+     },
+     {
+      "given": "Elizabeth M.",
+      "family": "Brydon",
+      "sequence": "additional"
+     },
+     {
+      "given": "Zexian",
+      "family": "Zeng",
+      "sequence": "additional"
+     },
+     {
+      "given": "X. Shirley",
+      "family": "Liu",
+      "sequence": "additional"
+     },
+     {
+      "given": "Patrick T.",
+      "family": "Ellinor",
+      "sequence": "additional"
+     }
+    ],
+    "container-title": [
+     "Nature"
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       5,
+       31
+      ]
+     ]
+    }
+   },
+   {
+    "publisher": "Wiley",
+    "issue": "4",
+    "DOI": "10.1002/qub2.65",
+    "type": "journal-article",
+    "page": "433-443",
+    "title": [
+     "Current opinions on large cellular models"
+    ],
+    "volume": "12",
+    "author": [
+     {
+      "given": "Minsheng",
+      "family": "Hao",
+      "sequence": "first"
+     },
+     {
+      "given": "Lei",
+      "family": "Wei",
+      "sequence": "additional"
+     },
+     {
+      "given": "Fan",
+      "family": "Yang",
+      "sequence": "additional"
+     },
+     {
+      "given": "Jianhua",
+      "family": "Yao",
+      "sequence": "additional"
+     },
+     {
+      "given": "Christina V.",
+      "family": "Theodoris",
+      "sequence": "additional"
+     },
+     {
+      "given": "Bo",
+      "family": "Wang",
+      "sequence": "additional"
+     },
+     {
+      "given": "Xin",
+      "family": "Li",
+      "sequence": "additional"
+     },
+     {
+      "given": "Ge",
+      "family": "Yang",
+      "sequence": "additional"
+     },
+     {
+      "given": "Xuegong",
+      "family": "Zhang",
+      "sequence": "additional"
+     }
+    ],
+    "container-title": [
+     "Quantitative Biology"
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       7
+      ]
+     ]
+    }
+   },
+   {
+    "DOI": "10.1101/2024.08.16.608180",
+    "title": [
+     "Quantized multi-task learning for context-specific representations of gene network dynamics"
+    ],
+    "author": [
+     {
+      "given": "Han",
+      "family": "Chen",
+      "sequence": "first"
+     },
+     {
+      "given": "Madhavan S",
+      "family": "Venkatesh",
+      "sequence": "additional"
+     },
+     {
+      "given": "Javier",
+      "family": "Gomez Ortega",
+      "sequence": "additional"
+     },
+     {
+      "given": "Siddharth V",
+      "family": "Mahesh",
+      "sequence": "additional"
+     },
+     {
+      "given": "Tarak N",
+      "family": "Nandi",
+      "sequence": "additional"
+     },
+     {
+      "given": "Ravi K",
+      "family": "Madduri",
+      "sequence": "additional"
+     },
+     {
+      "given": "Karin",
+      "family": "Pelka",
+      "sequence": "additional"
+     },
+     {
+      "given": "Christina V",
+      "family": "Theodoris",
+      "sequence": "additional"
+     }
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       8,
+       19
+      ]
+     ]
+    },
+    "type": "posted-content",
+    "publisher": "openRxiv"
+   }
+  ]
+ }
+}

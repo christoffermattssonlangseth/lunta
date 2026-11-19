@@ -1,0 +1,561 @@
+{
+ "status": "ok",
+ "message": {
+  "items": [
+   {
+    "publisher": "Wiley",
+    "issue": "4",
+    "DOI": "10.1002/qub2.68",
+    "type": "journal-article",
+    "page": "335-338",
+    "title": [
+     "Perspectives on benchmarking foundation models for network biology"
+    ],
+    "volume": "12",
+    "author": [
+     {
+      "given": "Christina V.",
+      "family": "Theodoris",
+      "sequence": "first"
+     }
+    ],
+    "container-title": [
+     "Quantitative Biology"
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       7,
+       11
+      ]
+     ]
+    }
+   },
+   {
+    "publisher": "Cactus and Succulent Society of America",
+    "issue": "4",
+    "DOI": "10.2985/015.094.0411",
+    "type": "journal-article",
+    "page": "238-245",
+    "title": [
+     "Aloe Mite: The Other Pandemic"
+    ],
+    "volume": "94",
+    "author": [
+     {
+      "given": "George",
+      "family": "Theodoris",
+      "sequence": "first"
+     },
+     {
+      "given": "Mathew",
+      "family": "Fischel",
+      "sequence": "additional"
+     }
+    ],
+    "container-title": [
+     "Cactus and Succulent Journal"
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2022,
+       12,
+       6
+      ]
+     ]
+    }
+   },
+   {
+    "publisher": "American Association for the Advancement of Science (AAAS)",
+    "issue": "6723",
+    "DOI": "10.1126/science.adt3007",
+    "type": "journal-article",
+    "page": "729-730",
+    "title": [
+     "Learning the language of DNA"
+    ],
+    "volume": "386",
+    "author": [
+     {
+      "given": "Christina V.",
+      "family": "Theodoris",
+      "sequence": "first"
+     }
+    ],
+    "container-title": [
+     "Science"
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       11,
+       15
+      ]
+     ]
+    }
+   },
+   {
+    "publisher": "Springer Science and Business Media LLC",
+    "issue": "12",
+    "DOI": "10.1038/s43588-023-00570-8",
+    "type": "journal-article",
+    "page": "1011-1012",
+    "title": [
+     "Interpretable model of CRISPR–Cas9 enzymatic reactions"
+    ],
+    "volume": "3",
+    "author": [
+     {
+      "given": "David J.",
+      "family": "Wen",
+      "sequence": "first"
+     },
+     {
+      "given": "Christina V.",
+      "family": "Theodoris",
+      "sequence": "additional"
+     }
+    ],
+    "container-title": [
+     "Nature Computational Science"
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       12,
+       14
+      ]
+     ]
+    }
+   },
+   {
+    "publisher": "Springer Science and Business Media LLC",
+    "issue": "8",
+    "DOI": "10.1007/s00464-024-10941-5",
+    "type": "journal-article",
+    "page": "4245-4250",
+    "title": [
+     "Acute kidney injury after colorectal surgery with prophylactic ureteral stents"
+    ],
+    "volume": "38",
+    "author": [
+     {
+      "given": "Assar",
+      "family": "Rather",
+      "sequence": "first"
+     },
+     {
+      "given": "Adrianne",
+      "family": "Fisher",
+      "sequence": "additional"
+     },
+     {
+      "given": "Kelly",
+      "family": "Gardner",
+      "sequence": "additional"
+     },
+     {
+      "given": "Nessreen",
+      "family": "Ghanem",
+      "sequence": "additional"
+     },
+     {
+      "given": "Theodoris",
+      "family": "Katsichtis",
+      "sequence": "additional"
+     },
+     {
+      "given": "Gary",
+      "family": "Siegelman",
+      "sequence": "additional"
+     },
+     {
+      "given": "John D.",
+      "family": "Mannion",
+      "sequence": "additional"
+     }
+    ],
+    "container-title": [
+     "Surgical Endoscopy"
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       6,
+       11
+      ]
+     ]
+    }
+   },
+   {
+    "publisher": "Springer Science and Business Media LLC",
+    "issue": "9",
+    "DOI": "10.1038/s41592-022-01595-z",
+    "type": "journal-article",
+    "page": "1097-1108",
+    "title": [
+     "MIRA: joint regulatory modeling of multimodal expression and chromatin accessibility in single cells"
+    ],
+    "volume": "19",
+    "author": [
+     {
+      "given": "Allen W.",
+      "family": "Lynch",
+      "sequence": "first"
+     },
+     {
+      "given": "Christina V.",
+      "family": "Theodoris",
+      "sequence": "additional"
+     },
+     {
+      "given": "Henry W.",
+      "family": "Long",
+      "sequence": "additional"
+     },
+     {
+      "given": "Myles",
+      "family": "Brown",
+      "sequence": "additional"
+     },
+     {
+      "given": "X. Shirley",
+      "family": "Liu",
+      "sequence": "additional"
+     },
+     {
+      "given": "Clifford A.",
+      "family": "Meyer",
+      "sequence": "additional"
+     }
+    ],
+    "container-title": [
+     "Nature Methods"
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2022,
+       9
+      ]
+     ]
+    }
+   },
+   {
+    "publisher": "Wiley",
+    "issue": "4",
+    "DOI": "10.1002/qub2.65",
+    "type": "journal-article",
+    "page": "433-443",
+    "title": [
+     "Current opinions on large cellular models"
+    ],
+    "volume": "12",
+    "author": [
+     {
+      "given": "Minsheng",
+      "family": "Hao",
+      "sequence": "first"
+     },
+     {
+      "given": "Lei",
+      "family": "Wei",
+      "sequence": "additional"
+     },
+     {
+      "given": "Fan",
+      "family": "Yang",
+      "sequence": "additional"
+     },
+     {
+      "given": "Jianhua",
+      "family": "Yao",
+      "sequence": "additional"
+     },
+     {
+      "given": "Christina V.",
+      "family": "Theodoris",
+      "sequence": "additional"
+     },
+     {
+      "given": "Bo",
+      "family": "Wang",
+      "sequence": "additional"
+     },
+     {
+      "given": "Xin",
+      "family": "Li",
+      "sequence": "additional"
+     },
+     {
+      "given": "Ge",
+      "family": "Yang",
+      "sequence": "additional"
+     },
+     {
+      "given": "Xuegong",
+      "family": "Zhang",
+      "sequence": "additional"
+     }
+    ],
+    "container-title": [
+     "Quantitative Biology"
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       7
+      ]
+     ]
+    }
+   },
+   {
+    "DOI": "10.1101/2024.08.16.608180",
+    "title": [
+     "Quantized multi-task learning for context-specific representations of gene network dynamics"
+    ],
+    "author": [
+     {
+      "given": "Han",
+      "family": "Chen",
+      "sequence": "first"
+     },
+     {
+      "given": "Madhavan S",
+      "family": "Venkatesh",
+      "sequence": "additional"
+     },
+     {
+      "given": "Javier",
+      "family": "Gomez Ortega",
+      "sequence": "additional"
+     },
+     {
+      "given": "Siddharth V",
+      "family": "Mahesh",
+      "sequence": "additional"
+     },
+     {
+      "given": "Tarak N",
+      "family": "Nandi",
+      "sequence": "additional"
+     },
+     {
+      "given": "Ravi K",
+      "family": "Madduri",
+      "sequence": "additional"
+     },
+     {
+      "given": "Karin",
+      "family": "Pelka",
+      "sequence": "additional"
+     },
+     {
+      "given": "Christina V",
+      "family": "Theodoris",
+      "sequence": "additional"
+     }
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       8,
+       19
+      ]
+     ]
+    },
+    "type": "posted-content",
+    "publisher": "openRxiv"
+   },
+   {
+    "DOI": "10.1183/13993003.congress-2023.pa3879",
+    "title": [
+     "The Assess Respiratory Risk in Surgical Patients in Catalonia (ARISCAT) score overestimates postoperative complications’ risk in thoracic surgery."
+    ],
+    "author": [
+     {
+      "given": "Georgia",
+      "family": "Hardavella",
+      "sequence": "first"
+     },
+     {
+      "given": "Ioannis",
+      "family": "Karampinis",
+      "sequence": "additional"
+     },
+     {
+      "given": "Maria",
+      "family": "Salomidou",
+      "sequence": "additional"
+     },
+     {
+      "given": "Irma",
+      "family": "Bracka",
+      "sequence": "additional"
+     },
+     {
+      "given": "Theodoris",
+      "family": "Daskalos",
+      "sequence": "additional"
+     },
+     {
+      "given": "Antonia",
+      "family": "Zachariou",
+      "sequence": "additional"
+     },
+     {
+      "given": "Elli",
+      "family": "Keramida",
+      "sequence": "additional"
+     },
+     {
+      "given": "Elena",
+      "family": "Bellou",
+      "sequence": "additional"
+     },
+     {
+      "given": "Fotis",
+      "family": "Kyriakou",
+      "sequence": "additional"
+     },
+     {
+      "given": "Despoina",
+      "family": "Zorpidou",
+      "sequence": "additional"
+     },
+     {
+      "given": "Panagiotis",
+      "family": "Demertzis",
+      "sequence": "additional"
+     },
+     {
+      "given": "Nikolaos",
+      "family": "Anastasiou",
+      "sequence": "additional"
+     }
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2023,
+       9,
+       9
+      ]
+     ]
+    },
+    "container-title": [
+     "Lung cancer"
+    ],
+    "type": "proceedings-article",
+    "page": "PA3879",
+    "publisher": "European Respiratory Society"
+   },
+   {
+    "DOI": "10.21203/rs.3.rs-5014333/v1",
+    "title": [
+     "Soluble DLK1 secreted by telomere-shortening-induced senescent microglia impairs myelination and alters neuronal activity"
+    ],
+    "author": [
+     {
+      "given": "Li",
+      "family": "Gan",
+      "sequence": "first"
+     },
+     {
+      "given": "Bangyan",
+      "family": "Liu",
+      "sequence": "additional"
+     },
+     {
+      "given": "Maria",
+      "family": "Telpoukhovskaia",
+      "sequence": "additional"
+     },
+     {
+      "given": "Li",
+      "family": "Fan",
+      "sequence": "additional"
+     },
+     {
+      "given": "Alice",
+      "family": "Giani",
+      "sequence": "additional"
+     },
+     {
+      "given": "Eileen",
+      "family": "Torres",
+      "sequence": "additional"
+     },
+     {
+      "given": "Lihong",
+      "family": "Zhan",
+      "sequence": "additional"
+     },
+     {
+      "given": "Pearly",
+      "family": "Ye",
+      "sequence": "additional"
+     },
+     {
+      "given": "Jingjie",
+      "family": "Zhu",
+      "sequence": "additional"
+     },
+     {
+      "given": "Nessa",
+      "family": "Foxe",
+      "sequence": "additional"
+     },
+     {
+      "given": "Daphne",
+      "family": "Zhu",
+      "sequence": "additional"
+     },
+     {
+      "given": "Xinran",
+      "family": "Tong",
+      "sequence": "additional"
+     },
+     {
+      "given": "Deepak",
+      "family": "Srivast",
+      "sequence": "additional"
+     },
+     {
+      "given": "Christina",
+      "family": "Theodoris",
+      "sequence": "additional"
+     },
+     {
+      "given": "Shiaoching",
+      "family": "Gong",
+      "sequence": "additional"
+     },
+     {
+      "given": "Mingrui",
+      "family": "Zhao",
+      "sequence": "additional"
+     }
+    ],
+    "issued": {
+     "date-parts": [
+      [
+       2024,
+       11,
+       21
+      ]
+     ]
+    },
+    "type": "posted-content",
+    "publisher": "Springer Science and Business Media LLC"
+   }
+  ]
+ }
+}

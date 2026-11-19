@@ -1,0 +1,418 @@
+{
+ "results": [
+  {
+   "title": "Transfer learning enables predictions in network biology",
+   "authorships": [
+    {
+     "author": {
+      "display_name": "Christina V. Theodoris"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Ling Xiao"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Anant Chopra"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Mark D. Chaffin"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Zeina Reda Al Sayed"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Matthew C. Hill"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Helene Mantineo"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Elizabeth M. Brydon"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Zexian Zeng"
+     }
+    },
+    {
+     "author": {
+      "display_name": "X. Shirley Liu"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Patrick T. Ellinor"
+     }
+    }
+   ],
+   "publication_date": "2023-05-31",
+   "primary_location": {
+    "source": {
+     "display_name": "Nature"
+    }
+   },
+   "doi": "https://doi.org/10.1038/s41586-023-06139-9",
+   "ids": {
+    "openalex": "https://openalex.org/W4378838672",
+    "doi": "https://doi.org/10.1038/s41586-023-06139-9",
+    "pmid": "https://pubmed.ncbi.nlm.nih.gov/37258680",
+    "pmcid": "https://www.ncbi.nlm.nih.gov/pmc/articles/10949956"
+   },
+   "biblio": {
+    "volume": "618",
+    "issue": "7965",
+    "first_page": "616",
+    "last_page": "624"
+   },
+   "type": "article"
+  },
+  {
+   "title": "Current and future directions in network biology",
+   "authorships": [
+    {
+     "author": {
+      "display_name": "Marinka Žitnik"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Michelle M. Li"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Aydin Wells"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Kimberly Glass"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Deisy Morselli Gysi"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Arjun Krishnan"
+     }
+    },
+    {
+     "author": {
+      "display_name": "T. M. Murali"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Predrag Radivojac"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Sushmita Roy"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Anaïs Baudot"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Serdar Bozdag"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Danny Z. Chen"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Lenore Cowen"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Kapil Devkota"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Anthony Gitter"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Sara J.C. Gosline"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Pengfei Gu"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Pietro Hiram Guzzi"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Heng Huang"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Meng Jiang"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Ziynet Nesibe Kesimoglu"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Mehmet Koyutürk"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Jian Ma"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Alexander R. Pico"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Nataša Pržulj"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Teresa M. Przytycka"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Benjamin J. Raphael"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Anna Ritz"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Roded Sharan"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Yang Shen"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Mona Singh"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Donna K. Slonim"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Hanghang Tong"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Xinan Holly Yang"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Byung-Jun Yoon"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Haiyuan Yu"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Tijana Milenković"
+     }
+    }
+   ],
+   "publication_date": "2024-01-05",
+   "primary_location": {
+    "source": {
+     "display_name": "Bioinformatics Advances"
+    }
+   },
+   "doi": "https://doi.org/10.1093/bioadv/vbae099",
+   "ids": {
+    "openalex": "https://openalex.org/W4401556795",
+    "doi": "https://doi.org/10.1093/bioadv/vbae099",
+    "pmid": "https://pubmed.ncbi.nlm.nih.gov/39143982",
+    "pmcid": "https://www.ncbi.nlm.nih.gov/pmc/articles/11321866"
+   },
+   "biblio": {
+    "volume": "4",
+    "issue": "1",
+    "first_page": "vbae099",
+    "last_page": "vbae099"
+   },
+   "type": "article"
+  },
+  {
+   "title": "Perspectives on benchmarking foundation models for network biology",
+   "authorships": [
+    {
+     "author": {
+      "display_name": "Christina V. Theodoris"
+     }
+    }
+   ],
+   "publication_date": "2024-07-11",
+   "primary_location": {
+    "source": {
+     "display_name": "Quantitative Biology"
+    }
+   },
+   "doi": "https://doi.org/10.1002/qub2.68",
+   "ids": {
+    "openalex": "https://openalex.org/W4400594521",
+    "doi": "https://doi.org/10.1002/qub2.68",
+    "pmid": "https://pubmed.ncbi.nlm.nih.gov/41674879",
+    "pmcid": "https://www.ncbi.nlm.nih.gov/pmc/articles/12806037"
+   },
+   "biblio": {
+    "volume": "12",
+    "issue": "4",
+    "first_page": "335",
+    "last_page": "338"
+   },
+   "type": "article"
+  },
+  {
+   "title": "Connecting the dots: Computational network analysis for disease insight and drug repurposing",
+   "authorships": [
+    {
+     "author": {
+      "display_name": "Nicoleta Siminea"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Eugen Czeizler"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Victor Popescu"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Ion Petre"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Andrei Păun"
+     }
+    }
+   ],
+   "publication_date": "2024-07-10",
+   "primary_location": {
+    "source": {
+     "display_name": "Current Opinion in Structural Biology"
+    }
+   },
+   "doi": "https://doi.org/10.1016/j.sbi.2024.102881",
+   "ids": {
+    "openalex": "https://openalex.org/W4400495371",
+    "doi": "https://doi.org/10.1016/j.sbi.2024.102881",
+    "pmid": "https://pubmed.ncbi.nlm.nih.gov/38991238"
+   },
+   "biblio": {
+    "volume": "88",
+    "issue": null,
+    "first_page": "102881",
+    "last_page": "102881"
+   },
+   "type": "review"
+  },
+  {
+   "title": "Gene networks and systems biology in Alzheimer's disease: Insights from multi‐omics approaches",
+   "authorships": [
+    {
+     "author": {
+      "display_name": "Negin Rahimzadeh"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Shushrruth Sai Srinivasan"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Jing Zhang"
+     }
+    },
+    {
+     "author": {
+      "display_name": "Vivek Swarup"
+     }
+    }
+   ],
+   "publication_date": "2024-03-27",
+   "primary_location": {
+    "source": {
+     "display_name": "Alzheimer s & Dementia"
+    }
+   },
+   "doi": "https://doi.org/10.1002/alz.13790",
+   "ids": {
+    "openalex": "https://openalex.org/W4393233503",
+    "doi": "https://doi.org/10.1002/alz.13790",
+    "pmid": "https://pubmed.ncbi.nlm.nih.gov/38534018",
+    "pmcid": "https://www.ncbi.nlm.nih.gov/pmc/articles/11095483"
+   },
+   "biblio": {
+    "volume": "20",
+    "issue": "5",
+    "first_page": "3587",
+    "last_page": "3605"
+   },
+   "type": "review"
+  }
+ ]
+}

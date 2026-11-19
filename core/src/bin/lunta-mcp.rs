@@ -12,7 +12,7 @@
 //! so it can work while the Mac and iPhone apps are open, and its changes sync everywhere.
 
 use lunta_core::model::*;
-use lunta_core::{export, Library};
+use lunta_core::{export, placeholders, Library};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
@@ -267,7 +267,7 @@ fn tools() -> Value {
             "name": name,
             "description": desc,
             "inputSchema": {"type": "object", "properties": props, "required": required},
-            "annotations": {"readOnlyHint": read_only, "openWorldHint": name == "find_new_papers" || name == "add_paper" || name == "find_pdf"},
+            "annotations": {"readOnlyHint": read_only, "openWorldHint": name == "find_new_papers" || name == "add_paper" || name == "find_pdf" || name == "resolve_citations"},
         })
     }
     let ids = json!({"type": "array", "items": {"type": "string"}, "description": "Paper ids"});
@@ -286,6 +286,9 @@ fn tools() -> Value {
                  "max_chars": {"type": "integer", "default": 12000}}), &["id"], true),
         t("cite", "Formatted citations or a bibliography for papers. `bibtex` uses each paper's citation key (fixed, the same as in the Lunta apps); `latex` gives \\cite{key1,key2} to paste into a LaTeX document.",
           json!({"ids": ids, "style": {"type": "string", "enum": CitationStyle::ALL.iter().map(|s| s.key()).chain(["bibtex", "latex", "ris"]).collect::<Vec<_>>(), "default": "apa"}}), &["ids"], true),
+        t("resolve_citations", "Find citation placeholders in a text the user is writing ((Langseth et al. 2025), (Smith 2019; Lee 2020), [Smith 2019 hint words], {Smith 2019}; with latex: \\cite{?smith2019}) and propose, for each, up to 5 papers it may mean: the library's first (family names, year, hint words), then Crossref/OpenAlex. Read-only: nothing is added or changed; show the candidates and let the user confirm each one (then cite them, adding an outside paper with add_paper).",
+          json!({"text": {"type": "string"}, "latex": {"type": "boolean", "default": false, "description": "The text is LaTeX: \\cite{?key} placeholders, comments skipped"},
+                 "external": {"type": "boolean", "default": true, "description": "Also search Crossref/OpenAlex when the library has no exact match"}}), &["text"], true),
         t("library_overview", "Size of the library, its tags and collections.", json!({}), &[], true),
         t("find_new_papers", "Search published literature beyond the library (OpenAlex). Marks results already in the library.",
           json!({"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}}), &["query"], true),
@@ -383,6 +386,28 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
                 "text": chars[off..end].iter().collect::<String>()}))
         }
         "cite" => Ok(json!(cite(lib, &arg_ids(a), &arg_str(a, "style").unwrap_or("apa".into()))?)),
+        "resolve_citations" => {
+            let text = arg_str(a, "text").ok_or("text is required")?;
+            let latex = a.get("latex").and_then(Value::as_bool).unwrap_or(false);
+            let external = a.get("external").and_then(Value::as_bool).unwrap_or(true);
+            let found = if latex { placeholders::find_tex_placeholders(text) } else { placeholders::find_placeholders(text) };
+            Ok(json!(found.iter().take(200).map(|p| json!({
+                "placeholder": p.text, "start": p.start, "end": p.end,
+                "cites": p.cites.iter().map(|c| {
+                    let s = lib.suggest_citation(c.clone(), external);
+                    json!({
+                        "cite": c.text, "surnames": c.surnames, "year": c.year, "hints": c.hints,
+                        "exact": s.exact, "note": s.note,
+                        "candidates": s.candidates.iter().map(|k| json!({
+                            "id": (!k.paper_id.is_empty()).then(|| k.paper_id.clone()), "in_library": !k.paper_id.is_empty(),
+                            "source": k.source, "confidence": (k.confidence * 100.0).round() / 100.0, "exact": k.exact,
+                            "title": k.meta.title, "authors": short_authors(&k.meta.authors), "year": k.meta.year(),
+                            "journal": k.meta.journal, "doi": k.meta.doi, "cite_key": (!k.cite_key.is_empty()).then(|| k.cite_key.clone()),
+                        })).collect::<Vec<_>>(),
+                    })
+                }).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>()))
+        }
         "library_overview" => {
             let all = lib.papers(PaperFilter::default(), SortKey::Added);
             Ok(json!({
