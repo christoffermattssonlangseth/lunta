@@ -111,13 +111,9 @@ final class BibFiles: ObservableObject {
     /// The .bib text for a source: its papers sorted by citation key, so the file changes only
     /// where papers did (friendly to Git and Overleaf).
     /// Nil for an empty library (still opening, or syncing to a new Mac): the file is left as it was.
+    /// Extra entries kept from an imported .bib (software, web pages) come after the papers.
     nonisolated static func bibtex(_ lib: Library, source: String) -> String? {
-        let filter = PaperFilter(collection: source == allPapers ? nil : source, tag: nil, starredOnly: false, unreadOnly: false)
-        let ids = lib.papers(filter: filter, sort: .added)
-            .sorted { $0.citeKey.lowercased() < $1.citeKey.lowercased() }
-            .map(\.id)
-        if ids.isEmpty && source == allPapers { return nil }
-        return "% Kept up to date by Lunta: changes made here are overwritten.\n\n" + lib.exportBibtex(ids: ids)
+        lib.keptBibtex(collection: source == allPapers ? nil : source)
     }
 
     /// Writes the file if its text changed; returns the problem, if any.
@@ -156,7 +152,36 @@ struct BibFileMenu: View {
         } else {
             Button("Keep BibTeX File Updated…") { files.choose(source: source, name: name, model: model) }
         }
+        if source != BibFiles.allPapers {
+            Button("Import BibTeX (Keep Citation Keys)…") { importBibKeepingKeys(model: model, folder: source) }
+        }
     }
+}
+
+/// "Import BibTeX (Keep Citation Keys)…": choose a LaTeX project's .bib and import it into a folder
+/// (`folder`, or one named after the file, which can be changed), keeping its keys.
+@MainActor
+func importBibKeepingKeys(model: LibraryModel?, folder: String? = nil) {
+    guard let model else { return }
+    let p = NSOpenPanel()
+    p.title = "Choose the LaTeX project's .bib file"
+    p.message = "Each entry is looked up (DOI, arXiv, Crossref) and added with its citation key, so \\cite{…} keeps working."
+    p.allowedContentTypes = [UTType(filenameExtension: "bib")].compactMap { $0 }
+    guard p.runModal() == .OK, let file = p.url else { return }
+    var name: String?
+    if folder == nil {
+        let ask = NSAlert()
+        ask.messageText = "Import into which folder?"
+        ask.informativeText = "The papers go into this folder (made if there is none). Keep its BibTeX file updated afterwards and use that file in the LaTeX project."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = file.deletingPathExtension().lastPathComponent
+        ask.accessoryView = field
+        ask.addButton(withTitle: "Import")
+        ask.addButton(withTitle: "Cancel")
+        guard ask.runModal() == .alertFirstButtonReturn else { return }
+        name = field.stringValue
+    }
+    Task { await model.importBibKeepingKeys(file: file, folderID: folder, folderName: name) }
 }
 
 /// A sidebar name, with a mark when Lunta keeps a .bib file for it.

@@ -108,6 +108,9 @@ struct LibraryWindow: View {
         // the paper table onto sidebar folders (SwiftUI on macOS 26)
         .overlay(alignment: .bottom) { StatusBar() }
         .sheet(isPresented: $addingPaper) { AddPaperSheet() }
+        .sheet(item: $model.bibImport) { r in
+            BibImportReportView(result: r) { BibFiles.shared.choose(source: r.folderID, name: r.folder, model: model) }
+        }
         .modifier(EditSheet(editing: $editing))
         .onReceive(NotificationCenter.default.publisher(for: .luntaAddPaper)) { _ in addingPaper = true }
         .onReceive(NotificationCenter.default.publisher(for: .luntaAskCompare)) { n in

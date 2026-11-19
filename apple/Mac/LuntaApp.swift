@@ -240,6 +240,7 @@ struct LuntaCommands: Commands {
             Button("Import from Zotero, Mendeley, ReadCube, EndNote… (BibTeX / RIS)") { importExport() }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
             Button("Import Folder of PDFs…") { importPDFFolder() }
+            Button("Import BibTeX (Keep Citation Keys)…") { importBibKeepingKeys(model: model) }
             Divider()
             Button("Find Missing PDFs") { Task { await model?.findMissingPDFs() } }
             Button("Make Missing Reading Views") { Task { await model?.makeReadingViews() } }

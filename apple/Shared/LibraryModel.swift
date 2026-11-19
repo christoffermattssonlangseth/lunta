@@ -38,6 +38,8 @@ final class LibraryModel: ObservableObject {
     @Published var status: String?
     @Published var progress: Double?
     @Published var errorMessage: String?
+    /// A .bib imported with its citation keys: its report (BibImport.swift).
+    @Published var bibImport: BibImportResult?
     @Published var counts = (all: 0, starred: 0, mustRead: 0, unread: 0)
     // Discover: searching beyond the library (OpenAlex)
     @Published var discoverQuery = ""

@@ -10,12 +10,20 @@ import LuntaCore
 final class LibraryImporter: ObservableObject {
     static let shared = LibraryImporter()
 
-    enum Kind { case library, pdfFolder }
+    enum Kind { case library, pdfFolder, bibKeys }
 
     /// The file picker is open for this.
     @Published var picking: Kind?
     /// Picked and opened, waiting for "Put the imported papers in a folder?".
     @Published var asking: Pending?
+    /// A LaTeX project's .bib picked, waiting for the folder to import it into (its keys kept).
+    @Published var askingBib: PendingBib?
+
+    struct PendingBib: Identifiable {
+        let id = UUID()
+        let file: URL
+        let scoped: Bool
+    }
     /// The alert at the end (or the error).
     @Published var result: (title: String, message: String)?
     @Published var showingHelp = false
@@ -42,6 +50,8 @@ final class LibraryImporter: ObservableObject {
         let scoped = url.startAccessingSecurityScopedResource()
         running = true
         switch kind {
+        case .bibKeys:
+            askingBib = PendingBib(file: url, scoped: scoped)
         case .pdfFolder:
             Task {
                 let bg = BackgroundWork("Import PDFs")
@@ -101,6 +111,25 @@ final class LibraryImporter: ObservableObject {
         }
     }
 
+    /// Imports the .bib into the folder `folder` with its citation keys; the report is shown by
+    /// the library (`LibraryModel.bibImport`).
+    func runBib(_ p: PendingBib, folder: String, model: LibraryModel) {
+        askingBib = nil
+        Task {
+            let bg = BackgroundWork("Import BibTeX")
+            await model.importBibKeepingKeys(file: p.file, folderName: folder)
+            if p.scoped { p.file.stopAccessingSecurityScopedResource() }
+            bg.end()
+            running = false
+        }
+    }
+
+    func cancelBib(_ p: PendingBib) {
+        askingBib = nil
+        if p.scoped { p.file.stopAccessingSecurityScopedResource() }
+        running = false
+    }
+
     func cancel(_ p: Pending) {
         asking = nil
         finish(p)
@@ -138,7 +167,7 @@ struct LibraryImportFlow: ViewModifier {
         content
             .onChange(of: importer.picking) { _, k in if let k { kind = k } }
             .fileImporter(isPresented: Binding(get: { importer.picking != nil }, set: { if !$0 { importer.picking = nil } }),
-                          allowedContentTypes: (importer.picking ?? kind) == .pdfFolder ? [.folder] : ImportSource.pickable) { r in
+                          allowedContentTypes: Self.types(importer.picking ?? kind)) { r in
                 if case .success(let url) = r { importer.picked(url, kind: kind, model: model) }
             }
             .alert("Put the imported papers in a folder?",
@@ -152,10 +181,31 @@ struct LibraryImportFlow: ViewModifier {
                 Text("Importing “\(p.source.export.lastPathComponent)”. Exports don't include your folders: to keep a collection, export it on its own and import it into a folder of the same name.")
             }
             .onChange(of: importer.asking?.id) { folderName = importer.asking?.source.suggestedFolder ?? "" }
+            .alert("Import into which folder?",
+                   isPresented: Binding(get: { importer.askingBib != nil }, set: { if !$0 { importer.askingBib = nil } }),
+                   presenting: importer.askingBib) { p in
+                TextField("Folder name", text: $folderName)
+                Button("Import") { importer.runBib(p, folder: folderName, model: model) }
+                Button("Cancel", role: .cancel) { importer.cancelBib(p) }
+            } message: { p in
+                Text("Each entry of “\(p.file.lastPathComponent)” is looked up (DOI, arXiv, Crossref) and added with its citation key, so \\cite{…} keeps working in the folder's BibTeX file.")
+            }
+            .onChange(of: importer.askingBib?.id) { folderName = importer.askingBib?.file.deletingPathExtension().lastPathComponent ?? "" }
+            .sheet(item: $model.bibImport) { r in BibImportReportView(result: r) }
             .alert(importer.result?.title ?? "", isPresented: Binding(get: { importer.result != nil }, set: { if !$0 { importer.result = nil } })) {
                 Button("OK") { importer.result = nil }
             } message: { Text(importer.result?.message ?? "") }
             .sheet(isPresented: $importer.showingHelp) { MovingToLuntaHelp() }
+    }
+}
+
+extension LibraryImportFlow {
+    static func types(_ k: LibraryImporter.Kind) -> [UTType] {
+        switch k {
+        case .pdfFolder: [.folder]
+        case .bibKeys: [.bibtex, .plainText]
+        case .library: ImportSource.pickable
+        }
     }
 }
 
@@ -182,6 +232,7 @@ struct ImportMenuItems: View {
             LibraryImporter.shared.start(.library)
         }
         Button("Import Folder of PDFs", systemImage: "folder.badge.plus") { LibraryImporter.shared.start(.pdfFolder) }
+        Button("Import BibTeX (Keep Citation Keys)", systemImage: "curlybraces") { LibraryImporter.shared.start(.bibKeys) }
         Button("Moving from Zotero, Mendeley…", systemImage: "questionmark.circle") { LibraryImporter.shared.showingHelp = true }
     }
 }
