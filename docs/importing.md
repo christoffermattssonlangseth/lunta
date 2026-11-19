@@ -4,9 +4,11 @@ Lunta imports from any reference manager that can export **BibTeX (.bib)** or **
 Mendeley, ReadCube Papers, EndNote, Paperpile, JabRef, BibDesk and others. Titles, authors, DOIs, tags and
 notes come along; duplicates (same DOI, or the same title) are merged rather than added twice.
 
-Import in **Lunta for Mac** (**File › Import from Zotero, Mendeley, ReadCube, EndNote…**, ⇧⌘I) or on
-**iPhone and iPad** (**+ › Import Library**, also in the list of folders). The library then syncs to your
-other Apple devices through iCloud, and to Android, Windows and Linux through Google Drive (see
+Import in **Lunta for Mac** (**File › Import from Zotero, Mendeley, ReadCube, EndNote…**, ⇧⌘I), on
+**iPhone and iPad** (**+ › Import Library**, also in the list of folders), on **Windows and Linux**
+(**Import ▾ › Import Library…**, Ctrl+Shift+I, also under **Settings ▾**) or on **Android** (**+ › Import
+library**, also in Settings). The library then syncs to your other devices: through iCloud between Apple
+devices, through Google Drive to and from Android, Windows and Linux (see
 [Using Lunta on several devices](#using-lunta-on-several-devices)).
 
 **On iPhone and iPad**, export on your computer as below, put the export's folder in iCloud Drive (or zip
@@ -16,7 +18,24 @@ to it). Lunta finds the export in the folder, takes the PDFs it names, and match
 to the papers by DOI or title, so there is no separate folder step. **+ › Import Folder of PDFs** matches a
 folder of PDFs to the papers already in Lunta.
 
-The import asks three things:
+**On Windows and Linux**, **Import ▾ › Import Library…** asks whether to choose the export's folder (the
+one Zotero's "Export Files" makes) or a file: the .bib or .ris, or a ZIP of the folder. As on iPhone, Lunta
+finds the export in the folder, takes the PDFs it names (from their paths on this computer, next to the
+export, or, for an export made on another computer, by their last folders, `storage/AB12CD/paper.pdf`) and
+matches the folder's other PDFs by DOI or title. Then it asks whether to put the papers in a folder, imports
+them with the progress in the status bar, and shows what came in ("Added 312 papers, merged 4 with papers
+already in Lunta, 280 PDFs."). Reading views are made afterwards in the background, one paper after another
+(the status bar counts them). **Import ▾ › Import Folder of PDFs…** matches a folder of PDFs to the papers
+already in Lunta, and **Make Missing Reading Views** makes the ones still missing.
+
+**On Android**, put the export's folder on the phone (Downloads) or in Google Drive, or zip it, then tap
+**+ › Import library (Zotero, Mendeley…)** (also in Settings) and **Choose folder** or **Choose file** (the
+ZIP, or the .bib or .ris file alone, which brings no PDFs). Lunta copies what it needs into its cache,
+imports as above, asks about the folder and shows the summary; reading views are made afterwards while
+Lunta is open. Android can also send papers on as BibTeX or RIS: a paper's **⋯ › Share as BibTeX** (or
+RIS), or the share button above a list (a folder, a tag, a search) for all the papers in it.
+
+On the Mac, the import asks three things:
 
 1. **The export file** (.bib or .ris).
 2. **Optionally, a folder of PDFs.** Lunta matches each PDF to its paper by the DOI printed in it, or by
@@ -37,8 +56,9 @@ Menu names in the other apps vary a little between versions.
 
 1. **File › Export Library…**, format **BibTeX**, and tick **Export Files**.
 2. Zotero writes a folder with the .bib file and a `files` folder with the PDFs.
-3. In Lunta, choose the .bib file. The PDFs are found from the paths in the export; if any are missed,
-   choose the same export folder when Lunta asks for a folder of PDFs.
+3. In Lunta, choose the .bib file (on iPhone, iPad, Windows, Linux and Android, choose the whole folder).
+   The PDFs are found from the paths in the export; if any are missed on the Mac, choose the same export
+   folder when Lunta asks for a folder of PDFs.
 
 Zotero's notes and tags come along. To keep a collection, right-click it › **Export Collection…** and
 import it into a folder of the same name.
