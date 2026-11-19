@@ -10,11 +10,14 @@ struct AdaptiveLibrary: View {
 
     var body: some View {
         // the idiom too: a Pro Max iPhone in landscape is also regular width
-        if UIDevice.current.userInterfaceIdiom == .pad, sizeClass == .regular {
-            iPadLibrary()
-        } else {
-            LibraryView()
+        Group {
+            if UIDevice.current.userInterfaceIdiom == .pad, sizeClass == .regular {
+                iPadLibrary()
+            } else {
+                LibraryView()
+            }
         }
+        .libraryImport()   // import from Zotero, Mendeley… (+ › Import Library)
     }
 }
 
@@ -149,16 +152,20 @@ struct iPadLibrary: View {
                 Button { asking.toggle() } label: { Label("Ask", systemImage: "sparkles") }
                     .keyboardShortcut("j", modifiers: .command)
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { adding = true } label: { Label("Add Paper", systemImage: "plus") }
-                    .keyboardShortcut("n", modifiers: .command)
-            }
+            ToolbarItem(placement: .topBarTrailing) { AddMenu(adding: $adding) }
         }
         // ⌘F: to the search field (a button the keyboard can reach, not seen). With a paper open,
         // ⌘F finds in the paper (ReaderView) and the library's search is ⌥⌘F.
         .background {
             Button("Search Library") { if columns == .detailOnly { withAnimation { columns = narrow ? .doubleColumn : .all } }; searching = true }
                 .keyboardShortcut("f", modifiers: selected.flatMap(model.paper) == nil ? .command : [.command, .option])
+                .opacity(0).allowsHitTesting(false).accessibilityHidden(true)
+            // ⌘N and ⇧⌘I: Add Paper and Import Library, which are in the + menu
+            Button("Add Paper") { adding = true }
+                .keyboardShortcut("n", modifiers: .command)
+                .opacity(0).allowsHitTesting(false).accessibilityHidden(true)
+            Button("Import Library") { LibraryImporter.shared.start(.library) }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
                 .opacity(0).allowsHitTesting(false).accessibilityHidden(true)
         }
         // PDFs dragged in from Files or another app
@@ -230,7 +237,7 @@ struct iPadLibrary: View {
                         ContentUnavailableView.search(text: model.query)
                     } else if model.counts.all == 0 {
                         ContentUnavailableView("No papers yet", systemImage: "books.vertical",
-                                               description: Text(model.inCloud ? "Your library is syncing from iCloud…" : "Tap + to add a paper by DOI or link, or drop a PDF here."))
+                                               description: Text(model.inCloud ? "Your library is syncing from iCloud…" : "Tap + to add a paper by DOI or link or to import your library from Zotero, Mendeley…, or drop a PDF here."))
                     }
                 }
             }

@@ -552,48 +552,73 @@ final class LibraryModel: ObservableObject {
     /// then optionally matches a folder of exported PDFs and builds reading views in the background.
     /// `folder`: put the imported papers in this folder (made if needed). Exports carry no folders, so
     /// a collection is moved by exporting it on its own and importing it into a folder of the same name.
-    func importExport(file: URL, pdfFolder: URL?, folder: String? = nil) async {
-        status = "Importing \(file.lastPathComponent)…"
-        let lib = self.lib
+    /// `roots`: more folders to look for the export's PDFs in (a picked export folder or unpacked ZIP).
+    @discardableResult
+    func importExport(file: URL, pdfFolder: URL?, folder: String? = nil, roots: [URL] = [], readingViews: Bool = true) async -> ImportSummary? {
         do {
-            let text = try String(contentsOf: file, encoding: .utf8)
-            // PDF paths relative to the export (Zotero's "Export Files": files/12/paper.pdf) are found next to it
-            let base = file.deletingLastPathComponent()
-            let entries = parseImport(text: text).map { e -> ImportEntry in
-                var e = e
-                e.files = e.files.map { path in
-                    if FileManager.default.fileExists(atPath: path) { return path }
-                    let rel = base.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
-                    return FileManager.default.fileExists(atPath: rel.path) ? rel.path : path
-                }
-                return e
-            }
-            let report = try await Task.detached { try lib.importEntries(entries: entries) }.value
-            if let name = folder?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty, !report.paperIds.isEmpty {
-                let ids = report.paperIds
-                try await Task.detached {
-                    let col = try lib.collections().first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame })
-                        ?? lib.createCollection(name: name, parent: nil)
-                    for id in ids { try lib.setMembership(collection: col.id, paper: id, present: true) }
-                }.value
-            }
-            reload()
-            status = "Imported \(report.added) new papers, merged \(report.merged)" + (folder.map { $0.isEmpty ? "." : " into “\($0)”." } ?? ".")
-            if let pdfFolder { await importPDFFolder(pdfFolder) }
-            await makeReadingViews()
+            let summary = try await runImport(file: file, pdfFolder: pdfFolder, folder: folder, roots: roots)
+            if readingViews { await makeReadingViews() }
+            return summary
         } catch {
             errorMessage = "Import failed: \(error.readable)"
             status = nil
+            progress = nil
+            return nil
         }
+    }
+
+    /// The import itself (see `importExport`); throws instead of showing the error.
+    func runImport(file: URL, pdfFolder: URL?, folder: String?, roots: [URL]) async throws -> ImportSummary {
+        status = "Importing \(file.lastPathComponent)…"
+        defer { progress = nil }
+        let lib = self.lib
+        // the export read and its PDFs found off the main thread (files in iCloud Drive are downloaded first).
+        // PDF paths relative to the export (Zotero's "Export Files": files/12/paper.pdf) are found next to it.
+        let roots = [file.deletingLastPathComponent()] + roots
+        let read = try await Task.detached { try ImportSource.read(file, roots: roots) }.value
+        let (entries, found, missing) = (read.entries, read.found, read.missing)
+        // in batches, so the status shows how far it has got and the library fills in as it goes
+        var summary = ImportSummary(missingPDFs: missing)
+        var ids: [String] = []
+        let step = 20
+        for start in stride(from: 0, to: entries.count, by: step) {
+            status = "Importing \(file.lastPathComponent): \(start) of \(entries.count) papers"
+            progress = Double(start) / Double(max(1, entries.count))
+            let batch = Array(entries[start ..< min(start + step, entries.count)])
+            let r = try await Task.detached { try lib.importEntries(entries: batch) }.value
+            summary.added += Int(r.added)
+            summary.merged += Int(r.merged)
+            summary.skipped += Int(r.skipped)
+            summary.pdfs += Int(r.pdfsCopied)
+            ids += r.paperIds
+            if (start / step) % 5 == 4 { reload() }
+        }
+        if let name = folder?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty, !ids.isEmpty {
+            try await Task.detached { [ids] in
+                let col = try lib.collections().first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame })
+                    ?? lib.createCollection(name: name, parent: nil)
+                for id in ids { try lib.setMembership(collection: col.id, paper: id, present: true) }
+            }.value
+            summary.folder = name
+        }
+        reload()
+        status = "Imported \(summary.added) new papers, merged \(summary.merged)" + (summary.folder.map { " into “\($0)”." } ?? ".")
+        if let pdfFolder { summary.matched = await importPDFFolder(pdfFolder, skipping: found).attached }
+        status = summary.text
+        return summary
     }
 
     /// Matches a folder of PDFs (e.g. ReadCube Papers' “Export PDFs”) to papers in the library:
     /// by the DOI printed in the PDF, else by finding a paper's title on the first pages.
-    /// PDFs that match nothing are reported, not added (avoids duplicates).
-    func importPDFFolder(_ folder: URL) async {
+    /// PDFs that match nothing are reported, not added (avoids duplicates). `skipping`: PDFs already
+    /// taken from the export (their resolved paths). Returns how many were attached, and the summary.
+    @discardableResult
+    func importPDFFolder(_ folder: URL, skipping: Set<String> = []) async -> (attached: Int, text: String) {
         let fm = FileManager.default
-        let pdfs = (fm.enumerator(at: folder, includingPropertiesForKeys: nil)?.compactMap { $0 as? URL } ?? [])
-            .filter { $0.pathExtension.lowercased() == "pdf" }
+        let pdfs = (fm.enumerator(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])?.compactMap { $0 as? URL } ?? [])
+            .filter { $0.pathExtension.lowercased() == "pdf" && !skipping.contains($0.resolvingSymlinksInPath().path) }
+        // nothing left once the export's own PDFs are taken (a Zotero export folder): no second status
+        if pdfs.isEmpty && !skipping.isEmpty { return (0, "") }
         let lib = self.lib
         let norm: @Sendable (String) -> String = { s in s.lowercased().filter { $0.isLetter || $0.isNumber } }
         let all = lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
@@ -603,16 +628,19 @@ final class LibraryModel: ObservableObject {
         for (i, url) in pdfs.enumerated() {
             status = "Matching PDFs: \(i + 1) of \(pdfs.count)"
             progress = Double(i) / Double(max(1, pdfs.count))
-            guard let data = try? Data(contentsOf: url) else { continue }
-            let match: (id: String, how: Int)? = await Task.detached {
-                if let doi = Paper2Epub.doi(inPDF: data), let p = lib.findByDoi(doi: doi) { return (p.id, 0) }
+            // read off the main thread; a PDF in iCloud Drive is downloaded first
+            let found: (data: Data, id: String, how: Int)?? = await Task.detached {
+                guard let data = try? ImportSource.coordinated(url, { try Data(contentsOf: $0) }) else { return nil }
+                if let doi = Paper2Epub.doi(inPDF: data), let p = lib.findByDoi(doi: doi) { return (data, p.id, 0) }
                 let text = norm(Paper2Epub.firstPagesText(ofPDF: data))
                 // longest title found on the first pages wins (avoids short generic titles)
-                if let hit = titles.filter({ text.contains($0.1) }).max(by: { $0.1.count < $1.1.count }) { return (hit.0, 1) }
-                return nil
+                if let hit = titles.filter({ text.contains($0.1) }).max(by: { $0.1.count < $1.1.count }) { return (data, hit.0, 1) }
+                return .some(nil)
             }.value
-            guard let match else { unmatched.append(url.lastPathComponent); continue }
+            guard let read = found else { continue }
+            guard let match = read else { unmatched.append(url.lastPathComponent); continue }
             if lib.paper(id: match.id)?.hasPdf == true { already += 1; continue }
+            let data = match.data
             try? await Task.detached { try lib.attachFile(id: match.id, kind: .pdf, data: data) }.value
             if match.how == 0 { byDOI += 1 } else { byTitle += 1 }
             if (byDOI + byTitle) % 25 == 0 { reload() }
@@ -621,7 +649,9 @@ final class LibraryModel: ObservableObject {
         reload()
         NSLog("Lunta: PDF import: %d by DOI, %d by title, %d already had a PDF, %d unmatched", byDOI, byTitle, already, unmatched.count)
         if !unmatched.isEmpty { NSLog("Lunta: unmatched PDFs: %@", unmatched.joined(separator: ", ")) }
-        status = "PDFs: \(byDOI + byTitle) attached (\(byDOI) by DOI, \(byTitle) by title), \(unmatched.count) not matched to a paper."
+        let text = "PDFs: \(byDOI + byTitle) attached (\(byDOI) by DOI, \(byTitle) by title), \(unmatched.count) not matched to a paper."
+        status = text
+        return (byDOI + byTitle, text)
     }
 
     // MARK: - Natural narration

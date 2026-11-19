@@ -153,6 +153,20 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         UIBackgroundModes: [audio, fetch]
         BGTaskSchedulerPermittedIdentifiers: [com.cmlangseth.margins.ios.foryou]
+        # library exports the import's file picker offers (+ › Import Library)
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: org.tug.bib
+            UTTypeDescription: BibTeX Bibliography
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [bib, bibtex]
+              public.mime-type: [application/x-bibtex, text/x-bibtex]
+          - UTTypeIdentifier: com.cmlangseth.margins.ris
+            UTTypeDescription: RIS Bibliography
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [ris]
+              public.mime-type: [application/x-research-info-systems]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
     entitlements:

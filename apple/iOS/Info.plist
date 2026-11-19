@@ -57,5 +57,52 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>BibTeX Bibliography</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.tug.bib</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>bib</string>
+					<string>bibtex</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-bibtex</string>
+					<string>text/x-bibtex</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>RIS Bibliography</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.cmlangseth.margins.ris</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>ris</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-research-info-systems</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

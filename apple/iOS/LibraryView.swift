@@ -118,9 +118,7 @@ struct LibraryView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { asking = true } label: { Image(systemName: "sparkles") }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { adding = true } label: { Image(systemName: "plus") }
-                }
+                ToolbarItem(placement: .topBarTrailing) { AddMenu(adding: $adding) }
             }
             .sheet(isPresented: $asking) {
                 NavigationStack(path: $askPath) {
@@ -181,7 +179,7 @@ struct LibraryView: View {
                         ContentUnavailableView.search(text: model.query)
                     } else if model.counts.all == 0 {
                         ContentUnavailableView("No papers yet", systemImage: "books.vertical",
-                                               description: Text(model.inCloud ? "Your library is syncing from iCloud…" : "Tap + to add a paper by DOI or link."))
+                                               description: Text(model.inCloud ? "Your library is syncing from iCloud…" : "Tap + to add a paper by DOI or link, or to import your library from Zotero, Mendeley…"))
                     }
                 }
             }
@@ -269,6 +267,9 @@ struct LibraryHome: View {
         Section {
             Button { managing = true } label: { Label("Manage Folders & Tags…", systemImage: "folder.badge.gearshape") }
             Button { cleaning = true } label: { Label("Clean Up Library…", systemImage: "wand.and.sparkles") }
+            Menu {
+                ImportMenuItems()
+            } label: { Label("Import Library…", systemImage: "square.and.arrow.down.on.square") }
             AppearancePicker().pickerStyle(.menu)
         }
     }
