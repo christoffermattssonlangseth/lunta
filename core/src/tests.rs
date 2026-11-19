@@ -148,7 +148,7 @@ fn citations_and_exports() {
     let bib = export::bibtex(&[p.clone(), p.clone()]);
     assert!(bib.contains("@article{Kukanja2024cellular,"), "{bib}");
     assert!(bib.contains("@article{Kukanja2024cellulara,"));
-    assert!(bib.contains("author = {Kukanja, Petra and Langseth, Christoffer M. and Castelo-Branco, Gonçalo}"));
+    assert!(bib.contains("author = {Kukanja, Petra and Langseth, Christoffer M. and Castelo-Branco, Gon{\\c{c}}alo}"));
     assert!(bib.contains("pages = {1990--2009}"));
     let ris = export::ris(&[p.clone()]);
     assert!(ris.contains("AU  - Langseth, Christoffer M.\r\n") && ris.contains("SP  - 1990\r\n") && ris.contains("EP  - 2009"));
@@ -1123,4 +1123,15 @@ fn work_type_in_the_log_is_compatible() {
     // a deleted folder has no .bib (its file is left as it was)
     again.delete_collection(c.id.clone()).unwrap();
     assert!(again.kept_bibtex(Some(c.id)).is_none());
+}
+
+#[test]
+fn bibtex_letters_as_latex() {
+    let names = "Paweł Szostek, Łukasz Bolikowski, Nuno Preguiça, Ångström Øre, Müller Straße, Dvořák Čapek, Íñigo Ğür, Œuvre Đorđe";
+    let tex = export::latex_letters(names);
+    assert_eq!(tex, "Pawe{\\l} Szostek, {\\L}ukasz Bolikowski, Nuno Pregui{\\c{c}}a, {\\r{A}}ngstr{\\\"o}m {\\O}re, M{\\\"u}ller Stra{\\ss}e, Dvo{\\v{r}}{\\'a}k {\\v{C}}apek, {\\'I}{\\~n}igo {\\u{G}}{\\\"u}r, {\\OE}uvre {\\DJ}or{\\dj}e");
+    assert!(tex.is_ascii());
+    // read back as they were
+    assert_eq!(import::delatex(&tex), names);
+    assert_eq!(import::delatex(&export::latex_letters("Rodríguez")), "Rodríguez");
 }

@@ -222,7 +222,7 @@ pub fn delatex(s: &str) -> String {
         ("H", '\u{030B}'), ("r", '\u{030A}'), ("k", '\u{0328}'),
     ];
     let specials: &[(&str, &str)] = &[
-        ("\\textasciitilde", "~"), ("\\textbackslash", "\\"), ("\\textbar", "|"), ("\\textless", "<"), ("\\textgreater", ">"), ("\\o", "ø"), ("\\O", "Ø"), ("\\aa", "å"), ("\\AA", "Å"), ("\\ae", "æ"), ("\\AE", "Æ"), ("\\ss", "ß"),
+        ("\\textasciitilde", "~"), ("\\textbackslash", "\\"), ("\\textbar", "|"), ("\\textless", "<"), ("\\textgreater", ">"), ("\\o", "ø"), ("\\O", "Ø"), ("\\aa", "å"), ("\\AA", "Å"), ("\\ae", "æ"), ("\\AE", "Æ"), ("\\ss", "ß"), ("\\oe", "œ"), ("\\OE", "Œ"), ("\\dj", "đ"), ("\\DJ", "Đ"), ("\\dh", "ð"),
         ("\\l", "ł"), ("\\L", "Ł"), ("\\i", "ı"), ("\\&", "&"), ("\\%", "%"), ("\\_", "_"), ("\\#", "#"),
         ("\\$", "$"), ("--", "–"), ("\\textendash", "–"), ("\\textemdash", "—"), ("~", "\u{00A0}"),
     ];
@@ -325,7 +325,14 @@ fn nfc(s: &str) -> String {
         ("a\u{030A}", "å"), ("A\u{030A}", "Å"), ("o\u{030B}", "ő"), ("u\u{030B}", "ű"), ("e\u{0328}", "ę"), ("a\u{0328}", "ą"),
         ("g\u{0306}", "ğ"), ("e\u{0304}", "ē"), ("z\u{0307}", "ż"),
     ];
-    table.iter().find(|(k, _)| *k == s).map(|(_, v)| v.to_string()).unwrap_or_else(|| s.to_string())
+    if let Some((_, v)) = table.iter().find(|(k, _)| *k == s) {
+        return v.to_string();
+    }
+    let mut c = s.chars();
+    match (c.next(), c.next(), c.next()) {
+        (Some(b), Some(m), None) => crate::export::compose(b, m).map(|x| x.to_string()).unwrap_or_else(|| s.to_string()),
+        _ => s.to_string(),
+    }
 }
 
 /// The work type a BibTeX entry type says (with an arXiv "journal" a preprint).

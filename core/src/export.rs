@@ -138,13 +138,78 @@ pub fn latex_cite(keys: &[String]) -> String {
 }
 
 fn bib_escape(s: &str) -> String {
-    s.replace('\\', "\\textbackslash{}")
+    let s = s
+        .replace('\\', "\\textbackslash{}")
         .replace('&', "\\&")
         .replace('%', "\\%")
         .replace('#', "\\#")
         .replace('_', "\\_")
         .replace('{', "\\{")
-        .replace('}', "\\}")
+        .replace('}', "\\}");
+    latex_letters(&s)
+}
+
+/// Accented and special Latin letters as LaTeX commands ("Paweł" → "Pawe{\l}", "Preguiça" →
+/// "Pregui{\c{c}}a"), as BibTeX exports usually have them: classic BibTeX sorts and abbreviates
+/// them right, and every engine and font prints them (Unicode "ł" is missing from the default
+/// fonts of pdfLaTeX and XeTeX without fontspec). Other characters stay as they are.
+/// LaTeX's accent commands, the letters they make and those letters' bases (in the same order).
+const ACCENTS: [(&str, &str, &str); 13] = [
+        ("`", "àèìòùÀÈÌÒÙ", "aeiouAEIOU"),
+        ("'", "áéíóúýćńśźĺŕÁÉÍÓÚÝĆŃŚŹĹŔ", "aeiouycnszlrAEIOUYCNSZLR"),
+        ("^", "âêîôûĉĝĥĵŝŵŷÂÊÎÔÛĈĜĤĴŜŴŶ", "aeioucghjswyAEIOUCGHJSWY"),
+        ("~", "ãñõĩũÃÑÕĨŨ", "anoiuANOIU"),
+        ("\"", "äëïöüÿÄËÏÖÜŸ", "aeiouyAEIOUY"),
+        ("r", "åůÅŮ", "auAU"),
+        ("c", "çşţģķļņÇŞŢĢĶĻŅ", "cstgklnCSTGKLN"),
+        ("v", "čďěňřšťžČĎĚŇŘŠŤŽ", "cdenrstzCDENRSTZ"),
+        ("u", "ăğŭĂĞŬ", "aguAGU"),
+        ("H", "őűŐŰ", "ouOU"),
+        ("k", "ąęįųĄĘĮŲ", "aeiuAEIU"),
+        (".", "żėŻĖİ", "zezEI"),
+        ("=", "āēīōūĀĒĪŌŪ", "aeiouAEIOU"),
+    ];
+
+/// The letter a base and a combining accent make ('C' + U+030C → 'Č'), for LaTeX read back.
+pub(crate) fn compose(base: char, mark: char) -> Option<char> {
+    let cmd = match mark {
+        '\u{0300}' => "`", '\u{0301}' => "'", '\u{0302}' => "^", '\u{0303}' => "~", '\u{0308}' => "\"",
+        '\u{030A}' => "r", '\u{0327}' => "c", '\u{030C}' => "v", '\u{0306}' => "u", '\u{030B}' => "H",
+        '\u{0328}' => "k", '\u{0307}' => ".", '\u{0304}' => "=",
+        _ => return None,
+    };
+    let (_, letters, bases) = ACCENTS.iter().find(|(c, _, _)| *c == cmd)?;
+    bases.chars().position(|b| b == base).and_then(|i| letters.chars().nth(i))
+}
+
+pub fn latex_letters(s: &str) -> String {
+    const SPECIAL: [(char, &str); 13] = [
+        ('ß', "{\\ss}"), ('æ', "{\\ae}"), ('Æ', "{\\AE}"), ('ø', "{\\o}"), ('Ø', "{\\O}"), ('œ', "{\\oe}"), ('Œ', "{\\OE}"),
+        ('ł', "{\\l}"), ('Ł', "{\\L}"), ('ı', "{\\i}"), ('đ', "{\\dj}"), ('Đ', "{\\DJ}"), ('ð', "{\\dh}"),
+    ];
+    let mut out = String::with_capacity(s.len());
+    'chars: for c in s.chars() {
+        if c.is_ascii() {
+            out.push(c);
+            continue;
+        }
+        if let Some((_, r)) = SPECIAL.iter().find(|(x, _)| *x == c) {
+            out.push_str(r);
+            continue;
+        }
+        for (cmd, letters, bases) in ACCENTS {
+            if let Some(i) = letters.chars().position(|x| x == c) {
+                let base = bases.chars().nth(i).unwrap();
+                // \i: a dotless i under the accent
+                let base = if base == 'i' { "\\i".to_string() } else { base.to_string() };
+                let letter_cmd = cmd.chars().all(|x| x.is_ascii_alphabetic());
+                out.push_str(&if letter_cmd { format!("{{\\{cmd}{{{base}}}}}") } else { format!("{{\\{cmd}{base}}}") });
+                continue 'chars;
+            }
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// The BibTeX entry type for a paper's kind, as BibTeX and biblatex users expect: conference
