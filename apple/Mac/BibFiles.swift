@@ -154,6 +154,7 @@ struct BibFileMenu: View {
         }
         if source != BibFiles.allPapers {
             Button("Import BibTeX (Keep Citation Keys)…") { importBibKeepingKeys(model: model, folder: source) }
+            Button("Resolve Citations in a .tex File…") { resolveTexCitations(model: model, folder: source) }
         }
     }
 }

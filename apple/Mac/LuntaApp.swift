@@ -241,6 +241,7 @@ struct LuntaCommands: Commands {
                 .keyboardShortcut("i", modifiers: [.command, .shift])
             Button("Import Folder of PDFs…") { importPDFFolder() }
             Button("Import BibTeX (Keep Citation Keys)…") { importBibKeepingKeys(model: model) }
+            Button("Resolve Citations in a .tex File…") { resolveTexCitations(model: model) }
             Divider()
             Button("Find Missing PDFs") { Task { await model?.findMissingPDFs() } }
             Button("Make Missing Reading Views") { Task { await model?.makeReadingViews() } }

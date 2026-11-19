@@ -14,6 +14,7 @@ import { aiSettingsDialog, libraryAskButton, setAskOpener } from './ai';
 import { setOpenPaper, voiceDialog } from './listen';
 import { showForYou, hideForYou, forYouCount, setForYouHooks, startForYou, watchItems } from './foryou';
 import { importLibrary, importPdfFolder, makeMissingReadingViews, setImportReload } from './importer';
+import { resolveTexCitations } from './texresolve';
 
 let source: Source = { kind: 'all' };
 let query = '';
@@ -96,12 +97,19 @@ function bibItems(source: string, name: string): MenuItem[] {
     try { await api.setBibFile(source, p); status(`Lunta keeps ${p} updated`); } catch (e) { status(String(e), 'error'); }
     await reload();
   };
-  if (!path) return [{ label: 'Keep BibTeX File Updated…', action: choose }];
+  // Resolve Citations in a .tex file (texresolve.ts): the papers go into this folder
+  const resolve: MenuItem[] = source === '*' ? [] : [{ label: 'Resolve Citations in a .tex File…', action: () => resolveTex(source) }];
+  if (!path) return [{ label: 'Keep BibTeX File Updated…', action: choose }, ...resolve];
   return [
+    ...resolve,
     { label: `BibTeX file: ${path.split(/[\\/]/).pop()}`, disabled: true, action: () => {} },
     { label: 'Save BibTeX File Elsewhere…', action: choose },
     { label: 'Stop Updating BibTeX File', action: () => after(api.setBibFile(source, null)) },
   ];
+}
+
+function resolveTex(folder: string | null) {
+  resolveTexCitations(side?.folders || [], Object.keys(bibFiles), folder, () => { reload(); });
 }
 
 /** A sidebar name with a mark when a .bib file is kept for it. */
@@ -531,6 +539,8 @@ $('#add').onclick = addPaper;
 const importItems = (): MenuItem[] => [
   { label: 'Import Library (Zotero, Mendeley, ReadCube, EndNote…)…', action: importLibrary },
   { label: 'Import Folder of PDFs…', action: importPdfFolder },
+  '-',
+  { label: 'Resolve Citations in a .tex File…', action: () => resolveTex(null) },
   '-',
   { label: 'Make Missing Reading Views', action: makeMissingReadingViews },
 ];

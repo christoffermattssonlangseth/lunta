@@ -21,6 +21,7 @@ mod listen;
 mod positions;
 mod settings;
 mod smart;
+mod texresolve;
 mod updates;
 
 use lunta_core::model::{Annotation, AnnotationKind, CitationStyle, FileKind, Paper, PaperFilter, PaperMeta, SortKey};
@@ -878,6 +879,9 @@ pub fn run() {
             importer::import_library,
             importer::import_pdf_folder,
             importer::make_reading_views,
+            texresolve::tex_open,
+            texresolve::tex_suggest,
+            texresolve::tex_write,
             find_pdf,
             pdf_bytes,
             pdfcite::pdf_prepare_citations,
