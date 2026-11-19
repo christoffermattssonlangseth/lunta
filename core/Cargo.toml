@@ -27,6 +27,10 @@ name = "paper2epub"
 path = "src/bin/paper2epub.rs"
 required-features = ["convert"]
 
+[[example]]
+name = "ai"
+required-features = ["llm"]
+
 [dependencies]
 uniffi = { version = "0.32", features = ["cli"] }
 rusqlite = { version = "0.42", features = ["bundled"] }
@@ -54,6 +58,13 @@ bzip2 = { version = "0.6", optional = true }
 tar = { version = "0.4", default-features = false, optional = true }
 libloading = { version = "0.9", optional = true }
 
+# On-device AI (core/src/llm): llama.cpp, built from source with CMake (CPU; Metal on macOS)
+llama-cpp-2 = { version = "=0.1.161", default-features = false, optional = true }
+
+# Android: llama.cpp with the NDK's static C++ library (nothing more to ship in the APK)
+[target.'cfg(target_os = "android")'.dependencies]
+llama-cpp-2 = { version = "=0.1.161", default-features = false, features = ["android-static-stdcxx"], optional = true }
+
 [dev-dependencies]
 tempfile = "3"
 
@@ -77,3 +88,6 @@ drive = ["dep:sha2", "dep:md-5", "dep:base64", "dep:getrandom"]
 # sherpa-onnx's C API, loaded at run time: downloaded with the model on Windows, Linux and macOS,
 # in the APK on Android) and its download. For the desktop and Android apps; not in the Apple build.
 tts = ["dep:bzip2", "dep:tar", "dep:libloading", "dep:sha2"]
+# On-device AI (core/src/llm): the open model (Qwen3, GGUF) on llama.cpp for summaries and Ask in
+# the desktop and Android apps; its download, prompts and summary.json. Not in the Apple build.
+llm = ["dep:llama-cpp-2", "dep:sha2"]

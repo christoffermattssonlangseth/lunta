@@ -807,3 +807,27 @@ fn bridge_publishes_icloud_positions_without_rewriting_them() {
     assert!(icloud.join("positions/android-0003.json").exists());
     assert!(!w.remote.join("positions/ios-0002 2.json").exists());
 }
+
+/// The reader's Summary card is kept as papers/<id>/summary.json (apple/Shared/Summary.swift, and
+/// core/src/llm/summary.rs for the desktop and Android apps): small, so it comes down even in lazy
+/// mode, and a regenerated one goes back up and replaces the old, both ways.
+#[test]
+fn summaries_sync_both_ways_also_in_lazy_mode() {
+    let w = World::new();
+    let mac = w.mac();
+    let a = mac.lib.add_paper(meta("Alpha", ""), Some(b"pdf bytes".to_vec()), Some(b"epub bytes".to_vec()), Some("full text".into())).unwrap();
+    let pid = &a.id;
+    let on_mac = w.remote.join(format!("papers/{pid}/summary.json"));
+    fs::write(&on_mac, br#"{"created":"2026-11-19T09:30:00Z","model":"apple-on-device","source":"s1","text":"From the Mac."}"#).unwrap();
+    set_time(&on_mac, 1_000_000);
+    let ph = w.api_with("phone", Box::new(LocalDirRemote::new(&w.remote)), true);
+    let r = ph.sync();
+    assert_eq!(r.skipped_lazy, 2);
+    let on_phone = ph.root.join(format!("papers/{pid}/summary.json"));
+    assert!(read(&on_phone).ends_with(b"From the Mac.\"}"));
+    // regenerated on the phone: replaces the Mac's
+    fs::write(&on_phone, br#"{"created":"2026-11-20T09:30:00Z","model":"qwen3-1.7b","source":"s2","text":"From the phone."}"#).unwrap();
+    set_time(&on_phone, 2_000_000);
+    ph.sync();
+    assert!(read(&on_mac).ends_with(b"From the phone.\"}"));
+}

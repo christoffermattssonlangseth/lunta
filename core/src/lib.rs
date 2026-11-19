@@ -20,6 +20,8 @@ pub mod export;
 pub mod highlight;
 pub mod import;
 pub mod index;
+#[cfg(feature = "llm")]
+pub mod llm;
 pub mod metadata;
 pub mod model;
 pub mod refcite;
