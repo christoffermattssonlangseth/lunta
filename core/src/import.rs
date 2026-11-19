@@ -126,11 +126,30 @@ fn parse_fields(body: &str, strings: &[(String, String)]) -> Vec<(String, String
             i += 1;
         }
         let raw: String = chars[vs..i].iter().collect();
-        if !name.is_empty() {
+        if is_file_field(&name) {
+            // paths as written: LaTeX cleaning would eat Windows' backslashes ("\Users") and
+            // Zotero's escapes ("C\:\\Users")
+            out.push((name, unwrap_raw(raw.trim())));
+        } else if !name.is_empty() {
             out.push((name, unwrap_value(raw.trim(), strings)));
         }
     }
     out
+}
+
+/// Fields that hold paths to the paper's files (Zotero, JabRef, Mendeley, BibDesk).
+fn is_file_field(name: &str) -> bool {
+    name == "file" || name == "pdf" || name == "local-url" || name.starts_with("bdsk-file")
+}
+
+/// A value without its outer `{…}` or `"…"`, otherwise as written.
+fn unwrap_raw(v: &str) -> String {
+    let v = v.trim();
+    if (v.starts_with('{') && v.ends_with('}')) || (v.starts_with('"') && v.ends_with('"') && v.len() >= 2) {
+        v[1..v.len() - 1].trim().to_string()
+    } else {
+        v.to_string()
+    }
 }
 
 /// Resolves `{…}`, `"…"`, numbers, @string macros and `#` concatenation, then cleans LaTeX.
@@ -321,7 +340,7 @@ fn entry_from_bib(kind: &str, f: &[(String, String)]) -> ImportEntry {
     };
     let mut files = vec![];
     for (n, v) in f {
-        if n == "file" || n == "pdf" || n == "local-url" || n.starts_with("bdsk-file") {
+        if is_file_field(n) {
             files.extend(pdf_paths(v));
         }
     }
@@ -364,28 +383,158 @@ fn month_num(m: &str) -> String {
     m.parse::<u32>().ok().filter(|n| (1..=12).contains(n)).map(|n| format!("{n:02}")).unwrap_or_default()
 }
 
-/// Pulls PDF paths out of Zotero ("desc:/path.pdf:application/pdf"), Mendeley (":path:pdf"),
-/// JabRef and plain-path file fields.
+/// Splits at `sep` where it isn't escaped with a backslash, and undoes the escapes Zotero and
+/// JabRef write (`\:`, `\;`, `\\`) in each part.
+fn split_escaped(s: &str, sep: char) -> Vec<String> {
+    let mut out = vec![];
+    let mut cur = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.peek() {
+                Some(&n) if n == sep || n == '\\' || n == ':' || n == ';' => {
+                    // keep it escaped for the next split, unless it is this split's separator
+                    if n == sep {
+                        cur.push(n);
+                    } else {
+                        cur.push('\\');
+                        cur.push(n);
+                    }
+                    chars.next();
+                }
+                _ => cur.push(c),
+            }
+        } else if c == sep {
+            out.push(std::mem::take(&mut cur));
+        } else {
+            cur.push(c);
+        }
+    }
+    out.push(cur);
+    out
+}
+
+fn unescape_path(s: &str) -> String {
+    let mut out = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' && matches!(chars.peek(), Some(':') | Some(';') | Some('\\')) {
+            out.push(chars.next().unwrap());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// A Windows path: "C:\…" or "C:/…".
+fn windows_path(p: &str) -> bool {
+    let b = p.as_bytes();
+    b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'\\' || b[2] == b'/')
+}
+
+/// Pulls PDF paths out of a file field as Zotero ("desc:/path.pdf:application/pdf", on Windows
+/// "desc:C\:\\Users\\…\\x.pdf:application/pdf"), Mendeley (":C\:/Users/…/x.pdf:pdf"), JabRef
+/// (":C\:\\…\\x.pdf:PDF") and BibDesk write it, several separated by ";", or a plain path
+/// ("C:\Users\…\x.pdf", "/Users/…/x.pdf", "file:///…"). Windows paths stay as they are (drive and
+/// backslashes); the importer finds them on this device by their last folders.
 pub fn pdf_paths(v: &str) -> Vec<String> {
     let mut out = vec![];
-    for item in v.split(';') {
-        let item = item.trim().trim_start_matches("file://");
+    for item in split_escaped(v, ';') {
+        let item = item.trim();
+        let item = item.strip_prefix("file://").unwrap_or(item);
+        // "file:///C:/Users/…"
+        let item = if item.starts_with('/') && windows_path(&item[1..]) { &item[1..] } else { item };
         if item.is_empty() {
             continue;
         }
-        // try "a:b:c" segments first, longest segment ending in .pdf wins
-        let segs: Vec<&str> = item.split(':').collect();
-        let found = segs.iter().find(|s| s.to_lowercase().ends_with(".pdf")).map(|s| s.to_string());
-        let path = match found {
-            Some(p) => p,
-            None if item.to_lowercase().ends_with(".pdf") => item.to_string(),
-            None => continue,
+        let plain = unescape_path(item);
+        let path = if windows_path(&plain) && !plain.contains("\\:") && split_escaped(item, ':').len() == 2 {
+            // a plain Windows path: its only colon is the drive's
+            Some(plain)
+        } else {
+            // "description:path:type": the colons that aren't escaped separate the parts; a
+            // drive letter cut off by an unescaped colon ("C:\Users…" written as is) joins its path
+            let raw = split_escaped(item, ':');
+            let mut segs: Vec<String> = vec![];
+            for s in raw {
+                let joins = segs.last().is_some_and(|l: &String| l.len() == 1 && l.chars().all(|c| c.is_ascii_alphabetic()))
+                    && (s.starts_with('\\') || s.starts_with('/'));
+                if joins {
+                    let d = segs.pop().unwrap();
+                    segs.push(format!("{d}:{s}"));
+                } else {
+                    segs.push(s);
+                }
+            }
+            let segs: Vec<String> = segs.iter().map(|s| unescape_path(s)).collect();
+            segs.iter()
+                .find(|s| s.to_lowercase().ends_with(".pdf"))
+                .cloned()
+                .or_else(|| (plain.to_lowercase().ends_with(".pdf")).then(|| plain.clone()))
         };
-        let p = path.replace("\\:", ":").replace("%20", " ");
-        let p = if p.starts_with('/') || p.starts_with('~') { p } else { format!("/{p}") };
+        let Some(p) = path else { continue };
+        let p = p.trim().replace("%20", " ");
+        if p.is_empty() {
+            continue;
+        }
+        let p = if p.starts_with('/') || p.starts_with('~') || windows_path(&p) { p } else { format!("/{p}") };
         out.push(p);
     }
     out
+}
+
+#[cfg(test)]
+mod file_field_tests {
+    use super::*;
+
+    fn files(bib: &str) -> Vec<String> {
+        parse_bibtex(bib).remove(0).files
+    }
+
+    #[test]
+    fn zotero_windows() {
+        // Zotero's Better BibTeX / built-in export on Windows
+        let bib = r"@article{a, title={T}, file = {Full Text PDF:C\:\\Users\\Anna\\Zotero\\storage\\AB12CD34\\Smith - 2020 - Title.pdf:application/pdf;Snapshot:C\:\\Users\\Anna\\Zotero\\storage\\AB12CD34\\page.html:text/html}}";
+        assert_eq!(files(bib), vec![r"C:\Users\Anna\Zotero\storage\AB12CD34\Smith - 2020 - Title.pdf"]);
+        // the "Export Files" option: relative paths
+        assert_eq!(files(r"@article{a, title={T}, file = {Smith 2020:files/12/Smith 2020.pdf:application/pdf}}"), vec!["/files/12/Smith 2020.pdf"]);
+    }
+
+    #[test]
+    fn zotero_mac_and_linux() {
+        let bib = "@article{a, title={T}, file = {Full Text:/Users/me/Zotero/storage/AB12/paper.pdf:application/pdf}}";
+        assert_eq!(files(bib), vec!["/Users/me/Zotero/storage/AB12/paper.pdf"]);
+    }
+
+    #[test]
+    fn jabref_windows() {
+        let bib = r"@article{a, title={T}, file = {:C\:\\Users\\bob\\Documents\\papers\\x.pdf:PDF;:D\:\\other\\y.PDF:PDF}}";
+        assert_eq!(files(bib), vec![r"C:\Users\bob\Documents\papers\x.pdf", r"D:\other\y.PDF"]);
+    }
+
+    #[test]
+    fn mendeley_windows() {
+        let bib = r"@article{a, title={T}, file = {:C$\backslash$:/Users/c/AppData/Local/Mendeley Ltd./Mendeley Desktop/Downloaded/x.pdf:pdf}}";
+        // Mendeley's own escaping of the colon ($\backslash$:) is also written as \: by newer versions
+        let newer = r"@article{a, title={T}, file = {:C\:/Users/c/AppData/Local/Mendeley Ltd./Mendeley Desktop/Downloaded/x.pdf:pdf}}";
+        assert_eq!(files(newer), vec!["C:/Users/c/AppData/Local/Mendeley Ltd./Mendeley Desktop/Downloaded/x.pdf"]);
+        assert_eq!(files(bib).len(), 1);
+        assert!(files(bib)[0].ends_with("/Mendeley Desktop/Downloaded/x.pdf"), "{:?}", files(bib));
+    }
+
+    #[test]
+    fn plain_windows_paths() {
+        assert_eq!(files(r"@article{a, title={T}, file = {C:\Users\x\Zotero\storage\AB12\x.pdf}}"), vec![r"C:\Users\x\Zotero\storage\AB12\x.pdf"]);
+        assert_eq!(files(r"@article{a, title={T}, pdf = {file:///C:/Users/x/x.pdf}}"), vec!["C:/Users/x/x.pdf"]);
+    }
+
+    #[test]
+    fn mac_paths_as_before() {
+        assert_eq!(pdf_paths(":Users/me/x.pdf:pdf"), vec!["/Users/me/x.pdf"]);
+        assert_eq!(pdf_paths("file:///Users/me/My%20Paper.pdf"), vec!["/Users/me/My Paper.pdf"]);
+        assert_eq!(pdf_paths("desc:/a/b.pdf:application/pdf;desc:/a/c.html:text/html"), vec!["/a/b.pdf"]);
+    }
 }
 
 // ---------------------------------------------------------------- RIS
