@@ -476,6 +476,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bzip2"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3a53fac24f34a81bc9954b5d6cfce0c21e18ec6959f44f56e8e90e4bb7c346c"
+dependencies = [
+ "libbz2-rs-sys",
+]
+
+[[package]]
 name = "cairo-rs"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2538,9 +2547,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e9ec52138abedcc58dc17a7c6c0c00a2bdb4f3427c7f63fa97fd0d859155caf"
 dependencies = [
  "gtk-sys",
- "libloading",
+ "libloading 0.7.4",
  "once_cell",
 ]
+
+[[package]]
+name = "libbz2-rs-sys"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32f454fd6831a29c0e827ed075bca2a15be201bd57f4168f0fd1041124eab17e"
 
 [[package]]
 name = "libc"
@@ -2565,6 +2580,16 @@ checksum = "b67380fd3b2fbe7527a606e18729d21c6f3951633d0500574c4dc22d2d638b9f"
 dependencies = [
  "cfg-if",
  "winapi",
+]
+
+[[package]]
+name = "libloading"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1832accd5a4ca2795ace4d05d15c4039be15b62d3b950eff99746a990e3cc10"
+dependencies = [
+ "cfg-if",
+ "windows-link",
 ]
 
 [[package]]
@@ -2620,10 +2645,12 @@ version = "1.0.8"
 dependencies = [
  "ab_glyph",
  "base64 0.22.1",
+ "bzip2",
  "getrandom 0.3.4",
  "hayagriva",
  "icu_normalizer",
  "image",
+ "libloading 0.9.1",
  "md-5",
  "pdfium-render",
  "quick-xml 0.38.4",
@@ -2632,6 +2659,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tar",
  "thiserror 2.0.21",
  "ttf-parser",
  "uniffi",
@@ -3301,7 +3329,7 @@ dependencies = [
  "image",
  "itertools",
  "js-sys",
- "libloading",
+ "libloading 0.7.4",
  "log",
  "maybe-owned",
  "once_cell",

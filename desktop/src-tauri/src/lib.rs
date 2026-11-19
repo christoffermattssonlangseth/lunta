@@ -14,6 +14,7 @@ mod citeapi;
 mod devsnap;
 mod pdfcite;
 mod extension;
+mod listen;
 mod positions;
 mod settings;
 mod smart;
@@ -98,6 +99,7 @@ struct PaperDto {
     tags: Vec<String>,
     annotation_count: u32,
     cite_key: String,
+    has_audio: bool,
 }
 
 impl From<Paper> for PaperDto {
@@ -116,6 +118,7 @@ impl From<Paper> for PaperDto {
             tags: p.tags,
             annotation_count: p.annotation_count,
             cite_key: p.cite_key,
+            has_audio: p.has_audio,
         }
     }
 }
@@ -792,6 +795,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updates::Pending::default())
+        .manage(listen::Listen::new())
         .register_asynchronous_uri_scheme_protocol("lunta", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             let path = request.uri().path().to_string();
@@ -881,6 +885,17 @@ pub fn run() {
             updates::set_update_auto,
             dev_log,
             dev_snapshot,
+            listen::listen_voices,
+            listen::listen_status,
+            listen::listen_download,
+            listen::listen_cancel_download,
+            listen::listen_remove,
+            listen::listen_prepare_text,
+            listen::listen_generation,
+            listen::listen_warm_up,
+            listen::listen_clip,
+            listen::listen_paper_timings,
+            listen::listen_paper_audio,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lunta");

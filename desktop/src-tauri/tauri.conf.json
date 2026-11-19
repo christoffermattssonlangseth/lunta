@@ -33,6 +33,7 @@
         "connect-src": "'self' ipc: http://ipc.localhost lunta: http://lunta.localhost",
         "frame-src": "lunta: http://lunta.localhost",
         "worker-src": "'self' blob:",
+        "media-src": "'self' blob:",
         "object-src": "'none'",
         "base-uri": "'self'",
         "form-action": "'none'"
@@ -58,7 +59,7 @@
       "wix": { "language": "en-US" }
     },
     "linux": {
-      "deb": { "depends": [] },
+      "deb": { "depends": ["gstreamer1.0-plugins-good"] },
       "appimage": { "bundleMediaFramework": false }
     },
     "createUpdaterArtifacts": true

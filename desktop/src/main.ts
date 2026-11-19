@@ -10,6 +10,7 @@ import { setupDrag, type Payload } from './drag';
 import { fill, h, $, status, prompt, menu, menuBelow, copy, authorsShort, type MenuItem } from './ui';
 import { openReader, readerPaper, closeReader } from './reader';
 import { startUpdateChecks, checkNow, updatesApi } from './updates';
+import { setOpenPaper, voiceDialog } from './listen';
 
 let source: Source = { kind: 'all' };
 let query = '';
@@ -488,6 +489,14 @@ async function read(p: Paper, mode: 'reading' | 'pdf') {
   await openReader(p, mode, async () => { $('#library').hidden = false; await reload(); });
 }
 
+// Now Playing's title: the paper being read aloud, at the paragraph being read
+setOpenPaper(async (id) => {
+  const p = await api.paper(id);
+  if (!p || readerPaper() === id) return;
+  if (readerPaper()) await closeReader();
+  read(p, p.has_epub ? 'reading' : 'pdf');
+});
+
 // ---- wiring ----
 
 listen<string>('status', (e) => { if (busy) status(e.payload, 'busy'); });
@@ -522,6 +531,8 @@ $('#settings').onclick = async () => {
       try { await api.chooseLibrary(dir); source = { kind: 'all' }; selected = null; reload(); status(`Library: ${dir}`); }
       catch (e) { status(String(e), 'error'); }
     } },
+    '-',
+    { label: 'Natural Voice for Listening…', action: voiceDialog },
     '-',
     { label: 'Check for Updates…', action: checkNow },
     { label: 'Check for Updates Automatically', checked: autoUpdate, action: () => {

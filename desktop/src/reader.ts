@@ -13,6 +13,7 @@ import { fill, h, $, status, copy, menu, type MenuItem } from './ui';
 import { showPdf, closePdf, pdfZoom, pdfFind, pdfFindStep, pdfFindClear } from './pdf';
 import { closeFigureOverlay, figureList, figureOpen, showFigureGrid, showFigureViewer, type Fig } from './figures';
 import { openFind, closeFind, findOpen, findStep, findUpdate, type FindResult, type FindTarget } from './find';
+import { startNarration, attachReader, detachReader, narrationPaper, playFromId, playerBar, type NarrationItem, type ReaderLink } from './listen';
 
 const COLORS = ['yellow', 'green', 'blue', 'pink'] as const;
 
@@ -108,6 +109,9 @@ window.addEventListener('message', (e) => {
     case '__cite':     // the citation card's "Add to Lunta"
       citeFromPage(String(body));
       break;
+    case 'narr':       // a paragraph tapped while listening: read from there
+      playFromId(String(body));
+      break;
   }
 });
 
@@ -126,6 +130,7 @@ export async function openReader(p: Paper, m: 'reading' | 'pdf', closed: () => v
 
 export async function closeReader() {
   if (!paper) return;
+  if (narrationPaper() === paper.id) detachReader();
   await savePosition();
   clearInterval(saver);
   closeFind();
@@ -160,6 +165,7 @@ function render() {
       // figures · find · highlighter · highlights and notes · Aa (text size, theme, layout, figures)
       h('div.tools', {},
         reading ? h('button.icon#figures-btn', { text: '🖼', hidden: !figures.length, onclick: () => openFigureGrid() }) : null,
+        reading ? h('button.icon#listen-btn', { text: '🎧', title: 'Listen: read the paper aloud', 'aria-label': 'Listen', onclick: () => startListening() }) : null,
         h('button.icon#find-btn', { text: '🔍', title: 'Find in paper (Ctrl+F)', 'aria-label': 'Find in paper', onclick: () => startFind() }),
         reading ? h('button.icon#goto-btn', { text: '#', title: 'Go to page (Ctrl+Alt+G)', 'aria-label': 'Go to page', onclick: () => goToPage() }) : null,
         modeBtn,
@@ -176,6 +182,7 @@ function render() {
       h('div#page'),
       h('aside#hl-list', { hidden: !showingList }),
       reading ? h('aside#refs-list', { hidden: !showingRefs }) : null),
+    playerBar(),
     h('div#resume', { hidden: true }),
     h('div#selbar', { hidden: true }, COLORS.map((c) => h(`button.swatch.c-${c}`, { title: `Highlight ${c}`, onmousedown: (e: Event) => { e.preventDefault(); highlight(c); } })),
       h('button', { text: 'Note…', onmousedown: (e: Event) => { e.preventDefault(); noteOnSelection(); } })),
@@ -240,6 +247,7 @@ async function show() {
 /** The page loaded: draw the highlights, then go to where the reader stopped (on any device). */
 async function pageReady() {
   run(hlModeJS());
+  if (paper) attachReader(paper.id, pageLink);
   if (showingRefs) loadRefs();
   await refreshHighlights();
   if (restored || !paper) return;
@@ -410,6 +418,26 @@ async function citeFromPage(link: string) {
   } catch (e) { status(String(e), 'error'); }
   if (paper?.id !== forPaper || mode !== 'reading') return;
   run(`window.luntaCiteDone && luntaCiteDone(${JSON.stringify(label)})`);
+}
+
+// ---- Listen (listen.ts) ----
+
+/** What the narration may do in the page: highlight the paragraph being read, the listening mode. */
+const pageLink: ReaderLink = {
+  highlight: (id) => { run(`window.luntaHighlight && luntaHighlight(${JSON.stringify(id)})`); },
+  setListening: (on) => { run(`window.luntaListening && luntaListening(${on})`); },
+};
+
+/** Reads the paper aloud from the paragraph at the top of the screen (ReaderWindow.startListening). */
+async function startListening() {
+  if (!paper || mode !== 'reading' || !frame) return;
+  if (attachReader(paper.id, pageLink)) return;     // already reading this paper: its player is back
+  const json = await run<string>('window.luntaNarration ? luntaNarration(false) : "[]"');
+  let items: NarrationItem[] = [];
+  try { items = JSON.parse(json || '[]'); } catch { items = []; }
+  const from = (await run<string>('window.luntaFirstVisible ? luntaFirstVisible() : ""')) || '';
+  if (!paper) return;
+  await startNarration(paper.id, paper.meta.title, items, from, pageLink, !!paper.has_audio);
 }
 
 /** Go to Page: the page's own panel (page number and slider; JumpBack.swift's luntaShowGoTo), with the keyboard. */

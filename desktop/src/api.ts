@@ -11,6 +11,8 @@ export interface Paper {
   read: boolean; starred: boolean; must_read: boolean; collections: string[]; tags: string[]; annotation_count: number;
   /** Citation key for LaTeX: fixed, unique, the same on every device. */
   cite_key: string;
+  /** A natural-voice narration made on the Mac (narration.m4a + narration.json) is here. */
+  has_audio?: boolean;
 }
 export interface Row { paper: Paper; snippet: string; }
 export interface Folder { id: string; name: string; parent: string | null; paper_count: number; }
