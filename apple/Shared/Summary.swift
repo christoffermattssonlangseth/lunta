@@ -37,7 +37,14 @@ enum SummaryModel: String {
 
     /// Under the summary: who wrote it (summaries can be wrong).
     static func note(_ id: String) -> String {
-        let who = id == SummaryModel.open.rawValue ? "the open model (\(OpenModelName.name))" : "Apple Intelligence"
+        // summaries sync: one may come from the Android or Windows/Linux app's open model
+        let who: String
+        switch id {
+        case SummaryModel.apple.rawValue: who = "Apple Intelligence"
+        case SummaryModel.open.rawValue: who = "the open model (\(OpenModelName.name))"
+        case "qwen3-1.7b": who = "the open model (Qwen3 1.7B)"
+        default: who = "an open model (\(id))"
+        }
         return "Made on device by \(who). It can be wrong."
     }
 

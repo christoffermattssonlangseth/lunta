@@ -15,6 +15,9 @@ core/src/convert/      Rust port of the paper → EPUB converter (DOI, PMCID, Pu
 core/src/drive/        Google Drive sync for devices without a synced folder (Android, Linux, ...):
                        RemoteStore trait, Drive REST client + OAuth (PKCE), Syncer; feature "drive",
                        not in the Apple build. CLI: cargo run --bin lunta-sync -- connect|sync|status
+core/src/llm/          on-device AI for the desktop and Android apps: Qwen3 (GGUF) on llama.cpp, its download,
+                       the Summary card's prompt and summary.json, Ask's retrieval; feature "llm", not in the
+                       Apple build. Try it: cargo run --release --features llm --example ai
 android/               Android app (Kotlin, Jetpack Compose, Material 3) on the core through UniFFI Kotlin bindings;
                        reader scripts reused from desktop/src/reader/generated/
 desktop/               Windows / Linux app (Tauri 2): Rust backend on the core (src-tauri/), plain
@@ -589,7 +592,7 @@ For scripted UI checks, debug builds run any `*.js` dropped into `$LUNTA_DEV_EVA
 Not in the desktop app yet (the Mac app has them): highlighting in the PDF (PDF highlights made on the
 Mac or iPhone are listed, not drawn), reading views from PDFs, adding a paper from a PDF alone,
 import (Papers, BibTeX, RIS), Discover, New for You,
-Clean Up, Ask, the MCP server and the Word / Google Docs add-ins; Make Natural Narration (no AAC encoder
+Clean Up, Ask's proposals (tag, add…), the MCP server and the Word / Google Docs add-ins; Make Natural Narration (no AAC encoder
 everywhere: a narration made on the Mac or Android plays).
 
 ## Listen on Windows, Linux and Android
@@ -669,9 +672,60 @@ library, optionally synced with a plain folder as the "remote":
 (`cargo run --example seed_library -- <dir> <doi>...` makes a library of public papers for it).
 `.github/workflows/android.yml` builds the debug APK on GitHub Actions.
 
-Not in the Android app yet: highlighting in the PDF, New for You, Discover, Ask, import,
+Not in the Android app yet: highlighting in the PDF, New for You, Discover, Ask about the library, import,
 Clean Up, creating or editing smart folders, editing metadata, Keystore-backed token storage (tokens
 are in the app's private, non-backed-up folder), a release build and signing.
+
+## On-device AI (Windows, Linux, Android)
+
+The Summary card and Ask, which the Apple apps run on Apple's on-device model (or Qwen3 4B through MLX),
+run in the desktop and Android apps on an open-weights model through llama.cpp, in the core
+(`core/src/llm/`, cargo feature `llm`, on for the desktop app and the Android build, off for Apple's):
+
+- **Model:** Qwen3 (Apache-2.0) as GGUF, 4-bit (Q4_K_M), pinned to a revision on Hugging Face and checked
+  against its SHA-256 (`llm/models.rs`). Windows and Linux: Qwen3 4B from Qwen's own `Qwen/Qwen3-4B-GGUF`
+  (2.5 GB). Android: Qwen3 1.7B (1.3 GB) from llama.cpp's `ggml-org/Qwen3-1.7B-GGUF` (Qwen publishes the
+  1.7B only as Q8_0, 1.8 GB and slower on a phone). Never bundled: downloaded when the user turns the
+  feature on (desktop: Settings ▾ › On-Device AI…; Android: Settings › On-device AI), into the app's local
+  data folder (`<local app data>/models`; Android's no-backup folder), as `<file>.part` resumed with a
+  Range request, renamed only once its checksum matches; deletable there.
+- **Runtime:** [llama-cpp-2](https://crates.io/crates/llama-cpp-2) (llama.cpp built from source by CMake;
+  needs CMake and libclang). CPU only: x86-64 with AVX2/FMA (checked before loading: an older processor
+  gets a note instead of a crash), Android arm64 for ARMv8.2 with dot products (`GGML_CPU_ARM_ARCH` in
+  `scripts/build-core-android.sh`; checked too), Metal on a Mac (the desktop app on macOS, for testing).
+  Vulkan would speed up PCs with a GPU but is not built (its SDK and shader compiler on every CI runner).
+  Qwen3's chat template (ChatML) with thinking off (the empty think block `enable_thinking=False` writes),
+  4,096 tokens of context.
+- **Summary card:** the Apple apps' own card and source (`luntaSummarySource`, now also extracted to
+  `desktop/src/reader/generated/summary.js` and injected on Android), the same prompt and cleaning rules
+  as `SummaryWriter.swift` (`llm/prompt.rs`), and the same `summary.json` next to the paper, with the same
+  source hash (SHA-256 of the 1,900-word source): a summary made on any device is shown on the others
+  (it syncs like the paper's other small files, also in the Android app's lazy sync), and one made from a
+  different reading view is made again. The card's note says which model wrote it, and that it can be wrong.
+- **Ask:** one call, no tools: the app looks up first and gives the model just that. About a paper: its
+  five passages of `fulltext.txt` that best match the question (BM25, words as prefixes, a follow-up looked
+  up with the question before it), the abstract and the user's highlights; the answer cites them as [n],
+  with the passages listed under it. About the library (desktop): the papers a search for the question's
+  words finds (all words, else each word, fused), with their abstracts, and the library's counts, tags and
+  folders. Not ported: the Apple apps' tools and proposals (tag, add to folder, add a paper), which need a
+  model that calls tools reliably; New for You's summaries (no New for You on these platforms yet).
+- **Android's memory rule:** `ActivityManager.MemoryInfo.totalMem` (a 6 GB phone reports about 5.3–5.6 GiB):
+  6 GB or more, offered; 4–6 GB, offered after a warning ("needs at least 6 GB; this phone has 4 GB… try
+  anyway"); less, or not arm64-v8a, or no dot-product instructions: shown with the reason, no download.
+- **Speed** (the summary of a 630-word source, ~900 tokens of prompt): on an M-series Mac's CPU (5 threads)
+  Qwen3 1.7B 11 s, 4B 16 s; with Metal 3.3 s and 5.5 s. Expect a few times slower on a phone's CPU.
+
+```sh
+cd core && cargo test --features llm llm::                          # prompts, cleaning, summary.json, downloads (mock HTTP)
+cargo run --release --features llm --example ai -- download desktop|phone <dir>
+node scripts/summary-source.mjs book.epub > source.txt               # what the card is made from
+cargo run --release --features llm --example ai -- summarize <model.gguf> source.txt "<title>"
+LUNTA_TEST_GGUF=<model.gguf> cargo test --release --features llm llm::tests::real_model -- --ignored --nocapture
+```
+
+`LUNTA_LLM_CPU=1` keeps llama.cpp off the GPU (to time the CPU on a Mac); `LUNTA_LLM_LOG=1` keeps its log.
+Google's on-device Gemini Nano (ML Kit GenAI) was not used on Android: its API is in beta and runs on
+few phones.
 
 ## Roadmap
 
