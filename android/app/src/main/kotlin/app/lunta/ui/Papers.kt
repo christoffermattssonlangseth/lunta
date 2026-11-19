@@ -53,6 +53,8 @@ fun PapersScreen(model: AppModel, place: Place) {
     var organizing by remember { mutableStateOf<String?>(null) }
     var sortMenu by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
+    var shareMenu by remember { mutableStateOf(false) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(place, query, model.papers, model.collections, model.smartFolders) {
         if (query.isNotBlank()) delay(250)
@@ -78,6 +80,18 @@ fun PapersScreen(model: AppModel, place: Place) {
                             }
                         }
                         IconButton({ adding = true }) { Icon(Icons.Filled.Add, "Add paper") }
+                        Box {
+                            IconButton({ shareMenu = true }, enabled = rows.isNotEmpty()) { Icon(Icons.Filled.Share, "Share as BibTeX or RIS") }
+                            DropdownMenu(shareMenu, { shareMenu = false }) {
+                                val what = if (rows.size == 1) "this paper" else "these ${rows.size} papers"
+                                for (ris in listOf(false, true)) {
+                                    DropdownMenuItem({ Text("Share $what as ${if (ris) "RIS" else "BibTeX"}") }, {
+                                        shareMenu = false
+                                        LibraryImport.share(model, ctx, rows.map { it.paper.id }, ris, model.placeTitle(place))
+                                    })
+                                }
+                            }
+                        }
                     }
                 },
             )

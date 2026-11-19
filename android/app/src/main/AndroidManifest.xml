@@ -60,6 +60,17 @@
             </intent-filter>
         </activity>
 
+        <!-- Share as BibTeX / RIS: the file handed to the share sheet (cache/exports/, LibraryImport.kt) -->
+        <provider
+            android:name=".ExportFileProvider"
+            android:authorities="${applicationId}.exports"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/export_paths" />
+        </provider>
+
         <!-- Listen: the paper read aloud in the background, with its media notification (app/lunta/listen) -->
         <service
             android:name=".listen.ListenService"

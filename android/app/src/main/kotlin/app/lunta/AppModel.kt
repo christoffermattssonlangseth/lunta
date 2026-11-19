@@ -102,6 +102,8 @@ class AppModel(val app: Application) {
     }
 
     val clientIdMissing: Boolean get() = BuildConfig.GOOGLE_CLIENT_ID.isBlank()
+    /** Import Library and Share as BibTeX / RIS (LibraryImport.kt). */
+    val imports = LibraryImport(this)
 
     // ---- navigation ----
 

@@ -53,6 +53,8 @@ fun HomeScreen(model: AppModel) {
                         DropdownMenu(menu, { menu = false }) {
                             DropdownMenuItem({ Text("DOI or link…") }, { menu = false; adding = true }, leadingIcon = { Icon(Icons.Filled.Link, null) })
                             DropdownMenuItem({ Text("PDF from Files…") }, { menu = false; pickPdf.launch(arrayOf("application/pdf")) }, leadingIcon = { Icon(Icons.Filled.PictureAsPdf, null) })
+                            HorizontalDivider()
+                            DropdownMenuItem({ Text("Import library (Zotero, Mendeley…)…") }, { menu = false; model.imports.ask() }, leadingIcon = { Icon(Icons.Filled.LibraryAdd, null) })
                         }
                     }
                     IconButton({ settings = true }) { Icon(Icons.Filled.Settings, "Settings") }
@@ -208,6 +210,14 @@ private fun SettingsSheet(model: AppModel, onDismiss: () -> Unit) {
             OutlinedButton({ onDismiss(); model.leaveLibrary(model.mode == LibraryMode.Drive) }) {
                 Text(if (model.mode == LibraryMode.Drive) "Sign out and choose another library" else "Choose another library")
             }
+            Spacer(Modifier.height(20.dp))
+            Text("Import", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Bring your papers and their PDFs from Zotero, Mendeley, ReadCube Papers or EndNote: a BibTeX or RIS export, the folder Zotero’s “Export Files” makes, or a ZIP of it.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton({ onDismiss(); model.imports.ask() }, enabled = !model.imports.running) { Text("Import library…") }
             OnDeviceAiSettings()
             UpdateSettings(model.updater)
             Spacer(Modifier.height(20.dp))

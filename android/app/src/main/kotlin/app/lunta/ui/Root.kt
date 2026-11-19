@@ -24,6 +24,7 @@ fun LuntaRoot(model: AppModel) {
                 !model.opened -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 else -> AppNav(model)
             }
+            if (model.opened && model.mode != LibraryMode.None) ImportDialogs(model)
             model.status?.let { s ->
                 Surface(
                     Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp),

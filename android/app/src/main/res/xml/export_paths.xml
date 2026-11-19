@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Share as BibTeX / RIS (LibraryImport.share): the .bib or .ris file, for the share sheet -->
+<paths>
+    <cache-path name="exports" path="exports/" />
+</paths>

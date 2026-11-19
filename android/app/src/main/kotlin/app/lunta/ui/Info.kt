@@ -65,6 +65,8 @@ fun InfoScreen(model: AppModel, id: String) {
                         DropdownMenu(menu, { menu = false }) {
                             DropdownMenuItem({ Text(if (p.read) "Mark as unread" else "Mark as read") }, { menu = false; model.toggleRead(p) })
                             DropdownMenuItem({ Text("Folders & tags…") }, { menu = false; organizing = true })
+                            DropdownMenuItem({ Text("Share as BibTeX") }, { menu = false; LibraryImport.share(model, ctx, listOf(p.id), ris = false, name = p.citeKey.ifBlank { p.meta.title }) })
+                            DropdownMenuItem({ Text("Share as RIS") }, { menu = false; LibraryImport.share(model, ctx, listOf(p.id), ris = true, name = p.citeKey.ifBlank { p.meta.title }) })
                             DropdownMenuItem({ Text("Delete paper…") }, { menu = false; deleting = true })
                         }
                     }
