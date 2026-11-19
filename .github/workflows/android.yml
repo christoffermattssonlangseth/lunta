@@ -49,6 +49,7 @@ jobs:
       - name: Reader assets are up to date
         run: node scripts/extract-reader-assets.mjs --check
 
+      # with llama.cpp (on-device AI), built by the runner's CMake with the NDK's toolchain file
       - name: Core for Android (arm64-v8a, x86_64) + Kotlin bindings + PDFium
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"

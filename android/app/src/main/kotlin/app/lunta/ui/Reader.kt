@@ -136,6 +136,10 @@ private fun EpubReader(model: AppModel, paper: Paper) {
     var restored by remember { mutableStateOf(false) }
     val lib = model.library!!
     val refsState = remember(id) { ReferencesState(scope, lib, model) }
+    // the Summary card and Ask (on-device AI: app/lunta/ai)
+    val summary = remember(id) { app.lunta.ai.OnDeviceAi.init(ctx); app.lunta.ai.SummaryCard(scope, lib, id, paper.meta.title, paper.meta.abstractText) }
+    DisposableEffect(id) { onDispose { summary.close() } }
+    var showAsk by remember { mutableStateOf(false) }
 
     LaunchedEffect(id) {
         try {
@@ -176,6 +180,7 @@ private fun EpubReader(model: AppModel, paper: Paper) {
     suspend fun pageReady() {
         js(hlModeJS())
         refreshHighlights()
+        summary.pageReady { js(it) }
         if (restored) return
         val spot = withContext(Dispatchers.IO) { model.positions?.latest(id) }
         if (spot != null && spot.offset > 300) {
@@ -349,6 +354,7 @@ private fun EpubReader(model: AppModel, paper: Paper) {
                 "__chrome" -> chrome = !chrome
                 "__link" -> (v as? String)?.let { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
                 "__cite" -> (v as? String)?.let { cite(it) }
+                "summary" -> (v as? String)?.let { summary.action(it) }
             }
         }
     }
@@ -461,6 +467,8 @@ private fun EpubReader(model: AppModel, paper: Paper) {
                                     refsState.refresh()
                                 }
                             }, leadingIcon = { Icon(Icons.Outlined.FormatQuote, null) })
+                            DropdownMenuItem({ Text("Ask") }, { overflow = false; showAsk = true },
+                                leadingIcon = { Icon(Icons.Outlined.AutoAwesome, null) })
                             DropdownMenuItem({ Text("Go to page…") }, { overflow = false; chrome = false; scope.launch { js("window.luntaShowGoTo && luntaShowGoTo()") } },
                                 leadingIcon = { Icon(Icons.Outlined.Pages, null) })
                             DropdownMenuItem({ Text("Text & Theme…") }, { overflow = false; showAppearance = true },
@@ -544,6 +552,8 @@ private fun EpubReader(model: AppModel, paper: Paper) {
             }
         }
     }
+
+    if (showAsk) AskSheet(lib, id) { showAsk = false }
 
     // the reference list
     if (showRefs) ReferencesSheet(

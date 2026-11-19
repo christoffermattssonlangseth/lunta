@@ -22,7 +22,7 @@ const val READER_HOST = "lunta.local"
  */
 @SuppressLint("SetJavaScriptEnabled", "ViewConstructor")
 class LuntaWebView(context: Context, private val bookDir: File, bridge: LuntaBridge) : WebView(context) {
-    private val readerScripts = listOf("style.js", "tracking.js", "narration.js", "annotation.js", "position.js", "paged.js", "find.js")
+    private val readerScripts = listOf("style.js", "tracking.js", "narration.js", "annotation.js", "position.js", "paged.js", "find.js", "summary.js")
 
     init {
         settings.javaScriptEnabled = true

@@ -49,7 +49,7 @@
 
   function send(name, body){ try { LuntaNative.post(name, JSON.stringify(body === undefined ? null : body)); } catch (x) {} }
   var handlers = {};
-  ['pos', 'fig', 'narr', 'page', 'ann'].forEach(function(n){ handlers[n] = { postMessage: function(b){ send(n, b); } }; });
+  ['pos', 'fig', 'narr', 'page', 'ann', 'summary'].forEach(function(n){ handlers[n] = { postMessage: function(b){ send(n, b); } }; });
   window.webkit = { messageHandlers: handlers };
 
   // Pages: selecting text never turns or shifts the page (cf. PageMessageHandler in PageTurn.swift,

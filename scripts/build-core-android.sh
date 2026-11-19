@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the Rust core for Android and prepares what the Gradle project in android/ needs:
-#   android/app/src/main/jniLibs/<abi>/liblunta_core.so   the core, with features convert, pdf, drive
+#   android/app/src/main/jniLibs/<abi>/liblunta_core.so   the core, with features convert, pdf, drive, llm
 #   android/app/src/main/jniLibs/<abi>/libpdfium.so       PDFium (bblanchon/pdfium-binaries), downloaded, not committed
 #   android/app/src/main/assets/licenses/pdfium*          PDFium's licences (pdfium-LICENSE.txt is committed, the rest not)
 #   android/app/src/main/generated/uniffi/                Kotlin bindings (UniFFI), not committed
@@ -10,7 +10,7 @@
 #        PDFIUM_TAG=chromium/8152 ...             pin a PDFium release (default: latest)
 #        PROFILE=debug ...                        faster builds, larger library
 # Needs: rustup targets aarch64-linux-android / x86_64-linux-android, cargo-ndk, the Android NDK
-# (ANDROID_NDK_HOME, or ANDROID_HOME/ndk/<version>).
+# (ANDROID_NDK_HOME, or ANDROID_HOME/ndk/<version>), CMake and libclang (llama.cpp, feature llm).
 set -euo pipefail
 export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 
@@ -40,10 +40,17 @@ for abi in $ABIS; do
   esac
 done
 
+# llama.cpp (on-device AI, feature llm) is built by CMake with the NDK's toolchain file: for the
+# app's minSdk, and for ARMv8.2 with dot products (int8 matrix kernels, several times faster for
+# Q4_K_M; phones from about 2018 on; the core checks for them before loading a model). The core is
+# built for the same API level (cargo-ndk's default, 21, would hide what llama.cpp uses from 23 on).
+export ANDROID_NDK="$ANDROID_NDK_HOME" ANDROID_API_LEVEL=${ANDROID_API_LEVEL:-26}
+export GGML_CPU_ARM_ARCH=${GGML_CPU_ARM_ARCH:-armv8.2-a+dotprod}
+
 echo "› cargo ndk build (--$PROFILE, $ABIS)"
 cd "$CORE"
 flag=--release; [[ $PROFILE == debug ]] && flag=
-cargo ndk "${targets[@]}" -o "$JNI" build $flag --lib --features convert,pdf,drive
+cargo ndk "${targets[@]}" -P "$ANDROID_API_LEVEL" -o "$JNI" build $flag --lib --features convert,pdf,drive,llm
 
 echo "› PDFium"
 CACHE=$ROOT/android/.cache/pdfium

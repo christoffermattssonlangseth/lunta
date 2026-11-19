@@ -208,6 +208,7 @@ private fun SettingsSheet(model: AppModel, onDismiss: () -> Unit) {
             OutlinedButton({ onDismiss(); model.leaveLibrary(model.mode == LibraryMode.Drive) }) {
                 Text(if (model.mode == LibraryMode.Drive) "Sign out and choose another library" else "Choose another library")
             }
+            OnDeviceAiSettings()
             UpdateSettings(model.updater)
             Spacer(Modifier.height(20.dp))
             Text("Lunta for Android ${BuildConfig.VERSION_NAME} · Rust core, PDFium for PDFs (see licenses in the app’s assets).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
