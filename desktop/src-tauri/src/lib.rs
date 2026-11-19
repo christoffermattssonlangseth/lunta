@@ -15,6 +15,7 @@ mod citeapi;
 mod devsnap;
 mod pdfcite;
 mod extension;
+mod importer;
 mod listen;
 mod positions;
 mod settings;
@@ -870,6 +871,11 @@ pub fn run() {
             cite_paper,
             attach_pdf,
             make_reading_view,
+            importer::import_open,
+            importer::import_discard,
+            importer::import_library,
+            importer::import_pdf_folder,
+            importer::make_reading_views,
             find_pdf,
             pdf_bytes,
             pdfcite::pdf_prepare_citations,

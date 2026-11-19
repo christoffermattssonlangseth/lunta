@@ -12,6 +12,7 @@ import { openReader, readerPaper, closeReader } from './reader';
 import { startUpdateChecks, checkNow, updatesApi } from './updates';
 import { aiSettingsDialog, libraryAskButton, setAskOpener } from './ai';
 import { setOpenPaper, voiceDialog } from './listen';
+import { importLibrary, importPdfFolder, makeMissingReadingViews, setImportReload } from './importer';
 
 let source: Source = { kind: 'all' };
 let query = '';
@@ -513,6 +514,15 @@ listen<string>('open', async (e) => {
 });
 
 $('#add').onclick = addPaper;
+// importing a library or a folder of PDFs (importer.ts), as the Mac's File menu has it
+const importItems = (): MenuItem[] => [
+  { label: 'Import Library (Zotero, Mendeley, ReadCube, EndNote…)…', action: importLibrary },
+  { label: 'Import Folder of PDFs…', action: importPdfFolder },
+  '-',
+  { label: 'Make Missing Reading Views', action: makeMissingReadingViews },
+];
+$('#add-more').onclick = () => menuBelow($('#add-more'), importItems());
+setImportReload(() => { reload(); });
 // Ask about the library (ai.ts), next to Settings; a paper it cites opens in the reader
 $('#settings').before(libraryAskButton());
 setAskOpener(async (id) => {
@@ -541,6 +551,8 @@ $('#settings').onclick = async () => {
       catch (e) { status(String(e), 'error'); }
     } },
     '-',
+    ...importItems(),
+    '-',
     { label: 'Natural Voice for Listening…', action: voiceDialog },
     '-',
     { label: 'On-Device AI…', action: aiSettingsDialog },
@@ -555,6 +567,7 @@ document.addEventListener('keydown', (e) => {
   if (!$('#reader').hidden || document.querySelector('.modal-back')) return;
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key === 'n') { e.preventDefault(); addPaper(); return; }
+  if (mod && e.shiftKey && e.key.toLowerCase() === 'i') { e.preventDefault(); importLibrary(); return; }
   if (mod && e.key === 'f') { e.preventDefault(); $('#search').focus(); return; }
   if ((e.target as HTMLElement).closest?.('input, textarea, select')) return;
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
