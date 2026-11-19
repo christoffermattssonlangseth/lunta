@@ -92,6 +92,41 @@ final class WordSpacingTests: XCTestCase {
         XCTAssertTrue(t.contains("Figure label A"), t)
     }
 
+    // MARK: ligatures, accents and glyphs drawn twice
+
+    func testLigatureAtALowCode() {
+        // a ligature font as some publishers subset it: "fi" and "fl" at codes 1 and 3, named in the
+        // encoding ("/uniFB01"), drawn between the pieces of the word in the text font
+        let lig = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /FirstChar 1 /LastChar 3 /Widths [556 0 556] "
+            + "/Encoding << /Type /Encoding /Differences [1 /uniFB01 3 /uniFB02] >> >>"
+        let fonts = ["<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>", lig]
+        let t = joinLines(lines(PDFDocument(data: Self.pdf("""
+            BT /F1 10 Tf 72 700 Td (encoding detoxi) Tj /F2 10 Tf (\\001) Tj /F1 10 Tf (cation; we ) Tj /F2 10 Tf (\\001) Tj /F1 10 Tf (nd the ) Tj /F2 10 Tf (\\003) Tj /F1 10 Tf (uorescence.) Tj ET
+            """, fonts: fonts))!).components(separatedBy: "\n"))
+        XCTAssertTrue(t.contains("encoding detoxification; we find the fluorescence."), t)
+    }
+
+    func testAccentGlyphBeforeItsLetter() {
+        // Elsevier's accent font has its dieresis at the code of "€", drawn over the letter after it;
+        // TeX draws "´" before the "e" it goes on
+        let t = text(raw: """
+            BT /F1 10 Tf 72 700 Td (Sarah J) Tj ET BT /F1 10 Tf 106.5 700 Td (\\200) Tj ET BT /F1 10 Tf 107.0 700 Td (akel and St) Tj ET
+            BT /F1 10 Tf 156.9 700 Td (\\264) Tj ET BT /F1 10 Tf 157.6 700 Td (ephane Lafon, \\200 100) Tj ET
+            """)
+        XCTAssertTrue(t.contains("Sarah Jäkel and Stéphane Lafon, € 100"), t)
+    }
+
+    func testTextDrawnTwiceStaysWhole() {
+        // a heading overprinted to look bold: PDFKit gives both copies, with boxes not where their letters
+        // are; no letter of either goes (a word is not cut into pieces), and the bullet line stays whole
+        let t = text(raw: """
+            BT /F1 12 Tf 72 700 Td (Results) Tj ET BT /F1 12 Tf 72.2 700 Td (Results) Tj ET
+            BT /F1 10 Tf 72 680 Td (\\225) Tj ET BT /F1 10 Tf 80 680 Td (One item of a list.) Tj ET
+            """)
+        XCTAssertTrue(t.hasPrefix("ResultsResults\n"), t)
+        XCTAssertTrue(t.contains("• One item of a list."), t)
+    }
+
     // MARK: layouts whose spaces stay
 
     func testJustifiedWideSpaces() {

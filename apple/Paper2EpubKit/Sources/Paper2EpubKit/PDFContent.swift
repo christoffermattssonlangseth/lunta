@@ -46,6 +46,17 @@ struct PageGraphics {
     /// (put in URLs to let them break: "https:// creat iveco mmons"): (x, baseline). A space glyph that
     /// word spacing takes most of the room from is still a space (0.05 em in tightly justified lines).
     var joints: [CGPoint] = []
+    /// Ligature glyphs ("fi", "ffl") of fonts that name them in their encoding: PDFKit leaves out the
+    /// ones a font puts at codes below 32 ("detoxi cation", "to lter"), even with a ToUnicode map.
+    var ligatures: [Ligature] = []
+}
+
+/// A ligature glyph as drawn: its horizontal extent and baseline (top-left page coords) and letters.
+struct Ligature {
+    var x0: CGFloat, x1: CGFloat, baseline: CGFloat, size: CGFloat
+    var text: String
+    /// at a code below 32, which PDFKit leaves out (above, PDFKit has a character of its own there)
+    var lowCode = false
 }
 
 /// Walks a page's content stream with CGPDFScanner to find image placements, vector drawings and
@@ -76,6 +87,8 @@ final class PDFContentScanner {
         var missingWidth: CGFloat = 500
         /// Type 3 fonts: their FontMatrix's scale × 1000 (glyph widths are in its units, not 1/1000 em)
         var widthScale: CGFloat = 1, sizeScale: CGFloat = 1
+        /// codes the encoding's Differences give a ligature's glyph name ("/uniFB01", "/fi", "/f_f_l")
+        var ligatures: [Int: String] = [:]
         func width(_ code: Int) -> CGFloat {
             if twoByte { return cidWidths[code] ?? defaultWidth }
             let i = code - firstChar
@@ -273,6 +286,28 @@ final class PDFContentScanner {
                     if CGPDFArrayGetObject(w, i, &o), let o { info.widths.append(number(o) ?? 0) } else { info.widths.append(0) }
                 }
             }
+            var enc: CGPDFDictionaryRef?, diffs: CGPDFArrayRef?
+            if CGPDFDictionaryGetDictionary(f, "Encoding", &enc), let enc, CGPDFDictionaryGetArray(enc, "Differences", &diffs), let diffs {
+                var code = 0
+                for i in 0..<CGPDFArrayGetCount(diffs) {
+                    var o: CGPDFObjectRef?
+                    guard CGPDFArrayGetObject(diffs, i, &o), let o else { continue }
+                    if let v = number(o) { code = Int(v); continue }
+                    var n: UnsafePointer<CChar>?
+                    if CGPDFObjectGetValue(o, .name, &n), let n {
+                        if let lig = ligatureNames[String(cString: n)] { info.ligatures[code] = lig }
+                        code += 1
+                    }
+                }
+            }
+            // a ToUnicode map that gives such a code something else (a space, ";") is right, not the name
+            if !info.ligatures.isEmpty, let map = toUnicode(f) {
+                for (code, lig) in info.ligatures {
+                    if let u = map[code], u != lig, !u.unicodeScalars.allSatisfy({ (0xFB00...0xFB04).contains($0.value) }) {
+                        info.ligatures[code] = nil
+                    }
+                }
+            }
             var fm: CGPDFArrayRef?
             if name(f, "Subtype") == "Type3", CGPDFDictionaryGetArray(f, "FontMatrix", &fm), let fm {
                 // glyph widths in the font's own units ("/FontMatrix [.01493 0 0 -.01493 0 0]"): read as
@@ -302,6 +337,54 @@ final class PDFContentScanner {
         }
         return info
     }
+
+    /// One-byte codes → text from a font's ToUnicode CMap (bfchar and bfrange entries).
+    private static func toUnicode(_ f: CGPDFDictionaryRef) -> [Int: String]? {
+        var st: CGPDFStreamRef?
+        guard CGPDFDictionaryGetStream(f, "ToUnicode", &st), let st else { return nil }
+        var format = CGPDFDataFormat.raw
+        guard let data = CGPDFStreamCopyData(st, &format) as Data?, let text = String(data: data, encoding: .isoLatin1) else { return nil }
+        func utf16(_ hex: Substring) -> String? {
+            var units: [UInt16] = []
+            var i = hex.startIndex
+            while hex.distance(from: i, to: hex.endIndex) >= 4 {
+                let j = hex.index(i, offsetBy: 4)
+                guard let u = UInt16(hex[i..<j], radix: 16) else { return nil }
+                units.append(u)
+                i = j
+            }
+            return String(utf16CodeUnits: units, count: units.count)
+        }
+        var map: [Int: String] = [:]
+        let hex = try! NSRegularExpression(pattern: "<([0-9A-Fa-f]+)>")
+        for section in ["bfchar", "bfrange"] {
+            for part in text.components(separatedBy: "begin" + section).dropFirst() {
+                let body = part.components(separatedBy: "end" + section)[0]
+                let values = hex.matches(in: body, range: NSRange(body.startIndex..., in: body)).map { Substring(body[Range($0.range(at: 1), in: body)!]) }
+                let n = section == "bfchar" ? 2 : 3
+                for k in stride(from: 0, to: values.count - n + 1, by: n) {
+                    guard let lo = Int(values[k], radix: 16) else { continue }
+                    if n == 2 {
+                        if let u = utf16(values[k + 1]) { map[lo] = u }
+                    } else if let hi = Int(values[k + 1], radix: 16), hi >= lo, hi - lo < 256, let first = utf16(values[k + 2]),
+                              let base = first.unicodeScalars.last {
+                        for c in lo...hi {
+                            if let sc = Unicode.Scalar(base.value + UInt32(c - lo)) {
+                                map[c] = String(first.unicodeScalars.dropLast()) + String(sc)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return map
+    }
+
+    static let ligatureNames: [String: String] = [
+        "fi": "fi", "fl": "fl", "ff": "ff", "ffi": "ffi", "ffl": "ffl",
+        "f_i": "fi", "f_l": "fl", "f_f": "ff", "f_f_i": "ffi", "f_f_l": "ffl",
+        "uniFB00": "ff", "uniFB01": "fi", "uniFB02": "fl", "uniFB03": "ffi", "uniFB04": "ffl",
+    ]
 
     /// CID font /W array: [c [w1 w2 …]] or [cFirst cLast w].
     private static func parseW(_ w: CGPDFArrayRef, into info: FontInfo) {
@@ -339,6 +422,7 @@ final class PDFContentScanner {
         var firstCode = -1, lastCode = -1
         var starts: [CGFloat] = []
         var zeroSpaces: [CGFloat] = []   // space glyphs word spacing takes all the room from
+        var ligs: [(CGFloat, CGFloat, String, Bool)] = []
         let em = abs(ts.size * font.sizeScale)
         while i < len {
             let code: Int
@@ -350,6 +434,7 @@ final class PDFContentScanner {
                 if abs(tx) < 0.02 * em { zeroSpaces.append(adv) }
             }
             starts.append(adv)
+            if let lig = font.ligatures[code] { ligs.append((adv, adv + tx * ts.th, lig, code < 32)) }
             if firstCode < 0 { firstCode = code }
             lastCode = code
             adv += tx * ts.th
@@ -369,6 +454,10 @@ final class PDFContentScanner {
         }
         out.runs.append(TextRun(x0: min(a.x, b.x), x1: max(a.x, b.x), baseline: a.y, size: effSize,
                                 bold: font.bold, italic: font.italic, math: font.math, clip: gstack.last?.clip, starts: xs))
+        for (l0, l1, lig, low) in ligs {
+            let p0 = CGPoint(x: l0, y: 0).applying(trm).x - origin.x, p1 = CGPoint(x: l1, y: 0).applying(trm).x - origin.x
+            out.ligatures.append(Ligature(x0: min(p0, p1), x1: max(p0, p1), baseline: a.y, size: effSize, text: lig, lowCode: low))
+        }
         // a jump to the right on the same baseline since the last text = a word space nobody drew;
         // in text squeezed by horizontal scaling (OCR layers: "48.53 Tz") the spaces shrink with it
         if let e = lastEnd, abs(e.y - a.y) < 0.3 * max(effSize, 2), a.x - e.x > 0.15 * effSize * min(1, abs(ts.th), lastScale),

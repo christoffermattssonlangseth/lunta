@@ -159,7 +159,7 @@ final class PDFAnalyzer {
             }
             let g = page.pageRef.map { PDFContentScanner(box: mb).scan($0) } ?? PageGraphics()
             graphics.append(g)
-            let lines = extractLines(page, pno: pno, mb: mb, runs: g.runs, gaps: g.gaps, joints: g.joints)
+            let lines = extractLines(page, pno: pno, mb: mb, runs: g.runs, gaps: g.gaps, joints: g.joints, ligatures: g.ligatures)
             for l in lines { sizes[l.size, default: 0] += l.text.count }
             pagesLines.append(lines)
             if pno % 5 == 4 { log("Reading page \(pno + 1) of \(doc.pageCount)") }
@@ -181,7 +181,8 @@ final class PDFAnalyzer {
         findRunning()
     }
 
-    private func extractLines(_ page: PDFPage, pno: Int, mb: CGRect, runs: [TextRun], gaps: [CGPoint], joints: [CGPoint]) -> [PLine] {
+    private func extractLines(_ page: PDFPage, pno: Int, mb: CGRect, runs: [TextRun], gaps: [CGPoint], joints: [CGPoint],
+                              ligatures: [Ligature] = []) -> [PLine] {
         guard let attr = page.attributedString, let sel = page.selection(for: mb) else { return [] }
         let ns = attr.string as NSString
         // bucket text runs by baseline for quick style lookup
@@ -191,9 +192,13 @@ final class PDFAnalyzer {
         for g in gaps { gapBuckets[Int(g.y / 4), default: []].append(g) }
         var jointBuckets: [Int: [CGPoint]] = [:]
         for j in joints { jointBuckets[Int(j.y / 4), default: []].append(j) }
-        /// a point of `buckets` between the middles of two characters, on their baseline
+        /// a point of `buckets` between the middles of two characters, on their baseline. A glyph PDFKit
+        /// cannot map (a Greek letter in a symbol font: "hepatitis δ antigen") is left out of its text
+        /// but widens the box of the letter before or after it, whose middle then lies past the word
+        /// gap: no further in than 0.3 em from the letter's edge.
         func between(_ buckets: [Int: [CGPoint]], _ p: R, _ c: R) -> Bool {
-            let lo = (p.x0 + p.x1) / 2, hi = (c.x0 + c.x1) / 2
+            let em = max(p.h, c.h, 4)
+            let lo = max((p.x0 + p.x1) / 2, p.x1 - 0.3 * em), hi = min((c.x0 + c.x1) / 2, c.x0 + 0.3 * em)
             let key = Int(c.y1 / 4)
             // the point must sit on this line's baseline (lower part of the glyph box), not the line above
             return ((key - 2)...(key + 2)).contains { k in
@@ -246,6 +251,7 @@ final class PDFAnalyzer {
         }
 
         var out: [PLine] = []
+        var usedLigatures = Set<Int>()   // each goes into one line (PDFKit may break the line at it)
         var lineSels: [(sel: PDFSelection, range: NSRange)] = []
         for ls in sel.selectionsByLine() {
             let nr = ls.numberOfTextRanges(on: page)
@@ -260,11 +266,86 @@ final class PDFAnalyzer {
             guard i >= 0, i < ns.length, let u = Unicode.Scalar(ns.character(at: i)) else { return false }
             return letters.contains(u)
         }
+        struct C { var ch: String; var size: CGFloat; var box: R; var run: TextRun?; var added = false; var ligature = false }
+        /// the median gap between the words of a line (0 for one word)
+        func typicalWordGap(_ chars: [C]) -> CGFloat {
+            let blank = { (c: C) in c.ch.trimmingCharacters(in: .whitespaces).isEmpty }
+            var gaps: [CGFloat] = []
+            for k in chars.indices.dropFirst().dropLast() where chars[k].ch == " " && !blank(chars[k - 1]) && !blank(chars[k + 1]) {
+                gaps.append(chars[k + 1].box.x0 - chars[k - 1].box.x1)
+            }
+            gaps.sort()
+            return gaps.isEmpty ? 0 : gaps[gaps.count / 2]
+        }
+        /// Puts back the ligatures PDFKit left out of the line (see PageGraphics.ligatures): where a
+        /// ligature glyph is drawn on the line's baseline and PDFKit has no letter, its letters go in
+        /// place of the space PDFKit put there (or between the letters either side), with a space
+        /// before or after only where the glyphs leave room for one ("detoxi cation" →
+        /// "detoxification", "to lter" → "to filter").
+        func restoreLigatures(_ chars: inout [C]) {
+            let blank = { (c: C) in c.ch.trimmingCharacters(in: .whitespaces).isEmpty }
+            let shown = chars.filter { !blank($0) && $0.box.w > 0 }
+            guard let first = shown.first else { return }
+            let lineBox = R.union(shown.map(\.box))
+            for (li, l) in ligatures.enumerated().sorted(by: { $0.element.x0 < $1.element.x0 }) where !usedLigatures.contains(li) {
+                let em = max(l.size, 4)
+                // on this line: the baseline in the lower part of its letters, within its extent
+                guard l.baseline >= lineBox.y0 + 0.4 * first.box.h, l.baseline <= lineBox.y1 + 1.5,
+                      l.x0 >= lineBox.x0 - em, l.x1 <= lineBox.x1 + em else { continue }
+                let letters = chars.indices.filter { !blank(chars[$0]) && chars[$0].box.w > 0 }
+                // PDFKit has its letters there: it mapped the ligature itself (another letter may reach
+                // over it, its box widened by the glyph PDFKit left out)
+                let inner = 0.3 * (l.x1 - l.x0)
+                let own = Set(l.text.map(String.init) + ["\u{FB00}", "\u{FB01}", "\u{FB02}", "\u{FB03}", "\u{FB04}"])
+                if letters.contains(where: { own.contains(chars[$0].ch) && chars[$0].box.x0 < l.x1 - inner && chars[$0].box.x1 > l.x0 + inner }) { continue }
+                let w = (l.x1 - l.x0) / CGFloat(l.text.count)
+                func glyphs(_ y0: CGFloat, _ y1: CGFloat) -> [C] {
+                    l.text.enumerated().map { k, ch in
+                        let x = l.x0 + w * CGFloat(k)
+                        return C(ch: String(ch), size: l.size, box: R(x0: x, y0: y0, x1: x + w, y1: y1), run: nil, ligature: true)
+                    }
+                }
+                // something else in its middle: a symbol the font's wrong ToUnicode map gives for it
+                // ("di↵erent") is replaced; a letter means the ligature is not where PDFKit's text is
+                let within = letters.filter { chars[$0].box.cx > l.x0 && chars[$0].box.cx < l.x1 }
+                if let a = within.first, let b = within.last {
+                    // (not a character of Latin-1: a font may name its ";" "fi" and map it right)
+                    guard within.allSatisfy({ k in chars[k].ch.unicodeScalars.allSatisfy { $0.value > 0xFF && !CharacterSet.alphanumerics.contains($0) } }) else { continue }
+                    chars.replaceSubrange(a...b, with: glyphs(chars[a].box.y0, chars[a].box.y1))
+                    usedLigatures.insert(li)
+                    continue
+                }
+                // nothing there: put in only a ligature at a code PDFKit leaves out
+                guard l.lowCode else { continue }
+                let mid = (l.x0 + l.x1) / 2
+                let j = letters.first { chars[$0].box.cx >= mid } ?? chars.count
+                let i = letters.last { $0 < j }
+                // the letters either side touch the ligature (or there is none on that side)
+                guard i != nil || j < chars.count else { continue }
+                if let i, l.x0 - chars[i].box.x1 > em { continue }
+                if j < chars.count, chars[j].box.x0 - l.x1 > em { continue }
+                // and leave room for it (else the glyphs are not where the widths put them)
+                if let i, j < chars.count, chars[j].box.x0 - chars[i].box.x1 < 0.8 * (l.x1 - l.x0) { continue }
+                let lo = i.map { $0 + 1 } ?? 0
+                guard (lo..<j).allSatisfy({ blank(chars[$0]) }) else { continue }
+                let near = chars[i ?? j].box
+                var ins: [C] = []
+                if let i, l.x0 - chars[i].box.x1 > 0.15 * em {
+                    ins.append(C(ch: " ", size: l.size, box: R(x0: chars[i].box.x1, y0: near.y0, x1: l.x0, y1: near.y1), run: nil, added: true))
+                }
+                ins += glyphs(near.y0, near.y1)
+                if j < chars.count, chars[j].box.x0 - l.x1 > 0.15 * em {
+                    ins.append(C(ch: " ", size: l.size, box: R(x0: l.x1, y0: near.y0, x1: chars[j].box.x0, y1: near.y1), run: nil, added: true))
+                }
+                chars.replaceSubrange(lo..<j, with: ins)
+                usedLigatures.insert(li)
+            }
+        }
+        // the lines' characters first, to tell glyphs drawn twice over (see below)
+        var built: [(li: Int, range: NSRange, bbox: R, chars: [C])] = []
         for (li, (ls, range)) in lineSels.enumerated() {
             let bbox = toTop(ls.bounds(for: page))
             if bbox.h > 2.5 * bbox.w && range.length > 2 { continue }   // rotated margin text
-
-            struct C { var ch: String; var size: CGFloat; var box: R; var run: TextRun?; var added = false }
             var chars: [C] = []
             var i = range.location
             while i < range.location + range.length {
@@ -281,10 +362,48 @@ final class PDFAnalyzer {
                 // characterBounds(at:) uses a different index space on some PDFs; a 1-char selection is reliable
                 let box = page.selection(for: r).map { toTop($0.bounds(for: page)) } ?? R(x0: 0, y0: 0, x1: 0, y1: 0)
                 let size = f?.pointSize ?? 0
+                // a bullet with a box across the whole line is a second copy of an item's bullet ("••", drawn
+                // twice to look bold) that PDFKit put after the line's last word ("analy•" for "analy-")
+                if ch == "•" && box.w > 3 * max(size, 4) { continue }
                 chars.append(C(ch: ch, size: size, box: box, run: nil))
             }
             while chars.last?.ch == " " { chars.removeLast() }
             guard !chars.isEmpty else { continue }
+            built.append((li, range, bbox, chars))
+        }
+        // Glyphs drawn twice in the same place (a book's bullets and line-end hyphens overprinted to look
+        // bold): PDFKit may gather the copies into lines of their own between the lines of the text
+        // ("chro-|- • - • - •|mosomes", "analy•|y• y• y•|ses"). A line of nothing but copies of letters
+        // drawn before goes, and in a line a symbol drawn twice.
+        // (the same letter, within 0.6 pt: a copy drawn to look bold is set a little to the side)
+        func same(_ a: C, _ b: C) -> Bool {
+            a.ch == b.ch && abs(a.box.x0 - b.box.x0) < 0.6 && abs(a.box.y0 - b.box.y0) < 0.6 && abs(a.box.w - b.box.w) < 0.6
+        }
+        var drawn: [String: [(line: Int, c: C)]] = [:]   // by letter: where it is drawn first
+        func first(_ c: C) -> Int? { drawn[c.ch]?.first { same($0.c, c) }?.line }
+        let shown = { (c: C) in !c.ch.trimmingCharacters(in: .whitespaces).isEmpty && c.box.w > 0 }
+        for (n, b) in built.enumerated() {
+            for c in b.chars where shown(c) && first(c) == nil { drawn[c.ch, default: []].append((n, c)) }
+        }
+        for n in built.indices {
+            let visible = built[n].chars.filter(shown)
+            if !visible.isEmpty && visible.allSatisfy({ first($0).map { $0 < n } == true }) {
+                built[n].chars = []
+                continue
+            }
+            // (within a line only symbols: PDFKit's boxes for a word drawn twice are not where its letters are)
+            var kept: [C] = []
+            for c in built[n].chars {
+                if shown(c) && !c.ch.unicodeScalars.contains(where: { CharacterSet.alphanumerics.contains($0) })
+                    && kept.contains(where: { same($0, c) }) { continue }
+                kept.append(c)
+            }
+            while kept.last?.ch == " " { kept.removeLast() }
+            built[n].chars = kept
+        }
+        let copies = Set(built.filter { $0.chars.isEmpty }.map(\.li))
+        for (li, range, bbox, lineChars) in built where !lineChars.isEmpty {
+            var chars = lineChars
             // text the content stream draws outside a form's box is not shown, though PDFKit reads it
             // (see GState.clip) and mixes it into the lines it overlaps: leave it out, and the spaces
             // that came with it unless there is room for one between the letters that stay
@@ -328,6 +447,8 @@ final class PDFAnalyzer {
                     guard !chars.isEmpty else { continue }
                 }
             }
+            if !ligatures.isEmpty { restoreLigatures(&chars) }
+            let endsWithLigature = chars.last?.ligature == true
             chars = chars.indices.compactMap { k in
                 guard k > 0, k + 1 < chars.count, chars[k].ch == " " else { return chars[k] }
                 let p = chars[k - 1], n = chars[k + 1]
@@ -360,14 +481,36 @@ final class PDFAnalyzer {
                 spaced.append(c)
             }
             chars = spaced
-            // Accents drawn as separate spacing glyphs after their letter ("Bu¨ ttner"): fold them into
-            // the letter and drop the space the accent's backward move leaves behind.
-            if chars.contains(where: { Self.spacingAccents[$0.ch] != nil }) {
+            // Accents drawn as glyphs of their own: fold them into their letter. After it ("Bu¨ ttner",
+            // drawn after a move back over the letter, or with no width: "Falca˜ o"), drop the space the
+            // move leaves behind; before it, set right up to it ("St´ephane", and the "€" Elsevier's
+            // accent font has for a dieresis: "J€akel" → "Jäkel").
+            if chars.contains(where: { Self.spacingAccents[$0.ch] != nil || $0.ch == "€" }) {
+                let letter = { (c: C) in c.ch.count == 1 && c.ch.first!.isLetter }
                 var folded: [C] = []
                 var k = 0
                 while k < chars.count {
                     let c = chars[k]
-                    if let comb = Self.spacingAccents[c.ch], let p = folded.last, p.ch.count == 1, p.ch.first!.isLetter {
+                    let comb = Self.spacingAccents[c.ch] ?? (c.ch == "€" ? "\u{0308}" : nil)
+                    let prev = folded.last.flatMap { letter($0) ? $0 : nil }
+                    let next = k + 1 < chars.count && letter(chars[k + 1]) ? chars[k + 1] : nil
+                    let em = max(c.size, 4)
+                    // over the letter before it (or no width): that letter's
+                    let onPrev = prev.map { p in c.box.w <= 0.05 * em || min(p.box.x1, c.box.x1) - max(p.box.x0, c.box.x0) > 0.3 * c.box.w } ?? false
+                    // set right up to the next letter, within a word: that one's, if the two make a letter
+                    // and the letter before and the accent do not ("St´ephane", "J€akel"; but "Mu¨nster",
+                    // and "4˚C" is a degree sign)
+                    let makes = { (base: C) in comb.map { ((base.ch == "ı" ? "i" : base.ch) + $0).precomposedStringWithCanonicalMapping.unicodeScalars.count == 1 } ?? false }
+                    let onNext = !onPrev && next.map { n in n.box.x0 >= c.box.x0 - 0.1 * em && n.box.x0 <= c.box.x1 + 0.1 * em } == true
+                        && prev.map { !makes($0) } == true && next.map(makes) == true
+                    if let comb, onNext, let n = next {
+                        folded.append(n)
+                        folded[folded.count - 1].ch = ((n.ch == "ı" ? "i" : n.ch) + comb).precomposedStringWithCanonicalMapping
+                        folded[folded.count - 1].box = c.box.union(n.box)
+                        k += 2
+                        continue
+                    }
+                    if let comb, c.ch != "€", let p = prev {
                         folded[folded.count - 1].ch = ((p.ch == "ı" ? "i" : p.ch) + comb).precomposedStringWithCanonicalMapping
                         if k + 2 < chars.count, chars[k + 1].ch == " ", chars[k + 2].ch.first?.isLowercase == true { k += 1 }
                         k += 1
@@ -377,6 +520,23 @@ final class PDFAnalyzer {
                     k += 1
                 }
                 chars = folded
+            }
+            // A letter and its accent PDFKit made one ("e" + U+0301) may still have the space after it the
+            // accent's moves left ("Cance´ rologie", "C ˇ uklina"): it goes where the next letter is set
+            // closer than the line's word spaces.
+            if chars.contains(where: { $0.ch.unicodeScalars.count > 1 && $0.ch.unicodeScalars.dropFirst().allSatisfy { (0x300...0x36F).contains($0.value) } }) {
+                let typical = typicalWordGap(chars)
+                var kept: [C] = []
+                for (k, c) in chars.enumerated() {
+                    if c.ch == " ", !c.added, k > 0, k + 1 < chars.count, let p = kept.last,
+                       p.ch.unicodeScalars.count > 1, p.ch.unicodeScalars.dropFirst().allSatisfy({ (0x300...0x36F).contains($0.value) }),
+                       chars[k + 1].ch.first?.isLetter == true {
+                        let gap = chars[k + 1].box.x0 - p.box.x1, em = max(p.size, 4)
+                        if gap < 0.15 * em || gap < 0.7 * typical { continue }
+                    }
+                    kept.append(c)
+                }
+                chars = kept
             }
             for idx in chars.indices {
                 let c = chars[idx]
@@ -411,10 +571,44 @@ final class PDFAnalyzer {
             // the word goes on in the next line with nothing between (PDFKit dropped a hyphenation hyphen):
             // mark it so the lines are joined without a space
             let end = range.location + range.length
-            if li + 1 < lineSels.count, lineSels[li + 1].range.location == end, isLetter(end - 1), isLetter(end), !endsHidden,
+            // (or the line ends in a ligature PDFKit left out, and broke the line at)
+            let next = li + 1 < lineSels.count ? lineSels[li + 1].range.location : -1
+            let isSpace = { (i: Int) in i < ns.length && (ns.character(at: i) == 0x20 || ns.character(at: i) == 0x0A) }
+            /// the box of the next line's first letter: it goes on right after `c` on the same baseline
+            func goesOnAfter(_ c: C, at k: Int) -> Bool {
+                guard let nb = page.selection(for: NSRange(location: k, length: 1)).map({ toTop($0.bounds(for: page)) }) else { return false }
+                let em = max(c.size, 4), gap = nb.x0 - c.box.x1
+                return min(nb.y1, c.box.y1) - max(nb.y0, c.box.y0) > 0.5 * min(nb.h, c.box.h) && gap > -0.3 * em
+                    && (gap < 0.15 * em || gap < 0.7 * typicalWordGap(chars))
+            }
+            let firstNext = isLetter(end) ? end : end + 1
+            let onAfterLigature = endsWithLigature && next == end && (isLetter(end) || isSpace(end) && isLetter(end + 1))
+                && chars.last.map { goesOnAfter($0, at: firstNext) } == true
+            // (or PDFKit broke the line after an accented letter, "Falca˜|o", and the word goes on right
+            // after it on the same baseline)
+            var onAfterAccent = false
+            if !onAfterLigature, next == end || next == end + 1 && isSpace(end), isLetter(next), let c = chars.last,
+               c.ch.decomposedStringWithCanonicalMapping.unicodeScalars.count > 1 {
+                onAfterAccent = goesOnAfter(c, at: next)
+            }
+            // (the bullet copy left out above may stand between the word's two halves)
+            let lastLetter = end >= 2 && ns.character(at: end - 1) == 0x2022 && chars.last?.ch != "•" ? end - 2 : end - 1
+            // (or the word goes on in the line after lines of copies left out above: "inves•|s• s• s•|tigated")
+            var after = li + 1
+            while copies.contains(after) { after += 1 }
+            // (PDFKit took out the hyphen there, and put the bullet copy in its place)
+            var wordEnd = end - 1
+            while wordEnd > range.location, [0x0A, 0x20, 0x2022].contains(ns.character(at: wordEnd)) { wordEnd -= 1 }
+            let bulletCopy = wordEnd + 1 < end && ns.character(at: wordEnd + 1) == 0x2022
+            let afterAt = after < lineSels.count ? lineSels[after].range.location : -1
+            let overCopies = after > li + 1 && bulletCopy && (afterAt == end || afterAt == end + 1 && isSpace(end))
+                && isLetter(wordEnd) && chars.last?.ch.first?.isLetter == true && isLetter(afterAt)
+                && ns.substring(with: NSRange(location: afterAt, length: 1)).first?.isLowercase == true
+            if li + 1 < lineSels.count, next == end && isLetter(lastLetter) && isLetter(end) || overCopies || onAfterLigature || onAfterAccent, !endsHidden,
                text.last.map({ $0.isLetter }) == true {
                 text += Self.glue
-                gluedLines[(dom * 2).rounded() / 2, default: 0] += 1
+                // (only PDFKit's own: they tell whether it takes out hyphenation hyphens)
+                if !onAfterLigature && !onAfterAccent { gluedLines[(dom * 2).rounded() / 2, default: 0] += 1 }
             }
             out.append(PLine(text: text, bbox: bbox, size: dom, bold: CGFloat(nBold) / CGFloat(max(1, n)),
                              math: CGFloat(nMath) / CGFloat(max(1, n)), spans: spans, page: pno))
@@ -823,8 +1017,14 @@ final class PDFAnalyzer {
         var merged: [PLine] = []
         for l in sorted {
             if let m = merged.last, abs(m.bbox.y0 - l.bbox.y0) < 2, l.bbox.x0 >= m.bbox.x1 - 1, l.bbox.x0 - m.bbox.x1 < 1.2 * l.size {
-                m.text += (m.text.hasSuffix(" ") ? "" : " ") + l.text
-                m.spans += [Span(text: " ")] + l.spans
+                if m.text.hasSuffix(Self.glue) {   // the word goes on (PDFKit broke the line at a ligature)
+                    m.text.removeLast()
+                    m.text += l.text
+                    m.spans += l.spans
+                } else {
+                    m.text += (m.text.hasSuffix(" ") ? "" : " ") + l.text
+                    m.spans += [Span(text: " ")] + l.spans
+                }
                 m.bbox = m.bbox.union(l.bbox)
             } else {
                 merged.append(l)
