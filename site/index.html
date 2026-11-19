@@ -1,40 +1,371 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><meta name="google-site-verification" content="bxm84QAbweXseBKDcJlfrQlISgCQprSe6JPN4gG6qeU"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lunta – reader and reference manager for scientific papers</title><link rel="stylesheet" href="style.css"></head>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="google-site-verification" content="bxm84QAbweXseBKDcJlfrQlISgCQprSe6JPN4gG6qeU">
+<title>Lunta – Read papers, not PDFs. A free reader and reference manager</title>
+<meta name="description" content="Lunta is a free, open-source reader and reference manager for scientific papers: a clean reading view made from every paper, highlights that sync, and citations in Word, Google Docs and LaTeX. For Mac, iPhone, iPad, Android, Windows and Linux.">
+<link rel="canonical" href="https://getlunta.app/">
+<meta name="theme-color" content="#1f4f60">
+<link rel="icon" href="images/icon.svg" type="image/svg+xml">
+<link rel="icon" href="images/icon-64.png" type="image/png" sizes="64x64">
+<link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Lunta">
+<meta property="og:title" content="Lunta – Read papers, not PDFs">
+<meta property="og:description" content="A free, open-source reader and reference manager for scientific papers. Reading views, highlights that sync, citations in Word, Google Docs and LaTeX. On every device.">
+<meta property="og:url" content="https://getlunta.app/">
+<meta property="og:image" content="https://getlunta.app/images/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Lunta on iPad and iPhone: a paper's reading view with highlights.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Lunta – Read papers, not PDFs">
+<meta name="twitter:description" content="A free, open-source reader and reference manager for scientific papers, on every device.">
+<meta name="twitter:image" content="https://getlunta.app/images/og.jpg">
+<link rel="preload" href="fonts/libre-franklin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Lunta","applicationCategory":"ProductivityApplication","operatingSystem":"macOS, iOS, iPadOS, Android, Windows, Linux","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://opensource.org/licenses/MIT","url":"https://getlunta.app/","downloadUrl":"https://github.com/christoffermattssonlangseth/lunta/releases/latest","description":"A free, open-source reader and reference manager for scientific papers."}
+</script>
+</head>
 <body>
-<img class="logo" src="icons/icon-128.png" alt="">
-<h1>Lunta</h1>
-<p class="muted">A free, open-source reader and reference manager for scientific papers, for Mac, iPhone, iPad,
-Android, Windows and Linux.</p>
+<a class="skip" href="#main">Skip to content</a>
 
-<p>Lunta keeps your library of papers in your own iCloud or Google Drive, turns each paper into a clean reading
-view, keeps your highlights and notes in sync, and cites your papers while you write.</p>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-read" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h5.5A3.5 3.5 0 0 1 12 8.5V20a2.5 2.5 0 0 0-2.5-2.5H3z"/><path d="M21 5h-5.5A3.5 3.5 0 0 0 12 8.5V20a2.5 2.5 0 0 1 2.5-2.5H21z"/></symbol>
+    <symbol id="i-cite" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H5v16h3"/><path d="M16 4h3v16h-3"/><path d="M9 9h6M9 12h6M9 15h4"/></symbol>
+    <symbol id="i-highlight" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4.5l4.5 4.5-8.5 8.5H6.5V13z"/><path d="M12.5 7l4.5 4.5"/><path d="M4 21h16"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18.5h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.2 9.6 4.5 4.5 0 0 0 7 18.5z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18h16"/><path d="M7.5 18a4.5 4.5 0 0 1 9 0"/><path d="M12 6v3M5.6 10.6l2 2M18.4 10.6l-2 2M3 14.5h2M19 14.5h2"/></symbol>
+    <symbol id="i-ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8.5h18"/><path d="M12 12v5M9.5 14.5 12 17l2.5-2.5"/></symbol>
+    <symbol id="i-listen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><path d="M4 15h3v5H5a1 1 0 0 1-1-1z"/><path d="M20 15h-3v5h2a1 1 0 0 0 1-1z"/></symbol>
+    <symbol id="i-chip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/><path d="M9.5 3v3.5M14.5 3v3.5M9.5 17.5V21M14.5 17.5V21M3 9.5h3.5M3 14.5h3.5M17.5 9.5H21M17.5 14.5H21"/><path d="M10 12h4"/></symbol>
+    <symbol id="i-agent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9.5l3 2.5-3 2.5"/><path d="M12.5 15h4.5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="4"/><path d="M3 20c0-3.6 3.1-6 7-6 1.1 0 2.2.2 3.1.6"/><path d="M16 16l5 5M21 16l-5 5"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 6.1c.5-.1.9-.1 1.4-.1 5 0 8.5 4 9.5 6-.5 1-1.5 2.4-3 3.7"/><path d="M6.6 7.6C4.6 8.9 3.2 10.7 2.5 12c1 2 4.5 6 9.5 6 1.6 0 3-.4 4.3-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 4.5 5-4.5M5 20h14"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 5.5h2"/></symbol>
+  </defs>
+</svg>
 
-<h2>What Lunta does</h2>
-<ul>
-  <li><strong>Library:</strong> add papers by DOI, PubMed ID, arXiv link or PDF, or from your browser with the
-    Lunta extension (Chrome, Edge, Firefox, Safari). Lunta finds legal open-access PDFs.</li>
-  <li><strong>Reading view:</strong> each paper as reflowable text with tappable figures, real equations and
-    themes. Highlights and notes sync across your devices.</li>
-  <li><strong>New for You:</strong> a daily pick of new papers for your research.</li>
-  <li><strong>Citing in Word:</strong> the Lunta Citations add-in inserts citations and the reference list from
-    your library (12 styles and ~10,000 journal styles).</li>
-  <li><strong>Citing in Google Docs:</strong> the Lunta browser extension adds a Lunta panel to Google Docs.
-    With your permission (asked once, through Google), it reads the document you are writing to find its
-    citations and writes the formatted citations and the bibliography back into that document. It does this only
-    when you click Insert Citation, Insert Bibliography, Update All or Edit Citation, and only for the document you
-    have open. How Lunta handles your data: <a href="app-privacy.html">privacy policy</a>.</li>
-</ul>
+<div class="band hero">
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./"><img src="images/icon-64.png" alt="" width="32" height="32">Lunta</a>
+      <nav class="nav" aria-label="Main">
+        <a class="wide" href="#features">Features</a>
+        <a class="wide" href="#platforms">Platforms</a>
+        <a class="wide" href="#privacy">Privacy</a>
+        <a href="getting-started.html">Getting started</a>
+        <a class="btn btn-amber" href="download.html">Download</a>
+      </nav>
+    </div>
+  </header>
 
-<h2>Links</h2>
-<ul>
-  <li><a href="getting-started.html">Getting started</a></li>
-  <li><a href="https://github.com/christoffermattssonlangseth/lunta/releases/latest">Download Lunta for Mac, Windows, Linux and Android</a></li>
-  <li><a href="https://apps.apple.com/app/lunta/id6835403752">Lunta for iPhone and iPad on the App Store</a></li>
-  <li><a href="app-privacy.html">Privacy policy</a> (Lunta apps, browser extension and Google Docs)</li>
-  <li><a href="privacy.html">Privacy policy for the Word add-in</a> and <a href="support.html">Word add-in support</a></li>
-  <li><a href="https://github.com/christoffermattssonlangseth/lunta">Source code</a> ·
-    <a href="https://github.com/christoffermattssonlangseth/lunta/issues">Questions and support</a></li>
-</ul>
-<p class="muted">Lunta is made by Christoffer Mattsson Langseth. It has no account, no ads and no tracking.</p>
-</body></html>
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="kicker">Reader and reference manager for scientific papers</p>
+      <h1>Read papers,<br> <span class="mark">not PDFs.</span></h1>
+      <p class="lead">Lunta turns every paper into a clean reading view that fits your screen, keeps your highlights in sync, and cites in Word, Google Docs and LaTeX. On Mac, iPhone, iPad, Android, Windows and Linux, free and open source.</p>
+      <div class="cta-row">
+        <a class="btn btn-amber" href="https://apps.apple.com/app/lunta/id6835403752"><svg aria-hidden="true"><use href="#i-phone"/></svg><span>Download on the App Store<small>iPhone and iPad</small></span></a>
+        <a class="btn btn-ghost" href="https://github.com/christoffermattssonlangseth/lunta/releases/latest"><svg aria-hidden="true"><use href="#i-download"/></svg><span>Download for computers<small>Mac, Windows, Linux · and Android</small></span></a>
+      </div>
+      <p class="cta-links"><a href="download.html">Which file do I need?</a> <a href="download.html#extension">Browser extension</a></p>
+      <p class="hero-meta"><span>Free</span><span>No account</span><span>No tracking</span><span>MIT license</span></p>
+    </div>
+    <div class="hero-art">
+      <div class="tablet">
+        <img src="images/ipad-library-900.webp" srcset="images/ipad-library-900.webp 900w, images/ipad-library-1600.webp 1600w" sizes="(min-width: 62rem) 30rem, 80vw" width="900" height="1200" alt="Lunta on iPad: the sidebar, the list of papers and a paper's reading view with green and pink highlights in the abstract." fetchpriority="high">
+      </div>
+      <div class="phone">
+        <img src="images/iphone-reading-640.webp" srcset="images/iphone-reading-640.webp 640w, images/iphone-reading-960.webp 960w" sizes="14rem" width="640" height="1391" alt="Lunta on iPhone: the reading view of a Nature paper with yellow and blue highlights and a card for Fig. 1.">
+      </div>
+    </div>
+  </div>
+</div>
+
+<main id="main">
+
+  <section class="facts" aria-label="Lunta in short">
+    <div class="wrap">
+      <ul>
+        <li><b>Six platforms</b><span>Mac, iPhone, iPad, Android, Windows and Linux, with one library</span></li>
+        <li><b>~10,000 styles</b><span>Every journal style in the Citation Style Language, plus 12 built in</span></li>
+        <li><b>No account</b><span>Your library lives in your own iCloud Drive or Google Drive</span></li>
+        <li><b>Open source</b><span>Free, MIT licensed, with no ads and nothing collected</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section" id="features" aria-labelledby="read-title">
+    <div class="wrap">
+
+      <article class="feature" id="read">
+        <div class="feature-copy">
+          <p class="kicker"><svg aria-hidden="true"><use href="#i-read"/></svg>Read</p>
+          <h2 id="read-title">A reading view made from every paper</h2>
+          <p>Lunta builds each paper's reading view from its best source: the open XML version, arXiv, the journal's web page, or the PDF itself. Text that fits your screen, real equations, and figures you can open full size with their captions.</p>
+          <p>Scroll or turn pages in Light, Paper, Quiet or Black. The original PDF is always one tap away.</p>
+        </div>
+        <div class="media">
+          <div class="pair">
+            <div class="phone"><img src="images/iphone-figure-640.webp" srcset="images/iphone-figure-640.webp 640w, images/iphone-figure-960.webp 960w" sizes="16rem" width="640" height="1391" loading="lazy" alt="The figure viewer on iPhone: Fig. 1 of the paper shown large over the text, with its full caption."></div>
+            <div class="phone"><img src="images/iphone-black-640.webp" srcset="images/iphone-black-640.webp 640w, images/iphone-black-960.webp 960w" sizes="16rem" width="640" height="1391" loading="lazy" alt="The reading view in the Black theme with page turning: the Results section of a paper."></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="feature flip" id="references">
+        <div class="feature-copy">
+          <p class="kicker"><svg aria-hidden="true"><use href="#i-cite"/></svg>References</p>
+          <h2>Check a reference without losing your place</h2>
+          <p>Tap a citation, in the reading view or the PDF, and the reference opens in a card over the text. Open the paper, or add it to your library with one tap.</p>
+        </div>
+        <div class="media">
+          <div class="shot narrow"><img src="images/citation-card-800.webp" srcset="images/citation-card-800.webp 800w, images/citation-card-1320.webp 1320w" sizes="26rem" width="800" height="782" loading="lazy" alt="A tapped citation in an abstract opens a card with the reference, Attention Is All You Need, and the buttons Open paper, Add to Lunta and Show in References."></div>
+        </div>
+      </article>
+
+      <article class="feature" id="highlight">
+        <div class="feature-copy">
+          <p class="kicker"><svg aria-hidden="true"><use href="#i-highlight"/></svg>Highlight and note</p>
+          <h2>Highlights that last</h2>
+          <p>Highlight in four colors and add notes, in the reading view or the PDF. Highlight mode marks every selection at once; on iPad, write and draw with Apple Pencil.</p>
+          <p>Highlights sync to all your devices and are searchable. When Lunta makes a better reading view of a paper, your highlights and notes are found again in the new text.</p>
+        </div>
+        <div class="media media-crop">
+          <div class="shot"><img src="images/ipad-pencil-900.webp" srcset="images/ipad-pencil-900.webp 900w, images/ipad-pencil-1600.webp 1600w" sizes="(min-width: 60rem) 40rem, 90vw" width="900" height="770" loading="lazy" alt="The PDF of a Nature Methods paper on iPad, marked up with Apple Pencil: circled words, a bracket and a highlighted sentence, with the Pencil tool picker."></div>
+        </div>
+      </article>
+
+      <article class="feature flip" id="library">
+        <div class="feature-copy">
+          <p class="kicker"><svg aria-hidden="true"><use href="#i-cloud"/></svg>Library and sync</p>
+          <h2>Your library, in your own storage</h2>
+          <p>Mac, iPhone and iPad sync through your iCloud Drive; Android, Windows and Linux through a Lunta folder in your Google Drive, and a Mac can bridge the two. <strong>There is no Lunta account and no Lunta server.</strong></p>
+          <ul>
+            <li>Add papers by DOI, PubMed ID, arXiv link or PDF. Lunta finds legal open-access PDFs, and never swaps a published paper for its preprint.</li>
+            <li>Folders, tags, Smart Folders, stars, a Must Read list and full-text search across everything.</li>
+            <li>Bring your library from Zotero, Mendeley, ReadCube or EndNote, with its PDFs.</li>
+          </ul>
+          <a class="textlink" href="getting-started.html#import">Moving from another reference manager</a>
+        </div>
+        <div class="media">
+          <div class="phone"><img src="images/iphone-library-640.webp" srcset="images/iphone-library-640.webp 640w, images/iphone-library-960.webp 960w" sizes="16rem" width="640" height="1391" loading="lazy" alt="All Papers on iPhone: starred and Must Read papers with badges for the reading view, the PDF and the number of highlights."></div>
+        </div>
+      </article>
+
+      <article class="feature" id="new-for-you">
+        <div class="feature-copy">
+          <p class="kicker"><svg aria-hidden="true"><use href="#i-sun"/></svg>New for You</p>
+          <h2>New papers for your research, every morning</h2>
+          <p>Each morning Lunta picks new papers that match your interests, the authors and topics you follow, and your journals, with a short summary and the reason each one is there.</p>
+          <p>Add your ORCID iD and it also learns from your own papers, and shows you new papers that cite them.</p>
+        </div>
+        <div class="media">
+          <div class="phone"><img src="images/iphone-new-for-you-640.webp" srcset="images/iphone-new-for-you-640.webp 640w, images/iphone-new-for-you-960.webp 960w" sizes="16rem" width="640" height="1391" loading="lazy" alt="New for You on iPhone: a short digest of today's picks and a card for a new preprint, with why it was picked and an Add button."></div>
+        </div>
+      </article>
+
+      <article class="feature flip" id="cite">
+        <div class="feature-copy">
+          <p class="kicker"><svg aria-hidden="true"><use href="#i-cite"/></svg>Cite</p>
+          <h2>Cite while you write</h2>
+          <p>Cite from your library in Word and Google Docs, in 12 built-in styles or any of about 10,000 journal styles. Click a citation to change it; the reference list keeps itself in order. Documents carry a copy of the papers they cite, so co-authors without your library can still update them.</p>
+          <ul>
+            <li><strong>LaTeX:</strong> citation keys that never change on their own, and a .bib file that keeps itself up to date.</li>
+            <li><strong>Import BibTeX (Keep Citation Keys):</strong> bring an existing project's .bib into Lunta, and every <code>\cite{…}</code> keeps working.</li>
+          </ul>
+          <a class="textlink" href="support.html">Lunta Citations for Word</a>
+        </div>
+        <div class="media wide">
+          <figure class="window" style="margin:0">
+            <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>Google Docs</span></div>
+            <img src="images/gdocs-citing-900.webp" srcset="images/gdocs-citing-900.webp 900w, images/gdocs-citing-1600.webp 1600w" sizes="(min-width: 60rem) 40rem, 90vw" width="900" height="465" loading="lazy" alt="Citing in Google Docs: two numbered citations and a Nature-style reference list in the document, and the Lunta panel with a search, Insert Citation, Insert Bibliography and Update All.">
+          </figure>
+        </div>
+      </article>
+
+      <article class="feature" id="extension">
+        <div class="feature-copy">
+          <p class="kicker"><svg aria-hidden="true"><use href="#i-ext"/></svg>Browser extension</p>
+          <h2>Save papers from the journal's page</h2>
+          <p>Save the paper you're reading, with its PDF, using the access your browser already has, such as your institution's subscription. <strong>Use this page's full text</strong> turns the article page into the paper's reading view. On PubMed, <strong>Find PDF</strong> gets a free, legal copy.</p>
+          <p>For Chrome, Edge, Firefox and other Chromium browsers. On Mac, iPhone and iPad, the Safari extension comes with the app. It talks only to the Lunta app on your device, never to a server.</p>
+          <a class="textlink" href="download.html#extension">Install the extension</a>
+        </div>
+        <div class="media">
+          <div class="shot panel"><img src="images/extension-panel.webp" width="545" height="567" loading="lazy" alt="The Lunta extension's panel on a Nature Genetics article page: the paper is in the library, its PDF saved, and the reading view updated from the page's full text (7,059 words, 3 figures)."></div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section class="section section-alt" aria-labelledby="more-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">And more</p>
+        <h2 id="more-title">Listen, ask, and hand off the legwork</h2>
+      </div>
+      <div class="cards">
+        <article class="card" id="listen">
+          <div class="icon"><svg aria-hidden="true"><use href="#i-listen"/></svg></div>
+          <h3>Listen</h3>
+          <p>Papers read aloud in a natural voice, on every platform. The paragraph being read follows along, and it keeps playing from the lock screen.</p>
+        </article>
+        <article class="card" id="ai">
+          <div class="icon"><svg aria-hidden="true"><use href="#i-chip"/></svg></div>
+          <h3>On-device AI</h3>
+          <p>A short summary at the top of each paper, and Ask: questions about a paper or your library, answered from its text. It runs on your device, with Apple Intelligence or an open Qwen3 model downloaded once. Nothing is sent to a server.</p>
+        </article>
+        <article class="card" id="agents">
+          <div class="icon"><svg aria-hidden="true"><use href="#i-agent"/></svg></div>
+          <h3>AI agents</h3>
+          <p>Connect Claude or any MCP client to Lunta for Mac, and an agent can do the legwork: look up papers, add them with their open-access PDF, file them in folders and format citations. Every change it makes goes into its own change log, so you can see it and undo it.</p>
+          <p class="note muted">Lunta › Connect AI Agents…</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="platforms" aria-labelledby="platforms-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">Platforms</p>
+        <h2 id="platforms-title">One library on all your devices</h2>
+        <p class="lead">Lunta is a native app on each platform, built on one shared core. Here is what each one does today.</p>
+      </div>
+      <div class="table-scroll" tabindex="0" role="region" aria-labelledby="platforms-title">
+        <table class="platforms">
+          <thead>
+            <tr><th scope="col">Feature</th><th scope="col">Mac</th><th scope="col">iPhone, iPad</th><th scope="col">Windows, Linux</th><th scope="col">Android</th></tr>
+          </thead>
+          <tbody>
+            <tr class="group"><th scope="rowgroup" colspan="5">Reading</th></tr>
+            <tr><th scope="row">Reading view with figures and citations</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
+            <tr><th scope="row">Highlights and notes, synced</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
+            <tr><th scope="row">Highlighting in the PDF</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td>Yes<small>and Apple Pencil</small></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">Not yet</span></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">Not yet</span></td></tr>
+            <tr><th scope="row">Listen in a natural voice</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
+            <tr><th scope="row">Summary and Ask, on the device</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td>Yes<small>phones with 6 GB</small></td></tr>
+            <tr class="group"><th scope="rowgroup" colspan="5">Library</th></tr>
+            <tr><th scope="row">Sync</th><td>iCloud Drive</td><td>iCloud Drive</td><td>Google Drive</td><td>Google Drive</td></tr>
+            <tr><th scope="row">New for You</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
+            <tr><th scope="row">Import from Zotero, Mendeley, EndNote…</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
+            <tr><th scope="row">Browser extension</th><td>Safari, Chrome,<small>Edge, Firefox</small></td><td>Safari</td><td>Chrome, Edge,<small>Firefox</small></td><td><small>The journal's page<br>in the app</small></td></tr>
+            <tr class="group"><th scope="rowgroup" colspan="5">Citing</th></tr>
+            <tr><th scope="row">Cite in Word</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td></tr>
+            <tr><th scope="row">Cite in Google Docs</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td></tr>
+            <tr><th scope="row">A .bib file that keeps itself up to date</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td></tr>
+            <tr><th scope="row">Import BibTeX, keeping citation keys</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td></tr>
+            <tr><th scope="row">AI agents (MCP)</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td></tr>
+          </tbody>
+          <tfoot>
+            <tr><th scope="row">Get it</th><td><a href="download.html">Download</a></td><td><a href="https://apps.apple.com/app/lunta/id6835403752">App Store</a></td><td><a href="download.html">Download</a></td><td><a href="download.html">Download</a></td></tr>
+          </tfoot>
+        </table>
+      </div>
+      <p class="footnote">A Mac keeps iCloud Drive and Google Drive in sync, so one library can span Apple devices and Android, Windows or Linux. Google Docs citing works through the browser extension, with Lunta for Mac, Windows or Linux open on the same computer.</p>
+    </div>
+  </section>
+
+  <section class="section section-alt" id="privacy" aria-labelledby="privacy-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">Privacy</p>
+        <h2 id="privacy-title">Lunta collects nothing</h2>
+        <p class="lead">Your papers, highlights and notes are yours. Lunta looks papers up in public scholarly services, and sends nothing about you anywhere.</p>
+      </div>
+      <div class="pillars">
+        <div>
+          <h3><svg aria-hidden="true"><use href="#i-user"/></svg>No account</h3>
+          <p>Nothing to sign up for. Open the app and start reading.</p>
+        </div>
+        <div>
+          <h3><svg aria-hidden="true"><use href="#i-eye"/></svg>No tracking, no ads</h3>
+          <p>No analytics and no trackers, in the apps, the extension or on this website.</p>
+        </div>
+        <div>
+          <h3><svg aria-hidden="true"><use href="#i-folder"/></svg>Your own storage</h3>
+          <p>Your library stays in your iCloud Drive or Google Drive. There is no Lunta server.</p>
+        </div>
+      </div>
+      <p style="margin-top:2rem"><a class="textlink" href="app-privacy.html">Read the privacy policy</a></p>
+    </div>
+  </section>
+
+  <section class="section" id="open-source" aria-labelledby="oss-title">
+    <div class="wrap split">
+      <div>
+        <p class="kicker"><svg aria-hidden="true"><use href="#i-code"/></svg>Open source</p>
+        <h2 id="oss-title" style="font-size:clamp(1.875rem,1.3rem + 2.2vw,2.875rem);margin-bottom:1.25rem">Free, and open source</h2>
+        <p class="lead" style="max-width:40rem">Lunta is MIT licensed. The code, every release and the issue tracker are on GitHub. Questions, bugs and ideas are welcome there.</p>
+        <p hidden data-todo="arxiv">How Lunta makes its reading views, and how well they work, is described in a paper on arXiv.</p>
+      </div>
+      <div class="actions">
+        <a class="btn btn-teal" href="https://github.com/christoffermattssonlangseth/lunta"><svg aria-hidden="true"><use href="#i-code"/></svg>Source on GitHub</a>
+        <a class="btn btn-line" href="https://github.com/christoffermattssonlangseth/lunta/issues">Ask a question</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="closing" aria-labelledby="closing-title">
+    <div class="wrap">
+      <h2 id="closing-title">Start <span class="mark">reading.</span></h2>
+      <p>Free on every platform. Bring your library from another reference manager, or start with a single DOI.</p>
+      <div class="cta-row">
+        <a class="btn btn-amber" href="https://apps.apple.com/app/lunta/id6835403752"><svg aria-hidden="true"><use href="#i-phone"/></svg>App Store: iPhone and iPad</a>
+        <a class="btn btn-ghost" href="download.html"><svg aria-hidden="true"><use href="#i-download"/></svg>Mac, Windows, Linux, Android</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap footer-grid">
+    <div class="about">
+      <a class="brand" href="./"><img src="images/icon-64.png" alt="" width="32" height="32" loading="lazy">Lunta</a>
+      <p>A reader and reference manager for scientific papers. <em>Lunta</em> is Swedish for a thick bundle of papers.</p>
+    </div>
+    <nav aria-labelledby="f-get">
+      <h2 id="f-get">Get Lunta</h2>
+      <ul>
+        <li><a href="https://apps.apple.com/app/lunta/id6835403752">App Store</a></li>
+        <li><a href="download.html">Mac, Windows, Linux, Android</a></li>
+        <li><a href="download.html#extension">Browser extension</a></li>
+        <li><a href="https://github.com/christoffermattssonlangseth/lunta/releases">All releases</a></li>
+      </ul>
+    </nav>
+    <nav aria-labelledby="f-help">
+      <h2 id="f-help">Help</h2>
+      <ul>
+        <li><a href="getting-started.html">Getting started</a></li>
+        <li><a href="support.html">Lunta Citations for Word</a></li>
+        <li><a href="https://github.com/christoffermattssonlangseth/lunta/issues">Questions and problems</a></li>
+        <li><a href="https://github.com/christoffermattssonlangseth/lunta">Source code</a></li>
+      </ul>
+    </nav>
+    <nav aria-labelledby="f-privacy">
+      <h2 id="f-privacy">Privacy</h2>
+      <ul>
+        <li><a href="app-privacy.html">Privacy policy</a></li>
+        <li><a href="privacy.html">Word add-in privacy</a></li>
+      </ul>
+    </nav>
+  </div>
+  <div class="wrap footer-bottom">
+    <span>Made by Christoffer Mattsson Langseth · MIT license</span>
+    <span>No cookies, no analytics, no third-party requests on this site.</span>
+  </div>
+</footer>
+</body>
+</html>
