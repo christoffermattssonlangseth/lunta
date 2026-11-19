@@ -4,9 +4,17 @@ Lunta imports from any reference manager that can export **BibTeX (.bib)** or **
 Mendeley, ReadCube Papers, EndNote, Paperpile, JabRef, BibDesk and others. Titles, authors, DOIs, tags and
 notes come along; duplicates (same DOI, or the same title) are merged rather than added twice.
 
-Importing is done in **Lunta for Mac**: **File › Import from Zotero, Mendeley, ReadCube, EndNote…** (⇧⌘I).
-The library then syncs to your iPhone and iPad through iCloud, and to Android, Windows and Linux through
-Google Drive (see [Using Lunta on several devices](#using-lunta-on-several-devices)).
+Import in **Lunta for Mac** (**File › Import from Zotero, Mendeley, ReadCube, EndNote…**, ⇧⌘I) or on
+**iPhone and iPad** (**+ › Import Library**, also in the list of folders). The library then syncs to your
+other Apple devices through iCloud, and to Android, Windows and Linux through Google Drive (see
+[Using Lunta on several devices](#using-lunta-on-several-devices)).
+
+**On iPhone and iPad**, export on your computer as below, put the export's folder in iCloud Drive (or zip
+it, Finder › Compress, and AirDrop the ZIP), then tap **+ › Import Library** and choose the folder, the ZIP,
+or just the .bib or .ris file (which brings no PDFs: the file alone doesn't give access to the files next
+to it). Lunta finds the export in the folder, takes the PDFs it names, and matches the folder's other PDFs
+to the papers by DOI or title, so there is no separate folder step. **+ › Import Folder of PDFs** matches a
+folder of PDFs to the papers already in Lunta.
 
 The import asks three things:
 
