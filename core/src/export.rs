@@ -238,7 +238,136 @@ fn bib_name(a: &str) -> String {
     if g.is_empty() { bib_escape(&f) } else { format!("{}, {}", bib_escape(&f), bib_escape(&g)) }
 }
 
+/// How BibTeX outputs shorten long author lists: a paper with more than `max_authors` authors
+/// gets its first `shown_authors` and "and others", which BibTeX and biblatex styles print as
+/// "et al." (0: never shorten). A library-wide setting (`Library::set_bibtex_options`).
+#[derive(uniffi::Record, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BibtexOptions {
+    pub max_authors: u32,
+    pub shown_authors: u32,
+}
+
+impl Default for BibtexOptions {
+    /// More than 15 authors: the first 10 and "and others".
+    fn default() -> Self {
+        BibtexOptions { max_authors: 15, shown_authors: 10 }
+    }
+}
+
+impl BibtexOptions {
+    /// Within bounds: at least one author shown, never more than the limit.
+    pub fn checked(self) -> BibtexOptions {
+        if self.max_authors == 0 {
+            return BibtexOptions { max_authors: 0, shown_authors: self.shown_authors.max(1) };
+        }
+        BibtexOptions { max_authors: self.max_authors, shown_authors: self.shown_authors.clamp(1, self.max_authors) }
+    }
+
+    /// The `author` field for these authors (already in BibTeX's form).
+    pub fn author_field(&self, authors: &[String]) -> String {
+        let o = self.checked();
+        if o.max_authors > 0 && authors.len() > o.max_authors as usize {
+            let mut a: Vec<String> = authors[..o.shown_authors as usize].to_vec();
+            a.push("others".into());
+            a.join(" and ")
+        } else {
+            authors.join(" and ")
+        }
+    }
+}
+
+/// Words a title in title case may leave in lower case (prepositions and the like), which don't
+/// tell it from sentence case.
+const TITLE_SMALL: [&str; 24] = [
+    "with", "from", "into", "onto", "over", "upon", "than", "that", "versus", "about", "after", "among", "within", "without",
+    "along", "through", "between", "under", "across", "against", "toward", "towards", "during", "beyond",
+];
+
+/// A word's letters and digits without the punctuation around it ("(BRCA1)," → "BRCA1"), with
+/// what was before and after.
+fn word_core(w: &str) -> (&str, &str, &str) {
+    let start = w.find(|c: char| c.is_alphanumeric()).unwrap_or(w.len());
+    let end = w.rfind(|c: char| c.is_alphanumeric()).map(|i| i + w[i..].chars().next().unwrap().len_utf8()).unwrap_or(start);
+    if start >= end {
+        return (w, "", "");
+    }
+    (&w[..start], &w[start..end], &w[end..])
+}
+
+/// A word that must keep its capitals whatever the style does: an acronym or a word with
+/// capitals inside (GROBID, AI, arXiv, iPhone, PDFFigures, OpenAlex) or capitals and digits
+/// (BRCA1, Qwen3, S2ORC, 82M).
+fn keeps_capitals(w: &str) -> bool {
+    let letters = w.chars().filter(|c| c.is_alphabetic()).count();
+    let upper_inside = w.chars().skip(1).any(|c| c.is_uppercase());
+    let digits_and_capitals = w.chars().any(|c| c.is_ascii_digit()) && w.chars().any(|c| c.is_uppercase());
+    letters > 0 && (upper_inside || digits_and_capitals)
+}
+
+/// Whether a title is in sentence case ("Robust annotation positioning in digital documents"):
+/// at least as many longer words in lower case as capitalized ones, leaving out the first word,
+/// the first after a colon, acronyms and title case's small words. In sentence case a capital
+/// marks a proper noun ("Bayesian", "Markov"), which is then kept.
+fn sentence_case(title: &str) -> bool {
+    let (mut lower, mut upper) = (0, 0);
+    let mut start = true;
+    for token in title.split_whitespace() {
+        for (i, part) in token.split('-').enumerate() {
+            let (_, w, _) = word_core(part);
+            let first = start && i == 0;
+            if !first && w.chars().count() >= 4 && !keeps_capitals(w) && !TITLE_SMALL.contains(&w.to_lowercase().as_str()) {
+                match w.chars().next() {
+                    Some(c) if c.is_lowercase() => lower += 1,
+                    Some(c) if c.is_uppercase() => upper += 1,
+                    _ => {}
+                }
+            }
+        }
+        start = token.ends_with([':', '.', '?', '!']);
+    }
+    lower >= 1 && lower >= upper
+}
+
+/// A title for BibTeX: escaped, with braces only around what must stay as written, so the
+/// bibliography style decides the case of the rest (most styles that change case put titles in
+/// sentence case). Kept: acronyms and words with capitals inside or with digits (`{GROBID}`,
+/// `{arXiv}`, `{iPhone}`, `{BRCA1}`, `{RNA}-seq`), and in a sentence-case title the capitalized
+/// words after its start (proper nouns: `{Bayesian}`, `{Markov}`). A title in title case keeps
+/// its other words unbraced: a style that lowercases titles lowercases them.
+pub fn bib_title(title: &str) -> String {
+    let sentence = sentence_case(title);
+    let mut out: Vec<String> = vec![];
+    let mut start = true;
+    for token in title.split_whitespace() {
+        let parts: Vec<String> = token
+            .split('-')
+            .enumerate()
+            .map(|(i, part)| {
+                let (before, w, after) = word_core(part);
+                let first = start && i == 0;
+                let proper = sentence && !first && w.chars().next().is_some_and(|c| c.is_uppercase());
+                if !w.is_empty() && (keeps_capitals(w) || proper) {
+                    format!("{}{{{}}}{}", bib_escape(before), bib_escape(w), bib_escape(after))
+                } else {
+                    bib_escape(part)
+                }
+            })
+            .collect();
+        out.push(parts.join("-"));
+        start = token.ends_with([':', '.', '?', '!']);
+    }
+    out.join(" ")
+}
+
+/// BibTeX for papers outside the library (cited in a document only): the default options, no
+/// fields of their own.
 pub fn bibtex(papers: &[Paper]) -> String {
+    bibtex_with(papers, BibtexOptions::default(), &std::collections::BTreeMap::new())
+}
+
+/// BibTeX for papers. `own`: paper id -> fields from an imported .bib, written as they are in
+/// place of Lunta's field of the same name, or added (see `OpKind::SetBibFields`).
+pub fn bibtex_with(papers: &[Paper], options: BibtexOptions, own: &std::collections::BTreeMap<String, Vec<(String, String)>>) -> String {
     use crate::worktype::Kind;
     // papers from the library carry their fixed key; others (cited in a document only) get one
     // from their details, made unique within this export
@@ -256,15 +385,15 @@ pub fn bibtex(papers: &[Paper]) -> String {
         let m = &crate::worktype::for_export(&p.meta);
         let kind = crate::worktype::kind(m);
         let entry = bibtex_type(m);
-        out += &format!("@{entry}{{{key},\n");
+        let mut fields: Vec<(String, String)> = vec![];
         let mut field = |k: &str, v: &str| {
             if !v.trim().is_empty() {
-                out += &format!("  {k} = {{{v}}},\n");
+                fields.push((k.to_string(), v.to_string()));
             }
         };
-        field("title", &format!("{{{}}}", bib_escape(&m.title)));
+        field("title", &bib_title(&m.title));
         let authors: Vec<String> = m.authors.iter().map(|a| bib_name(a)).collect();
-        field("author", &authors.join(" and "));
+        field("author", &options.author_field(&authors));
         let journal = bib_escape(&m.journal);
         match entry {
             "article" => field("journal", &journal),
@@ -296,6 +425,17 @@ pub fn bibtex(papers: &[Paper]) -> String {
             field("archivePrefix", "arXiv");
         }
         field("url", &m.url);
+        // the researcher's own fields win
+        for (k, v) in own.get(&p.id).map(|v| v.as_slice()).unwrap_or(&[]) {
+            match fields.iter_mut().find(|(n, _)| n.eq_ignore_ascii_case(k)) {
+                Some(f) => f.1 = v.clone(),
+                None => fields.push((k.clone(), v.clone())),
+            }
+        }
+        out += &format!("@{entry}{{{key},\n");
+        for (k, v) in fields.iter().filter(|(_, v)| !v.trim().is_empty()) {
+            out += &format!("  {k} = {{{v}}},\n");
+        }
         out += "}\n\n";
     }
     out

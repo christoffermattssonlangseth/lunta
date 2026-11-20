@@ -533,7 +533,46 @@ impl Library {
     /// BibTeX for the papers, with their citation keys (which this fixes, if they weren't yet).
     pub fn export_bibtex(&self, ids: Vec<String>) -> String {
         let _ = self.inner.lock().unwrap().fix_keys(&ids);
-        export::bibtex(&self.collect(ids))
+        let papers = self.collect(ids);
+        let (options, own) = {
+            let g = self.inner.lock().unwrap();
+            let own = papers.iter().filter_map(|p| g.state.bib_fields.get(&p.id).map(|f| (p.id.clone(), f.clone()))).collect();
+            (g.state.bibtex_options.unwrap_or_default(), own)
+        };
+        export::bibtex_with(&papers, options, &own)
+    }
+
+    /// How BibTeX outputs shorten long author lists (the library's setting, else more than 15
+    /// authors: the first 10 and "and others").
+    pub fn bibtex_options(&self) -> export::BibtexOptions {
+        self.inner.lock().unwrap().state.bibtex_options.unwrap_or_default()
+    }
+
+    /// Sets how BibTeX outputs shorten long author lists, for the whole library (synced, so every
+    /// device's .bib files agree). `max_authors` 0: never shorten.
+    pub fn set_bibtex_options(&self, options: export::BibtexOptions) -> Result<()> {
+        let o = options.checked();
+        if self.bibtex_options() == o {
+            return Ok(());
+        }
+        self.op(OpKind::SetBibtexOptions { max_authors: o.max_authors, shown_authors: o.shown_authors })
+    }
+
+    /// The BibTeX fields of the paper's own, from an imported .bib (see `OpKind::SetBibFields`).
+    pub fn bib_fields(&self, id: String) -> Vec<BibField> {
+        let g = self.inner.lock().unwrap();
+        g.state.bib_fields.get(&id).map(|f| f.iter().map(|(name, value)| BibField { name: name.clone(), value: value.clone() }).collect()).unwrap_or_default()
+    }
+
+    /// Replaces the paper's own BibTeX fields (empty: none; Lunta's fields are written again).
+    pub fn set_bib_fields(&self, id: String, fields: Vec<BibField>) -> Result<()> {
+        let fields: Vec<(String, String)> =
+            fields.into_iter().filter(|f| !f.name.trim().is_empty()).map(|f| (f.name.trim().to_lowercase(), f.value)).collect();
+        let same = self.inner.lock().unwrap().state.bib_fields.get(&id).cloned().unwrap_or_default() == fields;
+        if same {
+            return Ok(());
+        }
+        self.op(OpKind::SetBibFields { paper: id, fields })
     }
 
     /// The papers' citation keys, in order (unknown ids are left out). Fixes them, as they are

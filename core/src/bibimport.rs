@@ -128,7 +128,10 @@ fn differences(e: &RawBibEntry, bib: &PaperMeta, found: &PaperMeta) -> Vec<Strin
     if !bib.pages.is_empty() && !found.pages.is_empty() && pages(&bib.pages) != pages(&found.pages) {
         out.push(format!("pages: {} in the .bib, {} in {source}", bib.pages, found.pages));
     }
-    let others = e.get("author").to_lowercase().split_whitespace().collect::<Vec<_>>().windows(2).any(|w| w == ["and", "others"]);
+    if !bib.doi.is_empty() && !found.doi.is_empty() && !bib.doi.eq_ignore_ascii_case(&found.doi) {
+        out.push(format!("DOI: {} in the .bib (kept), {} in {source}", bib.doi, found.doi));
+    }
+    let others = has_others(&e.get("author"));
     let (b, f) = (bib.authors.len(), found.authors.len());
     if b > 0 && f > 0 {
         if (!others && b != f) || (others && f < b) {
@@ -139,6 +142,89 @@ fn differences(e: &RawBibEntry, bib: &PaperMeta, found: &PaperMeta) -> Vec<Strin
         }
     }
     out
+}
+
+/// Fields the library has no place for that are kept from the .bib as written (`type = {W3C
+/// Recommendation}`, a `note`, an `edition`…).
+const KEPT_FIELDS: [&str; 12] =
+    ["type", "note", "addendum", "edition", "editor", "address", "organization", "month", "isbn", "issn", "chapter", "language"];
+
+/// An author field with "and others" at the end.
+fn has_others(raw_authors: &str) -> bool {
+    raw_authors.to_lowercase().split_whitespace().collect::<Vec<_>>().windows(2).any(|w| w == ["and", "others"])
+}
+
+/// An author field that is one organization or a name written whole: `{Qwen Team}`, `{Apple}`,
+/// "World Wide Web Consortium".
+fn corporate(raw_authors: &str, authors: &[String]) -> bool {
+    let r = raw_authors.trim();
+    let whole = r.starts_with('{') && r.ends_with('}') && {
+        // one group: the brace opened first closes last
+        let mut depth = 0;
+        r.char_indices().all(|(i, c)| {
+            match c {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+            depth > 0 || i == r.len() - 1
+        })
+    };
+    authors.len() == 1 && (whole || crate::worktype::is_organization(&authors[0]))
+}
+
+/// The fields of the entry the researcher's .bib keeps for BibTeX outputs (see
+/// `OpKind::SetBibFields`): an author field that is an organization or ends in "and others"
+/// (the record's full list, 60 or 156 names, stays in the library), the booktitle of a conference
+/// paper or chapter (with its "(CHI)" or "(ECDL 2009)", which Crossref's lacks), and fields the
+/// library has no place for (`KEPT_FIELDS`). As written, LaTeX and all.
+pub fn own_fields(e: &RawBibEntry, bib: &PaperMeta) -> Vec<(String, String)> {
+    let mut out = vec![];
+    if let Some(a) = e.get_raw("author") {
+        if has_others(&a) || corporate(&a, &bib.authors) {
+            out.push(("author".to_string(), a));
+        }
+    }
+    if matches!(e.kind.as_str(), "inproceedings" | "incollection" | "conference" | "inbook") {
+        if let Some(b) = e.get_raw("booktitle").filter(|b| !b.trim().is_empty()) {
+            out.push(("booktitle".to_string(), b));
+        }
+    }
+    for f in KEPT_FIELDS {
+        if let Some(v) = e.get_raw(f).filter(|v| !v.trim().is_empty()) {
+            out.push((f.to_string(), v));
+        }
+    }
+    out
+}
+
+/// Given names as letters: "Maurice G." → ["maurice", "g"].
+fn given_parts(g: &str) -> Vec<String> {
+    g.split(|c: char| c.is_whitespace() || c == '-' || c == '.').map(norm).filter(|p| !p.is_empty()).collect()
+}
+
+/// The record's authors with the .bib's given names where those are fuller ("Maurice G. Kendall"
+/// for Crossref's "M. G. Kendall", "Daniel S. Weld" for "Daniel Weld"): same family name in the
+/// same place, and every given name of the record's an initial or the same name in the .bib's.
+fn fuller_names(found: &[String], bib: &[String]) -> Vec<String> {
+    found
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+            let Some(b) = bib.get(i) else { return a.clone() };
+            if crate::worktype::is_organization(a) {
+                return a.clone();
+            }
+            let ((ff, fg), (bf, bg)) = (crate::export::split_name(a), crate::export::split_name(b));
+            if norm(&ff) != norm(&bf) || fg.is_empty() {
+                return a.clone();
+            }
+            let (fp, bp) = (given_parts(&fg), given_parts(&bg));
+            let fits = fp.len() <= bp.len() && fp.iter().zip(&bp).all(|(f, b)| if f.chars().count() == 1 { b.starts_with(f.as_str()) } else { f == b });
+            let fuller = bp.iter().map(|p| p.chars().count()).sum::<usize>() > fp.iter().map(|p| p.chars().count()).sum::<usize>();
+            if fits && fuller { format!("{} {}", bg.trim(), ff) } else { a.clone() }
+        })
+        .collect()
 }
 
 /// Adds the extra entries to the ones the folder keeps: an entry with the same key (ignoring
@@ -330,6 +416,14 @@ impl Library {
                         m.pages = bib.pages.clone();
                     }
                     item.notes = differences(e, &bib, &m);
+                    // a DOI in the .bib is the researcher's: never replaced by what a search found
+                    if !bib.doi.is_empty() && !bib.doi.eq_ignore_ascii_case(&m.doi) {
+                        if m.url.contains(&m.doi) && !m.doi.is_empty() {
+                            m.url = format!("https://doi.org/{}", bib.doi);
+                        }
+                        m.doi = bib.doi.clone();
+                    }
+                    m.authors = fuller_names(&m.authors, &bib.authors);
                     // what the .bib has and the record lacks (an LNCS volume, a series)
                     crate::merge_meta(&mut m, &bib);
                     (m, how)
@@ -344,8 +438,15 @@ impl Library {
                 BibFound::Search => r.by_search += 1,
                 _ => r.as_is += 1,
             }
-            let (paper, new) = self.add_or_merge(meta)?;
+            let own = own_fields(e, &bib);
+            if own.iter().any(|(k, _)| k == "author") {
+                for n in item.notes.iter_mut().filter(|n| n.starts_with("authors:")) {
+                    n.push_str(" (BibTeX keeps the .bib's)");
+                }
+            }
+            let (paper, new) = self.add_or_merge(meta, &e.key)?;
             self.set_membership(collection.to_string(), paper.clone(), true)?;
+            self.set_bib_fields(paper.clone(), own.into_iter().map(|(name, value)| BibField { name, value }).collect())?;
             item.paper_id = paper.clone();
             item.cite_key = self.keep_key(&paper, new, &e.key, &keyed, &mut item.notes);
             if item.cite_key == e.key {
@@ -374,10 +475,20 @@ impl Library {
     }
 
     /// The paper with these details: one already in the library (same DOI, or the same title when
-    /// there is no DOI) with its details filled in, or a new one. Returns its id, and whether it
-    /// is new.
-    fn add_or_merge(&self, meta: PaperMeta) -> Result<(String, bool)> {
-        let existing = self.find_by_doi(meta.doi.clone()).or_else(|| if meta.doi.is_empty() { self.find_by_title(&meta.title) } else { None });
+    /// there is no DOI, or the paper with the entry's key and title: a short title such as "EPUB
+    /// 3.3" imported again) with its details filled in, or a new one. Returns its id, and whether
+    /// it is new.
+    fn add_or_merge(&self, meta: PaperMeta, key: &str) -> Result<(String, bool)> {
+        let keyed = || {
+            let id = {
+                let g = self.inner.lock().unwrap();
+                g.state.cite_keys.iter().find(|(_, k)| k.eq_ignore_ascii_case(key)).map(|(id, _)| id.clone())
+            }?;
+            self.paper(id).filter(|p| !norm(&meta.title).is_empty() && norm(&p.meta.title) == norm(&meta.title))
+        };
+        let existing = self
+            .find_by_doi(meta.doi.clone())
+            .or_else(|| if meta.doi.is_empty() { self.find_by_title(&meta.title).or_else(keyed) } else { None });
         match existing {
             Some(p) => {
                 let mut m = p.meta.clone();
@@ -478,6 +589,21 @@ mod tests {
   pages     = {4969--4983},
   year      = {2020}
 }
+@article{qwen3,
+  author  = {{Qwen Team}},
+  title   = {Qwen3 Technical Report},
+  journal = {arXiv preprint arXiv:2505.09388},
+  year    = {2025}
+}
+@techreport{epub33,
+  author      = {{World Wide Web Consortium}},
+  title       = {{EPUB} 3.3},
+  institution = {W3C},
+  type        = {W3C Recommendation},
+  year        = {2023},
+  url         = {https://www.w3.org/TR/epub-33/},
+  note        = {Accessed \todo{date}}
+}
 @techreport{jats,
   author      = {{National Information Standards Organization}},
   title       = {{JATS}: Journal Article Tag Suite, version 1.2},
@@ -508,7 +634,9 @@ mod tests {
                 volume: "30".into(),
                 issue: "1-2".into(),
                 pages: "81-93".into(),
-                doi: "10.1093/biomet/30.1-2.81".into(),
+                // JSTOR's record of the same paper, as Crossref's search found it
+                doi: "10.2307/2332226".into(),
+                url: "https://doi.org/10.2307/2332226".into(),
                 work_type: "journal-article".into(),
                 ..Default::default()
             };
@@ -524,6 +652,21 @@ mod tests {
                     journal: "arXiv".into(),
                     arxiv: "2308.13418".into(),
                     doi: "10.48550/arXiv.2308.13418".into(),
+                    work_type: "posted-content".into(),
+                    ..Default::default()
+                },
+                BibFound::Arxiv,
+            ));
+        }
+        if m.arxiv == "2505.09388" {
+            return Some((
+                PaperMeta {
+                    title: "Qwen3 Technical Report".into(),
+                    authors: (0..60).map(|i| format!("Author{i} Name{i}")).collect(),
+                    date: "2025-05-14".into(),
+                    journal: "arXiv".into(),
+                    arxiv: "2505.09388".into(),
+                    doi: "10.48550/arXiv.2505.09388".into(),
                     work_type: "posted-content".into(),
                     ..Default::default()
                 },
@@ -571,8 +714,8 @@ mod tests {
         let (_d, l) = lib();
         let c = l.create_collection("Lunta paper".into(), None).unwrap();
         let r = l.import_bib_with(BIB, &c.id, &fake).unwrap();
-        assert_eq!((r.by_doi, r.by_arxiv, r.by_search, r.as_is, r.extra, r.skipped), (1, 1, 2, 1, 1, 0), "{}", r.text);
-        assert_eq!(r.keys_kept, 5, "{}", r.text);
+        assert_eq!((r.by_doi, r.by_arxiv, r.by_search, r.as_is, r.extra, r.skipped), (1, 2, 2, 2, 1, 0), "{}", r.text);
+        assert_eq!(r.keys_kept, 7, "{}", r.text);
         let by_key = |k: &str| r.items.iter().find(|i| i.key == k).unwrap().clone();
         // the paper keeps the .bib's key, also for \cite
         let kendall = by_key("kendall1938");
@@ -580,7 +723,15 @@ mod tests {
         assert_eq!(l.latex_cite(vec![kendall.paper_id.clone()]), "\\cite{kendall1938}");
         // Crossref's capitals fixed on the way in; issue 1-2 vs 1/2 isn't a difference we report
         assert_eq!(l.paper(kendall.paper_id.clone()).unwrap().meta.title, "A New Measure of Rank Correlation");
-        assert!(kendall.notes.is_empty(), "{:?}", kendall.notes);
+        // the .bib's DOI is kept, not the one the lookup found (reported); its fuller given names too
+        assert_eq!(kendall.notes, vec!["DOI: 10.1093/biomet/30.1-2.81 in the .bib (kept), 10.2307/2332226 in Crossref".to_string()]);
+        let km = l.paper(kendall.paper_id.clone()).unwrap().meta;
+        assert_eq!((km.doi.as_str(), km.url.as_str()), ("10.1093/biomet/30.1-2.81", "https://doi.org/10.1093/biomet/30.1-2.81"));
+        assert_eq!(km.authors, vec!["Maurice G. Kendall".to_string()]);
+        // Qwen: the library has arXiv's 60 authors, BibTeX the .bib's {Qwen Team}
+        let qwen = by_key("qwen3");
+        assert_eq!(l.paper(qwen.paper_id.clone()).unwrap().meta.authors.len(), 60);
+        assert_eq!(qwen.notes, vec!["authors: 1 in the .bib, 60 in arXiv (BibTeX keeps the .bib's)".to_string()]);
         // "and others" in the .bib: 4 authors in arXiv is not a mismatch; the year is the same
         assert!(by_key("blecher2023nougat").notes.is_empty(), "{:?}", by_key("blecher2023nougat").notes);
         // S2ORC: 2 authors in the .bib, 5 found
@@ -593,30 +744,36 @@ mod tests {
         let jats = l.paper(by_key("jats").paper_id).unwrap();
         assert_eq!((jats.cite_key.as_str(), jats.meta.work_type.as_str(), jats.meta.publisher.as_str()), ("jats", "report", "NISO"));
         // all the papers are in the folder
-        assert_eq!(l.papers(PaperFilter { collection: Some(c.id.clone()), ..Default::default() }, SortKey::Added).len(), 5);
+        assert_eq!(l.papers(PaperFilter { collection: Some(c.id.clone()), ..Default::default() }, SortKey::Added).len(), 7);
 
         // the folder's .bib: papers by key with the fixed exporter, then the extra entry as written
         let bib = l.kept_bibtex(Some(c.id.clone())).unwrap();
         assert!(bib.contains("@inproceedings{lopez2009grobid,"), "{bib}");
-        assert!(bib.contains("  booktitle = {Research and Advanced Technology for Digital Libraries},"), "{bib}");
+        // the .bib's booktitle, with its "(ECDL 2009)"
+        assert!(bib.contains("  booktitle = {Research and Advanced Technology for Digital Libraries (ECDL 2009)},"), "{bib}");
         assert!(bib.contains("  series = {Lecture Notes in Computer Science},"), "{bib}");
         assert!(bib.contains("@misc{blecher2023nougat,") && bib.contains("howpublished = {arXiv preprint arXiv:2308.13418}"), "{bib}");
-        assert!(bib.contains("@article{kendall1938,") && bib.contains("{{A New Measure of Rank Correlation}}") && bib.contains("Kendall, M. G."), "{bib}");
+        assert!(bib.contains("@article{kendall1938,\n  title = {A New Measure of Rank Correlation},\n  author = {Kendall, Maurice G.},"), "{bib}");
+        assert!(bib.contains("doi = {10.1093/biomet/30.1-2.81}") && !bib.contains("2332226"), "{bib}");
+        assert!(bib.contains("@misc{qwen3,\n  title = {{Qwen3} Technical Report},\n  author = {{Qwen Team}},"), "{bib}");
+        // fields the library has no place for, as written
+        assert!(bib.contains("@techreport{epub33,\n  title = {{EPUB} 3.3},\n  author = {{World Wide Web Consortium}},"), "{bib}");
+        assert!(bib.contains("  type = {W3C Recommendation},\n  note = {Accessed \\todo{date}},\n}"), "{bib}");
         assert!(bib.contains("@techreport{jats,") && bib.contains("author = {{National Information Standards Organization}}"), "{bib}");
         assert!(bib.contains("@misc{zotero,\n  author = {{Corporation for Digital Scholarship}},"), "{bib}");
         // every key once
         let reparsed = parse_bibtex_raw(&bib);
         let keys: Vec<&str> = reparsed.iter().map(|e| e.key.as_str()).collect();
-        assert_eq!(keys, vec!["blecher2023nougat", "jats", "kendall1938", "lo2020s2orc", "lopez2009grobid", "zotero"]);
+        assert_eq!(keys, vec!["blecher2023nougat", "epub33", "jats", "kendall1938", "lo2020s2orc", "lopez2009grobid", "qwen3", "zotero"]);
         // the whole library's .bib has the folder's extra entries too
         assert!(l.kept_bibtex(None).unwrap().contains("@misc{zotero,"));
-        assert!(r.text.contains("6 entries into “Lunta paper”"), "{}", r.text);
+        assert!(r.text.contains("8 entries into “Lunta paper”"), "{}", r.text);
         assert!(r.text.contains("lo2020s2orc: authors: 2 in the .bib, 5 in Crossref"), "{}", r.text);
 
         // importing again: same papers, same keys, extras not doubled
         let again = l.import_bib_with(BIB, &c.id, &fake).unwrap();
-        assert_eq!(again.keys_kept, 5, "{}", again.text);
-        assert_eq!(l.papers(PaperFilter::default(), SortKey::Added).len(), 5);
+        assert_eq!(again.keys_kept, 7, "{}", again.text);
+        assert_eq!(l.papers(PaperFilter::default(), SortKey::Added).len(), 7);
         assert_eq!(parse_bibtex_raw(&l.collection_bib(c.id.clone())).len(), 1);
     }
 
@@ -642,6 +799,30 @@ mod tests {
         assert!(r.text.contains("Citation keys: 0 kept, 3 not"), "{}", r.text);
         // the other paper keeps its key
         assert_eq!(l.paper(other.id).unwrap().cite_key, "kendall1938");
+    }
+
+    #[test]
+    fn fuller_given_names_kept() {
+        let found: Vec<String> = ["M. G. Kendall", "Daniel Weld", "Lucy Lu Wang", "J. Smith", "World Wide Web Consortium"].iter().map(|s| s.to_string()).collect();
+        let bib: Vec<String> = ["Maurice G. Kendall", "Daniel S. Weld", "L. Wang", "Jane Doe", "W3C"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(fuller_names(&found, &bib), vec!["Maurice G. Kendall", "Daniel S. Weld", "Lucy Lu Wang", "J. Smith", "World Wide Web Consortium"]);
+        // a different first name isn't fuller
+        assert_eq!(fuller_names(&["M. Kendall".into()], &["Nora Kendall".into()]), vec!["M. Kendall"]);
+    }
+
+    #[test]
+    fn own_fields_of_an_entry() {
+        let e = parse_bibtex_raw(
+            "@inproceedings{a, author = {Lo, Kyle and Wang, Lucy Lu and others}, title = {T}, booktitle = {Proc. of {CHI} (CHI '21)}, note = acm, month = 5, year = {2021}}\n\
+             @article{b, author = {{Apple}}, title = {Apple Intelligence Foundation Language Models}, journal = {arXiv preprint arXiv:2407.21075}}\n\
+             @article{c, author = {Kendall, Maurice G.}, title = {A New Measure}, journal = {Biometrika}, note = {\\todo{check}}}",
+        );
+        let own = |i: usize| own_fields(&e[i], &entry_from_bib(&e[i].kind, &e[i].fields).meta);
+        // "and others" kept as written; the booktitle with its braces; a macro value (acm) left out
+        assert_eq!(own(0), vec![("author".into(), "Lo, Kyle and Wang, Lucy Lu and others".into()), ("booktitle".into(), "Proc. of {CHI} (CHI '21)".into()), ("month".into(), "5".into())]);
+        assert_eq!(own(1), vec![("author".to_string(), "{Apple}".to_string())]);
+        // one person: their names come from the record
+        assert_eq!(own(2), vec![("note".to_string(), "\\todo{check}".to_string())]);
     }
 
     #[test]

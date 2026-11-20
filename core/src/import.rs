@@ -42,6 +42,24 @@ impl RawBibEntry {
     pub fn get(&self, k: &str) -> String {
         self.fields.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap_or_default()
     }
+
+    /// A field's value as written, LaTeX and inner braces kept, without its outer `{…}` or
+    /// `"…"` ("{Qwen Team}" for `author = {{Qwen Team}}`). None when the field isn't there or is
+    /// a @string macro or a `#` concatenation (`get` has those resolved).
+    pub fn get_raw(&self, k: &str) -> Option<String> {
+        let open = self.raw.find(['{', '('])?;
+        let body = &self.raw[open + 1..self.raw.len().saturating_sub(1).max(open + 1)];
+        let v = parse_field_values(body).into_iter().find(|(n, _)| n == k)?.1;
+        let v = v.trim();
+        let wrapped = (v.starts_with('{') && v.ends_with('}')) || (v.starts_with('"') && v.ends_with('"') && v.len() >= 2);
+        if wrapped && split_concat(v).len() == 1 {
+            Some(unwrap_raw(v))
+        } else if !v.is_empty() && v.chars().all(|c| c.is_ascii_digit()) {
+            Some(v.to_string())
+        } else {
+            None
+        }
+    }
 }
 
 /// The entries of a .bib file (not @string, @comment or @preamble), with their keys.
@@ -115,6 +133,23 @@ pub fn parse_bibtex_raw(text: &str) -> Vec<RawBibEntry> {
 
 /// Splits `key, name = value, name = {value}, …` into (name, value) pairs.
 fn parse_fields(body: &str, strings: &[(String, String)]) -> Vec<(String, String)> {
+    parse_field_values(body)
+        .into_iter()
+        .map(|(name, raw)| {
+            if is_file_field(&name) {
+                // paths as written: LaTeX cleaning would eat Windows' backslashes ("\Users") and
+                // Zotero's escapes ("C\:\\Users")
+                let v = unwrap_raw(raw.trim());
+                (name, v)
+            } else {
+                (name, unwrap_value(raw.trim(), strings))
+            }
+        })
+        .collect()
+}
+
+/// (name, value as written) pairs of an entry's body.
+fn parse_field_values(body: &str) -> Vec<(String, String)> {
     let chars: Vec<char> = body.chars().collect();
     // skip the cite key
     let mut i = chars.iter().position(|c| *c == ',').map(|p| p + 1).unwrap_or(chars.len());
@@ -150,12 +185,8 @@ fn parse_fields(body: &str, strings: &[(String, String)]) -> Vec<(String, String
             i += 1;
         }
         let raw: String = chars[vs..i].iter().collect();
-        if is_file_field(&name) {
-            // paths as written: LaTeX cleaning would eat Windows' backslashes ("\Users") and
-            // Zotero's escapes ("C\:\\Users")
-            out.push((name, unwrap_raw(raw.trim())));
-        } else if !name.is_empty() {
-            out.push((name, unwrap_value(raw.trim(), strings)));
+        if !name.is_empty() {
+            out.push((name, raw));
         }
     }
     out

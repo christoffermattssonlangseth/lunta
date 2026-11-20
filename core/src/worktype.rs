@@ -295,14 +295,35 @@ pub fn is_organization(name: &str) -> bool {
     !name.contains(',') && name.split_whitespace().count() >= 2 && name.split_whitespace().any(|w| words.contains(&w.to_lowercase().as_str()))
 }
 
+/// A proceedings title without the stray "on" in ACM's Crossref records: "Proceedings of the 16th
+/// ACM/IEEE-CS on Joint Conference on Digital Libraries" → "Proceedings of the 16th ACM/IEEE-CS
+/// Joint Conference on Digital Libraries", "Proceedings of the 2016 on Genetic and Evolutionary
+/// Computation Conference" → "… 2016 Genetic and …". Only when every word between "Proceedings of
+/// the" and "on" is an ordinal, a year or an acronym (ACM, IEEE-CS, SIGPLAN) and a conference,
+/// symposium, workshop or congress follows: "Proceedings of the ACM on Programming Languages" (a
+/// journal) and "… Workshop on …" stay. No acronym such as "(JCDL)" is added: Crossref doesn't
+/// have it, and an invented one could be wrong.
+pub fn fix_proceedings_title(j: &str) -> String {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(r"^(Proceedings of the (?:(?:\d+(?:st|nd|rd|th)|\d{4}|[A-Z][A-Z0-9/&-]*[A-Z0-9]) )+)on ([A-Z].*\b(?:Conference|Symposium|Workshop|Congress)\b.*)$").unwrap()
+    });
+    match re.captures(j) {
+        Some(c) => format!("{}{}", &c[1], &c[2]),
+        None => j.to_string(),
+    }
+}
+
 /// The details as they are written out (BibTeX, RIS, citations): a title or names in capitals
-/// in proper case. The library itself is not changed.
+/// in proper case, a proceedings title without Crossref's stray "on". The library itself is not
+/// changed.
 pub fn for_export(m: &PaperMeta) -> PaperMeta {
     let mut o = m.clone();
+    o.journal = fix_proceedings_title(&m.journal);
     o.title = fix_title_case(&m.title);
     o.authors = m.authors.iter().map(|a| if is_organization(a) { a.clone() } else { fix_name_case(a) }).collect();
     if mostly_upper(&m.journal) && m.journal.split_whitespace().count() > 1 {
-        o.journal = fix_title_case(&m.journal);
+        o.journal = fix_title_case(&o.journal);
     }
     o
 }
@@ -310,6 +331,7 @@ pub fn for_export(m: &PaperMeta) -> PaperMeta {
 /// Details as they come from Crossref and the other sources, cleaned: capitals, the type.
 pub fn tidy(m: &mut PaperMeta) {
     m.title = fix_title_case(&m.title);
+    m.journal = fix_proceedings_title(&m.journal);
     m.authors = m.authors.iter().map(|a| if is_organization(a) { a.clone() } else { fix_name_case(a) }).collect();
 }
 
@@ -319,6 +341,21 @@ mod tests {
 
     fn meta(journal: &str, doi: &str, arxiv: &str) -> PaperMeta {
         PaperMeta { title: "T".into(), journal: journal.into(), doi: doi.into(), arxiv: arxiv.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn proceedings_titles_without_stray_on() {
+        for (crossref, fixed) in [
+            ("Proceedings of the 16th ACM/IEEE-CS on Joint Conference on Digital Libraries", "Proceedings of the 16th ACM/IEEE-CS Joint Conference on Digital Libraries"),
+            ("Proceedings of the 2016 on Genetic and Evolutionary Computation Conference", "Proceedings of the 2016 Genetic and Evolutionary Computation Conference"),
+            // journals and ordinary titles stay
+            ("Proceedings of the ACM on Programming Languages", "Proceedings of the ACM on Programming Languages"),
+            ("Proceedings of the ACM on Human-Computer Interaction", "Proceedings of the ACM on Human-Computer Interaction"),
+            ("Proceedings of the 2nd ACM Workshop on Hot Topics in Networks", "Proceedings of the 2nd ACM Workshop on Hot Topics in Networks"),
+            ("Proceedings of the SIGCHI Conference on Human Factors in Computing Systems", "Proceedings of the SIGCHI Conference on Human Factors in Computing Systems"),
+        ] {
+            assert_eq!(fix_proceedings_title(crossref), fixed);
+        }
     }
 
     #[test]

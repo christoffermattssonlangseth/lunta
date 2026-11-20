@@ -44,6 +44,14 @@ pub enum OpKind {
     /// researcher's choices about it (`checks::PaperUpdates`; the latest wins; older versions skip
     /// this op).
     SetUpdates { paper: String, updates: crate::checks::PaperUpdates },
+    /// BibTeX fields the researcher wrote for a paper in an imported .bib (keep-keys import:
+    /// an author list as "{Qwen Team}" or "… and others", their booktitle, `type`, `note`…), as
+    /// written; each replaces Lunta's field of that name in BibTeX outputs, or is added. Empty:
+    /// none. The latest wins; older versions skip this op.
+    SetBibFields { paper: String, fields: Vec<(String, String)> },
+    /// How BibTeX outputs shorten long author lists, for the whole library so every device writes
+    /// the same .bib (`export::BibtexOptions`; the latest wins; older versions skip this op).
+    SetBibtexOptions { max_authors: u32, shown_authors: u32 },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -83,6 +91,10 @@ pub struct State {
     pub collection_bib: BTreeMap<String, String>,
     /// Paper id -> what the checks found (`SetUpdates`).
     pub updates: BTreeMap<String, crate::checks::PaperUpdates>,
+    /// Paper id -> its own BibTeX fields (`SetBibFields`).
+    pub bib_fields: BTreeMap<String, Vec<(String, String)>>,
+    /// The latest `SetBibtexOptions`, if any.
+    pub bibtex_options: Option<crate::export::BibtexOptions>,
 }
 
 impl State {
@@ -109,6 +121,7 @@ impl State {
                 self.papers.remove(paper);
                 self.annotations.remove(paper);
                 self.updates.remove(paper);
+                self.bib_fields.remove(paper);
                 self.deleted.insert(paper.clone());
             }
             OpKind::SetRead { paper, read } => {
@@ -188,6 +201,19 @@ impl State {
                 } else {
                     self.updates.insert(paper.clone(), updates.clone());
                 }
+            }
+            OpKind::SetBibFields { paper, fields } => {
+                if !self.papers.contains_key(paper) {
+                    return;
+                }
+                if fields.is_empty() {
+                    self.bib_fields.remove(paper);
+                } else {
+                    self.bib_fields.insert(paper.clone(), fields.clone());
+                }
+            }
+            OpKind::SetBibtexOptions { max_authors, shown_authors } => {
+                self.bibtex_options = Some(crate::export::BibtexOptions { max_authors: *max_authors, shown_authors: *shown_authors });
             }
         }
     }

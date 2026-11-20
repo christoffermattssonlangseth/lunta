@@ -1052,17 +1052,17 @@ fn exports_by_work_type() {
     let entry = |key: &str| bib.split("\n\n").find(|e| e.contains(&format!("{{{key},"))).unwrap().to_string();
     assert_eq!(
         entry("g"),
-        "@inproceedings{g,\n  title = {{GROBID: Combining Automatic Bibliographic Data Recognition and Term Extraction for Scholarship Publications}},\n  author = {Lopez, Patrice},\n  booktitle = {Research and Advanced Technology for Digital Libraries},\n  series = {Lecture Notes in Computer Science},\n  year = {2009},\n  pages = {473--474},\n  publisher = {Springer Berlin Heidelberg},\n  doi = {10.1007/978-3-642-04346-8_62},\n}"
+        "@inproceedings{g,\n  title = {{GROBID}: Combining Automatic Bibliographic Data Recognition and Term Extraction for Scholarship Publications},\n  author = {Lopez, Patrice},\n  booktitle = {Research and Advanced Technology for Digital Libraries},\n  series = {Lecture Notes in Computer Science},\n  year = {2009},\n  pages = {473--474},\n  publisher = {Springer Berlin Heidelberg},\n  doi = {10.1007/978-3-642-04346-8_62},\n}"
     );
-    assert!(entry("f").starts_with("@inproceedings{f,\n  title = {{PDFFigures 2.0: Mining Figures from Research Papers}},"), "{}", entry("f"));
-    assert!(entry("f").contains("booktitle = {Proceedings of the 16th ACM/IEEE-CS on Joint Conference on Digital Libraries}"));
+    assert!(entry("f").starts_with("@inproceedings{f,\n  title = {{PDFFigures} 2.0: Mining Figures from Research Papers},"), "{}", entry("f"));
+    assert!(entry("f").contains("booktitle = {Proceedings of the 16th ACM/IEEE-CS Joint Conference on Digital Libraries}"), "{}", entry("f"));
     assert_eq!(
         entry("k"),
-        "@article{k,\n  title = {{A New Measure of Rank Correlation}},\n  author = {Kendall, M. G.},\n  journal = {Biometrika},\n  year = {1938},\n  volume = {30},\n  number = {1-2},\n  pages = {81--93},\n  doi = {10.1093/biomet/30.1-2.81},\n}"
+        "@article{k,\n  title = {A New Measure of Rank Correlation},\n  author = {Kendall, M. G.},\n  journal = {Biometrika},\n  year = {1938},\n  volume = {30},\n  number = {1-2},\n  pages = {81--93},\n  doi = {10.1093/biomet/30.1-2.81},\n}"
     );
     assert_eq!(
         entry("n"),
-        "@misc{n,\n  title = {{Nougat: Neural Optical Understanding for Academic Documents}},\n  author = {Blecher, Lukas and Stojnic, Robert},\n  howpublished = {arXiv preprint arXiv:2308.13418},\n  year = {2023},\n  doi = {10.48550/arXiv.2308.13418},\n  eprint = {2308.13418},\n  archivePrefix = {arXiv},\n  url = {https://arxiv.org/abs/2308.13418},\n}"
+        "@misc{n,\n  title = {Nougat: Neural Optical Understanding for Academic Documents},\n  author = {Blecher, Lukas and Stojnic, Robert},\n  howpublished = {arXiv preprint arXiv:2308.13418},\n  year = {2023},\n  doi = {10.48550/arXiv.2308.13418},\n  eprint = {2308.13418},\n  archivePrefix = {arXiv},\n  url = {https://arxiv.org/abs/2308.13418},\n}"
     );
     assert!(entry("c").starts_with("@inproceedings{c,") && entry("c").contains("booktitle = {Lecture Notes in Computer Science}"), "{}", entry("c"));
     assert!(entry("r").starts_with("@techreport{r,") && entry("r").contains("author = {{World Wide Web Consortium}}") && entry("r").contains("institution = {W3C}"), "{}", entry("r"));
@@ -1082,7 +1082,7 @@ fn exports_by_work_type() {
 
     // citations: conference papers "In" their proceedings, capitals fixed
     let apa = export::citation(&papers[1], CitationStyle::Apa);
-    assert_eq!(apa, "Clark, C., & Divvala, S. (2016). PDFFigures 2.0: Mining Figures from Research Papers. In *Proceedings of the 16th ACM/IEEE-CS on Joint Conference on Digital Libraries* (pp. 143–152). ACM. https://doi.org/10.1145/2910896.2910904");
+    assert_eq!(apa, "Clark, C., & Divvala, S. (2016). PDFFigures 2.0: Mining Figures from Research Papers. In *Proceedings of the 16th ACM/IEEE-CS Joint Conference on Digital Libraries* (pp. 143–152). ACM. https://doi.org/10.1145/2910896.2910904");
     let van = export::citation(&papers[0], CitationStyle::Vancouver);
     assert_eq!(van, "Lopez P. GROBID: Combining Automatic Bibliographic Data Recognition and Term Extraction for Scholarship Publications. In: Research and Advanced Technology for Digital Libraries. Springer Berlin Heidelberg; 2009. p. 473-474. doi:10.1007/978-3-642-04346-8_62");
     let ieee = export::citation(&papers[1], CitationStyle::Ieee);
@@ -1134,4 +1134,66 @@ fn bibtex_letters_as_latex() {
     // read back as they were
     assert_eq!(import::delatex(&tex), names);
     assert_eq!(import::delatex(&export::latex_letters("Rodríguez")), "Rodríguez");
+}
+
+#[test]
+fn bibtex_titles_protect_only_what_must_stay() {
+    // sentence case (Crossref's): no braces but for acronyms and proper nouns
+    assert_eq!(export::bib_title("Robust annotation positioning in digital documents"), "Robust annotation positioning in digital documents");
+    assert_eq!(
+        export::bib_title("HTML papers on arXiv -- why it is important, and how we made it happen"),
+        "{HTML} papers on {arXiv} -- why it is important, and how we made it happen"
+    );
+    assert_eq!(export::bib_title("Kendall's tau for Bayesian models of RNA-seq data in Sweden"), "Kendall's tau for {Bayesian} models of {RNA}-seq data in {Sweden}");
+    assert_eq!(export::bib_title("CERMINE: automatic extraction of structured metadata"), "{CERMINE}: automatic extraction of structured metadata");
+    // title case: only acronyms, words with capitals inside or with digits
+    assert_eq!(export::bib_title("PDFFigures 2.0: Mining Figures from Research Papers"), "{PDFFigures} 2.0: Mining Figures from Research Papers");
+    assert_eq!(
+        export::bib_title("The Semantic Reader Project: Augmenting Scholarly Documents through AI-Powered Interactive Reading Interfaces"),
+        "The Semantic Reader Project: Augmenting Scholarly Documents through {AI}-Powered Interactive Reading Interfaces"
+    );
+    assert_eq!(export::bib_title("Mutations in BRCA1 (CRISPR) on the iPhone, Qwen3 and S2ORC"), "Mutations in {BRCA1} ({CRISPR}) on the {iPhone}, {Qwen3} and {S2ORC}");
+    assert_eq!(export::bib_title("Local-First Software: You Own Your Data"), "Local-First Software: You Own Your Data");
+    // escaped and with LaTeX letters, inside and outside the braces
+    assert_eq!(export::bib_title("R&D at Universität Zürich: the ÖBB_data set"), "{R\\&D} at Universit{\\\"a}t Z{\\\"u}rich: the {{\\\"O}BB\\_data} set");
+    // read back as written
+    assert_eq!(import::delatex(&export::bib_title("HTML papers on arXiv")), "HTML papers on arXiv");
+}
+
+#[test]
+fn bibtex_long_author_lists() {
+    let authors: Vec<String> = (1..=60).map(|i| format!("Given{i} Family{i}")).collect();
+    let meta = PaperMeta { title: "Qwen3 Technical Report".into(), authors: authors.clone(), date: "2025".into(), arxiv: "2505.09388".into(), ..Default::default() };
+    let p = keyed_paper(meta.clone(), "qwen3");
+    // default: more than 15 authors, the first 10 and "and others"
+    let bib = export::bibtex(&[p.clone()]);
+    assert!(bib.contains("author = {Family1, Given1 and Family2, Given2 and Family3, Given3 and Family4, Given4 and Family5, Given5 and Family6, Given6 and Family7, Given7 and Family8, Given8 and Family9, Given9 and Family10, Given10 and others},"), "{bib}");
+    assert!(!bib.contains("Family11"));
+    // 15 authors are all written
+    let fifteen = keyed_paper(PaperMeta { authors: authors[..15].to_vec(), ..meta.clone() }, "f");
+    assert!(export::bibtex(&[fifteen]).contains("Family15, Given15},"));
+    // the options: 0 never shortens; the shown count stays within the limit
+    let all = export::bibtex_with(&[p.clone()], export::BibtexOptions { max_authors: 0, shown_authors: 3 }, &Default::default());
+    assert!(all.contains("Family60, Given60}") && !all.contains("others"));
+    let three = export::bibtex_with(&[p.clone()], export::BibtexOptions { max_authors: 3, shown_authors: 9 }, &Default::default());
+    assert!(three.contains("author = {Family1, Given1 and Family2, Given2 and Family3, Given3 and others},"), "{three}");
+    // read back: "others" isn't an author
+    assert_eq!(import::parse_bibtex(&bib)[0].meta.authors.len(), 10);
+
+    // the library's setting, synced through the log and kept on reopening
+    let root = tmp().join("lib");
+    let lib = open(&root, "mac");
+    let added = lib.add_paper(meta, None, None, None).unwrap();
+    assert_eq!(lib.bibtex_options(), export::BibtexOptions { max_authors: 15, shown_authors: 10 });
+    assert!(lib.export_bibtex(vec![added.id.clone()]).contains("Family10, Given10 and others}"));
+    lib.set_bibtex_options(export::BibtexOptions { max_authors: 5, shown_authors: 1 }).unwrap();
+    assert!(lib.export_bibtex(vec![added.id.clone()]).contains("author = {Family1, Given1 and others},"));
+    let other = open(&root, "iphone");
+    assert_eq!(other.bibtex_options(), export::BibtexOptions { max_authors: 5, shown_authors: 1 });
+    // a paper's own fields (from an imported .bib) win over the list
+    other.set_bib_fields(added.id.clone(), vec![BibField { name: "Author".into(), value: "{Qwen Team}".into() }, BibField { name: "type".into(), value: "Technical Report".into() }]).unwrap();
+    let own = other.export_bibtex(vec![added.id.clone()]);
+    assert!(own.contains("  author = {{Qwen Team}},\n") && own.contains("  type = {Technical Report},\n}"), "{own}");
+    other.set_bib_fields(added.id.clone(), vec![]).unwrap();
+    assert!(other.bib_fields(added.id.clone()).is_empty());
 }

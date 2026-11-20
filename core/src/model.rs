@@ -179,6 +179,13 @@ pub enum CitationStyle {
     Acs,
 }
 
+/// A BibTeX field of a paper's own, as written in an imported .bib (`Library::bib_fields`).
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct BibField {
+    pub name: String,
+    pub value: String,
+}
+
 /// A citation style as the apps list it: `key` is what add-ins and agents pass ("apa").
 #[derive(uniffi::Record, Clone, Debug)]
 pub struct CitationStyleInfo {

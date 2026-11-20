@@ -326,6 +326,35 @@ The built-in styles cite conference papers and chapters "In *Proceedings…*" wi
 BibTeX is written with accented letters as LaTeX (`Pawe{\l}`, `Pregui{\c{c}}a`), which every engine and
 font prints; organizations ("World Wide Web Consortium") are braced whole.
 
+**Titles in BibTeX** (`export::bib_title`). Only what must stay as written is braced, each word on its
+own, so the bibliography style decides the case of the rest (most styles that change case, such as
+`plain`, `unsrt` and `acm`, put titles in sentence case): acronyms and words with capitals inside or
+with digits (`{GROBID}`, `{arXiv}`, `{iPhone}`, `{PDFFigures}`, `{BRCA1}`, `{Qwen3}`, `{RNA}-seq`, `{AI}-Powered`),
+and, in a title in sentence case (as Crossref often has them: more longer words in lower case than
+capitalized, leaving out the first word, the first after a colon and title case's small words), the
+capitalized words after its start, which are then proper nouns (`{Bayesian}`, `{Sweden}`). Proper nouns in
+a title in title case can't be told from the other words and are left to the style ("The Semantic
+Reader Project" becomes "The semantic reader project" in `unsrt`, as an unbraced hand-written entry
+would). Lunta used to brace whole titles (`{{…}}`), which froze Crossref's sentence case and title case
+alike, whatever the style; there is no option to go back to that: a style that keeps the case as given (the
+standard biblatex styles) prints the title as it is either way, and a title can still be given braced
+whole as one of the paper's own fields (`set_bib_fields`, below).
+
+**Long author lists.** A paper with more than 15 authors is written with its first 10 and `and
+others`, which BibTeX and biblatex styles print as "et al." (Qwen3's 60 authors, Apple's 156). The
+library's setting (`Library::set_bibtex_options`, `export::BibtexOptions { max_authors, shown_authors }`,
+`max_authors` 0 never shortens; Mac: Settings › Shorten long author lists in BibTeX) is kept in the log
+(op `set_bibtex_options`, the latest wins; older versions skip it), so every device writes the same .bib
+files. RIS and the citation styles are not affected (the styles shorten lists their own way).
+
+**Proceedings titles.** Crossref's titles of ACM proceedings sometimes have a stray "on" ("Proceedings of
+the 16th ACM/IEEE-CS on Joint Conference on Digital Libraries"); `worktype::fix_proceedings_title` drops it
+when every word between "Proceedings of the" and "on" is an ordinal, a year or an acronym and a
+conference, symposium, workshop or congress follows ("Proceedings of the ACM on Programming Languages", a
+journal, and "… Workshop on …" stay). Applied as details come in and in exports. Acronyms such as
+"(JCDL)" or "(CHI)" are never added: Crossref doesn't have them and a guessed one could be wrong (a .bib
+imported with its keys keeps the researcher's booktitle, below).
+
 **Capitals and subtitles.** Crossref's subtitle is joined to the title with ": ". A title with at
 least 80% capitals (10+ letters, 3+ words: "A NEW MEASURE OF RANK CORRELATION") is put in title
 case, keeping words with digits (BRCA1, COVID-19), common acronyms and Roman numerals; name parts in
@@ -346,14 +375,30 @@ second entry for the same paper is reported, not forced. Entries that aren't pap
 folder's kept .bib (`Library::kept_bibtex`, which the Mac and desktop .bib files use), so one file has
 every key. The report gives the counts (by DOI, arXiv, Crossref search, as is, kept as written) and
 lists where the .bib and the record found differ: year, title, pages, number of authors ("and others"
-allowed), first author. `cargo run --example bib_keep_keys -- refs.bib out.bib` does it in a
+allowed), first author, DOI. `cargo run --example bib_keep_keys -- refs.bib out.bib` does it in a
 throwaway library.
+
+What the researcher wrote wins where the record can't know better:
+- **DOI.** A DOI in the .bib is kept, never replaced by the one a lookup found (Crossref's search may find
+  JSTOR's record, 10.2307/…, of a paper whose publisher's DOI the .bib has); the difference is reported.
+- **Given names.** Where the .bib's are fuller than the record's for the same family name in the same
+  place ("Maurice G." for "M. G.", "Daniel S." for "Daniel"), the paper gets the .bib's.
+- **The paper's own BibTeX fields** (`bibimport::own_fields`, op `set_bib_fields`, the latest wins; older
+  versions skip it; `Library::bib_fields` / `set_bib_fields`): an author field that is one organization or a
+  name braced whole (`{Qwen Team}`, `{Apple}`) or ends in `and others`; the booktitle of an
+  `@inproceedings` / `@incollection` (with its "(CHI)" or "(ECDL 2009)"); and fields the library has no
+  place for: `type` (`W3C Recommendation`), `note`, `addendum`, `edition`, `editor`, `address`,
+  `organization`, `month`, `isbn`, `issn`, `chapter`, `language`. They are kept as written (LaTeX and inner
+  braces; a value that is a @string macro is left out) and in every BibTeX output of the paper (kept .bib
+  files, Copy BibTeX, exports) replace Lunta's field of the same name or are added after its fields. The
+  library keeps the record's details (all 60 authors of Qwen3, for the reader and the citation styles).
 
 Tests: `cargo test keys` and `cargo test thin_details` in `core` (stable keys across exports, uniqueness,
 edits and deletes, user keys, two library instances syncing through copied logs) and
 `cargo test bibfiles` in `desktop/src-tauri`; `cargo test worktype`, `cargo test bibimport`,
-`cargo test exports_by_work_type` and `cargo test bibtex_letters` in `core` (types, capitals, subtitles,
-the .bib import with stand-in lookups).
+`cargo test exports_by_work_type`, `cargo test bibtex_letters`, `cargo test bibtex_titles`,
+`cargo test bibtex_long_author_lists` and `cargo test proceedings_titles` in `core` (types, capitals,
+subtitles, braces, author lists, the .bib import with stand-in lookups: DOI, given names and own fields kept).
 
 ## Checks against the published record
 
