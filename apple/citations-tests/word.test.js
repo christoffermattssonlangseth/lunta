@@ -539,3 +539,26 @@ test('Convert: Word listing EndNote’s nested field inside the outer one’s co
   assert.match(p.status(), /Converted 5 citations \(2 papers added to your library\)\./);
   assert.deepEqual(texts(p).slice(0, 5), ['[see 1, p. 12; 2]', '[3, p. 4]', '[e.g. 4, for the method]', '[5]', '[3, fig. 7]']);
 });
+
+test('Convert: several long EndNote citations (nested EN.CITE.DATA fields listed by Word) each get their own papers', async () => {
+  const titles = ['Long one', 'Long two', 'Long three'];
+  const d = X.endnoteLong(titles);
+  const p = await panel({ settings: { luntaStyle: 'apa' }, ooxml: d.xml, nodes: d.nodes });
+  await p.ctx.convertCitations();
+  const plan = p.ctx.conversion.plan;
+  assert.deepEqual(plainJSON(plan.citations.map((c) => c.works.map((w) => w.meta.title))), titles.map((t) => [t]));
+  await p.ctx.runConversion(plan.works.map((w) => w.key));
+  const titleOf = (id) => p.lunta.lib[id].title;
+  const cites = p.doc.nodes.filter((n) => n.kind !== 'field' && n.tag.startsWith('margins:'));
+  assert.deepEqual(cites.map((c) => titleOf(c.tag.slice('margins:'.length))), titles);
+  assert.deepEqual(p.doc.nodes.filter((n) => n.kind === 'field').map((n) => n.code), [], 'no EndNote field is left');
+  assert.match(p.status(), /Converted 3 citations \(3 papers added to your library\)\./);
+});
+
+test('sameCode: a field code matches its own start, not a longer word', () => {
+  const F = require('../citations/word/fields.js');
+  assert.ok(F.sameCode(' ADDIN EN.CITE ', 'ADDIN EN.CITE'));
+  assert.ok(F.sameCode('ADDIN EN.CITE  ADDIN EN.CITE.DATA', ' ADDIN EN.CITE '));
+  assert.ok(!F.sameCode('ADDIN EN.CITE.DATA', 'ADDIN EN.CITE'));
+  assert.ok(!F.sameCode('ADDIN EN.CITE', ' ADDIN EN.CITE.DATA '));
+});

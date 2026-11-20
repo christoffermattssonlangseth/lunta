@@ -247,12 +247,15 @@ var LuntaFields = (function () {
   function zoteroBookmarks(xml) { return /<w:bookmarkStart\b[^>]*w:name="ZOTERO_BREF_/.test(String(xml || '')); }
 
   /** Field codes compared loosely (Word's Field.code and the OOXML's instruction): the same start
-   *  (Word may give a field's code with a nested field's after it, EndNote's EN.CITE.DATA). */
+   *  (Word may give a field's code with a nested field's after it, EndNote's EN.CITE.DATA), ending
+   *  where a word ends: "ADDIN EN.CITE" isn't the same as "ADDIN EN.CITE.DATA". */
   function sameCode(a, b) {
     var n = function (s) { return String(s || '').replace(/\s+/g, ' ').trim().slice(0, 60); };
     var x = n(a), y = n(b);
     if (!x || !y) return x === y;
-    return x === y || (x.length < y.length ? y.indexOf(x) === 0 : x.indexOf(y) === 0);
+    if (x === y) return true;
+    var short = x.length < y.length ? x : y, long = x.length < y.length ? y : x;
+    return long.indexOf(short) === 0 && long.charAt(short.length) === ' ';
   }
 
   return { scan: scan, classify: classify, classifyTag: classifyTag, endnoteCitation: endnoteCitation, endnoteMeta: endnoteMeta,

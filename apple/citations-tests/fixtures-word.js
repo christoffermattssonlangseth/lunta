@@ -95,4 +95,22 @@ const NODES = [
   { field: ' ADDIN EN.REFLIST ' }
 ];
 
-module.exports = { documentXML, NODES, ZOTERO_CODE, EN_INLINE_CODE, EN_INLINE_XML, EN_DATA_XML, MENDELEY_CODE, MENDELEY_CITE_TAG, ZOTERO_BIBL_CODE, b64 };
+/** Long EndNote citations, one after another (each the XML base64 in <w:fldData>, an EN.CITE.DATA
+ *  field nested in the EN.CITE one), then EndNote's bibliography: {xml, nodes} with Word listing
+ *  the nested fields as fields of their own. */
+function endnoteLong(titles) {
+  const cite = (title, i) => '<EndNote><Cite><Author>Author' + i + '</Author><Year>2021</Year><RecNum>' + (40 + i) + '</RecNum>' +
+    '<DisplayText>(Author' + i + ', 2021)</DisplayText><record><rec-number>' + (40 + i) + '</rec-number><ref-type name="Journal Article">17</ref-type>' +
+    '<contributors><authors><author>Author' + i + ', Ann</author></authors></contributors><titles><title>' + esc(title) + '</title></titles>' +
+    '<dates><year>2021</year></dates><electronic-resource-num>10.5555/long' + i + '</electronic-resource-num></record></Cite></EndNote>';
+  const paras = titles.map((title, i) => P(t('Long ' + i + ' '), begin(b64(cite(title, i))), instr(' ADDIN EN.CITE '), begin(b64(cite(title, i))), instr(' ADDIN EN.CITE.DATA '), end,
+    sep, t('(Author' + i + ', 2021)'), end)).join('') +
+    '<w:p>' + begin() + instr(' ADDIN EN.REFLIST ') + sep + t('Author0 A (2021).') + end + '</w:p>';
+  const xml = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' + paras + '<w:sectPr/></w:body></w:document>';
+  const nodes = [];
+  titles.forEach((_, i) => { nodes.push({ field: ' ADDIN EN.CITE ', name: 'en' + i }); nodes.push({ field: ' ADDIN EN.CITE.DATA ', parent: 'en' + i }); });
+  nodes.push({ field: ' ADDIN EN.REFLIST ' });
+  return { xml, nodes };
+}
+
+module.exports = { documentXML, NODES, endnoteLong, ZOTERO_CODE, EN_INLINE_CODE, EN_INLINE_XML, EN_DATA_XML, MENDELEY_CODE, MENDELEY_CITE_TAG, ZOTERO_BIBL_CODE, b64 };

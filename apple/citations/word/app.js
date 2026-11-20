@@ -556,6 +556,8 @@ function readForeign(ctx) {
       if (!c || c.kind === 'data') return;
       var at = -1;
       for (var j = k; j < fields.items.length; j++) {
+        // Word may list EndNote's nested EN.CITE.DATA as a field of its own: never a citation
+        if (/^\s*ADDIN\s*EN\.CITE\.DATA\b/.test(fields.items[j].code || '')) continue;
         if (LuntaFields.sameCode(fields.items[j].code, f.instr)) { at = j; k = j + 1; break; }
       }
       if (at < 0) { out.unreadable++; return; }
