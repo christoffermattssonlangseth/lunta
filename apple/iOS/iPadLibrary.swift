@@ -19,6 +19,7 @@ struct AdaptiveLibrary: View {
         }
         .libraryImport()   // import from Zotero, Mendeley… (+ › Import Library)
         .referenceChecks()   // Check a Reference List, retractions, published versions (Checks.swift)
+        .outlineSheet()   // Outline from Highlights (Outline.swift)
     }
 }
 
@@ -148,6 +149,7 @@ struct iPadLibrary: View {
                         }
                     } label: { Image(systemName: "arrow.up.arrow.down") }
                 }
+                ToolbarItem(placement: .topBarTrailing) { ListMoreMenu() }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { asking.toggle() } label: { Label("Ask", systemImage: "sparkles") }

@@ -112,6 +112,7 @@ struct LibraryWindow: View {
             BibImportReportView(result: r) { BibFiles.shared.choose(source: r.folderID, name: r.folder, model: model) }
         }
         .referenceChecks()   // Check a Reference List, retractions, published versions (Checks.swift)
+        .outlineSheet()   // Outline from Highlights (Outline.swift)
         .modifier(EditSheet(editing: $editing))
         .onReceive(NotificationCenter.default.publisher(for: .luntaAddPaper)) { _ in addingPaper = true }
         .onReceive(NotificationCenter.default.publisher(for: .luntaAskCompare)) { n in
@@ -283,6 +284,8 @@ struct Sidebar: View {
                                     prompt = NameRequest(title: "Rename Tag", initial: t) { model.renameTag(t, $0) }
                                 }
                                 Button("Remove Tag from All Papers", role: .destructive) { model.deleteTag(t) }
+                                Divider()
+                                Button("Outline from Highlights…") { OutlineUI.shared.open(model.outlineIDs(tag: t), scope: "the tag “\(t)”") }
                             }
                     }
                 }
@@ -324,6 +327,7 @@ struct Sidebar: View {
             })
             .contextMenu {
                 Button("Summarize with Ask") { NotificationCenter.default.post(name: .luntaAskFolder, object: c.id) }
+                Button("Outline from Highlights…") { OutlineUI.shared.open(model.outlineIDs(folder: c.id), scope: "“\(c.name)”") }
                 Divider()
                 Button("New Subfolder…") { newFolder(parent: c) }
                 Button("Rename…") {
@@ -528,6 +532,9 @@ struct PaperMenu: View {
         Button("Make Natural Narration") { NarrationRenderer.shared.enqueue(ids.filter { model.paper($0)?.hasEpub == true }) }
         Divider()
         Button("Check for Retractions and Published Versions") { Task { await model.checkUpdates(ids) } }
+        Button("Outline from Highlights…") {
+            OutlineUI.shared.open(ids, scope: ids.count == 1 ? "this paper" : "the \(ids.count) papers selected")
+        }
         if ids.count == 1, let p = model.paper(ids[0]), p.hasEpub || p.hasPdf {
             Button("Check This Paper's References") { Task { await model.checkPaperReferences(p.id) } }
         }

@@ -248,6 +248,8 @@ struct LuntaCommands: Commands {
             Divider()
             Button("Find Missing PDFs") { Task { await model?.findMissingPDFs() } }
             Button("Make Missing Reading Views") { Task { await model?.makeReadingViews() } }
+            Divider()
+            Button("Outline from Highlights…") { model?.outlineOfList() }
         }
     }
 

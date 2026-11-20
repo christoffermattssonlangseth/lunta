@@ -114,6 +114,7 @@ struct LibraryView: View {
                         }
                     } label: { Image(systemName: "arrow.up.arrow.down") }
                 }
+                ToolbarItem(placement: .topBarTrailing) { ListMoreMenu() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { asking = true } label: { Image(systemName: "sparkles") }
@@ -242,6 +243,9 @@ struct LibraryHome: View {
                         Button("Rename…", systemImage: "pencil") {
                             prompt = NameRequest(title: "Rename Folder", initial: item.folder.name, action: "Rename") { model.renameFolder(item.folder.id, $0) }
                         }
+                        Button("Outline from Highlights…", systemImage: "list.bullet.indent") {
+                            OutlineUI.shared.open(model.outlineIDs(folder: item.folder.id), scope: "“\(item.folder.name)”")
+                        }
                         Button("Delete Folder", systemImage: "trash", role: .destructive) { model.deleteFolder(item.folder.id) }
                     }
             }
@@ -261,7 +265,14 @@ struct LibraryHome: View {
         }
         if !model.tags.isEmpty {
             Section("Tags") {
-                ForEach(model.tags, id: \.self) { t in place(.tag(t), t, "tag") }
+                ForEach(model.tags, id: \.self) { t in
+                    place(.tag(t), t, "tag")
+                        .contextMenu {
+                            Button("Outline from Highlights…", systemImage: "list.bullet.indent") {
+                                OutlineUI.shared.open(model.outlineIDs(tag: t), scope: "the tag “\(t)”")
+                            }
+                        }
+                }
             }
         }
         Section {
