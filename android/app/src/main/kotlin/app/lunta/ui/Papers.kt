@@ -90,6 +90,13 @@ fun PapersScreen(model: AppModel, place: Place) {
                                         LibraryImport.share(model, ctx, rows.map { it.paper.id }, ris, model.placeTitle(place))
                                     })
                                 }
+                                HorizontalDivider()
+                                DropdownMenuItem({ Text("Outline from highlights…") }, {
+                                    shareMenu = false
+                                    val title = model.placeTitle(place)
+                                    val what = if (query.isBlank()) "“$title”" else "the search “${query.trim()}” in $title"
+                                    model.outline.ask(what, rows.map { it.paper.id })
+                                })
                             }
                         }
                     }

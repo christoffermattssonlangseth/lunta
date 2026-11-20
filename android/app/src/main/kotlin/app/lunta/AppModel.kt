@@ -110,6 +110,9 @@ class AppModel(val app: Application) {
     val imports = LibraryImport(this)
     /** Check a Reference List, retractions and published versions (Checks.kt). */
     val checks = ReferenceChecks(this)
+    /** Tidy library and Outline from highlights (Tidy.kt). */
+    val tidy = LibraryTidy(this)
+    val outline = HighlightsOutline(this)
     /** New for You: the daily feed, shared with the other devices through the library folder. */
     val forYou by lazy { ForYouModel(this) }
 

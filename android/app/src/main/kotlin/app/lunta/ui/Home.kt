@@ -35,6 +35,7 @@ fun HomeScreen(model: AppModel) {
     var settings by remember { mutableStateOf(false) }
     var newFolder by remember { mutableStateOf<String?>(null) }   // parent id, "" = top level
     var folderMenu by remember { mutableStateOf<PaperCollection?>(null) }
+    var tagMenu by remember { mutableStateOf<String?>(null) }
     var renaming by remember { mutableStateOf<PaperCollection?>(null) }
     var deleting by remember { mutableStateOf<PaperCollection?>(null) }
     val collapsed = remember { mutableStateListOf<String>() }
@@ -59,6 +60,7 @@ fun HomeScreen(model: AppModel) {
                             HorizontalDivider()
                             DropdownMenuItem({ Text("Check a reference list…") }, { menu = false; model.checks.asking = true }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.FactCheck, null) })
                             DropdownMenuItem({ Text("Check for retractions and published versions") }, { menu = false; model.checks.checkLibrary() }, leadingIcon = { Icon(Icons.Filled.Report, null) })
+                            DropdownMenuItem({ Text("Tidy library…") }, { menu = false; model.tidy.show() }, leadingIcon = { Icon(Icons.Filled.CleaningServices, null) })
                         }
                     }
                     IconButton({ settings = true }) { Icon(Icons.Filled.Settings, "Settings") }
@@ -99,6 +101,12 @@ fun HomeScreen(model: AppModel) {
                             DropdownMenuItem({ Text("New subfolder…") }, { folderMenu = null; newFolder = c.id })
                             DropdownMenuItem({ Text("Rename…") }, { folderMenu = null; renaming = c })
                             DropdownMenuItem({ Text("Delete…") }, { folderMenu = null; deleting = c })
+                            HorizontalDivider()
+                            DropdownMenuItem({ Text("Outline from highlights…") }, {
+                                folderMenu = null
+                                val ids = model.descendants(c.id)
+                                model.outline.ask("“${c.name}”", model.papers.filter { p -> p.collections.any { it in ids } }.map { it.id })
+                            })
                         }
                     }
                 }
@@ -114,7 +122,15 @@ fun HomeScreen(model: AppModel) {
                 if (model.tags.isEmpty()) item { Hint("Tags you add to papers show up here.") }
                 items(model.tags.size) { i ->
                     val t = model.tags[i]
-                    PlaceRow(Icons.Outlined.Sell, t, model.count(Place.Tag(t))) { model.push(Screen.Papers(Place.Tag(t))) }
+                    Box {
+                        PlaceRow(Icons.Outlined.Sell, t, model.count(Place.Tag(t)), onLongClick = { tagMenu = t }) { model.push(Screen.Papers(Place.Tag(t))) }
+                        DropdownMenu(tagMenu == t, { tagMenu = null }) {
+                            DropdownMenuItem({ Text("Outline from highlights…") }, {
+                                tagMenu = null
+                                model.outline.ask("the tag “$t”", model.papers.filter { t in it.tags }.map { it.id })
+                            })
+                        }
+                    }
                 }
                 model.syncError?.let { e ->
                     item { Text("Sync problem: $e", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
