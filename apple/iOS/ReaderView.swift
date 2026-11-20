@@ -13,6 +13,8 @@ struct ReaderView: View {
     @State private var pdfURL: URL?
     @State private var loading = true
     @State private var message: String?
+    /// The paper's file couldn't be downloaded (offline, say): why, with Try Again.
+    @State private var downloadProblem: String?
     @State private var showContents = false
     @State private var showReferences = false
     @StateObject private var references = ReferencesModel()
@@ -90,6 +92,15 @@ struct ReaderView: View {
                     .ignoresSafeArea(edges: .bottom)
                     // a paper being read aloud (this one too: its player is in the reading view)
                     .overlay(alignment: .bottom) { NowPlayingBar(style: .capsule).padding(.horizontal, 12).padding(.bottom, 12) }
+            } else if let downloadProblem {
+                ContentUnavailableView {
+                    Label("Not Downloaded", systemImage: "icloud.slash")
+                } description: {
+                    Text(downloadProblem)
+                } actions: {
+                    Button("Try Again") { Task { await retryDownload() } }.buttonStyle(.borderedProminent)
+                    Button("Paper Info") { showInfo = true }
+                }
             } else {
                 PaperInfoView(paperID: paperID, embedded: true)
             }
@@ -241,8 +252,9 @@ struct ReaderView: View {
         // scrolling, the bars stay
         .onChange(of: find.shown) { _, shown in withAnimation { chromeHidden = shown && paged && mode == .reading } }
         .task { await setUp() }
-        .onAppear { OpenReader.set(paperID); position.resume(); NowPlaying.shared.readerAppeared() }
+        .onAppear { OpenReader.set(paperID); model.reading.insert(paperID); position.resume(); NowPlaying.shared.readerAppeared() }
         .onDisappear {
+            model.reading.remove(paperID)
             NowPlaying.shared.readerDisappeared()
             // a figure opened over the reader: it's still there, at the same place
             guard figure == nil else { return }
@@ -465,32 +477,56 @@ struct ReaderView: View {
 
     private func load() async {
         guard let p = model.paper(paperID) else { loading = false; return }
+        downloadProblem = nil
+        var problem: String?
         if p.hasEpub {
-            message = model.needsDownload(paperID, .epub) ? "Downloading from iCloud…" : nil
+            message = model.needsDownload(paperID, .epub) ? "Downloading from \(model.downloadSource)…" : nil
             if model.inCloud, !model.needsDownload(paperID, .epub),
                CloudLibrary.isStale(URL(fileURLWithPath: model.lib.expectedFilePath(id: paperID, kind: .epub))) {
                 message = "Getting the newest version from iCloud…"
             }
-            if await model.ensureLocal(paperID, .epub) != nil {
+            switch await model.fetchFile(paperID, .epub) {
+            case .ready:
                 let lib = model.lib
                 let id = paperID
                 if let b = await Task.detached(operation: { try? lib.openEpub(id: id) }).value {
                     book = b
                     mode = .reading
                 }
+            case .failed(let why): problem = why
+            case .missing: break
             }
         }
         if book == nil, p.hasPdf {
             mode = .pdf
-            await loadPDF()
+            await loadPDF()   // (a reading view that couldn't be downloaded: the PDF instead, if it can be)
+        } else if book == nil {
+            downloadProblem = problem
         }
         if book != nil || pdfURL != nil { model.markOpened(p) }
         loading = false
     }
 
     private func loadPDF() async {
-        message = model.needsDownload(paperID, .pdf) ? "Downloading PDF from iCloud…" : nil
-        pdfURL = await model.ensureLocal(paperID, .pdf)
+        message = model.needsDownload(paperID, .pdf) ? "Downloading the PDF from \(model.downloadSource)…" : nil
+        switch await model.fetchFile(paperID, .pdf) {
+        case .ready(let u): pdfURL = u; downloadProblem = nil
+        case .failed(let why): downloadProblem = why
+        case .missing: break
+        }
+    }
+
+    /// Try Again after a failed download: the whole opening again (reading view first).
+    private func retryDownload() async {
+        downloadProblem = nil
+        if book == nil && pdfURL == nil {
+            loading = true
+            message = nil
+            await load()
+        } else if mode == .pdf, pdfURL == nil {
+            await loadPDF()
+        }
+        find.use(findBackend)
     }
 }
 

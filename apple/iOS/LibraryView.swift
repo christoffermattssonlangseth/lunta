@@ -149,7 +149,7 @@ struct LibraryView: View {
           ScrollViewReader { proxy in
             List {
               ForEach(model.papers) { p in
-                NavigationLink(value: p.id) { PaperRow(paper: p, snippet: model.snippets[p.id], updates: model.paperUpdates[p.id]) }
+                NavigationLink(value: p.id) { PaperRow(paper: p, snippet: model.snippets[p.id], updates: model.paperUpdates[p.id], inDrive: model.inDrive(p.id)) }
                     .id(p.id)
                     .listRowBackground(reveal == p.id ? Color.luntaTeal.opacity(0.18) : nil)
                     .modifier(PaperRowActions(paper: p, deleting: $deleting, organizing: $organizing, sharing: $sharing, prompt: $prompt))
@@ -335,6 +335,9 @@ struct PaperRow: View {
     var snippet: String?
     /// What the checks found (retracted, corrected, published): a badge.
     var updates: PaperUpdates? = nil
+    /// A Google Drive library synced on demand: the files that are in Drive and not on this device
+    /// (their pills get a cloud).
+    var inDrive: Set<FileKind> = []
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -362,15 +365,18 @@ struct PaperRow: View {
                 }
                 HStack(spacing: 4) {
                     UpdatesPill(updates: updates)
-                    if paper.hasEpub { Pill(text: "Read", icon: "book", color: .luntaTeal) }
-                    if paper.hasPdf { Pill(text: "PDF", color: .luntaCopper) }
-                    if paper.hasAudio { Pill(text: "Audio", icon: "waveform", color: .purple) }
+                    if paper.hasEpub { Pill(text: "Read", icon: inDrive.contains(.epub) ? Self.cloud : "book", color: .luntaTeal) }
+                    if paper.hasPdf { Pill(text: "PDF", icon: inDrive.contains(.pdf) ? Self.cloud : nil, color: .luntaCopper) }
+                    if paper.hasAudio { Pill(text: "Audio", icon: inDrive.contains(.audio) ? Self.cloud : "waveform", color: .purple) }
                     if paper.annotationCount > 0 { Pill(text: "\(paper.annotationCount)", icon: "highlighter", color: .secondary) }
                 }
             }
         }
         .padding(.vertical, 4)
+        .accessibilityHint(inDrive.isEmpty ? "" : "In Google Drive, downloaded when opened")
     }
+
+    static let cloud = PaperRowCloud.icon
 }
 
 struct DiscoverListIOS: View {
@@ -441,6 +447,7 @@ struct PaperRowActions: ViewModifier {
                 }
                 Button("Share…", systemImage: "square.and.arrow.up") { sharing = ShareTargetIOS(id: p.id) }
                 Button("Copy \\cite", systemImage: "doc.on.doc") { model.copyLatexCite([p.id]) }
+                DownloadMenuItems(ids: [p.id])
                 Menu("Watch", systemImage: "bell") { WatchMenu(paper: p) }
                 Menu("Check", systemImage: "checkmark.seal") {
                     Button("Retractions and Published Version", systemImage: "exclamationmark.shield") { Task { await model.checkUpdates([p.id]) } }

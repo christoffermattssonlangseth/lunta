@@ -63,6 +63,17 @@ final class LibraryModel: ObservableObject {
     let libraryURL: URL
     let inCloud: Bool
 
+    /// A Google Drive library synced on demand (iPhone and iPad, DriveLibrarySync): fetches a
+    /// paper's PDF, reading view or narration from Drive when it is needed. nil otherwise (the Mac
+    /// keeps every file; iCloud has its own placeholders).
+    weak var onDemand: DriveLibrarySync?
+    /// With `onDemand`: the paper files that are in Google Drive and not on this device
+    /// ("<id>/paper.pdf"), for the lists' cloud marks. The core counts them as present too
+    /// (`Library.setRemoteFiles`), so nothing takes them for missing.
+    @Published var remoteOnly: Set<String> = []
+    /// Papers open in a reader now (their files aren't removed from under it).
+    var reading: Set<String> = []
+
     nonisolated static var cacheURL: URL {
         if let t = testLibrary { return t.appendingPathComponent("Cache", isDirectory: true) }
         return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -285,22 +296,86 @@ final class LibraryModel: ObservableObject {
     }
     private var scanningPlaceholders = false
 
-    /// Makes sure a paper's file is on this device (downloading it from iCloud if needed).
-    func ensureLocal(_ id: String, _ kind: FileKind) async -> URL? {
-        guard lib.fileStatus(id: id, kind: kind) != .missing else { return nil }
+    /// What getting a paper's file gave.
+    enum FileFetch {
+        case ready(URL)
+        /// The paper has no such file.
+        case missing
+        /// It's in iCloud or Google Drive and couldn't be downloaded: why, for the user.
+        case failed(String)
+    }
+
+    /// Makes sure a paper's file is on this device: downloaded from iCloud, or from Google Drive
+    /// for a library synced on demand. Every place that reads a paper's file goes through here
+    /// (or `ensureLocal`).
+    func fetchFile(_ id: String, _ kind: FileKind) async -> FileFetch {
+        guard lib.fileStatus(id: id, kind: kind) != .missing else { return .missing }
         let url = URL(fileURLWithPath: lib.expectedFilePath(id: id, kind: kind))
-        if !inCloud { return url }
-        guard await CloudLibrary.download(url) else { return nil }
+        if onDemand != nil, kind == .pdf || kind == .epub || kind == .audio { DriveLibrarySync.used(id) }
+        if let drive = onDemand, !FileManager.default.fileExists(atPath: url.path) {
+            if let problem = await drive.fetch(id, [kind]) { return .failed(problem) }
+            return FileManager.default.fileExists(atPath: url.path) ? .ready(url) : .failed(DriveLibrarySync.notInDrive)
+        }
+        if !inCloud { return .ready(url) }
+        guard await CloudLibrary.download(url) else { return .failed("It couldn’t be downloaded from iCloud. Check that you’re online, then try again.") }
         // reading views and full texts can be remade on another device (e.g. figures added): if
         // iCloud has a newer version than the copy here, wait briefly for it
         if kind == .epub || kind == .fulltext { await CloudLibrary.freshen(url) }
-        return url
+        return .ready(url)
     }
 
-    /// True if the file still has to come down from iCloud (for "Downloading…" messages).
+    /// `fetchFile`, for callers that only need the file or nothing.
+    func ensureLocal(_ id: String, _ kind: FileKind) async -> URL? {
+        if case .ready(let u) = await fetchFile(id, kind) { return u }
+        return nil
+    }
+
+    /// True if the file still has to come down from iCloud or Google Drive (for "Downloading…" messages).
     func needsDownload(_ id: String, _ kind: FileKind) -> Bool {
+        if onDemand != nil { return lib.fileStatus(id: id, kind: kind) == .inCloud }
         guard inCloud, lib.fileStatus(id: id, kind: kind) != .missing else { return false }
         return !CloudLibrary.isDownloaded(URL(fileURLWithPath: lib.expectedFilePath(id: id, kind: kind)))
+    }
+
+    /// Where files that aren't here yet come from: "iCloud" or "Google Drive".
+    var downloadSource: String { onDemand != nil ? "Google Drive" : "iCloud" }
+
+    /// A library synced on demand: the file is in Google Drive and not on this device.
+    func isRemoteOnly(_ id: String, _ kind: FileKind) -> Bool {
+        onDemand != nil && remoteOnly.contains("\(id)/\(kind.fileName)")
+    }
+
+    /// A library synced on demand: which of the paper's PDF, reading view and narration are only in Google Drive.
+    func inDrive(_ id: String) -> Set<FileKind> {
+        guard onDemand != nil, !remoteOnly.isEmpty else { return [] }
+        return Set([FileKind.pdf, .epub, .audio].filter { remoteOnly.contains("\(id)/\($0.fileName)") })
+    }
+
+    /// Download (a library synced on demand): the paper's files, for reading offline.
+    func download(_ id: String) async {
+        guard let drive = onDemand else { return }
+        let title = paper(id)?.meta.title ?? ""
+        status = "Downloading “\(title.count > 50 ? String(title.prefix(47)) + "…" : title)” from Google Drive…"
+        let problem = await drive.fetch(id, [])
+        status = nil
+        if let problem { errorMessage = problem }
+    }
+
+    /// Remove Download (a library synced on demand): frees the space; the files stay in Google Drive.
+    func removeDownload(_ id: String) async {
+        guard let drive = onDemand else { return }
+        if let message = await drive.removeDownload(id) { errorMessage = message }
+    }
+
+    /// A library synced on demand: some of the paper's files (PDF, reading view, narration) are only in Google Drive.
+    func hasRemoteOnly(_ id: String) -> Bool {
+        onDemand != nil && [FileKind.pdf, .epub, .audio].contains { remoteOnly.contains("\(id)/\($0.fileName)") }
+    }
+
+    /// A library synced on demand: the paper's PDF, reading view or narration is on this device (can be removed).
+    func hasDownload(_ id: String) -> Bool {
+        guard onDemand != nil, DriveLibrarySync.onDemand else { return false }
+        return [FileKind.pdf, .epub, .audio].contains { lib.fileStatus(id: id, kind: $0) == .local }
     }
 
     /// Adds full texts to the search index a few papers at a time (files may first have to
@@ -847,9 +922,11 @@ final class LibraryModel: ObservableObject {
         let marker = "[Figure image not available]"
         let all = lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added)
         let lib = self.lib
+        let onDemand = self.onDemand != nil && DriveLibrarySync.onDemand
         let todo: [Paper] = await Task.detached(priority: .utility) {
             all.filter { p in
                 guard p.hasEpub, p.hasPdf, !UserDefaults.standard.bool(forKey: "figuresFromPDF.\(p.id)"),
+                      !onDemand || lib.fileStatus(id: p.id, kind: .pdf) != .inCloud,   // (a PDF left in Google Drive isn't downloaded for this)
                       let path = lib.filePath(id: p.id, kind: .fulltext),
                       let text = try? String(contentsOfFile: path, encoding: .utf8) else { return false }
                 return text.contains(marker)
@@ -954,6 +1031,24 @@ final class LibraryModel: ObservableObject {
         }
         reload()
         status = "Reading views: \(ok) more ready. The rest have no open version yet: save their PDF with the browser extension or drop it on the window."
+    }
+}
+
+/// The cloud on a file's pill in the lists: in Google Drive, not on this device.
+enum PaperRowCloud {
+    static let icon = "icloud.and.arrow.down"
+}
+
+extension FileKind {
+    /// The file's name in the paper's folder (the core's `FileKind::file_name`).
+    var fileName: String {
+        switch self {
+        case .pdf: return "paper.pdf"
+        case .epub: return "book.epub"
+        case .fulltext: return "fulltext.txt"
+        case .audio: return "narration.m4a"
+        case .audioIndex: return "narration.json"
+        }
     }
 }
 

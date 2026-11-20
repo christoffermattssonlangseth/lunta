@@ -120,6 +120,7 @@ final class ModelHolder: ObservableObject {
         if cloud { await CloudLibrary.prepareLogs(url) { _ in } }
         do {
             let lib = try await Task.detached { try LibraryModel.openLibrary(root: url) }.value
+            await preloadDrive(lib, root: url, cloud: cloud)
             let m = LibraryModel(lib: lib, root: url, inCloud: cloud)
             model = m
             started(m)
@@ -128,14 +129,22 @@ final class ModelHolder: ObservableObject {
         }
     }
 
+    /// A library in Google Drive (synced on demand): which files are in Drive and not here, before
+    /// the first listing, so no paper looks as if it had lost its PDF or reading view.
+    private func preloadDrive(_ lib: Library, root: URL, cloud: Bool) async {
+        guard !cloud, LibraryStorage.stored == .googleDrive else { return }
+        DriveLibrarySync.shared.preloaded = await Task.detached { DriveLibrarySync.preload(lib, root: root) }.value
+    }
+
     /// What runs once a library is open.
     private func started(_ model: LibraryModel) {
+        // (first: a library in Google Drive fetches files on demand from now on)
+        if LibraryStorage.stored == .googleDrive { DriveLibrarySync.shared.start(model) }
         // the citation card in a reader: add the cited paper (or say it's already there)
         ExternalLinks.onLunta = { url, web in Task { @MainActor in web.citationDone(await model.paperForCitation(url).label) } }
         Task { await model.importShared() }
         WatchCenter.shared.start(model)
         model.freshenReadingViews()
-        if LibraryStorage.stored == .googleDrive { DriveLibrarySync.shared.start(model) }
     }
 
     private func open() async {
@@ -151,6 +160,7 @@ final class ModelHolder: ObservableObject {
             progress = "Opening library…"
             do {
                 let m = try await Task.detached { try LibraryModel.openLibrary(root: url) }.value
+                await preloadDrive(m, root: url, cloud: cloud)
                 NSLog("Lunta: core opened after %.1fs", Date().timeIntervalSince(t0))
                 model = LibraryModel(lib: m, root: url, inCloud: cloud)
                 NSLog("Lunta: ready after %.1fs, %d papers", Date().timeIntervalSince(t0), model?.counts.all ?? -1)

@@ -129,6 +129,31 @@ enum LibraryLocation {
         return result
     }
 
+    /// The library's size in bytes: every file under `root`, iCloud's not-downloaded files
+    /// included (at their real size). nil if nothing could be read. Slow for a big library: off
+    /// the main thread.
+    static func size(of root: URL) -> UInt64? {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .fileSizeKey, .totalFileSizeKey]
+        guard let e = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: []) else { return nil }
+        var total: UInt64 = 0
+        for case let u as URL in e {
+            let name = u.lastPathComponent
+            guard let v = try? u.resourceValues(forKeys: Set(keys)) else { continue }
+            if v.isDirectory == true, name.hasPrefix(".") { e.skipDescendants(); continue }   // sync bookkeeping
+            guard v.isRegularFile == true else { continue }
+            if name.hasPrefix("."), name.hasSuffix(".icloud") {
+                // an iCloud placeholder (older systems): the real size is inside it
+                if let d = try? Data(contentsOf: u),
+                   let plist = try? PropertyListSerialization.propertyList(from: d, format: nil) as? [String: Any],
+                   let n = plist["NSURLFileSizeKey"] as? NSNumber { total += n.uint64Value }
+                continue
+            }
+            if name.hasPrefix(".") { continue }   // sync bookkeeping, partial downloads
+            total += UInt64(max(0, v.totalFileSize ?? v.fileSize ?? 0))
+        }
+        return total
+    }
+
     /// Where the copy a move leaves behind is, in words for the user.
     static func oldCopyDescription(_ s: LibraryStorage, root: URL) -> String {
         #if os(macOS)

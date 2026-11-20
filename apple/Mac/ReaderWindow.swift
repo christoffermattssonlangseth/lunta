@@ -21,6 +21,10 @@ struct ReaderWindow: View {
     @State private var figure: ReaderFigure?
     @State private var showFigures = false
     @State private var error: String?
+    /// The PDF is in iCloud or Google Drive and couldn't be downloaded: why (with Try Again).
+    @State private var pdfProblem: String?
+    /// Bumped when the PDF has been downloaded, to show it.
+    @State private var pdfArrived = 0
     @StateObject private var narrator = Narrator()
     @StateObject private var controller = ReaderController()
     @StateObject private var position = PositionKeeper()
@@ -110,16 +114,12 @@ struct ReaderWindow: View {
                             }
                             .overlay(alignment: .top) { ResumeNote(text: position.note).animation(.easeOut, value: position.note) }
                     } else if let error {
-                        ContentUnavailableView("No reading view", systemImage: "book", description: Text(error))
+                        readingError(error)
                     } else {
                         ProgressView()
                     }
                 case .pdf:
-                    if let url = model.fileURL(paperID, .pdf) {
-                        PDFReader(url: url, paperID: paperID, highlighter: pdfHighlights) { a in editingAnnotation = a }
-                    } else {
-                        ContentUnavailableView("No PDF", systemImage: "doc", description: Text("Use Find PDF in the library, or drop the PDF onto the library window."))
-                    }
+                    pdfPane
                 }
             }
             // retracted, corrected, or a preprint since published (Checks.swift)
@@ -224,7 +224,8 @@ struct ReaderWindow: View {
         .onChange(of: paper?.annotationCount) { refreshHighlights() }
         .onChange(of: highlightMode) { _, on in controller.setHighlightMode(on, color: hlColor) }
         .onChange(of: highlightModeColor) { controller.setHighlightMode(highlightMode, color: hlColor) }
-        .onDisappear { position.stop(paperID, model: model, controller: controller); summary.stop() }
+        .onAppear { model.reading.insert(paperID) }
+        .onDisappear { model.reading.remove(paperID); position.stop(paperID, model: model, controller: controller); summary.stop() }
         .onChange(of: summariesOn) { _, on in summary.setEnabled(on) }
         // stopped from the Now Playing bar or the Listen menu, or another paper is read aloud now
         .onReceive(NowPlaying.shared.settled) { if listening, Narrator.active !== narrator { closePlayer() } }
@@ -279,11 +280,55 @@ struct ReaderWindow: View {
         }
     }
 
+    /// The reading view couldn't be opened (not made yet, or not downloaded): why, with Try Again.
+    private func readingError(_ error: String) -> some View {
+        ContentUnavailableView {
+            Label("No reading view", systemImage: "book")
+        } description: {
+            Text(error)
+        } actions: {
+            if model.paper(paperID)?.hasEpub == true { Button("Try Again") { self.error = nil; Task { await load() } } }
+        }
+    }
+
+    /// The PDF: shown, downloaded first (iCloud or Google Drive), or not there.
+    @ViewBuilder
+    private var pdfPane: some View {
+        if let url = model.fileURL(paperID, .pdf) {
+            PDFReader(url: url, paperID: paperID, highlighter: pdfHighlights) { a in editingAnnotation = a }
+                .id(pdfArrived)
+        } else if model.paper(paperID)?.hasPdf == true, let pdfProblem {
+            ContentUnavailableView {
+                Label("PDF Not Downloaded", systemImage: "icloud.slash")
+            } description: {
+                Text(pdfProblem)
+            } actions: {
+                Button("Try Again") { self.pdfProblem = nil }
+            }
+        } else if model.paper(paperID)?.hasPdf == true {
+            // in iCloud or Google Drive: downloaded now
+            ProgressView("Downloading the PDF from \(model.downloadSource)…")
+                .task {
+                    switch await model.fetchFile(paperID, .pdf) {
+                    case .ready: pdfArrived += 1
+                    case .failed(let why): pdfProblem = why
+                    case .missing: break
+                    }
+                }
+        } else {
+            ContentUnavailableView("No PDF", systemImage: "doc", description: Text("Use Find PDF in the library, or drop the PDF onto the library window."))
+        }
+    }
+
     private func load() async {
         guard let p = model.paper(paperID) else { return }
         if let m = Self.requestedMode.removeValue(forKey: paperID) { mode = m }
         if !p.hasEpub { mode = p.hasPdf ? .pdf : .reading; error = "Use “Make Reading View” in the library."; return }
-        guard await model.ensureLocal(paperID, .epub) != nil else { error = "Couldn't download the reading view from iCloud."; return }
+        switch await model.fetchFile(paperID, .epub) {
+        case .ready: break
+        case .failed(let why): error = "The reading view isn’t downloaded. \(why)"; return
+        case .missing: error = "Use “Make Reading View” in the library."; return
+        }
         do {
             book = try model.lib.openEpub(id: paperID)
             model.markOpened(p)

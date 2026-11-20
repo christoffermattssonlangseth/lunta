@@ -13,10 +13,23 @@ enum StorageText {
         case .iCloud:
             return "Recommended if all your devices are Apple’s. Your Mac, iPhone and iPad keep the library in sync by themselves, through your own iCloud Drive."
         case .googleDrive:
+            #if os(macOS)
             return "For when you also use Lunta on Android, Windows or Linux, or can’t use iCloud (on a work Mac, say). The library is kept on this device and synced with a “Lunta” folder in your own Google Drive while Lunta is open."
+            #else
+            return "For when you also use Lunta on Android, Windows or Linux, or can’t use iCloud. The library is synced with a “Lunta” folder in your own Google Drive while Lunta is open; a paper’s PDF and reading view are downloaded when you open it."
+            #endif
         case .device:
             return "No syncing: the library stays on this device. Good for trying Lunta out; you can move it to iCloud or Google Drive later."
         }
+    }
+
+    /// Google Drive's space, and this library's size when it's known.
+    static func driveSpace(_ bytes: UInt64?) -> String {
+        var t = "Uses space in your Google Drive (free accounts have 15 GB, shared with Gmail and Photos)."
+        if let bytes, bytes > 0 {
+            t += " This library: about \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))."
+        }
+        return t
     }
 
     static var iCloudUnavailable: String {
@@ -119,6 +132,10 @@ struct StorageChoiceView: View {
                     }
                     Text(off ? StorageText.iCloudUnavailable : StorageText.explanation(s))
                         .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    if s == .googleDrive {
+                        // (no library here yet, so no size)
+                        Text(StorageText.driveSpace(nil)).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
                     if s == .googleDrive, let note = GoogleDriveClient.unverifiedNote {
                         Text(note).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
@@ -189,6 +206,11 @@ final class LibraryMover: ObservableObject {
         if from == .googleDrive {
             progress = "Syncing with Google Drive first…"
             await drive.syncAndWait()
+            // iPhone and iPad: papers whose files are only in Drive come down first, so the new place has them
+            if DriveLibrarySync.onDemand, let problem = await drive.fetchEverything(report: { self.progress = $0 }) {
+                error = "Your library stays in Google Drive, because not every paper could be downloaded to \(StorageText.thisDevice) first. \(problem)"
+                return
+            }
             drive.stop()
         }
         progress = "Copying your library…"
@@ -233,6 +255,8 @@ struct LibraryStorageView: View {
     @ObservedObject private var drive = DriveLibrarySync.shared
     @State private var confirming: LibraryStorage?
     @State private var iCloudAvailable = true
+    /// The library's size on disk (iCloud: including what isn't downloaded), for the Google Drive line.
+    @State private var librarySize: UInt64?
     #if os(macOS)
     @Environment(\.openWindow) private var openWindow
     #endif
@@ -244,7 +268,10 @@ struct LibraryStorageView: View {
             Section {
                 Label(current.name, systemImage: StorageText.icon(current)).font(.headline)
                 Text(where_).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                if current == .googleDrive { DriveSyncStatusView() }
+                if current == .googleDrive {
+                    DriveSyncStatusView()
+                    DriveDownloadsView()
+                }
             } header: { Text("Your library is in") }
 
             Section {
@@ -276,6 +303,11 @@ struct LibraryStorageView: View {
         .frame(minHeight: 420)
         #endif
         .task { iCloudAvailable = await Task.detached { CloudLibrary.iCloudURL() != nil }.value }
+        .task {
+            guard current != .googleDrive else { return }
+            let root = model.libraryURL
+            librarySize = await Task.detached(priority: .utility) { LibraryLocation.size(of: root) }.value
+        }
         .alert(confirming.map { moveTitle($0).replacingOccurrences(of: "…", with: "?") } ?? "", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }), presenting: confirming) { s in
             Button(s == .googleDrive ? "Sign In and Move" : "Move") { start(s) }
             #if os(macOS)
@@ -295,6 +327,9 @@ struct LibraryStorageView: View {
             return model.inCloud ? "Synced with your other Apple devices through your iCloud Drive."
                 : "iCloud isn’t available right now, so Lunta is using the copy on \(StorageText.thisDevice)."
         case .googleDrive:
+            if DriveLibrarySync.onDemand {
+                return "Synced with the “\(DriveLibrarySync.folderName)” folder in your Google Drive. Papers, notes and highlights are kept on \(StorageText.thisDevice); a paper’s PDF and reading view are downloaded when you open it."
+            }
             return "Kept on \(StorageText.thisDevice) and synced with the “\(DriveLibrarySync.folderName)” folder in your Google Drive."
         case .device:
             #if os(macOS)
@@ -329,6 +364,7 @@ struct LibraryStorageView: View {
             #endif
         }
         if s == .googleDrive {
+            t += "\n\n" + StorageText.driveSpace(librarySize)
             t += "\n\nIf your Google Drive already has a Lunta library (from Android, say), the two are combined."
             if !drive.connected, let note = GoogleDriveClient.unverifiedNote { t += "\n\n" + note }
         }
@@ -356,7 +392,9 @@ struct DriveSyncStatusView: View {
                 if drive.syncing {
                     SyncProgressLine(progress: drive.progress)
                     if drive.lastSync == nil {
-                        Text("The first sync copies the whole library, which can take a while.").font(.caption).foregroundStyle(.secondary)
+                        Text(DriveLibrarySync.onDemand
+                             ? "The first sync gets the library’s papers, notes and highlights; PDFs and reading views stay in Google Drive until you open them."
+                             : "The first sync copies the whole library, which can take a while.").font(.caption).foregroundStyle(.secondary)
                     }
                 } else if let last = drive.lastSync {
                     Text("Last sync \(last.formatted(.relative(presentation: .named)))\(drive.lastSummary.map { ": \($0)" } ?? "")")
@@ -387,6 +425,133 @@ struct DriveSyncStatusView: View {
             if drive.folderNotVisible {
                 Button("Choose Your Lunta Folder…") { Task { await drive.chooseFolder() } }.disabled(drive.syncing || drive.signingIn)
             }
+        }
+    }
+}
+
+/// A Google Drive library: "Download papers when you open them", how much is on this device,
+/// Download All, and removing downloads not opened for a while.
+struct DriveDownloadsView: View {
+    @ObservedObject private var drive = DriveLibrarySync.shared
+    @AppStorage(DriveLibrarySync.onDemandKey) private var onDemand = DriveLibrarySync.onDemandDefault
+    @State private var unused: (ids: [String], bytes: UInt64)?
+    @State private var removing = false
+    @State private var removed: String?
+
+    static var explanation: String {
+        #if os(macOS)
+        return "Only the papers you open are kept on this Mac; the rest stay in Google Drive. Good for a work computer or a small disk. Full texts are always kept on the Mac, so search and the AI assistant still see every paper."
+        #else
+        return "Only the papers you open are kept on \(StorageText.thisDevice); the rest stay in Google Drive. Full texts are always kept here, so search still finds every paper."
+        #endif
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Download papers when you open them", isOn: $onDemand)
+                .onChange(of: onDemand) { _, _ in removed = nil; drive.onDemandChanged() }
+            Text(onDemand ? Self.explanation : Self.explanation + " Off: every paper is downloaded.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let d = drive.downloads, d.papers > 0 {
+                Text(d.text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if let line = drive.downloadingAll {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(line).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Stop") { drive.cancelDownloadAll() }
+                }
+            } else if onDemand {
+                HStack {
+                    if let d = drive.downloads, d.bytesInDrive > 0 {
+                        Button("Download All for Offline Reading") { drive.downloadAll() }.disabled(!drive.connected)
+                    }
+                    Spacer()
+                    Button("Remove Downloads Not Opened in 30 Days…") {
+                        Task { unused = await drive.unusedDownloads(days: 30) }
+                    }
+                    .disabled(removing || drive.downloads?.bytesHere ?? 0 == 0)
+                }
+                #if os(macOS)
+                .buttonStyle(.link)
+                #else
+                .buttonStyle(.borderless)
+                #endif
+                if removing { ProgressView().controlSize(.small) }
+                if let removed { Text(removed).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                Text("To free space paper by paper, choose Remove Download in its menu: it stays in Google Drive and downloads again when you open it.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .alert(unusedTitle, isPresented: Binding(get: { unused != nil }, set: { if !$0 { unused = nil } }), presenting: unused) { u in
+            if !u.ids.isEmpty {
+                Button("Remove Downloads", role: .destructive) {
+                    removing = true
+                    Task {
+                        removed = await drive.removeDownloads(u.ids) ?? "Removed. Those papers stay in Google Drive and download again when you open them."
+                        removing = false
+                    }
+                }
+            }
+            Button(u.ids.isEmpty ? "OK" : "Cancel", role: .cancel) {}
+        } message: { u in
+            Text(u.ids.isEmpty ? "Every paper downloaded to \(StorageText.thisDevice) was opened in the last 30 days."
+                 : "\(u.ids.count.formatted()) paper\(u.ids.count == 1 ? "" : "s") not opened here in 30 days take \(ByteCountFormatter.string(fromByteCount: Int64(u.bytes), countStyle: .file)). Their PDFs and reading views are removed from \(StorageText.thisDevice) and stay in Google Drive; notes and highlights stay too.")
+        }
+    }
+
+    private var unusedTitle: String { unused?.ids.isEmpty == false ? "Remove Downloads Not Opened in 30 Days?" : "Nothing to Remove" }
+}
+
+/// Papers' Download / Remove Download, for their context menu (a Google Drive library; nothing
+/// otherwise). Remove Download only when papers are downloaded as they're opened.
+struct DownloadMenuItems: View {
+    @EnvironmentObject var model: LibraryModel
+    let ids: [String]
+
+    var body: some View {
+        if model.onDemand != nil {
+            let remote = ids.filter { model.hasRemoteOnly($0) }
+            if !remote.isEmpty {
+                Button(remote.count == 1 ? "Download" : "Download \(remote.count) Papers", systemImage: "icloud.and.arrow.down") {
+                    Task { for id in remote { await model.download(id) } }
+                }
+            }
+            if DriveLibrarySync.onDemand {
+                let here = ids.filter { model.hasDownload($0) && !model.reading.contains($0) }
+                if !here.isEmpty {
+                    Button("Remove Download", systemImage: "xmark.icloud") { Task { for id in here { await model.removeDownload(id) } } }
+                }
+            }
+        }
+    }
+}
+
+/// A paper's info: in Google Drive (Download) or downloaded (Remove Download), for a Google Drive
+/// library synced on demand; nothing otherwise.
+struct PaperDownloadLine: View {
+    @EnvironmentObject var model: LibraryModel
+    let paperID: String
+    @State private var busy = false
+
+    var body: some View {
+        if model.onDemand != nil {
+            if !model.inDrive(paperID).isEmpty {
+                line("In Google Drive; downloaded when you open it", icon: "icloud.and.arrow.down", button: "Download") { await model.download(paperID) }
+            } else if DriveLibrarySync.onDemand, model.hasDownload(paperID), !model.reading.contains(paperID) {
+                line("Downloaded to \(StorageText.thisDevice)", icon: "checkmark.icloud", button: "Remove Download") { await model.removeDownload(paperID) }
+            }
+        }
+    }
+
+    private func line(_ text: String, icon: String, button: String, action: @escaping () async -> Void) -> some View {
+        HStack(spacing: 8) {
+            Label(text, systemImage: icon).font(.footnote).foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            if busy { ProgressView().controlSize(.small) }
+            Button(button) { busy = true; Task { await action(); busy = false } }
+                .font(.footnote).disabled(busy)
         }
     }
 }

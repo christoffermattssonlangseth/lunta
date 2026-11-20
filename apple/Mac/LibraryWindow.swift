@@ -418,9 +418,16 @@ struct PaperTable: View {
             TableColumn("") { p in
                 HStack(spacing: 4) {
                     UpdatesPill(updates: model.paperUpdates[p.id])
-                    if p.hasEpub { Pill(text: "", icon: "book", color: .luntaTeal).help("Has a reading view") }
-                    if p.hasPdf { Pill(text: "PDF", color: .luntaCopper) }
-                    if p.hasAudio { Pill(text: "Audio", icon: "waveform", color: .purple) }
+                    let drive = model.inDrive(p.id)
+                    if p.hasEpub {
+                        Pill(text: "", icon: drive.contains(.epub) ? PaperRowCloud.icon : "book", color: .luntaTeal)
+                            .help(drive.contains(.epub) ? "Has a reading view, in Google Drive (downloaded when you open it)" : "Has a reading view")
+                    }
+                    if p.hasPdf {
+                        Pill(text: "PDF", icon: drive.contains(.pdf) ? PaperRowCloud.icon : nil, color: .luntaCopper)
+                            .help(drive.contains(.pdf) ? "In Google Drive, downloaded when you open it" : "")
+                    }
+                    if p.hasAudio { Pill(text: "Audio", icon: drive.contains(.audio) ? PaperRowCloud.icon : "waveform", color: .purple) }
                     if p.annotationCount > 0 { Pill(text: "\(p.annotationCount)", icon: "highlighter", color: .secondary) }
                 }
             }
@@ -533,6 +540,7 @@ struct PaperMenu: View {
         }
         Button("Folders & Tags…") { NotificationCenter.default.post(name: .luntaOrganize, object: ids) }
         Divider()
+        DownloadMenuItems(ids: ids)
         Button("Find PDF") { Task { for id in ids { await model.findPDF(id) } } }
         Button("Make Reading View") { Task { await model.makeReadingViews(Array(ids)) } }
         Button("Make Natural Narration") { NarrationRenderer.shared.enqueue(ids.filter { model.paper($0)?.hasEpub == true }) }

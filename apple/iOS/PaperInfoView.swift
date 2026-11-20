@@ -35,6 +35,7 @@ struct PaperInfoView: View {
                         Text(p.meta.authors.joined(separator: ", ")).font(.subheadline).foregroundStyle(.secondary).lineLimit(5)
                     }
                     actions(p)
+                    PaperDownloadLine(paperID: p.id)
                     if !p.hasPdf {
                         Button { choosingPDF = true } label: { Label("Have the PDF? Add it from Files…", systemImage: "doc.badge.plus") }
                             .font(.callout).tint(.luntaTeal)

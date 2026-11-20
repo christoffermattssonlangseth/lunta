@@ -152,6 +152,10 @@ final class ModelHolder: ObservableObject {
         if cloud { await CloudLibrary.prepareLogs(url) { line in Task { @MainActor in self.progress = line } } }
         do {
             let lib = try await Task.detached { try LibraryModel.openLibrary(root: url) }.value
+            if test == nil, !cloud, LibraryStorage.stored == .googleDrive {
+                // what's in Google Drive and not on this Mac counts as present from the start
+                DriveLibrarySync.shared.preloaded = await Task.detached { DriveLibrarySync.preload(lib, root: url) }.value
+            }
             model = LibraryModel(lib: lib, root: url, inCloud: cloud)
         } catch { self.error = "Could not open the library: \(error.readable)" }
         if let model, test != nil {

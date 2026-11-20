@@ -26,6 +26,8 @@ struct SharePanel: View {
     @State private var bib: URL?
     @State private var preparing = true
     @State private var copied: String?
+    /// Files that are in iCloud or Google Drive and couldn't be downloaded (offline, say).
+    @State private var notDownloaded: String?
 
     private var papers: [Paper] { ids.compactMap { model.paper($0) } }
     private var one: Paper? { papers.count == 1 ? papers.first : nil }
@@ -41,8 +43,12 @@ struct SharePanel: View {
             }
             group("Files") {
                 if preparing {
-                    HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Getting the files ready…").foregroundStyle(.secondary) }
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(papers.contains { model.hasRemoteOnly($0.id) } ? "Downloading the files from Google Drive…" : "Getting the files ready…").foregroundStyle(.secondary)
+                    }
                 } else {
+                    if let notDownloaded { Text(notDownloaded).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
                     if !pdfs.isEmpty {
                         ShareLink(items: pdfs) { row(pdfs.count == 1 ? "PDF" : "\(pdfs.count) PDFs", "doc.richtext", pdfs.count == 1 ? pdfs[0].lastPathComponent : nil) }
                     }
@@ -149,10 +155,20 @@ struct SharePanel: View {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Lunta Share", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var p: [URL] = [], e: [URL] = []
+        var failed = 0, problem: String?
         for paper in papers {
             let name = Self.fileName(paper)
-            if paper.hasPdf, let src = await model.ensureLocal(paper.id, .pdf) { if let u = Self.copy(src, to: dir, name: name + ".pdf") { p.append(u) } }
-            if paper.hasEpub, let src = await model.ensureLocal(paper.id, .epub) { if let u = Self.copy(src, to: dir, name: name + ".epub") { e.append(u) } }
+            for (kind, ext) in [(FileKind.pdf, "pdf"), (.epub, "epub")] where kind == .pdf ? paper.hasPdf : paper.hasEpub {
+                switch await model.fetchFile(paper.id, kind) {
+                case .ready(let src):
+                    if let u = Self.copy(src, to: dir, name: name + "." + ext) { if kind == .pdf { p.append(u) } else { e.append(u) } }
+                case .failed(let why): failed += 1; problem = problem ?? why
+                case .missing: break
+                }
+            }
+        }
+        if let problem {
+            notDownloaded = failed == 1 ? "One file isn’t here: \(problem)" : "\(failed) files aren’t here: \(problem)"
         }
         let b = dir.appendingPathComponent(papers.count == 1 ? Self.fileName(papers[0]) + ".bib" : "Lunta bibliography (\(papers.count) papers).bib")
         try? model.bibtex(ids).write(to: b, atomically: true, encoding: .utf8)
