@@ -61,7 +61,33 @@ fn open() -> Result<Arc<Library>, String> {
             id
         }
     };
-    Library::open(root.display().to_string(), cache.display().to_string(), device).map_err(|e| e.to_string())
+    let lib = Library::open(root.display().to_string(), cache.display().to_string(), device).map_err(|e| e.to_string())?;
+    apply_remote_files(&lib);
+    Ok(lib)
+}
+
+/// A Mac whose library is in Google Drive and downloads papers when they're opened: the app lists
+/// the paper files that are only in Drive (remote-files.json, for this library root). The agent
+/// doesn't download them itself (it has no Drive sign-in, and two syncs of one folder would race):
+/// they count as present (no find_pdf over a PDF that's in Drive, no "no reading view"), and what
+/// needs the file itself says it isn't downloaded. Full texts are always on the Mac, so read_paper
+/// and search see every paper. Re-read when the file changes.
+fn apply_remote_files(lib: &Library) {
+    static SEEN: std::sync::Mutex<Option<std::time::SystemTime>> = std::sync::Mutex::new(None);
+    let f = home().join("Library/Application Support/Lunta/remote-files.json");
+    let modified = std::fs::metadata(&f).and_then(|m| m.modified()).ok();
+    let mut seen = SEEN.lock().unwrap();
+    if seen.is_some() && *seen == modified {
+        return;
+    }
+    *seen = modified;
+    let files = std::fs::read_to_string(&f)
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .filter(|v| v.get("root").and_then(|r| r.as_str()).map(|r| PathBuf::from(r) == library_root()).unwrap_or(false))
+        .and_then(|v| v.get("files").and_then(|f| f.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>()))
+        .unwrap_or_default();
+    lib.set_remote_files(files);
 }
 
 fn uuid_like() -> String {
@@ -105,6 +131,11 @@ fn details(lib: &Library, p: &Paper) -> Value {
         .into_iter()
         .map(|a| json!({"id": a.id, "kind": format!("{:?}", a.kind).to_lowercase(), "color": a.color, "quote": a.quote, "note": a.note}))
         .collect();
+    let not_downloaded: Vec<&str> = [(FileKind::Pdf, "pdf"), (FileKind::Epub, "reading_view_epub"), (FileKind::Audio, "narration_audio")]
+        .iter()
+        .filter(|(k, _)| lib.file_status(p.id.clone(), *k) == FileStatus::InCloud)
+        .map(|(_, n)| *n)
+        .collect();
     json!({
         "id": p.id,
         "title": p.meta.title,
@@ -126,6 +157,8 @@ fn details(lib: &Library, p: &Paper) -> Value {
             "full_text": file(FileKind::Fulltext),
             "narration_audio": file(FileKind::Audio),
         },
+        // in iCloud or Google Drive, not downloaded to this Mac (opening the paper in Lunta downloads it)
+        "not_downloaded": not_downloaded,
         "open_in_app": format!("lunta://open?id={}", p.id),
         "doi_link": if p.meta.doi.is_empty() { Value::Null } else { json!(format!("https://doi.org/{}", p.meta.doi)) },
     })
@@ -696,6 +729,7 @@ fn serve() {
                 let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let args = params.get("arguments").cloned().unwrap_or(json!({}));
                 let _ = lib.refresh(); // see changes made in the apps since the last call
+                apply_remote_files(&lib);
                 Ok(match call(&lib, name, &args) {
                     Ok(v) => json!({"content": [{"type": "text", "text": serde_json::to_string_pretty(&v).unwrap()}], "isError": false}),
                     Err(e) => json!({"content": [{"type": "text", "text": e}], "isError": true}),

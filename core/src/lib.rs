@@ -286,7 +286,27 @@ impl Library {
         Ok(())
     }
 
-    /// Where a paper's file is: on this device, only in iCloud (not downloaded yet), or nowhere.
+    /// Paper files that are in the library's cloud folder but not on this device: a Google Drive
+    /// library synced on demand (an iPhone's, `LibrarySync::remote_paper_files`). Library-relative
+    /// paths ("papers/<id>/paper.pdf"); replaces the previous set. They count as present, like
+    /// iCloud's placeholders: `has_pdf`/`has_epub` are true and `file_status` says `InCloud`, so
+    /// nothing offers to find or remake them. Returns true if any paper's PDF / reading view /
+    /// narration flags changed (reload the list).
+    pub fn set_remote_files(&self, paths: Vec<String>) -> bool {
+        let mut g = self.inner.lock().unwrap();
+        g.store.remote = paths.into_iter().filter(|p| p.starts_with("papers/") && !p.contains("..")).collect();
+        let ids: Vec<String> = g.state.papers.keys().cloned().collect();
+        let files: std::collections::HashMap<String, (bool, bool, bool)> = ids
+            .iter()
+            .map(|id| (id.clone(), (g.store.has_file(id, FileKind::Pdf), g.store.has_file(id, FileKind::Epub), g.store.has_file(id, FileKind::AudioIndex))))
+            .collect();
+        let changed = files != g.files;
+        g.files = files;
+        changed
+    }
+
+    /// Where a paper's file is: on this device, only in the cloud (iCloud, or the Google Drive
+    /// folder of a library synced on demand; not downloaded yet), or nowhere.
     pub fn file_status(&self, id: String, kind: FileKind) -> FileStatus {
         let g = self.inner.lock().unwrap();
         if g.store.file_path(&id, kind).exists() {
@@ -347,8 +367,10 @@ impl Library {
     /// Removes a paper and its files.
     pub fn delete_paper(&self, id: String) -> Result<()> {
         self.op(OpKind::DeletePaper { paper: id.clone() })?;
-        let g = self.inner.lock().unwrap();
+        let mut g = self.inner.lock().unwrap();
         let _ = std::fs::remove_dir_all(g.store.paper_dir(&id));
+        let prefix = format!("papers/{id}/");
+        g.store.remote.retain(|p| !p.starts_with(&prefix));
         Ok(())
     }
 
@@ -493,10 +515,11 @@ impl Library {
         let (text, location) = if self.file_path(paper.clone(), FileKind::Epub).is_some() {
             let book = self.open_epub(paper.clone())?;
             (highlight::dom_text(&std::fs::read_to_string(&book.combined)?), "epub")
+        } else if p.has_epub {
+            // (in iCloud or Google Drive: anchoring in the full text instead would put the highlight on the PDF)
+            return Err(CoreError::NotFound("the paper's reading view isn't downloaded on this device yet (it's in iCloud or Google Drive): open the paper in Lunta, then try again".into()));
         } else if let Some(ft) = self.file_path(paper.clone(), FileKind::Fulltext) {
             (std::fs::read_to_string(ft)?, "pdf")
-        } else if p.has_epub {
-            return Err(CoreError::NotFound("the paper's reading view isn't downloaded on this device yet".into()));
         } else {
             return Err(CoreError::NotFound("the paper has no reading view or full text to highlight in".into()));
         };

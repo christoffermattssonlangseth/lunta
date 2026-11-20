@@ -1,6 +1,6 @@
-//! UniFFI exports of the Drive pieces the Android app needs: sign-in (Custom Tab + PKCE, with the
-//! redirect handled by the app) and the Syncer. Types here are thin wrappers over the plain Rust
-//! ones in this module tree; the Apple build (no `drive` feature) never sees them.
+//! UniFFI exports of the Drive pieces the apps need: sign-in (Custom Tab or ASWebAuthenticationSession
+//! + PKCE, with the redirect handled by the app) and the Syncer. Types here are thin wrappers over the
+//! plain Rust ones in this module tree.
 
 use super::*;
 use crate::model::{CoreError, FileKind, Result};
@@ -127,6 +127,24 @@ pub struct PaperRemoteFile {
     pub local: bool,
 }
 
+/// A paper file on the remote (`LibrarySync::remote_paper_files`).
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct RemoteLibraryFile {
+    /// Library-relative: "papers/<id>/paper.pdf".
+    pub path: String,
+    pub size: u64,
+    pub local: bool,
+}
+
+/// What `LibrarySync::remove_download` did.
+#[derive(uniffi::Record, Clone, Debug)]
+pub struct RemovedDownload {
+    pub removed: u32,
+    /// Copies kept because they have changes Google Drive doesn't have yet.
+    pub kept: u32,
+    pub bytes: u64,
+}
+
 fn drive_root(name: String, id: Option<String>) -> DriveRoot {
     match id.filter(|s| !s.trim().is_empty()) {
         Some(id) => DriveRoot::Id(id),
@@ -233,6 +251,20 @@ impl LibrarySync {
     /// files were fetched.
     pub fn fetch_paper(&self, paper_id: String, kinds: Vec<FileKind>) -> Result<u32> {
         self.syncer.fetch_paper(&paper_id, &kinds)
+    }
+
+    /// Every paper file on the remote as of the last sync (offline). For a library synced on
+    /// demand: the paths that are not here go to `Library::set_remote_files`.
+    pub fn remote_paper_files(&self) -> Vec<RemoteLibraryFile> {
+        self.syncer.remote_paper_files().into_iter().map(|(path, size, local)| RemoteLibraryFile { path, size, local }).collect()
+    }
+
+    /// "Remove Download" (lazy mode): deletes this device's copies of a paper's PDF, EPUB and
+    /// narration that are safely in the remote, which keeps them; later syncs don't treat that
+    /// as a deletion. Copies with changes not uploaded yet are kept.
+    pub fn remove_download(&self, paper_id: String) -> Result<RemovedDownload> {
+        let (removed, kept, bytes) = self.syncer.remove_download(&paper_id)?;
+        Ok(RemovedDownload { removed, kept, bytes })
     }
 
     pub fn reset_state(&self) -> Result<()> {

@@ -32,7 +32,10 @@
 //! at most a few files redone (which are recognised as identical by md5 and cost no transfer).
 //!
 //! **Lazy**: with `SyncOptions::lazy`, big paper files (PDF, EPUB, narration) are not downloaded by a
-//! sync; `fetch_paper` / `fetch_file` get them on demand (e.g. when the Android app opens a paper).
+//! sync; `fetch_paper` / `fetch_file` get them on demand (e.g. when the Android app or an iPhone opens
+//! a paper). A big file that is only on the remote is never a deletion, whether it was never
+//! downloaded or its download was removed with `remove_download` (which records it as not here).
+//! Deleting a downloaded file any other way is still a deletion, passed on to the remote.
 
 use super::remote::*;
 use super::util::*;
@@ -716,6 +719,60 @@ impl Syncer {
             .filter(|(p, _)| p.starts_with(&prefix))
             .map(|(p, r)| (p[prefix.len()..].to_string(), r.size, self.abs(p).exists()))
             .collect()
+    }
+
+    /// Every paper file on the remote as of the last sync, for a library synced on demand:
+    /// (library-relative path, size, present locally). Offline; give the paths that are not here
+    /// to `Library::set_remote_files`.
+    pub fn remote_paper_files(&self) -> Vec<(String, u64, bool)> {
+        let st = self.state.lock().unwrap();
+        st.remote
+            .iter()
+            .filter(|(p, _)| self.classify(p) == Some(Kind::Paper))
+            .map(|(p, r)| (p.clone(), r.size, self.abs(p).exists()))
+            .collect()
+    }
+
+    /// "Remove Download": frees space by deleting this device's copies of a paper's big files
+    /// (PDF, EPUB, narration) that are safely on the remote, remembering them as not downloaded
+    /// (lazy mode), so later syncs leave them alone: not a deletion to pass on, not something to
+    /// download again until fetched. A copy with changes the remote doesn't have yet is kept.
+    /// Only in lazy mode (otherwise the next sync would download them again).
+    /// Returns (removed, kept, bytes freed).
+    pub fn remove_download(&self, paper_id: &str) -> Result<(u32, u32, u64)> {
+        if paper_id.is_empty() || paper_id.contains('/') || paper_id.starts_with('.') {
+            return Err(CoreError::Invalid("bad paper id".into()));
+        }
+        if !self.opts.lazy {
+            return Err(CoreError::Invalid("this library downloads every file; removing a download is only for a library synced on demand".into()));
+        }
+        let mut st = self.state.lock().unwrap();
+        let prefix = format!("papers/{paper_id}/");
+        let here: Vec<String> = st.remote.keys().filter(|p| p.starts_with(&prefix) && heavy(p)).cloned().collect();
+        let (mut removed, mut kept, mut bytes) = (0, 0, 0);
+        for p in here {
+            let abs = self.abs(&p);
+            let Some(l) = file_sig(&abs) else { continue };
+            let r = st.remote[&p].clone();
+            let safe = match st.synced.get(&p).cloned() {
+                // synced before and not changed here since (a newer remote version is fine: it wins anyway)
+                Some(mut s) if s.local => !self.local_changed(&p, &mut s, l),
+                // never recorded as here (or recorded as not downloaded): only if it is the remote's copy
+                _ => r.md5.is_some() && l.0 == r.size && md5_file(&abs).ok() == r.md5,
+            };
+            if !safe {
+                kept += 1;
+                continue;
+            }
+            fs::remove_file(&abs)?;
+            st.synced.insert(p.clone(), Synced { remote: r, local_size: 0, local_mtime: 0, local: false });
+            removed += 1;
+            bytes += l.0;
+        }
+        if removed > 0 {
+            self.save_state(&st)?;
+        }
+        Ok((removed, kept, bytes))
     }
 
     /// Downloads one file by its library-relative path (`papers/<id>/paper.pdf`) if it is not

@@ -513,6 +513,94 @@ fn lazy_mode_defers_big_files_until_fetched() {
     assert!(s.fetch_paper("nope", &[]).unwrap() == 0);
 }
 
+/// An iPhone with its library in Google Drive: the files left in Drive count as present (no
+/// "missing PDF", no remade reading view), "Remove Download" frees space without a sync taking it
+/// for a deletion, and a file deleted any other way still is one.
+#[test]
+fn remote_only_files_count_as_present_and_removed_downloads_are_not_deletions() {
+    let w = World::new();
+    let mac = w.mac();
+    let a = mac.lib.add_paper(meta("Alpha", ""), Some(b"pdf alpha".to_vec()), Some(b"epub alpha".to_vec()), Some("alpha text".into())).unwrap();
+    let b = mac.lib.add_paper(meta("Beta", ""), Some(b"pdf beta".to_vec()), None, None).unwrap();
+    let ph = w.api_with("phone", Box::new(LocalDirRemote::new(&w.remote)), true);
+    ph.sync();
+    let s = ph.syncer.as_ref().unwrap();
+    let (aid, bid) = (a.id.clone(), b.id.clone());
+
+    // before the app tells the library, the files look missing
+    assert!(!ph.lib.paper(aid.clone()).unwrap().has_pdf);
+    let remote_only: Vec<String> = s.remote_paper_files().into_iter().filter(|(_, _, here)| !here).map(|(p, _, _)| p).collect();
+    assert_eq!(remote_only.len(), 3, "{remote_only:?}"); // Alpha's pdf and epub, Beta's pdf
+    assert!(s.remote_paper_files().iter().any(|(p, _, here)| p == &format!("papers/{aid}/fulltext.txt") && *here));
+    assert!(ph.lib.set_remote_files(remote_only.clone()));
+    assert!(!ph.lib.set_remote_files(remote_only.clone())); // nothing new
+    let pa = ph.lib.paper(aid.clone()).unwrap();
+    assert!(pa.has_pdf && pa.has_epub);
+    assert!(ph.lib.paper(bid.clone()).unwrap().has_pdf);
+    assert_eq!(ph.lib.file_status(aid.clone(), FileKind::Pdf), FileStatus::InCloud);
+    assert_eq!(ph.lib.file_status(aid.clone(), FileKind::Fulltext), FileStatus::Local);
+    assert_eq!(ph.lib.file_status(bid.clone(), FileKind::Epub), FileStatus::Missing);
+    assert!(ph.lib.file_path(aid.clone(), FileKind::Pdf).is_none());
+    // a highlight needs the reading view itself (not the full text, which would put it on the PDF)
+    let e = ph.lib.anchor_highlight(aid.clone(), "alpha text".into(), None).unwrap_err().to_string();
+    assert!(e.contains("isn't downloaded"), "{e}");
+    // still present after a refresh and a reindex
+    ph.lib.reindex().unwrap();
+    assert!(ph.lib.paper(aid.clone()).unwrap().has_pdf);
+
+    // opening Alpha: fetched, now on the device
+    assert_eq!(s.fetch_paper(&aid, &[FileKind::Pdf, FileKind::Epub]).unwrap(), 2);
+    assert_eq!(ph.lib.file_status(aid.clone(), FileKind::Pdf), FileStatus::Local);
+
+    // Remove Download: gone here, kept in Drive, and syncs leave it that way
+    assert_eq!(s.remove_download(&aid).unwrap(), (2, 0, 19));
+    assert!(!ph.root.join(format!("papers/{aid}/paper.pdf")).exists());
+    assert!(ph.root.join(format!("papers/{aid}/fulltext.txt")).exists());
+    assert_eq!(s.status().not_downloaded, 3);
+    for _ in 0..2 {
+        let r = ph.sync();
+        assert_eq!((r.downloaded, r.uploaded, r.deleted_remote, r.deleted_local), (0, 0, 0, 0), "{r:?}");
+    }
+    assert_eq!(read(&w.remote.join(format!("papers/{aid}/paper.pdf"))), b"pdf alpha");
+    assert_eq!(read(&w.remote.join(format!("papers/{aid}/book.epub"))), b"epub alpha");
+    // a never-downloaded file: nothing to remove
+    assert_eq!(s.remove_download(&bid).unwrap(), (0, 0, 0));
+    // and it can be fetched again
+    assert_eq!(s.fetch_paper(&aid, &[FileKind::Pdf]).unwrap(), 1);
+    assert_eq!(read(&ph.root.join(format!("papers/{aid}/paper.pdf"))), b"pdf alpha");
+
+    // the Mac replaces Alpha's reading view while the phone has no copy: fetched new, not a conflict
+    let r = ph.sync();
+    assert_eq!(r.deleted_remote, 0);
+    mac.lib.attach_file(aid.clone(), FileKind::Epub, b"epub alpha v2".to_vec()).unwrap();
+    let r = ph.sync();
+    assert_eq!((r.downloaded, r.deleted_remote), (0, 0), "{r:?}");
+    assert_eq!(s.fetch_paper(&aid, &[FileKind::Epub]).unwrap(), 1);
+    assert_eq!(read(&ph.root.join(format!("papers/{aid}/book.epub"))), b"epub alpha v2");
+
+    // a copy changed here and not uploaded yet is kept
+    fs::write(ph.root.join(format!("papers/{aid}/paper.pdf")), b"pdf alpha, edited here").unwrap();
+    set_time(&ph.root.join(format!("papers/{aid}/paper.pdf")), now_ms() + 5_000);
+    assert_eq!(s.remove_download(&aid).unwrap(), (1, 1, 13)); // the epub went, the edited pdf stayed
+    assert!(ph.root.join(format!("papers/{aid}/paper.pdf")).exists());
+    let r = ph.sync();
+    assert_eq!((r.uploaded, r.deleted_remote), (1, 0), "{r:?}");
+    assert_eq!(read(&w.remote.join(format!("papers/{aid}/paper.pdf"))), b"pdf alpha, edited here");
+
+    // deleting a downloaded file any other way (the app removing a reading view) is a deletion
+    s.fetch_paper(&bid, &[]).unwrap();
+    fs::remove_file(ph.root.join(format!("papers/{bid}/paper.pdf"))).unwrap();
+    let r = ph.sync();
+    assert_eq!(r.deleted_remote, 1, "{r:?}");
+    assert!(!w.remote.join(format!("papers/{bid}/paper.pdf")).exists());
+
+    // a library that downloads everything has nothing to remove
+    let full = w.api("tablet");
+    full.sync();
+    assert!(full.syncer.as_ref().unwrap().remove_download(&aid).is_err());
+    assert!(full.root.join(format!("papers/{aid}/paper.pdf")).exists());
+}
+
 #[test]
 fn wiped_working_folder_does_not_wipe_the_remote() {
     let w = World::new();

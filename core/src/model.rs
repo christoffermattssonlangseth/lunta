@@ -158,7 +158,8 @@ impl FileKind {
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileStatus {
     Missing,
-    /// In iCloud but not downloaded to this device yet.
+    /// In the cloud but not downloaded to this device yet: iCloud, or the Google Drive folder of a
+    /// library synced on demand (`Library::set_remote_files`).
     InCloud,
     Local,
 }

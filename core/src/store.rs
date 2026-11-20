@@ -277,6 +277,9 @@ pub struct Store {
     pub device: String,
     /// (size, mtime) of every log at the last replay; used to detect changes from other devices.
     seen: HashMap<PathBuf, (u64, i64)>,
+    /// Paper files in the library's cloud folder that are not on this device ("papers/<id>/paper.pdf"):
+    /// a Google Drive library synced on demand (`Library::set_remote_files`). Count as present.
+    pub remote: BTreeSet<String>,
 }
 
 impl Store {
@@ -286,7 +289,7 @@ impl Store {
         }
         fs::create_dir_all(root.join("papers"))?;
         fs::create_dir_all(root.join("ops"))?;
-        Ok(Store { root: root.to_path_buf(), device: device.to_string(), seen: HashMap::new() })
+        Ok(Store { root: root.to_path_buf(), device: device.to_string(), seen: HashMap::new(), remote: BTreeSet::new() })
     }
 
     pub fn paper_dir(&self, id: &str) -> PathBuf {
@@ -297,10 +300,13 @@ impl Store {
         self.paper_dir(id).join(kind.file_name())
     }
 
-    /// True if the file exists on this device or as an iCloud placeholder (".name.icloud").
+    /// True if the file exists on this device, as an iCloud placeholder (".name.icloud"), or in
+    /// the Google Drive folder of a library synced on demand (`remote`).
     pub fn has_file(&self, id: &str, kind: FileKind) -> bool {
         let dir = self.paper_dir(id);
-        dir.join(kind.file_name()).exists() || dir.join(format!(".{}.icloud", kind.file_name())).exists()
+        dir.join(kind.file_name()).exists()
+            || dir.join(format!(".{}.icloud", kind.file_name())).exists()
+            || (!self.remote.is_empty() && self.remote.contains(&format!("papers/{id}/{}", kind.file_name())))
     }
 
     /// Writes a blob atomically (temp file + rename) so a half-written file never syncs.
