@@ -5,7 +5,7 @@ in Word on Mac and on the web (and on Windows once the Windows app serves citati
 
 - Manifest to upload: `apple/citations/word/manifest-store.xml` (validated with
   `npx office-addin-manifest validate`). The panel it loads is the hosted copy on GitHub Pages
-  (`https://christoffermattssonlangseth.github.io/lunta/word/index.html`), published on every push to main.
+  (`https://getlunta.app/word/index.html`), published on every push to main.
 - Store logo (300 × 300): `appstore/microsoft/logo-300.png`.
 - Screenshots (1366 × 768 or 1280 × 720, PNG): take them in real Word with the panel open (see below).
 
@@ -24,8 +24,8 @@ in Word on Mac and on the web (and on Windows once the Windows app serves citati
 **Properties:**
 - Category: **Productivity** (secondary: **Education**, if offered).
 - Industries: **Education**, **Healthcare + Life Sciences** (optional).
-- Privacy policy URL: `https://christoffermattssonlangseth.github.io/lunta/app-privacy.html`
-- Support URL: `https://christoffermattssonlangseth.github.io/lunta/support.html`
+- Privacy policy URL: `https://getlunta.app/app-privacy.html`
+- Support URL: `https://getlunta.app/support.html`
 - End-user license agreement: the standard contract (or the MIT license URL:
   `https://github.com/christoffermattssonlangseth/lunta/blob/main/LICENSE`).
 - "Does your add-in require additional purchases or software?" **Yes**: it needs the free Lunta app.

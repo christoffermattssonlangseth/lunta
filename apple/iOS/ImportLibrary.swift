@@ -265,7 +265,7 @@ struct MovingToLuntaHelp: View {
                     Text("Reading views are made in the background afterwards. The library syncs to your other devices through iCloud.")
                 }
                 Section {
-                    Link(destination: URL(string: "https://christoffermattssonlangseth.github.io/lunta/getting-started.html#import")!) {
+                    Link(destination: URL(string: "https://getlunta.app/getting-started.html#import")!) {
                         Label("More about importing", systemImage: "safari")
                     }
                     Button {

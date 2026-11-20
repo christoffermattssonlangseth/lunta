@@ -214,13 +214,13 @@ struct LuntaCommands: Commands {
         }
         CommandGroup(replacing: .help) {
             Button("Getting Started with Lunta") {
-                NSWorkspace.shared.open(URL(string: "https://christoffermattssonlangseth.github.io/lunta/getting-started.html")!)
+                NSWorkspace.shared.open(URL(string: "https://getlunta.app/getting-started.html")!)
             }
             Button("Importing from Zotero, Mendeley, ReadCube…") {
-                NSWorkspace.shared.open(URL(string: "https://christoffermattssonlangseth.github.io/lunta/getting-started.html#import")!)
+                NSWorkspace.shared.open(URL(string: "https://getlunta.app/getting-started.html#import")!)
             }
             Button("Lunta Support") {
-                NSWorkspace.shared.open(URL(string: "https://christoffermattssonlangseth.github.io/lunta/support.html")!)
+                NSWorkspace.shared.open(URL(string: "https://getlunta.app/support.html")!)
             }
         }
         CommandGroup(after: .appSettings) {

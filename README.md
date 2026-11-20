@@ -27,7 +27,7 @@ under Settings elsewhere, where the daily check can be turned off). The Linux .d
 downloading the new one; Lunta says when there is one. Lunta 1.0.5 and earlier don't update themselves:
 download the newest version once more by hand.
 
-**New to Lunta?** Start with **[Getting started](https://christoffermattssonlangseth.github.io/lunta/getting-started.html)**:
+**New to Lunta?** Start with **[Getting started](https://getlunta.app/getting-started.html)**:
 which setup fits your devices, and how to move your library from Zotero, Mendeley, ReadCube or EndNote
 ([step-by-step import guide](docs/importing.md)).
 
@@ -116,7 +116,7 @@ your library first, else from Crossref. Lunta proposes, you decide: **Confirm** 
 fits. Only then does a placeholder become a citation (a paper not yet in your library is added to it), and the
 reference list updates. Ordinary brackets like "(see Fig. 2)" or "(n = 2025)" are left alone.
 
-More: [Lunta Citations](https://christoffermattssonlangseth.github.io/lunta/support.html).
+More: [Lunta Citations](https://getlunta.app/support.html).
 
 ### LaTeX and Overleaf
 
@@ -169,7 +169,7 @@ kept and found again in the new text; any that can't be placed are marked in the
 ## Help and development
 
 - Questions, bugs and ideas: [GitHub Issues](https://github.com/christoffermattssonlangseth/lunta/issues).
-- Privacy: [Lunta collects nothing](https://christoffermattssonlangseth.github.io/lunta/app-privacy.html).
+- Privacy: [Lunta collects nothing](https://getlunta.app/app-privacy.html).
 - Building from source, architecture and sync design: [docs/development.md](docs/development.md).
 
 ## License

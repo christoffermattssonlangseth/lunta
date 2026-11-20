@@ -29,10 +29,10 @@ simpler: **a new project, "Lunta Docs"**, is recommended.
 | App name | `Lunta` |
 | User support email | your address |
 | App logo | `appstore/chrome/icon-128.png` (optional; a logo means brand verification, a few days) |
-| Application home page | `https://christoffermattssonlangseth.github.io/lunta/` |
-| Application privacy policy link | `https://christoffermattssonlangseth.github.io/lunta/app-privacy.html` |
+| Application home page | `https://getlunta.app/` |
+| Application privacy policy link | `https://getlunta.app/app-privacy.html` |
 | Application terms of service link | leave empty |
-| Authorized domains | `christoffermattssonlangseth.github.io` (see "Verification" below) |
+| Authorized domains | `getlunta.app` (see "Verification" below) |
 | Developer contact | your address |
 
 **Audience**: User type **External**. Publishing status: leave it in **Testing** while you try it, and add
@@ -93,11 +93,9 @@ What Google checks, and what to prepare:
 
 1. **Your domain.** The home page and privacy policy must be on a domain you've verified in
    [Google Search Console](https://search.google.com/search-console) with the same Google account that owns the
-   Cloud project. `christoffermattssonlangseth.github.io` can be verified as a *URL prefix* property
-   (`https://christoffermattssonlangseth.github.io/lunta/` with the HTML-tag method: add the `<meta
-   name="google-site-verification" …>` tag Search Console gives you to `site/index.html` and publish the site).
-   Google sometimes refuses shared hosting domains like github.io for verification; if it does, a domain of your
-   own pointed at GitHub Pages is the way (then use it everywhere in step 2).
+   Cloud project. Lunta's site is on its own domain, `getlunta.app` (Cloudflare DNS → GitHub Pages), verified as a
+   *Domain* property with a DNS TXT record. Google refused the shared github.io address ("homepage not
+   registered to you") even with that address verified as a URL prefix, which is why the site moved (20 Nov 2026).
 2. **The home page** must say what Lunta is and link the privacy policy. `site/index.html` does; add one
    sentence about citing in Google Docs.
 3. **The privacy policy** must say what the app does with Google user data, with Google's Limited Use

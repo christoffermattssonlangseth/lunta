@@ -14,8 +14,8 @@ Everything App Store Connect asks for, ready to paste. Limits are Apple's.
 | Secondary category | Education |
 | Price | Free |
 | Age rating | 4+ (answer "None" to every content question; no web browser, no user-generated content shared with others) |
-| Privacy policy URL | https://christoffermattssonlangseth.github.io/lunta/app-privacy.html |
-| Support URL | https://christoffermattssonlangseth.github.io/lunta/getting-started.html |
+| Privacy policy URL | https://getlunta.app/app-privacy.html |
+| Support URL | https://getlunta.app/getting-started.html |
 | Copyright | 2026 Christoffer Mattsson Langseth |
 
 ## Promotional text (170)

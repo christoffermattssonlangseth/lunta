@@ -13,12 +13,12 @@
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="Lunta Citations"/>
   <Description DefaultValue="Cite papers from your Lunta library in 12 citation styles or any of ~10,000 journal styles; numbering and the reference list stay up to date. Requires the free Lunta app running on your Mac."/>
-  <IconUrl DefaultValue="https://christoffermattssonlangseth.github.io/lunta/icons/icon-64.png"/>
-  <HighResolutionIconUrl DefaultValue="https://christoffermattssonlangseth.github.io/lunta/icons/icon-128.png"/>
-  <SupportUrl DefaultValue="https://christoffermattssonlangseth.github.io/lunta/support.html"/>
-  <AppDomains><AppDomain>https://localhost:47481</AppDomain></AppDomains>
+  <IconUrl DefaultValue="https://getlunta.app/icons/icon-64.png"/>
+  <HighResolutionIconUrl DefaultValue="https://getlunta.app/icons/icon-128.png"/>
+  <SupportUrl DefaultValue="https://getlunta.app/support.html"/>
+  <AppDomains><AppDomain>https://localhost:47481</AppDomain><AppDomain>https://getlunta.app</AppDomain></AppDomains>
   <Hosts><Host Name="Document"/></Hosts>
-  <DefaultSettings><SourceLocation DefaultValue="https://christoffermattssonlangseth.github.io/lunta/word/index.html"/></DefaultSettings>
+  <DefaultSettings><SourceLocation DefaultValue="https://getlunta.app/word/index.html"/></DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
     <Hosts>
@@ -58,12 +58,12 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16" DefaultValue="https://christoffermattssonlangseth.github.io/lunta/icons/icon-16.png"/>
-        <bt:Image id="Icon.32" DefaultValue="https://christoffermattssonlangseth.github.io/lunta/icons/icon-32.png"/>
-        <bt:Image id="Icon.80" DefaultValue="https://christoffermattssonlangseth.github.io/lunta/icons/icon-80.png"/>
+        <bt:Image id="Icon.16" DefaultValue="https://getlunta.app/icons/icon-16.png"/>
+        <bt:Image id="Icon.32" DefaultValue="https://getlunta.app/icons/icon-32.png"/>
+        <bt:Image id="Icon.80" DefaultValue="https://getlunta.app/icons/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://christoffermattssonlangseth.github.io/lunta/word/index.html"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://getlunta.app/word/index.html"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="Group.Label" DefaultValue="Lunta"/>

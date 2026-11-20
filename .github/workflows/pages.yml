@@ -1,7 +1,7 @@
 # Publishes the website (site/: the home page, download, getting started, support and privacy pages) and the
 # hosted Word add-in panel (apple/citations: the Microsoft store listing's manifest-store.xml points here) to
 # GitHub Pages: https://getlunta.app (custom domain, set in the repository's Pages settings; before it,
-# https://christoffermattssonlangseth.github.io/lunta/)
+# https://getlunta.app/)
 name: Pages
 
 on:

@@ -96,7 +96,7 @@ All of it goes only to the Lunta app on the user's own computer; a Google Docs d
 browser and Google Docs, where it lives. Nothing is sent to the developer or anyone else. (The Google access
 token isn't "collected": it stays in the browser's session storage.)
 
-**Privacy policy URL:** https://christoffermattssonlangseth.github.io/lunta/app-privacy.html
+**Privacy policy URL:** https://getlunta.app/app-privacy.html
 
 ## Distribution tab
 
