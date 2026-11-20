@@ -63,12 +63,25 @@ pub struct OAuthClient {
     pub token_uri: String,
 }
 
+/// Whether Lunta asks Google for the narrow `drive.file` scope (and adopts other apps' files while
+/// an old full-scope token lasts). Off until the Windows and Linux app syncs through the Drive API:
+/// today it shares the library through a Google Drive for desktop folder, whose new files a
+/// `drive.file` grant can't see, so switching now would quietly stop its changes reaching Android
+/// and the Mac bridge. With this off, sign-in asks for the full `drive` scope as before and no
+/// adoption runs; the drive.file code stays tested and ready.
+pub const NARROW_DRIVE_ACCESS: bool = false;
+
+/// The switch as used: always on in tests, which cover the drive.file behaviour it will turn on.
+pub(crate) fn narrow_drive_access() -> bool {
+    cfg!(test) || NARROW_DRIVE_ACCESS
+}
+
 impl OAuthClient {
     pub fn new(client_id: impl Into<String>, client_secret: Option<String>) -> OAuthClient {
         OAuthClient {
             client_id: client_id.into(),
             client_secret: client_secret.filter(|s| !s.is_empty()),
-            scope: Scope::File,
+            scope: if narrow_drive_access() { Scope::File } else { Scope::Full },
             auth_uri: AUTH_URI.into(),
             token_uri: TOKEN_URI.into(),
         }
@@ -372,7 +385,7 @@ impl Authenticator {
     /// True if the stored grant is the old full `drive` scope (signed in with an older version).
     /// Signing in again replaces it with `drive.file`.
     pub fn has_full_drive_access(&self) -> bool {
-        matches!(self.current(), Ok(Some(t)) if t.has_full_drive())
+        narrow_drive_access() && matches!(self.current(), Ok(Some(t)) if t.has_full_drive())
     }
 
     /// Second half of the flow for callers that run the browser step themselves (Android).
