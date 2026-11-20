@@ -329,3 +329,18 @@ h4 .mini { margin-left: auto; }
 .check-key { font-family: ui-monospace, monospace; color: var(--dim); display: flex; gap: 6px; align-items: center; }
 .check-red { color: #b91c1c; font-weight: 600; }
 .check-links { display: flex; gap: 12px; font-size: 12px; }
+
+/* Citations in Word & Google Docs… (citations.ts) */
+.modal.citations { width: 600px; max-height: 88vh; overflow-y: auto; }
+.citations-body { display: flex; flex-direction: column; gap: 8px; }
+.citations-body h4 { margin: 8px 0 0; }
+.cite-step { display: flex; gap: 10px; align-items: flex-start; }
+.cite-n { flex: none; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--dim); color: var(--dim); font-size: 11px; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+.cite-n.done { background: var(--accent, #1f8a7a); border-color: transparent; color: #fff; }
+.cite-text { flex: 1; font-size: 13px; line-height: 1.4; }
+.cite-actions { flex: none; display: flex; flex-direction: column; gap: 4px; }
+.cite-problem { color: #c2410c; font-size: 13px; margin: 0; }
+.cite-message { font-size: 13px; margin: 0; }
+.citations details { margin-top: 2px; display: flex; flex-direction: column; gap: 8px; }
+.citations details > .cite-step { margin-top: 8px; }
+.citations summary { cursor: pointer; font-size: 13px; color: var(--dim); }

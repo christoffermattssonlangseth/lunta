@@ -18,6 +18,7 @@ import { resolveTexCitations } from './texresolve';
 import { loadUpdates, updatesBadge, updatesBanner, checkMenuItems, paperCheckItems, folderCheckItem, setChecksReload } from './checks';
 import { openTidy, setTidyReload } from './tidy';
 import { outlineDialog, setOutlineOpener } from './outline';
+import { citationsDialog } from './citations';
 
 let source: Source = { kind: 'all' };
 let query = '';
@@ -610,6 +611,7 @@ $('#settings').onclick = async () => {
     ...importItems(),
     '-',
     { label: 'Natural Voice for Listening…', action: voiceDialog },
+    { label: 'Citations in Word & Google Docs…', action: citationsDialog },
     '-',
     { label: 'On-Device AI…', action: aiSettingsDialog },
     { label: 'Check for Updates…', action: checkNow },
