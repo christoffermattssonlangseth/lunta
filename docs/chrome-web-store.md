@@ -36,7 +36,7 @@ publisher's page.
 
 ### Description
 
-No lists of publishers, journals or styles: the Chrome Web Store rejected 1.0.3 for "keyword spam" (Yellow Argon) over the sentence naming NEJM, Cell Press, Science, PNAS… (18 November 2026).
+No lists at all (publishers, journals, styles, platforms): the Chrome Web Store rejected 1.0.3 twice for "keyword spam" (Yellow Argon) — over the sentence naming NEJM, Cell Press, Science, PNAS… (18 Nov 2026) and over "Mac, iPhone, iPad, Android, Windows and Linux" (20 Nov 2026).
 
 ```
 Lunta saves scientific papers to your Lunta library, straight from the journal's page, with the access your browser already has.
@@ -51,15 +51,13 @@ In any Google Docs document, the Lunta button opens a panel: search your library
 
 ALSO
 • Save a PDF open in Chrome's PDF viewer with the toolbar button.
-• Works on article pages of journals, preprint servers and PubMed.
 
 NEEDS THE LUNTA APP
-The extension works together with Lunta for Mac, Windows or Linux, which must be open on the same computer. Get it free at https://github.com/christoffermattssonlangseth/lunta/releases/latest
+The extension works together with the Lunta app, which must be open on the same computer. Get it free at https://github.com/christoffermattssonlangseth/lunta/releases/latest
 
 PRIVATE
 The extension talks only to the Lunta app on your own computer (127.0.0.1) and, when you cite in Google Docs, to Google Docs for the document you're citing in. It sends nothing to us or anyone else, has no account, no analytics and no ads.
 
-Lunta is a reader and reference manager for scientific papers, for Mac, iPhone, iPad, Android, Windows and Linux.
 ```
 
 ## Privacy practices tab
