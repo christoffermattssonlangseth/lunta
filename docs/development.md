@@ -770,7 +770,13 @@ the folder through the API (Android, the Mac bridge, the CLI), not through Googl
   run, and refuses an empty remote after files were synced before.
 - **Lazy files** (`SyncOptions::lazy`): PDFs, EPUBs and narration are left on Drive during a sync;
   `Syncer::fetch_paper(id, kinds)` / `fetch_file(path)` download them on demand, e.g. when the Android app
-  opens a paper (`paper_files(id)` lists what exists remotely).
+  opens a paper (`paper_files(id)` lists what exists remotely, `remote_paper_files()` the whole library).
+  A big file that is only on the remote is never a deletion: never downloaded, or its download removed with
+  `remove_download(id)` ("Remove Download": deletes this device's copies of the paper's PDF, EPUB and
+  narration that the remote has unchanged, keeps copies with changes not uploaded yet, and records them as
+  not here). Deleting a downloaded file any other way is still a deletion. `Library::set_remote_files(paths)`
+  makes the files that are only on the remote count as present (`has_pdf`/`has_epub`, `file_status` =
+  `InCloud`), like iCloud's placeholders.
 
 **API** (plain owned types, ready for UniFFI; not exported to Swift yet):
 
@@ -836,9 +842,27 @@ so the scheme isn't in Info.plist). The text about Google's "unverified app" war
 (`google-tokens-library.json`, `drive-library-state.json`; excluded from backups on iOS) and the picked folder in
 `UserDefaults` `driveLibraryFolderId`. It syncs at start, when the app comes to the front (unless it synced in the
 last minute), every 5 minutes, and 20 s after this device's change log grows; a sync that is running when the
-iPhone app goes to the background gets the background time iOS allows. Every file is downloaded, also on iPhone
-and iPad: Android's lazy mode needs `has_pdf`/`has_epub` and every file opening to know about remote-only files,
-which the Apple apps don't yet (they only know iCloud placeholders). The Mac's AI agent (lunta-mcp) writes its own
+iPhone app goes to the background gets the background time iOS allows.
+
+*Download papers when you open them* (`DriveLibrarySync.onDemand`, `UserDefaults` `driveDownloadOnOpen`; on by
+default on iPhone and iPad, off on the Mac; a switch in Library Storage and the Mac's Settings › Library):
+the sync is lazy, so a paper's PDF, reading view and narration stay in Drive until needed; change logs,
+metadata, full texts, summaries, Pencil drawings and reading positions always come down. Either way the files
+not here count as present: while the library opens (`DriveLibrarySync.preload`, from the sync's records,
+offline) and after each sync, download or removed download, `remote_paper_files()` goes to
+`Library.setRemoteFiles`, so nothing offers Find PDF or remakes a reading view for them, and `LibraryModel.remoteOnly`
+gives the lists their cloud marks. Every file read goes through `LibraryModel.fetchFile` / `ensureLocal`
+(`needsDownload` for "Downloading from Google Drive…"), which fetches from Drive (`fetch_paper`, off the main
+thread) what isn't here; the readers show a failure with Try Again; Share says which files couldn't be
+downloaded. Per paper: Download / Remove Download (context menu, paper info); Library Storage: how much is here
+and in Drive, Download All, Remove Downloads Not Opened in 30 Days… (`driveFilesUsed` remembers when each
+paper's files were last asked for). Switching on deletes nothing; switching off downloads the rest at the
+next sync. Moving a library out of Google Drive downloads what's only in Drive first. iCloud mode is
+untouched (its placeholders go through the same helpers as before). The Mac writes the files only in Drive to
+`~/Library/Application Support/Lunta/remote-files.json` (with the library root) for lunta-mcp, which doesn't
+download them itself (no Drive sign-in there, and two syncs of one folder would race): full texts are always
+there, so `read_paper` and search see every paper; `get_paper` lists `not_downloaded`, `find_pdf` doesn't
+replace a PDF that's in Drive, and `add_highlight` says the reading view isn't downloaded. The Mac's AI agent (lunta-mcp) writes its own
 log (`ops/agent-….jsonl`) into the library folder; `SyncOptions::also_own` makes the Mac upload it like its own.
 lunta-mcp finds the library through `~/Library/Application Support/Lunta/library-root`, which the Mac app writes
 whenever it opens one. Status: Library Storage, and a line at the bottom of the Mac's sidebar / the iPhone's
@@ -857,7 +881,7 @@ library), the iPhone and iPad open it in place. Moving an iCloud library to Goog
 out of iCloud; the Mac offers **Keep iCloud and Also Sync with Google Drive** (the bridge) instead, and on iPhone
 and iPad the dialog says that's done by a Mac.
 
-Not done yet: lazy paper files and background sync (BGAppRefreshTask) on iPhone and iPad; the Share and Safari
+Not done yet: background sync (BGAppRefreshTask) on iPhone and iPad; the Share and Safari
 extensions write to the App Group inbox as before, so they work with any choice.
 
 ### Access: `drive.file` only
@@ -879,7 +903,7 @@ Google's picker. That scope is *non-sensitive* (brand verification only, no secu
 |---|---|---|
 | Android (`AppModel.kt`, `SyncWorker.kt`) | the "iOS"-type client `340661790250-jvrurg…` (`lunta.googleClientId`, redirect `com.googleusercontent.apps.…:/oauth2redirect`, Custom Tab + PKCE) | through the core's `LibrarySync.google_drive` (lazy) |
 | Mac bridge (`apple/Mac/DriveBridge.swift`) | the same client (`ASWebAuthenticationSession`) | through `LibrarySync.google_drive_bridge` |
-| Mac, iPhone, iPad with the library in Google Drive (`apple/Shared/DriveLibrarySync.swift`) | the same client (`ASWebAuthenticationSession`) | through `LibrarySync.google_drive_also_own` (not lazy; the Mac adds its AI agent's log) |
+| Mac, iPhone, iPad with the library in Google Drive (`apple/Shared/DriveLibrarySync.swift`) | the same client (`ASWebAuthenticationSession`) | through `LibrarySync.google_drive_also_own` (lazy on iPhone/iPad by default, a setting on the Mac; the Mac adds its AI agent's log) |
 | CLI `lunta-sync` | any client of the project (`LUNTA_GOOGLE_CLIENT_ID`, a "Desktop app" client with its secret; loopback redirect) | `GoogleDrive` + `Syncer` |
 | Windows/Linux desktop app | none: it opens a library *folder* (e.g. inside Google Drive for desktop); no Drive API | — |
 | Google Docs extension / Mac (citations) | separate scope `auth/documents` (see google-docs-extension.md); no Drive API | — |
@@ -1299,8 +1323,9 @@ desktop and Android apps have it too, on **the same files**:
     positions, PDF view, add by identifier; PDF highlighting, import and the rest next
 14. ◐ Google Drive sync through the API for devices without a synced folder (`core/src/drive`): core, CLI and
     tests done, in the Android app and on Mac, iPhone and iPad (the library in Google Drive, chosen at first
-    launch or in Library Storage); desktop settings screen next. On iPhone and iPad: lazy paper files (as on
-    Android) and syncing in the background (BGAppRefreshTask) next
+    launch or in Library Storage), downloading papers when they're opened (iPhone and iPad by default, a
+    setting on the Mac); desktop settings screen next. On iPhone and iPad: syncing in the background
+    (BGAppRefreshTask) next
 15. ◐ Android app (`android/`, Compose): library, reader with highlights and synced positions, PDF view,
     add by identifier / PDF / share, Google Drive sync; needs a Google OAuth client id to sign in;
     PDF highlighting, New for You and the rest next
