@@ -735,7 +735,7 @@ iPhone and iPad (allow it on all websites).
 
 ## Google Drive sync
 
-`core/src/drive/` (cargo feature `drive`, on by default for desktop and the CLI, and in the Apple build for the Mac's bridge: **Lunta › Google Drive for Android…** keeps the iCloud library and the Drive folder in sync)
+`core/src/drive/` (cargo feature `drive`, on by default for desktop and the CLI, and in the Apple build: for a Mac, iPhone or iPad whose library lives in Google Drive (see [Where the library lives on Apple devices](#where-the-library-lives-on-apple-devices)), and for the Mac's bridge: **Lunta › Also Sync with Google Drive…** keeps the iCloud library and the Drive folder in sync)
 syncs a library through Google Drive's API, for devices that have no synced folder: the Android app,
 Linux, or anyone who prefers it. It uses **the same layout** as everything else (see
 [Library layout](#library-layout-sync-safe)), in a Drive folder called `Lunta`. Lunta reaches only the
@@ -802,6 +802,64 @@ cargo run --bin lunta-sync -- fetch <paper-id> --library ~/lunta-test
 # no Google account? any folder works as the remote:  --remote-dir /some/folder
 ```
 
+### Where the library lives on Apple devices
+
+The first time Lunta opens on a Mac, iPhone or iPad it asks **Where should your library live?**: iCloud Drive,
+Google Drive or only on this device. The choice is kept in `UserDefaults` (`libraryStorage`:
+`icloud` | `googleDrive` | `device`), and `CloudLibrary.resolve()` opens that place:
+
+| Choice | Library folder | Sync |
+|---|---|---|
+| iCloud Drive | the app's container, `Documents/Library` | iCloud (as always) |
+| Google Drive | `Application Support/Margins/DriveLibrary` | `DriveLibrarySync` ↔ the "Lunta" folder in Drive |
+| Only on this device | `Application Support/Margins/Library` | none |
+| (not set: used Lunta before the choice existed) | iCloud when available, else the local folder | as before |
+
+**What start-up does** (`StartupDecision.decide`, `apple/Shared/StorageDecision.swift`, tested by
+`node --test apple/storage-tests/`, which compiles it with a Swift test driver):
+
+- A stored choice: open it.
+- Lunta ran here before (the device id `deviceID` is in `UserDefaults`) or the local folder has change logs:
+  open the automatic way, as before. Existing users never see the question, and are never moved.
+- iCloud available: look in the iCloud folder for change logs (up to ~12 s, "Looking for your library in
+  iCloud…"; a new device may take a moment to get the listing). Found: open it, remember iCloud, and say so
+  once ("Your library is in iCloud", with **Use Google Drive Instead…**). Not found: ask, iCloud recommended.
+- No iCloud: ask, Google Drive recommended (iCloud is shown greyed with how to turn it on).
+
+Choosing Google Drive signs in first (`ASWebAuthenticationSession`, the same OAuth client and redirect
+`com.googleusercontent.apps.<id>:/oauth2redirect` as Android and the bridge; the session catches the redirect,
+so the scheme isn't in Info.plist). The text about Google's "unverified app" warning is
+`GoogleDriveClient.unverifiedNote` (`DriveLibrarySync.swift`): set it to nil once Google has verified Lunta.
+
+**Google Drive sync on Apple devices** (`DriveLibrarySync`): the core's Syncer in normal (not bridge) mode,
+`LibrarySync.google_drive_also_own`, with tokens and state in `Application Support/Lunta/`
+(`google-tokens-library.json`, `drive-library-state.json`; excluded from backups on iOS) and the picked folder in
+`UserDefaults` `driveLibraryFolderId`. It syncs at start, when the app comes to the front (unless it synced in the
+last minute), every 5 minutes, and 20 s after this device's change log grows; a sync that is running when the
+iPhone app goes to the background gets the background time iOS allows. Every file is downloaded, also on iPhone
+and iPad: Android's lazy mode needs `has_pdf`/`has_epub` and every file opening to know about remote-only files,
+which the Apple apps don't yet (they only know iCloud placeholders). The Mac's AI agent (lunta-mcp) writes its own
+log (`ops/agent-….jsonl`) into the library folder; `SyncOptions::also_own` makes the Mac upload it like its own.
+lunta-mcp finds the library through `~/Library/Application Support/Lunta/library-root`, which the Mac app writes
+whenever it opens one. Status: Library Storage, and a line at the bottom of the Mac's sidebar / the iPhone's
+**Library Storage…** row. The Mac's bridge (Also Sync with Google Drive…) does nothing while the library itself
+lives in Google Drive.
+
+**Moving the library** (Mac: Settings › Library › Change…, the **Library Storage** window; iPhone/iPad:
+**Library Storage…** at the end of the library's list): `LibraryMover` signs in first if moving to Google Drive
+(on a Mac whose bridge is connected it takes the bridge's sign-in and folder), syncs a Google Drive library once
+more, then `LibraryLocation.copyLibrary` copies `ops/`, `positions/`, `papers/` and the root `*.json` files to the
+new folder: what the destination lacks is copied, this device's (and its agent's) change log is merged line by
+line when both have it, nothing else is overwritten, and files still in iCloud are downloaded first. The old copy
+is never changed or deleted; the app says where it is. If any file can't be copied the move stops and nothing
+changes. Then the choice is stored and the library reopened: the Mac restarts Lunta (its servers hold the
+library), the iPhone and iPad open it in place. Moving an iCloud library to Google Drive takes only this device
+out of iCloud; the Mac offers **Keep iCloud and Also Sync with Google Drive** (the bridge) instead, and on iPhone
+and iPad the dialog says that's done by a Mac.
+
+Not done yet: lazy paper files and background sync (BGAppRefreshTask) on iPhone and iPad; the Share and Safari
+extensions write to the App Group inbox as before, so they work with any choice.
+
 ### Access: `drive.file` only
 
 Lunta asks Google for **`https://www.googleapis.com/auth/drive.file`** and nothing else: it sees only the
@@ -816,6 +874,7 @@ Google's picker. That scope is *non-sensitive* (brand verification only, no secu
 |---|---|---|
 | Android (`AppModel.kt`, `SyncWorker.kt`) | the "iOS"-type client `340661790250-jvrurg…` (`lunta.googleClientId`, redirect `com.googleusercontent.apps.…:/oauth2redirect`, Custom Tab + PKCE) | through the core's `LibrarySync.google_drive` (lazy) |
 | Mac bridge (`apple/Mac/DriveBridge.swift`) | the same client (`ASWebAuthenticationSession`) | through `LibrarySync.google_drive_bridge` |
+| Mac, iPhone, iPad with the library in Google Drive (`apple/Shared/DriveLibrarySync.swift`) | the same client (`ASWebAuthenticationSession`) | through `LibrarySync.google_drive_also_own` (not lazy; the Mac adds its AI agent's log) |
 | CLI `lunta-sync` | any client of the project (`LUNTA_GOOGLE_CLIENT_ID`, a "Desktop app" client with its secret; loopback redirect) | `GoogleDrive` + `Syncer` |
 | Windows/Linux desktop app | none: it opens a library *folder* (e.g. inside Google Drive for desktop); no Drive API | — |
 | Google Docs extension / Mac (citations) | separate scope `auth/documents` (see google-docs-extension.md); no Drive API | — |
@@ -935,7 +994,7 @@ Lunta ships **no** Google credentials; you create an OAuth client in your own pr
    video is needed for non-sensitive scopes; if asked, record sign-in, the consent screen, a sync and the
    folder in Drive.
 5. Tell users signed in before the update to tap **Sign in again** (Android: Settings sheet; Mac: Lunta ›
-   Google Drive for Android…), which replaces the restricted grant with `drive.file`. Users who don't keep
+   Also Sync with Google Drive…), which replaces the restricted grant with `drive.file`. Users who don't keep
    working on the old token until it is revoked or expires.
 
 **Scope in code.** `auth::Scope::File` is the default everywhere; `Scope::Full` remains for the CLI
@@ -1234,8 +1293,9 @@ desktop and Android apps have it too, on **the same files**:
 13. ◐ Desktop app for Windows and Linux (`desktop/`, Tauri): library, reader with highlights and synced
     positions, PDF view, add by identifier; PDF highlighting, import and the rest next
 14. ◐ Google Drive sync through the API for devices without a synced folder (`core/src/drive`): core, CLI and
-    tests done, exported to the Android app; desktop settings screen and the Apple apps' "Move library to
-    Google Drive" next
+    tests done, in the Android app and on Mac, iPhone and iPad (the library in Google Drive, chosen at first
+    launch or in Library Storage); desktop settings screen next. On iPhone and iPad: lazy paper files (as on
+    Android) and syncing in the background (BGAppRefreshTask) next
 15. ◐ Android app (`android/`, Compose): library, reader with highlights and synced positions, PDF view,
     add by identifier / PDF / share, Google Drive sync; needs a Google OAuth client id to sign in;
     PDF highlighting, New for You and the rest next

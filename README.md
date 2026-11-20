@@ -166,9 +166,24 @@ kept and found again in the new text; any that can't be placed are marked in the
 
 ## Sync
 
-- **Mac, iPhone and iPad** sync through iCloud Drive, with nothing to set up.
-- **Android, Windows and Linux** sync through a *Lunta* folder in Google Drive.
-- **Both:** a Mac can bridge the two (**Lunta › Google Drive for Android…**).
+The first time you open Lunta on a Mac, iPhone or iPad, it asks where your library should live:
+
+- **iCloud Drive** (recommended if all your devices are Apple's): the Mac, iPhone and iPad sync by
+  themselves. If your iCloud already has a Lunta library (from your other Apple devices), Lunta opens
+  it without asking.
+- **Google Drive** (if you also use Android, Windows or Linux, or can't use iCloud, e.g. on a managed work
+  Mac): the library is kept on the device and synced with a *Lunta* folder in your Google Drive while
+  Lunta is open (at start, every few minutes, and soon after a change). Sign in with Google when asked;
+  until Google has verified Lunta, its sign-in shows a warning: choose **Advanced › Go to Lunta**.
+- **Only on this device:** no syncing.
+
+Change it later in **Lunta › Settings › Library › Change…** on the Mac, or **Library Storage…** at the
+end of the library's list on iPhone and iPad. Moving copies the library to the new place and leaves the
+old copy where it was.
+
+- **Android, Windows and Linux** sync through the *Lunta* folder in Google Drive.
+- **iCloud and Android together:** keep the library in iCloud and let a Mac copy it both ways with Google
+  Drive (**Lunta › Also Sync with Google Drive…**), or put every device on Google Drive.
 
 ## Help and development
 

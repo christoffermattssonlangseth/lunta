@@ -48,7 +48,7 @@ fun SetupScreen(model: AppModel) {
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Keeps the library in a “Lunta” folder in your Drive, in sync with your Mac (Lunta › Google Drive for Android…). Lunta only sees the files it puts there itself, not the rest of your Drive. Papers are downloaded when you open them.",
+                    "Keeps the library in a “Lunta” folder in your Drive, in sync with your Mac (Lunta › Also Sync with Google Drive…, or a Mac whose library is in Google Drive). Lunta only sees the files it puts there itself, not the rest of your Drive. Papers are downloaded when you open them.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 if (model.clientIdMissing) {
