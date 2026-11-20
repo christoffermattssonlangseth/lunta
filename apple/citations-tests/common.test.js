@@ -300,3 +300,25 @@ test('converting: CSL-JSON (Zotero, Mendeley) to Lunta’s details and options; 
   assert.deepEqual(res.left.map((l) => [l.index, l.reason]), [[2, '“Gamma” isn’t in your library'], [3, 'a work without a title or DOI']]);
   assert.match(C.convertDone(2, res.left, 1), /^Converted 2 citations \(1 paper added to your library\)\. 2 left as they were: “\(C\)”: “Gamma” isn’t in your library/);
 });
+
+test('converting: a paper found only by a similar title is listed, and unticked it is added instead', () => {
+  const found = [{ text: '(A)', works: [{ meta: { title: 'Spinal cord, part II', authors: ['Jane Smith'], date: '2022' } }] },
+    { text: '(B)', works: [{ meta: { title: 'Beta', doi: '10.1/b' } }] }];
+  const plan = C.convertPlan(found, [{ id: 'p1', how: 'close' }, { id: 'b', how: 'doi' }]);
+  const el = () => { const e = { children: [], innerHTML: '', appendChild(c) { e.children.push(c); return c; } }; return e; };
+  const doc = { createElement: el };
+  const box = el();
+  let asked = null;
+  const r = C.convertReview(doc, box, plan, [], (keys) => { asked = keys; }, () => {});
+  assert.equal(r.close.length, 1);
+  assert.ok(box.children.some((c) => /similar title/.test(c.textContent || '')));
+  assert.ok(box.children.some((c) => c.children.some((x) => /Spinal cord, part II/.test(x.textContent || ''))));
+  r.go.onclick();
+  assert.deepEqual(asked, [], 'ticked: the library’s paper is used');
+  r.close[0].cb.checked = false;
+  r.go.onclick();
+  assert.deepEqual(asked, [plan.works[0].key]);
+  // added as its own paper: the citation gets the new one, not the library's companion
+  const res = C.convertResolve(plan, { [plan.works[0].key]: 'new' });
+  assert.deepEqual(res.convert.map((c) => c.ids), [['new'], ['b']]);
+});

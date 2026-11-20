@@ -291,7 +291,9 @@ style. A citation with a paper not found or not added stays exactly as it was an
     EndNote have no Google Docs citations to read.
 - **Finding the papers**: `POST /match {items: [meta]}` (API 4; `Library::match_cited_papers`,
   `core/src/citeimport.rs`): DOI, PubMed id, the same title (with years at most one apart), or the same first
-  author, year and nearly the same title (shared words ≥ 0.8). Works are taken once (by DOI, else title and
+  author, year and nearly the same title (shared words ≥ 0.8, and the same numbers, digits or roman numerals, so
+  Part I and Part II or Phase 2 and Phase 3 stay apart; `how: "close"`, listed in the review to be unticked, which
+  adds the work as a paper of its own). Works are taken once (by DOI, else title and
   year) across citations.
 - **Writing, Word**: the document's OOXML (`body.getOoxml()`) is read for the fields (instructions split over
   runs and paragraphs, entities, `fldData`, nesting); Word's own `body.fields` come in the same order and are

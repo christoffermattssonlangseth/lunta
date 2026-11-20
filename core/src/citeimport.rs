@@ -36,6 +36,52 @@ fn words(s: &str) -> Vec<String> {
     w
 }
 
+/// The numbers in a title, as digits or roman numerals ("Part II", "Phase 3", "COVID-19"), which
+/// `words` leaves out but tell companion papers apart.
+fn numerals(s: &str) -> Vec<String> {
+    let roman = |w: &str| -> Option<u32> {
+        let v = |c| match c {
+            'i' => Some(1),
+            'v' => Some(5),
+            'x' => Some(10),
+            'l' => Some(50),
+            'c' => Some(100),
+            _ => None,
+        };
+        let ds: Vec<u32> = w.chars().map(v).collect::<Option<_>>()?;
+        let mut n = 0i64;
+        for (i, d) in ds.iter().enumerate() {
+            if ds.get(i + 1).is_some_and(|e| e > d) { n -= *d as i64 } else { n += *d as i64 }
+        }
+        // only a numeral written the usual way ("civil" isn't one; "xiv" is)
+        let canon = |mut n: u32| {
+            let mut out = String::new();
+            for (k, r) in [(100, "c"), (90, "xc"), (50, "l"), (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i")] {
+                while n >= k {
+                    out.push_str(r);
+                    n -= k;
+                }
+            }
+            out
+        };
+        (n > 0 && canon(n as u32) == w).then_some(n as u32)
+    };
+    let mut out: Vec<String> = s
+        .split(|c: char| !c.is_alphanumeric())
+        .map(|w| w.to_lowercase())
+        .filter_map(|w| {
+            if !w.is_empty() && w.chars().all(|c| c.is_ascii_digit()) {
+                Some(w.trim_start_matches('0').to_string())
+            } else {
+                roman(&w).map(|n| n.to_string())
+            }
+        })
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// Shared words over all words (0–1).
 fn similarity(a: &str, b: &str) -> f64 {
     let (x, y) = (words(a), words(b));
@@ -89,6 +135,8 @@ pub(crate) fn match_in(papers: &[Paper], m: &PaperMeta) -> CitedMatch {
         let best = papers
             .iter()
             .filter(|p| year(&p.meta) == year(m) && first_family(&p.meta) == fam)
+            // Part I and Part II, Phase 2 and Phase 3: other papers
+            .filter(|p| numerals(&p.meta.title) == numerals(&m.title))
             .map(|p| (similarity(&p.meta.title, &m.title), p))
             .filter(|(s, _)| *s >= 0.8)
             .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -173,5 +221,20 @@ mod tests {
         // another first author: not
         assert_eq!(match_in(&lib, &meta("Cellular architecture of evolving neuroinflammatory lesions in mice", &["Kukanja, P."], "2024", "")).how, "");
         assert_eq!(match_in(&lib, &meta("Something else entirely here", &["Nobody"], "2001", "10.9/x")).paper_id, "");
+    }
+
+    #[test]
+    fn companion_papers_with_other_numbers_are_not_close() {
+        let lib = vec![
+            paper("p1", meta("Mapping the developing spinal cord, part I: progenitors", &["Jane Smith"], "2022", "")),
+            paper("ph2", meta("A randomized phase 2 trial of drug X in glioma", &["Ann Berg"], "2021", "")),
+        ];
+        let close = |t: &str, a: &str, y: &str| match_in(&lib, &meta(t, &[a], y, "")).paper_id;
+        assert_eq!(close("Mapping the developing spinal cord, part II: progenitors", "Smith, J.", "2022"), "");
+        assert_eq!(close("A randomized phase 3 trial of drug X in glioma", "Berg, A.", "2021"), "");
+        // the same numbers, a word or subtitle off: still close
+        assert_eq!(close("Mapping the developing spinal cord, part I: the progenitors", "Smith, J.", "2022"), "p1");
+        assert_eq!(close("A randomised phase II trial of drug X in glioma", "Berg, A.", "2021"), "ph2");
+        assert_eq!(numerals("Part IV of the civil mix, phase 02"), vec!["2".to_string(), "4".to_string()]);
     }
 }

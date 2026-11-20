@@ -871,7 +871,8 @@ var LuntaCite = (function () {
       var ids = [], options = {}, missing = '';
       (c.works || []).forEach(function (w) {
         var k = workKey(w.meta || {}), x = k ? plan.works[plan.byKey[k]] : null;
-        var id = x ? (x.id || added[k] || '') : '';
+        // added: also a work the writer said isn't the library's paper found by a similar title
+        var id = x ? (added[k] || x.id || '') : '';
         if (!id) { if (!missing) missing = (w.meta && w.meta.title) ? '“' + w.meta.title + '” isn’t in your library' : 'a work without a title or DOI'; return; }
         if (ids.indexOf(id) < 0) ids.push(id);
         if (w.options) options[id] = w.options;
@@ -885,7 +886,9 @@ var LuntaCite = (function () {
 
   /**
    * The review before converting, in `box`: the summary, the papers to add (each can be unticked),
-   * what can't be converted, and Convert / Cancel. `onConvert(keysToAdd)`; nothing is written before.
+   * the papers found only by a similar title (each can be unticked: then it's added as a paper of
+   * its own), what can't be converted, and Convert / Cancel. `onConvert(keysToAdd)`; nothing is
+   * written before.
    */
   function convertReview(doc, box, plan, extra, onConvert, onCancel) {
     box.innerHTML = '';
@@ -905,15 +908,32 @@ var LuntaCite = (function () {
         box.appendChild(row);
       });
     }
+    // found by first author, year and a similar title only: a companion paper may look the same
+    var close = plan.works.filter(function (w) { return w.id && w.how === 'close'; });
+    var notSame = [];
+    if (close.length) {
+      box.appendChild(el('div', 'cv-h', 'Found in your library by a similar title (untick any that is another paper: it’s added instead)'));
+      close.forEach(function (w) {
+        var row = el('label', 'cv-row');
+        var cb = el('input'); cb.type = 'checkbox'; cb.checked = true;
+        notSame.push({ cb: cb, key: w.key });
+        var t = el('span', 'cv-t');
+        t.textContent = (w.meta.title || 'Untitled') + ' · ' + hitMeta({ authors: w.meta.authors, year: String(w.meta.date || '').slice(0, 4), journal: w.meta.journal });
+        row.appendChild(cb); row.appendChild(t);
+        box.appendChild(row);
+      });
+    }
     (extra || []).forEach(function (line) { box.appendChild(el('p', 'cv-note', line)); });
     box.appendChild(el('p', 'cv-note', 'Nothing changes until you click Convert. A citation whose papers aren’t all in your library (or added now) stays as it is and is listed afterwards. Keep a copy of the document first: File › Save a Copy in Word; Google Docs keeps the old version in its version history.'));
     var b = el('div', 'buttons');
     var go = el('button', 'primary btn cv-go', 'Convert'), no = el('button', 'btn cv-no', 'Cancel');
-    go.onclick = function () { onConvert(checks.filter(function (c) { return c.cb.checked; }).map(function (c) { return c.key; })); };
+    go.onclick = function () {
+      onConvert(checks.filter(function (c) { return c.cb.checked; }).concat(notSame.filter(function (c) { return !c.cb.checked; })).map(function (c) { return c.key; }));
+    };
     no.onclick = function () { onCancel(); };
     b.appendChild(go); b.appendChild(no);
     box.appendChild(b);
-    return { go: go, checks: checks };
+    return { go: go, checks: checks, close: notSame };
   }
 
   /** What the panel says after converting. */
