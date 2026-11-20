@@ -108,6 +108,14 @@ Inside the apps, **Ask** (✨) runs a small agent on the device with the same ki
 on-device model, or Qwen3 4B (4-bit, via MLX; a one-time 2.3 GB download) when Apple Intelligence is off
 or unavailable. Pick the model in the panel's ⋯ menu.
 
+The apps deploy to macOS 15 and iOS 18. FoundationModels only exists from macOS/iOS 26, so it is
+weak-linked (`-weak_framework FoundationModels` in project.yml) and every use is behind
+`#available(macOS 26.0, iOS 26.0, *)`; the open model plugs into FoundationModels' `LanguageModel`
+protocol, which needs macOS/iOS 27. Before 26, `AskEngine.unavailableReason` says the assistant needs a
+newer system, `plainAnswer` returns nil (New for You ranks without screening or summaries, Tidy and
+Outline keep their model-free grouping), there is no Summary card and "Read Title and Authors from the
+PDF" is off. SwiftUI modifiers new in 26 go through `Shared/Compat.swift`.
+
 ## Citations in Word and Google Docs
 
 **Lunta › Citations in Word & Google Docs…** sets them up. Both talk to the Mac app over

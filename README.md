@@ -21,6 +21,11 @@ Google Drive: no account, no server, nothing collected.
 Linux and Android (the release page says which file you need), plus the browser extension. iPhone and iPad:
 **[Lunta on the App Store](https://apps.apple.com/app/lunta/id6835403752)**.
 
+Lunta for Mac needs macOS 15 Sequoia or newer on Apple silicon (M1 or newer); Lunta for iPhone and iPad
+needs iOS 18 or iPadOS 18 or newer. The assistant (Ask), the Summary card, the summaries and screening in
+New for You and suggested topics need macOS 26 or iOS 26 or newer (Apple Intelligence, or the open model
+from macOS 27 or iOS 27); everything else works the same on the older systems.
+
 Lunta updates itself on Mac, Windows, Linux (AppImage) and Android: once a day it asks GitHub whether
 there is a newer version and offers to install it (**Check for Updates** is in the Lunta menu on the Mac,
 under Settings elsewhere, where the daily check can be turned off). The Linux .deb is updated by
