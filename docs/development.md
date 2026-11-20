@@ -862,6 +862,11 @@ extensions write to the App Group inbox as before, so they work with any choice.
 
 ### Access: `drive.file` only
 
+> **Not switched on yet.** `NARROW_DRIVE_ACCESS` in `core/src/drive/auth.rs` is `false`: sign-in still asks for
+> the full `drive` scope, and no adoption runs, until the Windows and Linux app syncs through the Drive API
+> (today it shares the library through a Google Drive for desktop folder, whose new files `drive.file` can't
+> see). Everything below describes the behaviour once it is on; the tests run with it on.
+
 Lunta asks Google for **`https://www.googleapis.com/auth/drive.file`** and nothing else: it sees only the
 files and folders created by the Cloud project's OAuth clients, plus the items the user picks for it in
 Google's picker. That scope is *non-sensitive* (brand verification only, no security assessment, no
