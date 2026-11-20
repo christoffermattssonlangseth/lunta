@@ -54,6 +54,7 @@
     <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 5.5h2"/></symbol>
     <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l10.5-6.5z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24" fill="currentColor"><rect x="6.5" y="5" width="4" height="14" rx="1"/><rect x="13.5" y="5" width="4" height="14" rx="1"/></symbol>
     <symbol id="i-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l1.8 5.2 5.2 1.8-5.2 1.8L12 17.5l-1.8-5.2L5 10.5l5.2-1.8z"/><path d="M18.5 16.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/></symbol>
     <symbol id="i-laptop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="5" width="15" height="10" rx="1.5"/><path d="M2.5 18.5h19"/></symbol>
     <symbol id="i-devices" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3.5" width="12" height="16" rx="1.8"/><rect x="15.5" y="9" width="6" height="11.5" rx="1.4"/><path d="M8 16.5h2"/></symbol>
@@ -90,10 +91,12 @@
     </div>
     <div class="hero-art">
       <div class="tablet">
-        <img src="images/ipad-library-900.webp" srcset="images/ipad-library-900.webp 900w, images/ipad-library-1600.webp 1600w" sizes="(min-width: 62rem) 30rem, 80vw" width="900" height="1200" alt="Lunta on iPad: the sidebar, the list of papers and a paper's reading view with green and pink highlights in the abstract." fetchpriority="high">
+        <!-- iPad 900×1200 and 1600×2133: Lunta's library and reading view of Kukanja et al., Cell 2024 (CC BY 4.0). To swap in a real screenshot, keep the names and the 3:4 aspect ratio. -->
+        <img src="images/kukanja-ipad-900.webp" srcset="images/kukanja-ipad-900.webp 900w, images/kukanja-ipad-1600.webp 1600w" sizes="(min-width: 62rem) 30rem, 80vw" width="900" height="1200" alt="Lunta on iPad: the sidebar, the list of papers and the reading view of a Cell paper on multiple sclerosis lesions, with green and pink highlights in its summary." fetchpriority="high">
       </div>
       <div class="phone">
-        <img src="images/iphone-reading-640.webp" srcset="images/iphone-reading-640.webp 640w, images/iphone-reading-960.webp 960w" sizes="14rem" width="640" height="1391" alt="Lunta on iPhone: the reading view of a Nature paper with yellow and blue highlights and a card for Fig. 1.">
+        <!-- iPhone 640×1391 and 960×2087: the reading view of Kukanja et al. To swap in a real screenshot, keep the names and the aspect ratio (1320:2868). -->
+        <img src="images/kukanja-iphone-reading-640.webp" srcset="images/kukanja-iphone-reading-640.webp 640w, images/kukanja-iphone-reading-960.webp 960w" sizes="14rem" width="640" height="1391" alt="Lunta on iPhone: the introduction of a Cell paper on multiple sclerosis in the reading view, with a yellow and a blue highlight, tappable citations and a card for Fig. 1.">
       </div>
     </div>
   </div>
@@ -119,31 +122,20 @@
       </div>
       <div class="stage">
         <figure>
-          <div class="pdf" aria-hidden="true">
-            <div class="pdf-top">nature <span>Article</span></div>
-            <h3>Transfer learning enables predictions in network biology</h3>
-            <p class="authors">Christina V. Theodoris, Ling Xiao, Anant Chopra, Mark D. Chaffin, Zeina R. Al Sayed, Matthew C. Hill, Helene Mantineo, Elizabeth M. Brydon, Zexian Zeng, X. Shirley Liu &amp; Patrick T. Ellinor</p>
-            <p class="abstract">Mapping gene networks requires large amounts of transcriptomic data to learn the connections between genes, which impedes discoveries in settings with limited data, including rare diseases and diseases affecting clinically inaccessible tissues. Recently, transfer learning has revolutionized fields such as natural language understanding and computer vision by leveraging deep learning models pretrained on large-scale general datasets that can then be fine-tuned towards a vast array of downstream tasks with limited task-specific data.</p>
-            <div class="cols">
-              <p>Mapping the gene regulatory networks that drive disease progression enables screening for molecules that correct the network by normalizing core regulatory elements, rather than targeting peripheral downstream effectors that may not be disease modifying. However, mapping the gene network architecture requires large amounts of transcriptomic data to learn the connections between genes, which impedes network-correcting drug discovery in settings with limited data, including rare diseases and diseases affecting clinically inaccessible tissues.</p>
-              <div class="fig"><i></i><i></i><i></i><b>Fig. 1 | Geneformer architecture and transfer learning strategy.</b></div>
-              <p>Although data remains limited in these settings, recent advances in sequencing technologies have driven a rapid expansion in the amount of transcriptomic data available from human tissues more broadly. Furthermore, single cell technologies have facilitated the observation of transcriptomic states without averaging genes' expression across multiple cells, potentially providing more precise data for inference of network interactions.</p>
-              <p>Recently, the concept of transfer learning has revolutionized fields such as natural language understanding and computer vision by leveraging deep learning models pretrained on large-scale general datasets that can then be fine-tuned towards a vast array of downstream tasks with limited task-specific data that would be insufficient to yield meaningful predictions when used in isolation.</p>
-            </div>
-          </div>
+          <img class="pdf shot" src="images/kukanja-pdf-page-886.webp" srcset="images/kukanja-pdf-page-560.webp 560w, images/kukanja-pdf-page-886.webp 886w" sizes="(min-width: 52rem) 25rem, 90vw" width="886" height="950" loading="lazy" alt="The first page of the paper's PDF in Lunta, with two highlights in its Highlights.">
           <figcaption>The PDF</figcaption>
         </figure>
         <div class="arrow" aria-hidden="true"><svg><use href="#i-arrow"/></svg></div>
         <figure>
           <div class="phone">
-            <div class="screen read" role="img" aria-label="The same paper in Lunta's reading view on a phone: the abstract in large, readable text with two highlights, a tappable citation and a card for Fig. 1.">
+            <div class="screen read" role="img" aria-label="The same paper in Lunta's reading view on a phone: the introduction in large, readable text with two highlights, tappable citations and a card for Fig. 1.">
               <div class="status" aria-hidden="true">9:41 <i></i></div>
               <div class="toolbar" aria-hidden="true"><span></span><span></span></div>
               <div aria-hidden="true">
-                <h4>Abstract</h4>
-                <p>Mapping gene networks requires large amounts of transcriptomic data to learn the connections between genes, which impedes discoveries in settings with limited data. Recently, transfer learning has revolutionized fields such as natural language understanding<sup>1,2</sup> by leveraging <mark>deep learning models pretrained on large-scale general datasets</mark> that can then be fine-tuned towards a vast array of downstream tasks.</p>
-                <p>Here, we developed Geneformer, <mark class="g">pretrained on a large-scale corpus of ~30 million single cell transcriptomes</mark>.</p>
-                <div class="figcard"><i></i><span><b>Fig. 1</b>Geneformer architecture and transfer learning strategy.</span></div>
+                <h4>Introduction</h4>
+                <p>Multiple sclerosis (MS) is a complex disease of unclear, multifactorial etiology<sup>1,2</sup> and lesion pathology. Lesions affect the white and gray matter of the central nervous system. <mark>Their distribution and composition vary between and within patients,</mark><sup>3</sup> and their localization often reflects the clinical symptoms.<sup>6</sup></p>
+                <p>Some patients develop lesions limited to specific regions, such as the spinal cord,<sup>7</sup> <mark class="g">suggesting the influence of the tissue microenvironment in disease specification</mark>.</p>
+                <div class="figcard"><i></i><span><b>Fig. 1</b>Comprehensive spatiotemporal cellular mapping of the EAE mouse model of MS</span></div>
               </div>
             </div>
           </div>
@@ -157,7 +149,7 @@
         <div class="reveal"><b>89%</b><span>of highlights back on the right passage after the view is rebuilt</span></div>
       </div>
       <p class="proof-note"><span>Measured on 200 open-access papers from PubMed Central.</span> <a class="textlink" href="https://github.com/christoffermattssonlangseth/lunta/blob/main/eval/RESULTS.md">How it was measured</a></p>
-      <p class="muted" style="font-size:.8125rem;margin-top:.5rem">Sample text: Theodoris et al., “Transfer learning enables predictions in network biology”, <em>Nature</em> 618, 616–624 (2023), an open-access paper.</p>
+      <p class="muted" style="font-size:.8125rem;margin-top:.5rem">The paper shown on this page: Kukanja et al., “Cellular architecture of evolving neuroinflammatory lesions and multiple sclerosis pathology”, <em>Cell</em> 187, 1990–2009 (2024), <a href="https://doi.org/10.1016/j.cell.2024.02.030">doi:10.1016/j.cell.2024.02.030</a>, CC BY 4.0.</p>
     </div>
   </section>
 
@@ -175,7 +167,8 @@
             <h3>Figures, citations and equations that work on a phone</h3>
             <p>Tap a figure, or “Fig. 2” in the text, to see it large with its caption, then swipe through the paper's figures. Tap a citation to see the reference and add it to your library. Scroll or turn pages in Light, Paper, Quiet or Black.</p>
           </div>
-          <div class="art"><div class="shot-crop"><img src="images/crop-figure-900.webp" width="900" height="913" loading="lazy" alt="The figure viewer on iPhone: Fig. 1 of the paper, all three panels, shown large over the text."></div></div>
+          <p class="credit">Figure from Kukanja et al., <em>Cell</em> 2024, <a href="https://doi.org/10.1016/j.cell.2024.02.030">CC BY 4.0</a></p>
+          <div class="art"><div class="shot-crop"><img src="images/kukanja-figure-900.webp" width="900" height="913" loading="lazy" alt="The figure viewer on iPhone: Fig. 1 of the paper, all its panels, shown large over the text with the start of its caption."></div></div>
         </article>
 
         <article class="cell c-hl reveal" id="highlight">
@@ -185,7 +178,7 @@
             <p>Four colors and notes, in the reading view or the PDF, and Apple Pencil on iPad. They sync everywhere and are searchable, and they find their place again when a paper gets a better reading view.</p>
           </div>
           <div class="vg" aria-hidden="true">
-            <p class="hl">Geneformer gained a fundamental understanding of network dynamics, <mark>encoding network hierarchy in the model's attention weights</mark> in a completely self-supervised manner.</p>
+            <p class="hl">We demonstrated that <mark>disease-associated (DA)-glia arise independently of lesions and are dynamically induced and resolved</mark> over the disease course.</p>
             <div class="swatches"><i></i><i></i><i></i><i></i><span>+ note</span></div>
           </div>
         </article>
@@ -198,8 +191,9 @@
           </div>
           <div class="vg summary" aria-hidden="true">
             <b><svg width="14" height="14"><use href="#i-spark"/></svg>Summary</b>
-            <p>The paper develops Geneformer, a context-aware deep learning model pretrained on 30 million single-cell transcriptomes to enable predictions in network biology with limited data. During pretraining, Geneformer learns network dynamics and hierarchy through self-supervised attention weights. …</p>
-            <small>Made on device by the open model (Qwen3 4B). It can be wrong.</small>
+            <!-- Lunta's summary of Kukanja et al., Cell 2024, made on a Mac by Apple Intelligence (its first two sentences, verbatim) -->
+            <p>The study investigated evolving cellular processes in experimental autoimmune encephalomyelitis (EAE) by modeling disease progression and using in situ sequencing (ISS) with high-sensitivity CartaNA kit to map cell-to-cell interactions. It found that disease-associated (DA)-glia arise independently of lesions and are dynamically induced and resolved during disease progression. …</p>
+            <small>Made on device by Apple Intelligence. It can be wrong.</small>
           </div>
         </article>
 
@@ -214,11 +208,11 @@
             <div class="doc-mock" aria-hidden="true">
               <div class="doc-bar"><i></i><i></i><i></i><span>Google Docs</span></div>
               <div class="doc-page">
-                <p>Foundation models are changing single-cell biology<sup>1,2</sup>.</p>
-                <ol><li>Theodoris, C. V. et al. Transfer learning enables predictions in network biology. <i>Nature</i> <b>618</b>, 616–624 (2023).</li><li>Tejada-Lapuerta, A. et al. Nicheformer: a foundation model for single-cell and spatial omics. <i>Nature Methods</i> <b>22</b>, 2525–2538 (2025).</li></ol>
+                <p>Spatial omics maps cells in their tissue context<sup>1,2</sup>.</p>
+                <ol><li>Kukanja, P. et al. Cellular architecture of evolving neuroinflammatory lesions and multiple sclerosis pathology. <i>Cell</i> <b>187</b>, 1990–2009 (2024).</li><li>Tejada-Lapuerta, A. et al. Nicheformer: a foundation model for single-cell and spatial omics. <i>Nature Methods</i> <b>22</b>, 2525–2538 (2025).</li></ol>
               </div>
             </div>
-            <div class="shot-crop panel"><img src="images/gdocs-panel.webp" width="669" height="1092" loading="lazy" alt="Lunta's panel in Google Docs: a search for papers in your library, Insert Citation, Insert Bibliography, Update All, and the selected citation (Theodoris et al., 2023)."></div>
+            <div class="shot-crop panel"><img src="images/gdocs-panel-top.webp" width="669" height="880" loading="lazy" alt="Lunta's panel in Google Docs: the citation style, a search for papers in your library, Insert Citation, Insert Bibliography, Update All and Edit Citation."></div>
           </div>
         </article>
 
@@ -228,12 +222,14 @@
             <h3>Papers read aloud</h3>
             <p>A natural voice on every platform. The paragraph being read follows along, and it keeps playing from the lock screen.</p>
           </div>
-          <div class="vg" aria-hidden="true">
+          <div class="vg listen" data-listen>
             <div class="wave">
-              <span class="play"><svg><use href="#i-play"/></svg></span>
-              <span class="bars"><i style="--h:35%;--d:1"></i><i style="--h:60%;--d:2"></i><i style="--h:85%;--d:3"></i><i style="--h:50%;--d:4"></i><i style="--h:70%;--d:5"></i><i style="--h:95%;--d:6"></i><i style="--h:55%;--d:7"></i><i style="--h:40%;--d:8"></i><i style="--h:75%;--d:9"></i><i style="--h:90%;--d:10"></i><i style="--h:45%;--d:11"></i><i style="--h:65%;--d:12"></i><i style="--h:30%;--d:13"></i><i style="--h:55%;--d:14"></i><i style="--h:80%;--d:15"></i><i style="--h:45%;--d:16"></i><i style="--h:60%;--d:17"></i><i style="--h:35%;--d:18"></i><i style="--h:70%;--d:19"></i><i style="--h:50%;--d:20"></i></span>
+              <button class="play" type="button" aria-label="Play a sample of Lunta reading Kukanja et al., Cell 2024" aria-pressed="false" hidden><svg class="i-play" aria-hidden="true"><use href="#i-play"/></svg><svg class="i-pause" aria-hidden="true"><use href="#i-pause"/></svg></button>
+              <span class="bars" aria-hidden="true"><i style="--h:64%"></i><i style="--h:58%"></i><i style="--h:77%"></i><i style="--h:100%"></i><i style="--h:48%"></i><i style="--h:64%"></i><i style="--h:64%"></i><i style="--h:59%"></i><i style="--h:71%"></i><i style="--h:55%"></i><i style="--h:15%"></i><i style="--h:69%"></i><i style="--h:67%"></i><i style="--h:60%"></i><i style="--h:73%"></i><i style="--h:41%"></i><i style="--h:40%"></i><i style="--h:82%"></i><i style="--h:65%"></i><i style="--h:51%"></i><i style="--h:89%"></i><i style="--h:86%"></i><i style="--h:50%"></i><i style="--h:14%"></i><i style="--h:81%"></i><i style="--h:56%"></i><i style="--h:73%"></i><i style="--h:54%"></i><i style="--h:75%"></i><i style="--h:68%"></i><i style="--h:61%"></i><i style="--h:63%"></i><i style="--h:48%"></i><i style="--h:81%"></i><i style="--h:53%"></i><i style="--h:66%"></i><i style="--h:73%"></i><i style="--h:56%"></i><i style="--h:41%"></i><i style="--h:8%"></i></span>
             </div>
-            <p class="wave-line"><mark>The pretrained Geneformer accurately predicted dosage-sensitive disease genes</mark> and their downstream targets…</p>
+            <audio controls preload="none" src="audio/kukanja-listen.m4a"></audio>
+            <p class="wave-line"><span data-t="0">Multiple sclerosis (MS) is a neurological disease characterized by multifocal lesions and smoldering pathology.</span> <span data-t="7.66">Although single-cell analyses provided insights into cytopathology, evolving cellular processes underlying MS remain poorly understood.</span> <span data-t="16.66">We investigated the cellular dynamics of MS by modeling temporal and regional rates of disease progression in mouse experimental autoimmune encephalomyelitis (EAE).</span></p>
+            <p class="credit">Lunta's natural voice (Kokoro), read on device. From the abstract of Kukanja et al., <em>Cell</em> 2024, <a href="https://doi.org/10.1016/j.cell.2024.02.030">CC BY 4.0</a>.</p>
           </div>
         </article>
 
@@ -256,7 +252,7 @@
             <h3>New papers, every morning</h3>
             <p>Picks that match your research, with why each one is there. Add your ORCID iD and Lunta also learns from your own papers.</p>
           </div>
-          <div class="art"><div class="shot-crop"><img src="images/crop-new-for-you-900.webp" width="900" height="1412" loading="lazy" alt="New for You on iPhone: a short digest of today's picks and a card for a new preprint, with why it was picked and an Add button."></div></div>
+          <div class="art"><div class="shot-crop"><img src="images/new-for-you-900.webp" width="900" height="837" loading="lazy" alt="New for You on iPhone: when today's picks were made, and a card for a new preprint with a one-line description and an Add button."></div></div>
         </article>
 
         <article class="cell c-ext reveal" id="extension">
@@ -512,6 +508,13 @@
 <script>
 /* the header turns frosted once the page scrolls; without this script it is frosted all along */
 (function(){var h=document.querySelector(".site-header");function f(){h.classList.toggle("at-top",scrollY<16)}f();addEventListener("scroll",f,{passive:true})})();
+/* Listen: the sample plays with its own button, the bars fill and the sentence being read is marked; without this script the audio has its own controls */
+(function(){var r=document.querySelector("[data-listen]");if(!r)return;var a=r.querySelector("audio"),b=r.querySelector(".play"),bars=r.querySelectorAll(".bars i"),ss=r.querySelectorAll("[data-t]");
+a.controls=false;a.hidden=true;b.hidden=false;r.classList.add("js");
+function tick(){var t=a.currentTime,d=a.duration||27.6,n=a.ended?0:Math.round(t/d*bars.length),k=-1,i;for(i=0;i<bars.length;i++)bars[i].classList.toggle("done",i<n);if(!a.ended&&t>0)for(i=0;i<ss.length;i++)if(t>=+ss[i].dataset.t)k=i;for(i=0;i<ss.length;i++)ss[i].classList.toggle("now",i===k)}
+function state(){var p=!a.paused&&!a.ended;b.setAttribute("aria-pressed",p);b.classList.toggle("on",p);tick()}
+b.addEventListener("click",function(){if(a.paused){a.preload="auto";a.play()}else a.pause()});
+["play","pause","ended","timeupdate","seeked"].forEach(function(e){a.addEventListener(e,e==="timeupdate"?tick:state)})})();
 </script>
 </body>
 </html>
