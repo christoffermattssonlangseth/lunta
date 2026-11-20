@@ -30,6 +30,13 @@ fn library_root() -> PathBuf {
     if let Ok(p) = std::env::var("LUNTA_LIBRARY") {
         return PathBuf::from(p);
     }
+    // where the Mac app has its library (iCloud, Google Drive or only on this Mac, chosen in the app)
+    if let Ok(p) = std::fs::read_to_string(home().join("Library/Application Support/Lunta/library-root")) {
+        let p = PathBuf::from(p.trim());
+        if !p.as_os_str().is_empty() && p.is_dir() {
+            return p;
+        }
+    }
     let cloud = home().join("Library/Mobile Documents/iCloud~com~cmlangseth~margins/Documents/Library");
     if cloud.exists() {
         return cloud;

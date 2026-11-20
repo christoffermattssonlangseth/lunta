@@ -58,11 +58,15 @@ pub struct SyncOptions {
     /// line by line, positions per paper), not only this device's. Makes the Mac a bridge between
     /// iCloud and Drive.
     pub bridge: bool,
+    /// Other device ids whose op logs this device publishes as its own: the AI agent (lunta-mcp)
+    /// on a Mac whose library is synced through the API writes `ops/agent-….jsonl` into the same
+    /// working folder, and only this device can upload it. Merged like the device's own log.
+    pub also_own: Vec<String>,
 }
 
 impl SyncOptions {
     pub fn new(state_path: impl Into<PathBuf>) -> SyncOptions {
-        SyncOptions { state_path: state_path.into(), lazy: false, progress: None, bridge: false }
+        SyncOptions { state_path: state_path.into(), lazy: false, progress: None, bridge: false, also_own: Vec::new() }
     }
 }
 
@@ -194,7 +198,9 @@ impl Syncer {
         }
         match parts.as_slice() {
             // a bridge treats every device's log and positions as its own: merged and passed on both ways
-            ["ops", n] => n.strip_suffix(".jsonl").map(|d| if d == self.device || self.opts.bridge { Kind::OwnLog } else { Kind::ForeignLog }),
+            ["ops", n] => n.strip_suffix(".jsonl").map(|d| {
+                if d == self.device || self.opts.bridge || self.opts.also_own.iter().any(|o| o == d) { Kind::OwnLog } else { Kind::ForeignLog }
+            }),
             // (not iCloud's conflict copies, "ios-1234 2.json")
             ["positions", n] if n.contains(' ') => None,
             ["positions", n] => n.strip_suffix(".json").map(|d| {

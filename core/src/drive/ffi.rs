@@ -166,6 +166,17 @@ impl LibrarySync {
         Ok(Arc::new(LibrarySync { syncer: Syncer::new(root, device, Box::new(remote), options(state_path, lazy, progress))? }))
     }
 
+    /// Like `google_drive`, and also publishes the op logs of `also_own` (device ids) as this
+    /// device's own: the Mac passes the id of its AI agent (lunta-mcp, `ops/agent-….jsonl`), which
+    /// writes into the same library folder and has no sync of its own.
+    #[uniffi::constructor]
+    pub fn google_drive_also_own(root: String, device: String, state_path: String, auth: Arc<DriveAuth>, folder_name: String, folder_id: Option<String>, lazy: bool, also_own: Vec<String>, progress: Option<Arc<dyn ProgressListener>>) -> Result<Arc<Self>> {
+        let remote = GoogleDrive::new(auth.auth.clone(), drive_root(folder_name, folder_id));
+        let mut o = options(state_path, lazy, progress);
+        o.also_own = also_own.into_iter().filter(|d| !d.trim().is_empty()).collect();
+        Ok(Arc::new(LibrarySync { syncer: Syncer::new(root, device, Box::new(remote), o)? }))
+    }
+
     /// A bridge between a folder shared with other devices (a Mac's iCloud library) and the folder
     /// `folder_name` in My Drive: every device's changes are passed on both ways (`SyncOptions::bridge`),
     /// and paper files are all fetched (not lazy), so devices on either side see everything.

@@ -165,6 +165,37 @@ fn never_touches_another_devices_log() {
 }
 
 #[test]
+fn publishes_the_logs_it_is_told_are_its_own() {
+    // a Mac whose library syncs through the API: its AI agent writes ops/agent-x.jsonl into the
+    // same working folder, and the Mac uploads it like its own log (other foreign logs stay put)
+    let w = World::new();
+    let root = w.tmp.path().join("lib-macapi");
+    let cache = w.tmp.path().join("cache-macapi");
+    let lib = Library::open(root.to_string_lossy().into(), cache.to_string_lossy().into(), "macapi".into()).unwrap();
+    let mut opts = SyncOptions::new(w.tmp.path().join("state-macapi.json"));
+    opts.also_own = vec!["agent-x".into()];
+    let mac = Dev { lib, syncer: Some(Syncer::new(&root, "macapi", Box::new(LocalDirRemote::new(&w.remote)), opts).unwrap()), root };
+    mac.lib.add_paper(meta("Alpha", ""), None, None, None).unwrap();
+    let agent = Library::open(mac.root.to_string_lossy().into(), w.tmp.path().join("cache-agent").to_string_lossy().into(), "agent-x".into()).unwrap();
+    let id = agent.papers(PaperFilter::default(), SortKey::Added)[0].id.clone();
+    agent.set_starred(id.clone(), true).unwrap();
+    fs::write(mac.root.join("ops/stray.jsonl"), b"{}\n").unwrap();
+    mac.sync();
+    assert!(w.remote.join("ops/agent-x.jsonl").exists());
+    assert!(!w.remote.join("ops/stray.jsonl").exists());
+
+    // the agent writes more: the next sync sends it, and a phone sees the star
+    agent.set_read(id.clone(), true).unwrap();
+    let r = mac.sync();
+    assert_eq!(r.uploaded, 1, "{r:?}");
+    assert!(r.conflicts.is_empty(), "{r:?}");
+    let ph = w.api("phone");
+    ph.sync();
+    let p = ph.lib.paper(id).unwrap();
+    assert!(p.starred && p.read);
+}
+
+#[test]
 fn three_devices_converge() {
     let w = World::new();
     let mac = w.mac();
