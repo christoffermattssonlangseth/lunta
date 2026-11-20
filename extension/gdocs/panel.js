@@ -617,8 +617,8 @@
       const first = LuntaCite.convertPlan(z.cites);
       const m = check(await send({ op: "match", items: first.works.map((w) => w.meta) }));
       const plan = LuntaCite.convertPlan(z.cites, m.matches || []);
-      conversion = { plan, bibs: z.bibs };
-      if (z.bibs.length) notes.push("Zotero’s bibliography becomes Lunta’s once all its citations are converted.");
+      conversion = { plan, bibs: z.bibs, unreadable: z.unreadable || 0 };
+      if (z.bibs.length) notes.push(z.unreadable ? "Zotero’s bibliography stays, as some of its citations can’t be read." : "Zotero’s bibliography becomes Lunta’s once all its citations are converted.");
       $(".cvbox").hidden = false;
       LuntaCite.convertReview(document, $(".cvlist"), plan, notes, (keys) => runConversion(keys), closeConvert);
       status(LuntaCite.convertSummary(plan) + ". Review, then Convert.");
@@ -640,9 +640,11 @@
       const res = LuntaCite.convertResolve(conv.plan, added);
       const left = res.left.map((l) => ({ text: conv.plan.citations[l.index].text, reason: l.reason }));
       const cites = res.convert.map((c) => ({ key: conv.plan.citations[c.index].key, ids: c.ids, options: LuntaCite.encodeOptions(c.options) }));
-      if (left.length && conv.bibs.length) left.push({ text: "", reason: "Zotero’s bibliography stays until its citations are converted" });
+      // Zotero's bibliography stays while any of its citations does (left out, or unreadable)
+      const keepBibs = left.length > 0 || conv.unreadable > 0;
+      if (keepBibs && conv.bibs.length) left.push({ text: "", reason: "Zotero’s bibliography stays until its citations are converted" });
       status("Converting " + cites.length + " citations…");
-      const r = check(await send({ op: "convertZotero", docId: docId(), cites, bibs: left.length ? [] : conv.bibs, ...(styleSaved ? {} : { style, styleTitle }) }));
+      const r = check(await send({ op: "convertZotero", docId: docId(), cites, bibs: keepBibs ? [] : conv.bibs, ...(styleSaved ? {} : { style, styleTitle }) }));
       done(r);
       closeConvert();
       status(LuntaCite.convertDone(r.converted, left, newPapers) + " " + (r.summary || ""), left.length > 0);

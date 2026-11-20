@@ -113,4 +113,12 @@ function endnoteLong(titles) {
   return { xml, nodes };
 }
 
-module.exports = { documentXML, NODES, endnoteLong, ZOTERO_CODE, EN_INLINE_CODE, EN_INLINE_XML, EN_DATA_XML, MENDELEY_CODE, MENDELEY_CITE_TAG, ZOTERO_BIBL_CODE, b64 };
+/** An EndNote citation with nothing in it (unreadable), a readable one, and EndNote's bibliography. */
+function endnoteUnreadable() {
+  const xml = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+    P(t('Lost '), begin(), instr(' ADDIN EN.CITE '), sep, t('(Gone, 1999)'), end, t(' and '), begin(), instr(EN_INLINE_CODE), sep, t('(2020, p. 4)'), end) +
+    '<w:p>' + begin() + instr(' ADDIN EN.REFLIST ') + sep + t('Gone (1999). Smith (2020).') + end + '</w:p><w:sectPr/></w:body></w:document>';
+  return { xml, nodes: [{ field: ' ADDIN EN.CITE ' }, { field: EN_INLINE_CODE }, { field: ' ADDIN EN.REFLIST ' }] };
+}
+
+module.exports = { documentXML, NODES, endnoteLong, endnoteUnreadable, ZOTERO_CODE, EN_INLINE_CODE, EN_INLINE_XML, EN_DATA_XML, MENDELEY_CODE, MENDELEY_CITE_TAG, ZOTERO_BIBL_CODE, b64 };

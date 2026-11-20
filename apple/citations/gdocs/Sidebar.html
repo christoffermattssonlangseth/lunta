@@ -233,9 +233,9 @@ var convertZotero = exclusive(function () {
     var first = LuntaCite.convertPlan(cites);
     return api('/match', { items: first.works.map(function (w) { return w.meta; }) }, 60000).then(function (r) {
       var plan = LuntaCite.convertPlan(cites, r.matches || []);
-      conversion = { plan: plan, bibs: bibs };
+      conversion = { plan: plan, bibs: bibs, unreadable: unreadable };
       $('convertBox').hidden = false;
-      if (bibs.length) notes.push('Zotero’s bibliography becomes Lunta’s once all its citations are converted.');
+      if (bibs.length) notes.push(unreadable ? 'Zotero’s bibliography stays, as some of its citations can’t be read.' : 'Zotero’s bibliography becomes Lunta’s once all its citations are converted.');
       LuntaCite.convertReview(document, $('cvlist'), plan, notes, runConversion, closeConvert);
       status(LuntaCite.convertSummary(plan) + '. Review, then Convert.');
     });
@@ -258,10 +258,12 @@ function runConversion(keys) {
         return { key: conv.plan.citations[c.index].key, ids: c.ids, names: LuntaCite.optionRangeNames(LuntaCite.encodeOptions(c.options)) };
       });
       var left = res.left.map(function (l) { return { text: conv.plan.citations[l.index].text, reason: l.reason }; });
+      // Zotero's bibliography stays while any of its citations does (left out, or unreadable)
+      var keepBibs = left.length > 0 || conv.unreadable > 0;
       return server('getState').then(function (st) {
-        return server('zoteroConvert', cites, left.length ? [] : conv.bibs, !st.hasBibliography);
+        return server('zoteroConvert', cites, keepBibs ? [] : conv.bibs, !st.hasBibliography);
       }).then(function (r) {
-        if (left.length && conv.bibs.length) left.push({ text: '', reason: 'Zotero’s bibliography stays until its citations are converted' });
+        if (keepBibs && conv.bibs.length) left.push({ text: '', reason: 'Zotero’s bibliography stays until its citations are converted' });
         closeConvert();
         return update().then(function () {
           status(LuntaCite.convertDone(r.converted, left, newPapers) + ' ' + $('status').textContent, left.length > 0);

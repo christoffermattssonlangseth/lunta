@@ -547,7 +547,9 @@ function readForeign(ctx) {
   ccs.load('items/id,items/tag,items/text');
   return ctx.sync().then(function () {
     var scan = LuntaFields.scan(ooxml.value);
-    var out = { cites: [], bibs: [], notes: [], unreadable: 0, fieldsOK: true };
+    // unreadable: how many citations can't be converted, per manager (its bibliography stays then)
+    var out = { cites: [], bibs: [], notes: [], unreadable: 0, unreadableBy: {}, fieldsOK: true };
+    var unreadable = function (source) { out.unreadable++; out.unreadableBy[source] = (out.unreadableBy[source] || 0) + 1; };
     // Word's fields in the same order as the OOXML's; a field whose code differs isn't touched
     var k = 0;
     scan.fields.forEach(function (f) {
@@ -560,10 +562,10 @@ function readForeign(ctx) {
         if (/^\s*ADDIN\s*EN\.CITE\.DATA\b/.test(fields.items[j].code || '')) continue;
         if (LuntaFields.sameCode(fields.items[j].code, f.instr)) { at = j; k = j + 1; break; }
       }
-      if (at < 0) { out.unreadable++; return; }
+      if (at < 0) { if (c.kind !== 'bib') unreadable(c.source); return; }
       var ref = { field: at, code: fields.items[at].code };
       if (c.kind === 'bib') out.bibs.push({ ref: ref, source: c.source });
-      else if (!c.works || !c.works.length) out.unreadable++;
+      else if (!c.works || !c.works.length) unreadable(c.source);
       else out.cites.push({ ref: ref, works: c.works, text: f.text, source: c.source });
     });
     ccs.items.forEach(function (cc) {
@@ -571,7 +573,7 @@ function readForeign(ctx) {
       if (!c) return;
       var ref = { cc: cc.id, tag: cc.tag };
       if (c.kind === 'bib') out.bibs.push({ ref: ref, source: c.source });
-      else if (!c.works || !c.works.length) out.unreadable++;
+      else if (!c.works || !c.works.length) unreadable(c.source);
       else out.cites.push({ ref: ref, works: c.works, text: cc.text, source: c.source });
     });
     if (LuntaFields.zoteroBookmarks(ooxml.value)) {
@@ -606,7 +608,10 @@ var convertCitations = exclusive(function () {
       conversion = { plan: plan, found: found };
       box.hidden = false;
       var notes = ['From ' + sourcesOf(found.cites) + '.'].concat(found.notes);
-      if (found.bibs.length) notes.push('The ' + sourcesOf(found.bibs) + ' bibliography becomes Lunta’s once all its citations are converted.');
+      var stays = found.bibs.filter(function (b) { return found.unreadableBy[b.source]; });
+      var goes = found.bibs.filter(function (b) { return !found.unreadableBy[b.source]; });
+      if (goes.length) notes.push('The ' + sourcesOf(goes) + ' bibliography becomes Lunta’s once all its citations are converted.');
+      if (stays.length) notes.push('The ' + sourcesOf(stays) + ' bibliography stays, as some of its citations can’t be read.');
       LuntaCite.convertReview(document, $('cvlist'), plan, notes, function (keys) { runConversion(keys); }, closeConvert);
       status(LuntaCite.convertSummary(plan) + '. Review, then Convert.');
     });
@@ -687,6 +692,7 @@ function replaceForeign(ctx, conv, res, left) {
       // a bibliography goes once none of its manager's citations is left
       var leftSources = {};
       left.forEach(function (l) { leftSources[l.source] = true; });
+      Object.keys(conv.found.unreadableBy || {}).forEach(function (s) { leftSources[s] = true; });
       var bibs = conv.found.bibs.filter(function (b) { return !leftSources[b.source]; });
       var keptBibs = conv.found.bibs.filter(function (b) { return leftSources[b.source]; });
       if (keptBibs.length) left.push({ text: '', source: '', reason: 'the ' + sourcesOf(keptBibs) + ' bibliography stays until its citations are converted' });

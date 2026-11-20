@@ -562,3 +562,13 @@ test('sameCode: a field code matches its own start, not a longer word', () => {
   assert.ok(!F.sameCode('ADDIN EN.CITE.DATA', 'ADDIN EN.CITE'));
   assert.ok(!F.sameCode('ADDIN EN.CITE', ' ADDIN EN.CITE.DATA '));
 });
+
+test('Convert: the other manager’s bibliography stays while an unreadable citation of it does', async () => {
+  const d = X.endnoteUnreadable();
+  const p = await panel({ settings: { luntaStyle: 'apa' }, ooxml: d.xml, nodes: d.nodes });
+  await p.ctx.convertCitations();
+  assert.equal(p.ctx.conversion.plan.citations.length, 1);
+  await p.ctx.runConversion([]);
+  assert.deepEqual(p.doc.nodes.map((n) => (n.kind === 'field' ? n.code.trim() : n.tag)), ['ADDIN EN.CITE', 'margins:b', 'ADDIN EN.REFLIST']);
+  assert.match(p.status(), /Converted 1 citation\. 1 left as they were: the EndNote bibliography stays until its citations are converted/);
+});
