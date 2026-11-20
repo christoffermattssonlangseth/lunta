@@ -323,6 +323,9 @@ fn tools() -> Value {
           json!({"text": {"type": "string", "description": "The references: a pasted list (one per line or numbered) or RIS"},
                  "bibtex": {"type": "string", "description": "A .bib file's contents"},
                  "markdown": {"type": "boolean", "default": false, "description": "Also return the report as Markdown with links"}}), &[], true),
+        t("outline_from_highlights", "An outline of the user's highlights and notes in some papers (`ids`, or a `collection`/folder name, or a `tag`), optionally about a `topic` (then only the highlights that mention it, unless none does): Markdown with headings per paper and section, each point a highlight word for word or the user's own note (marked Note), cited author-year with a lunta:// link and the citation key ([@key]), and a Sources list. Read-only. You may regroup the points into themes for the user, but keep every quote as it is and never present your own words as a highlight.",
+          json!({"ids": ids, "collection": {"type": "string", "description": "Collection (folder) name"}, "tag": {"type": "string"},
+                 "topic": {"type": "string", "description": "What the outline is about (keeps the highlights that mention it)"}}), &[], true),
         t("library_status", "Papers in the library flagged by Lunta's checks: retracted, withdrawn, corrected or with an expression of concern (Crossref and Retraction Watch notices), and preprints that have been published (with the published version), linked to it, or switched to it. Read-only; the apps check weekly.",
           json!({"id": {"type": "string", "description": "Only this paper"}}), &[], true),
     ])
@@ -593,6 +596,22 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
                 out["markdown"] = json!(r.markdown);
             }
             Ok(out)
+        }
+        "outline_from_highlights" => {
+            let mut ids = arg_ids(a);
+            if ids.is_empty() {
+                let collection = match arg_str(a, "collection") {
+                    Some(c) => Some(collection_id(lib, &c, false)?),
+                    None => None,
+                };
+                let tag = arg_str(a, "tag");
+                if collection.is_none() && tag.is_none() {
+                    return Err("give ids, a collection or a tag".into());
+                }
+                ids = lib.papers(PaperFilter { collection, tag, ..Default::default() }, SortKey::FirstAuthor).into_iter().map(|p| p.id).collect();
+            }
+            let o = lib.outline_from_highlights(ids, arg_str(a, "topic").unwrap_or_default(), None, None);
+            Ok(json!({"markdown": o.markdown, "highlights": o.items, "papers": o.papers, "note": o.note}))
         }
         "library_status" => {
             let only = arg_str(a, "id");
