@@ -3,6 +3,8 @@ import LuntaCore
 
 // Library cleanup: papers whose details look wrong (fixed from the DOI, or read from the PDF on
 // the device) and papers that are in the library twice (merged into one, keeping everything).
+// The duplicates are the core's (core/src/tidy): the same DOI, a title that differs a little, a
+// preprint and its published version. Tidy.swift adds the other suggestions.
 
 struct DetailIssue: Identifiable {
     let paper: Paper
@@ -13,6 +15,10 @@ struct DetailIssue: Identifiable {
 struct DuplicateGroup: Identifiable {
     let papers: [Paper]
     let reason: String
+    /// What merging does (from the core).
+    var note = ""
+    /// The paper to keep: the published version, else the most complete.
+    var keep = ""
     var id: String { papers.map(\.id).sorted().joined(separator: "+") }
 }
 
@@ -82,31 +88,20 @@ extension LibraryModel {
     }
 
     func duplicateGroups() -> [DuplicateGroup] {
+        // groups dismissed before the core kept dismissals
         let ignored = Set(UserDefaults.standard.stringArray(forKey: "notDuplicates") ?? [])
-        let papers = everyPaper
-        var seen = Set<String>(), out: [DuplicateGroup] = []
-        func add(_ ps: [Paper], _ reason: String) {
-            let g = DuplicateGroup(papers: ps, reason: reason)
-            guard ps.count > 1, !ignored.contains(g.id), !ps.contains(where: { seen.contains($0.id) }) else { return }
-            ps.forEach { seen.insert($0.id) }
-            out.append(g)
+        return lib.tidyDuplicates().compactMap { g in
+            let papers = g.paperIds.compactMap { paper($0) }
+            guard papers.count > 1, !ignored.contains(g.key) else { return nil }
+            return DuplicateGroup(papers: papers, reason: g.reasonText, note: g.note, keep: g.keep)
         }
-        for (_, ps) in Dictionary(grouping: papers.filter { !$0.meta.doi.isEmpty }, by: { Self.doiKey($0.meta.doi) }) where ps.count > 1 {
-            add(ps, "same DOI")
-        }
-        for (k, ps) in Dictionary(grouping: papers, by: { Self.titleKey($0.meta.title) }) where ps.count > 1 && k.count >= 20 {
-            // same title, and no conflicting DOIs or years
-            let dois = Set(ps.map { Self.doiKey($0.meta.doi) }.filter { !$0.isEmpty })
-            let years = Set(ps.map(\.meta.year).filter { !$0.isEmpty })
-            if dois.count <= 1 && years.count <= 1 { add(ps, "same title") }
-        }
-        return out
     }
 
     func ignoreDuplicates(_ g: DuplicateGroup) {
         var list = UserDefaults.standard.stringArray(forKey: "notDuplicates") ?? []
         list.append(g.id)
         UserDefaults.standard.set(list, forKey: "notDuplicates")
+        try? lib.tidyDismiss(key: g.id)
     }
 
     /// Tries to fix a paper's details: from its DOI online, otherwise from its PDF on the device
@@ -141,33 +136,23 @@ extension LibraryModel {
         return "Fixed (\(how.joined(separator: ", ")))" + (left.isEmpty ? "." : "; still \(left.joined(separator: ", ")).")
     }
 
-    /// Folds the other papers of a group into `keep`: details, tags, folders, stars, read state,
-    /// highlights and a PDF it lacks. Then deletes the others.
+    /// Folds the other papers of a group into `keep` (the core's merge_papers): details, tags,
+    /// folders, stars, read state, highlights, a PDF or reading view it lacks (downloaded from
+    /// iCloud first), a fixed citation key. Then deletes the others.
     func merge(_ group: DuplicateGroup, keep: String) async {
-        guard var keeper = paper(keep) else { return }
-        var meta = keeper.meta
-        for other in group.papers where other.id != keep {
-            meta.fillEmpty(from: other.meta)
-            for t in other.tags { try? lib.setTag(id: keep, tag: t, present: true) }
-            for c in other.collections { try? lib.setMembership(collection: c, paper: keep, present: true) }
-            if other.starred && !keeper.starred { try? lib.setStarred(id: keep, starred: true) }
-            if other.read && !keeper.read { try? lib.setRead(id: keep, read: true) }
-            for a in lib.annotations(paper: other.id) {
-                var copy = a
-                copy.id = ""
-                copy.paperId = keep
-                _ = try? lib.saveAnnotation(a: copy)
-            }
-            if !keeper.hasPdf, other.hasPdf, let u = await ensureLocal(other.id, .pdf), let data = try? Data(contentsOf: u) {
-                try? lib.attachFile(id: keep, kind: .pdf, data: data)
-            }
-            if !keeper.hasEpub, other.hasEpub, let u = await ensureLocal(other.id, .epub), let data = try? Data(contentsOf: u) {
-                try? lib.attachFile(id: keep, kind: .epub, data: data)
-            }
-            try? lib.deletePaper(id: other.id)
-            keeper = paper(keep) ?? keeper
+        guard let keeper = paper(keep) else { return }
+        let others = group.papers.map(\.id).filter { $0 != keep }
+        for o in others {
+            guard let other = paper(o) else { continue }
+            if !keeper.hasPdf, other.hasPdf { _ = await ensureLocal(o, .pdf) }
+            if !keeper.hasEpub, other.hasEpub { _ = await ensureLocal(o, .epub); _ = await ensureLocal(o, .fulltext) }
         }
-        if meta != keeper.meta { try? lib.updateMeta(id: keep, meta: meta) }
+        let lib = self.lib
+        do {
+            _ = try await Task.detached { try lib.mergePapers(keep: keep, others: others) }.value
+        } catch {
+            errorMessage = "Couldn't merge: \(error.readable)"
+        }
         reload()
     }
 
@@ -196,7 +181,8 @@ extension LibraryModel {
 
     /// The most complete paper of a group (files, highlights, details).
     func bestOf(_ g: DuplicateGroup) -> String {
-        g.papers.max { score($0) < score($1) }?.id ?? g.papers[0].id
+        if !g.keep.isEmpty { return g.keep }
+        return g.papers.max { score($0) < score($1) }?.id ?? g.papers[0].id
     }
 
     private func score(_ p: Paper) -> Int {
@@ -219,6 +205,7 @@ struct CleanupView: View {
     @State private var spacing: [Paper] = []
     @State private var remaking = false
     @State private var remade = 0
+    @State private var tick = 0
 
     struct EditID: Identifiable { let id: String }
 
@@ -230,7 +217,7 @@ struct CleanupView: View {
             } header: {
                 Text("Possible duplicates (\(groups.count))")
             } footer: {
-                Text("Merging keeps one paper and moves tags, folders, highlights, stars and a missing PDF onto it.")
+                Text("Merging keeps one paper and moves tags, folders, highlights, stars and a missing PDF onto it. Not Duplicates stops suggesting a group.")
             }
             if !spacing.isEmpty || remaking {
                 Section {
@@ -268,6 +255,7 @@ struct CleanupView: View {
             } footer: {
                 Text("Fix looks the paper up by its DOI, or reads the title and authors from the PDF on this device (nothing is sent anywhere unless the paper has a DOI).")
             }
+            TidySections(refresh: tick)
         }
         .navigationTitle("Clean Up Library")
         .task {
@@ -284,6 +272,7 @@ struct CleanupView: View {
         issues = model.detailIssues()
         groups = model.duplicateGroups()
         for g in groups where keep[g.id] == nil { keep[g.id] = model.bestOf(g) }
+        tick += 1
     }
 
     private func line(_ p: Paper) -> String {
@@ -292,7 +281,7 @@ struct CleanupView: View {
 
     private func duplicateRow(_ g: DuplicateGroup) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(g.reason.capitalized).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Text(g.reason.capitalizedFirst).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             ForEach(g.papers, id: \.id) { p in
                 Button { keep[g.id] = p.id } label: {
                     HStack(alignment: .top, spacing: 8) {
@@ -312,6 +301,7 @@ struct CleanupView: View {
                 }
                 .buttonStyle(.plain)
             }
+            if !g.note.isEmpty { Text(g.note).font(.caption).foregroundStyle(.secondary) }
             HStack {
                 Button(working.contains(g.id) ? "Merging…" : "Merge, Keep Selected") {
                     guard let k = keep[g.id] else { return }
