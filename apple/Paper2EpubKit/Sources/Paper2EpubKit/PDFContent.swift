@@ -57,6 +57,12 @@ struct Ligature {
     var text: String
     /// at a code below 32, which PDFKit leaves out (above, PDFKit has a character of its own there)
     var lowCode = false
+    /// a symbol font's glyph (see SymbolFonts): its text replaces what PDFKit made of it, one of `reads`
+    /// (the character of its name, of its code)
+    var symbol = false
+    var reads: [String] = []
+    /// for a font with its own encoding: what it is by what PDFKit read (`text` is empty)
+    var byRead: [String: String]?
 }
 
 /// Walks a page's content stream with CGPDFScanner to find image placements, vector drawings and
@@ -89,6 +95,10 @@ final class PDFContentScanner {
         var widthScale: CGFloat = 1, sizeScale: CGFloat = 1
         /// codes the encoding's Differences give a ligature's glyph name ("/uniFB01", "/fi", "/f_f_l")
         var ligatures: [Int: String] = [:]
+        /// what the glyphs of a symbol font without a ToUnicode map show (see SymbolFonts), by code
+        var symbols: [Int: (text: String, reads: [String])] = [:]
+        /// a symbol font with its own encoding: what its glyphs are by what PDFKit reads for them
+        var symbolsByRead: (reads: [String], byRead: [String: String])?
         func width(_ code: Int) -> CGFloat {
             if twoByte { return cidWidths[code] ?? defaultWidth }
             let i = code - firstChar
@@ -287,6 +297,7 @@ final class PDFContentScanner {
                 }
             }
             var enc: CGPDFDictionaryRef?, diffs: CGPDFArrayRef?
+            var glyphNames: [Int: String] = [:]
             if CGPDFDictionaryGetDictionary(f, "Encoding", &enc), let enc, CGPDFDictionaryGetArray(enc, "Differences", &diffs), let diffs {
                 var code = 0
                 for i in 0..<CGPDFArrayGetCount(diffs) {
@@ -295,9 +306,37 @@ final class PDFContentScanner {
                     if let v = number(o) { code = Int(v); continue }
                     var n: UnsafePointer<CChar>?
                     if CGPDFObjectGetValue(o, .name, &n), let n {
-                        if let lig = ligatureNames[String(cString: n)] { info.ligatures[code] = lig }
+                        let glyph = String(cString: n)
+                        if let lig = ligatureNames[glyph] { info.ligatures[code] = lig }
+                        glyphNames[code] = glyph
                         code += 1
                     }
+                }
+            }
+            // a symbol font that names its glyphs like letters, with no ToUnicode map to say otherwise: a
+            // map that gives a code only what its name or the code itself stands for (Advent's
+            // "<aa> <00AA>" for the © it names "ordfeminine") says nothing more
+            if name(f, "Subtype") != "Type3", let fam = SymbolFonts.family(clean) {
+                var encObj: CGPDFObjectRef?
+                if !CGPDFDictionaryGetObject(f, "Encoding", &encObj), !fam.byRead.isEmpty {
+                    info.symbolsByRead = (fam.byRead.keys.sorted(), fam.byRead)
+                }
+                let base = name(f, "Encoding") ?? enc.flatMap { name($0, "BaseEncoding") }
+                let byCode = base == "WinAnsiEncoding" ? fam.winAnsi : base == "MacRomanEncoding" ? fam.macRoman : fam.standard
+                let codepage: String.Encoding = base == "MacRomanEncoding" ? .macOSRoman : .windowsCP1252
+                let map = toUnicode(f) ?? [:]
+                for code in 0..<256 {
+                    let glyph = glyphNames[code]
+                    guard let t = glyph.map({ fam.names[$0] }) ?? byCode[code] else { continue }
+                    // what the glyph reads as without a map: its name's character, its code's
+                    var plain: Set<String> = [String(UnicodeScalar(UInt8(code)))]
+                    if let s = String(bytes: [UInt8(code)], encoding: codepage) { plain.insert(s) }
+                    if let g = glyph, let p = fam.plain[g] { plain.insert(p) }
+                    if let g = glyph, g.hasPrefix("C"), let n = Int(g.dropFirst()), n < 256, let sc = UnicodeScalar(n) { plain.insert(String(sc)) }
+                    if let u = map[code], !u.unicodeScalars.allSatisfy({ $0.value < 0x20 }) {
+                        guard plain.contains(u) else { continue }
+                    }
+                    info.symbols[code] = (t, plain.filter { !$0.unicodeScalars.allSatisfy { $0.value <= 0x20 } }.sorted())
                 }
             }
             // a ToUnicode map that gives such a code something else (a space, ";") is right, not the name
@@ -422,7 +461,7 @@ final class PDFContentScanner {
         var firstCode = -1, lastCode = -1
         var starts: [CGFloat] = []
         var zeroSpaces: [CGFloat] = []   // space glyphs word spacing takes all the room from
-        var ligs: [(CGFloat, CGFloat, String, Bool)] = []
+        var ligs: [(CGFloat, CGFloat, String, Bool, [String]?, [String: String]?)] = []
         let em = abs(ts.size * font.sizeScale)
         while i < len {
             let code: Int
@@ -434,7 +473,9 @@ final class PDFContentScanner {
                 if abs(tx) < 0.02 * em { zeroSpaces.append(adv) }
             }
             starts.append(adv)
-            if let lig = font.ligatures[code] { ligs.append((adv, adv + tx * ts.th, lig, code < 32)) }
+            if let sym = font.symbols[code] { ligs.append((adv, adv + tx * ts.th, sym.text, code < 32, sym.reads, nil)) }
+            else if let lig = font.ligatures[code] { ligs.append((adv, adv + tx * ts.th, lig, code < 32, nil, nil)) }
+            else if let s = font.symbolsByRead, code != 32 { ligs.append((adv, adv + tx * ts.th, "", code < 32, s.reads, s.byRead)) }
             if firstCode < 0 { firstCode = code }
             lastCode = code
             adv += tx * ts.th
@@ -454,9 +495,10 @@ final class PDFContentScanner {
         }
         out.runs.append(TextRun(x0: min(a.x, b.x), x1: max(a.x, b.x), baseline: a.y, size: effSize,
                                 bold: font.bold, italic: font.italic, math: font.math, clip: gstack.last?.clip, starts: xs))
-        for (l0, l1, lig, low) in ligs {
+        for (l0, l1, lig, low, reads, byRead) in ligs {
             let p0 = CGPoint(x: l0, y: 0).applying(trm).x - origin.x, p1 = CGPoint(x: l1, y: 0).applying(trm).x - origin.x
-            out.ligatures.append(Ligature(x0: min(p0, p1), x1: max(p0, p1), baseline: a.y, size: effSize, text: lig, lowCode: low))
+            out.ligatures.append(Ligature(x0: min(p0, p1), x1: max(p0, p1), baseline: a.y, size: effSize, text: lig, lowCode: low,
+                                          symbol: reads != nil, reads: reads ?? [], byRead: byRead))
         }
         // a jump to the right on the same baseline since the last text = a word space nobody drew;
         // in text squeezed by horizontal scaling (OCR layers: "48.53 Tz") the spaces shrink with it

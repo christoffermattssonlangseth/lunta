@@ -118,6 +118,31 @@ final class PDFAnalyzer {
     static func isDOILine(_ s: String) -> Bool {
         s.trimmingCharacters(in: .whitespaces).matches(#"^(https?://(dx\.)?doi\.org/|doi:?\s*)10\.\d{4,9}/\S+$"#, .caseInsensitive)
     }
+    /// P2E_DEBUG_SYMBOLS: each symbol font glyph (see SymbolFonts) and the characters PDFKit read around it.
+    static let debugSymbols = ProcessInfo.processInfo.environment["P2E_DEBUG_SYMBOLS"] != nil
+
+    /// A list item's bullet at the start of a line ("• ISS elucidates…").
+    static let bulletRE = re(#"^\s*[•●▪◦‣]\s*\S"#)
+    static func isBullet(_ l: PLine) -> Bool { bulletRE.test(l.text) }
+
+    /// Paragraphs that start with a bullet, one after another, become a list: `<p>• a</p><p>• b</p>`
+    /// → `<ul><li>a</li><li>b</li></ul>`.
+    static func bulletLists(_ html: String) -> String {
+        let item = try! NSRegularExpression(pattern: #"<p>\s*(?:<sup>[•●▪◦‣]</sup>|[•●▪◦‣])\s*(.*?)</p>"#)
+        let run = try! NSRegularExpression(pattern: #"(?:<p>\s*(?:<sup>[•●▪◦‣]</sup>|[•●▪◦‣])\s*.*?</p>)+"#)
+        let ns = html as NSString
+        var out = ""
+        var last = 0
+        for m in run.matches(in: html, range: NSRange(location: 0, length: ns.length)) {
+            out += ns.substring(with: NSRange(location: last, length: m.range.location - last))
+            let block = ns.substring(with: m.range)
+            out += "<ul>" + item.stringByReplacingMatches(in: block, range: NSRange(location: 0, length: (block as NSString).length),
+                                                         withTemplate: "<li>$1</li>") + "</ul>"
+            last = m.range.location + m.range.length
+        }
+        return out + ns.substring(from: last)
+    }
+
     static let captionRE = re(
         // the label must be followed by punctuation, a capitalised word or nothing: running text that
         // wraps onto a line starting "Figure S2G). Top genes…" or "Fig. 1a and …" is not a caption
@@ -266,7 +291,7 @@ final class PDFAnalyzer {
             guard i >= 0, i < ns.length, let u = Unicode.Scalar(ns.character(at: i)) else { return false }
             return letters.contains(u)
         }
-        struct C { var ch: String; var size: CGFloat; var box: R; var run: TextRun?; var added = false; var ligature = false }
+        struct C { var ch: String; var size: CGFloat; var box: R; var run: TextRun?; var added = false; var ligature = false; var symbol = false }
         /// the median gap between the words of a line (0 for one word)
         func typicalWordGap(_ chars: [C]) -> CGFloat {
             let blank = { (c: C) in c.ch.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -287,7 +312,7 @@ final class PDFAnalyzer {
             let shown = chars.filter { !blank($0) && $0.box.w > 0 }
             guard let first = shown.first else { return }
             let lineBox = R.union(shown.map(\.box))
-            for (li, l) in ligatures.enumerated().sorted(by: { $0.element.x0 < $1.element.x0 }) where !usedLigatures.contains(li) {
+            for (li, l) in ligatures.enumerated().sorted(by: { $0.element.x0 < $1.element.x0 }) where !usedLigatures.contains(li) && !l.symbol {
                 let em = max(l.size, 4)
                 // on this line: the baseline in the lower part of its letters, within its extent
                 guard l.baseline >= lineBox.y0 + 0.4 * first.box.h, l.baseline <= lineBox.y1 + 1.5,
@@ -339,6 +364,80 @@ final class PDFAnalyzer {
                 }
                 chars.replaceSubrange(lo..<j, with: ins)
                 usedLigatures.insert(li)
+            }
+        }
+        /// A symbol font's glyph (see SymbolFonts) replaces what PDFKit read for it ("d" for a bullet,
+        /// "ª" or "Ó" for ©): the character of its name or code that starts where it starts, on its
+        /// baseline (PDFKit widens the letter next to a glyph it leaves out: that letter stays). Where
+        /// PDFKit read nothing on any line, the glyph goes in between the letters either side, on their
+        /// baseline. Either way it takes the height of the letters next to it: a bullet drawn small and
+        /// high is not a superscript.
+        let symbolGlyphs = ligatures.indices.filter { ligatures[$0].symbol }
+        func reads(_ c: C, _ l: Ligature) -> Bool {
+            // (or a box PDFKit widened over the glyph)
+            let tol = max(1, 0.2 * max(l.size, 4))
+            return l.reads.contains(c.ch) && c.box.w > 0 && onBaseline(c, l)
+                && (abs(c.box.x0 - l.x0) <= tol || c.box.x0 <= l.x0 + tol && c.box.x1 >= l.x1 - tol)
+        }
+        func onBaseline(_ c: C, _ l: Ligature) -> Bool { l.baseline >= c.box.y0 + 0.3 * c.box.h && l.baseline <= c.box.y1 + 1 }
+        var symbolRead = Set<Int>()
+        func restoreSymbols(_ chars: inout [C]) {
+            let blank = { (c: C) in c.ch.trimmingCharacters(in: .whitespaces).isEmpty || c.box.w <= 0 }
+            for li in symbolGlyphs where !usedLigatures.contains(li) {
+                let l = ligatures[li], em = max(l.size, 4)
+                let hits = chars.indices.filter { reads(chars[$0], l) && !chars[$0].symbol }
+                if Self.debugSymbols, chars.contains(where: { $0.box.x1 > l.x0 - 15 && $0.box.x0 < l.x1 + 15 && abs($0.box.y1 - l.baseline) < 20 }) {
+                    let near = chars.filter { $0.box.x1 > l.x0 - 15 && $0.box.x0 < l.x1 + 15 && abs($0.box.y1 - l.baseline) < 20 }
+                    FileHandle.standardError.write("SYM \(l.text) x \(Int(l.x0))-\(Int(l.x1)) base \(Int(l.baseline)) hits \(hits.count) read \(symbolRead.contains(li)) near \(near.map { "\($0.ch)[\(Int($0.box.x0))-\(Int($0.box.x1)),\(Int($0.box.y0))-\(Int($0.box.y1))]" }.joined(separator: " "))\n".data(using: .utf8)!)
+                }
+                func glyph(_ cs: [C], _ text: String) -> C? {
+                    // the height of the nearest letter that is not a symbol (nor what PDFKit read for it)
+                    let mid = (l.x0 + l.x1) / 2
+                    let near = cs.filter { !blank($0) && !$0.symbol && !reads($0, l) }.min { abs($0.box.cx - mid) < abs($1.box.cx - mid) }
+                    guard let c = near ?? hits.first.map({ chars[$0] }) else { return nil }
+                    return C(ch: text, size: c.size, box: R(x0: l.x0, y0: c.box.y0, x1: l.x1, y1: c.box.y1), run: nil, symbol: true)
+                }
+                /// puts `g` in between the letters either side (on its baseline, and near)
+                func insert(_ g: C, into cs: inout [C]) -> Bool {
+                    let letters = cs.indices.filter { !blank(cs[$0]) }
+                    let mid = (l.x0 + l.x1) / 2
+                    let j = letters.first { cs[$0].box.x0 >= mid } ?? cs.count
+                    let i = letters.last { $0 < j }
+                    guard i != nil || j < cs.count else { return false }
+                    if let i, !onBaseline(cs[i], l) || l.x0 - cs[i].box.x1 > 3 * em { return false }
+                    if j < cs.count, !onBaseline(cs[j], l) || cs[j].box.x0 - l.x1 > 3 * em { return false }
+                    let lo = i.map { $0 + 1 } ?? 0
+                    guard (lo..<j).allSatisfy({ blank(cs[$0]) }) else { return false }
+                    // not into a word whose letters leave no room for it (where PDFKit's letters are
+                    // not where the content stream draws them, a glyph would land inside a word)
+                    if lo == j, let i, j < cs.count, cs[j].box.x0 - cs[i].box.x1 < 0.5 * (l.x1 - l.x0) { return false }
+                    var ins: [C] = []
+                    if let i, l.x0 - cs[i].box.x1 > 0.15 * em {
+                        ins.append(C(ch: " ", size: g.size, box: R(x0: cs[i].box.x1, y0: g.box.y0, x1: l.x0, y1: g.box.y1), run: nil, added: true))
+                    }
+                    ins.append(g)
+                    if j < cs.count, cs[j].box.x0 - l.x1 > 0.15 * em {
+                        ins.append(C(ch: " ", size: g.size, box: R(x0: l.x1, y0: g.box.y0, x1: cs[j].box.x0, y1: g.box.y1), run: nil, added: true))
+                    }
+                    cs.replaceSubrange(lo..<j, with: ins)
+                    return true
+                }
+                if let h = hits.min(by: { abs(chars[$0].box.x0 - l.x0) < abs(chars[$1].box.x0 - l.x0) }) {
+                    guard let g = glyph(chars, l.byRead.map { $0[chars[h].ch] ?? "" } ?? l.text), !g.ch.isEmpty else { continue }
+                    usedLigatures.insert(li)
+                    // in its place, unless PDFKit put it out of order ("pA + ð" for "(pA + pA)")
+                    let prev = chars[..<h].lastIndex { !blank($0) }, next = chars[(h + 1)...].firstIndex { !blank($0) }
+                    if (prev.map { chars[$0].box.x0 < l.x0 } ?? true) && (next.map { chars[$0].box.x0 >= l.x0 - 0.5 } ?? true) {
+                        chars[h] = g
+                        continue
+                    }
+                    var rest = chars
+                    rest.remove(at: h)
+                    if insert(g, into: &rest) { chars = rest } else { chars[h] = g }
+                    continue
+                }
+                guard !symbolRead.contains(li), l.byRead == nil, let g = glyph(chars, l.text) else { continue }
+                if insert(g, into: &chars) { usedLigatures.insert(li) }
             }
         }
         // the lines' characters first, to tell glyphs drawn twice over (see below)
@@ -402,6 +501,7 @@ final class PDFAnalyzer {
             built[n].chars = kept
         }
         let copies = Set(built.filter { $0.chars.isEmpty }.map(\.li))
+        for li in symbolGlyphs where built.contains(where: { b in b.chars.contains { reads($0, ligatures[li]) } }) { symbolRead.insert(li) }
         for (li, range, bbox, lineChars) in built where !lineChars.isEmpty {
             var chars = lineChars
             // text the content stream draws outside a form's box is not shown, though PDFKit reads it
@@ -447,6 +547,7 @@ final class PDFAnalyzer {
                     guard !chars.isEmpty else { continue }
                 }
             }
+            if !symbolGlyphs.isEmpty { restoreSymbols(&chars) }
             if !ligatures.isEmpty { restoreLigatures(&chars) }
             let endsWithLigature = chars.last?.ligature == true
             chars = chars.indices.compactMap { k in
@@ -1085,8 +1186,10 @@ final class PDFAnalyzer {
             let sizeChange = abs(l.size - a.size) >= 1.0
             let styleBreak = (a.bold > 0.9) != (l.bold > 0.9) && (at.count < 120 || l.text.count < 120)
             let cap = Self.captionRE.test(l.text.trimmingCharacters(in: .whitespaces))
-            if jumped || gap > 0.75 * max(l.size, a.size) || shortA || indent || hanging || sizeChange || styleBreak || cap
-                || (cur.count == 1 && l.bbox.x0 > a.bbox.x0 + 8 && gap > 0.3 * l.size && !numberedItem) {
+            // a bullet starts a list item; the item's next lines are indented to its text
+            let bullet = Self.isBullet(l), inItem = Self.isBullet(cur[0])
+            if jumped || gap > 0.75 * max(l.size, a.size) || shortA || indent || hanging || sizeChange || styleBreak || cap || bullet
+                || (cur.count == 1 && l.bbox.x0 > a.bbox.x0 + 8 && gap > 0.3 * l.size && !numberedItem && !inItem) {
                 if jumped && !(gap > 0.75 * l.size) && !shortA && !sizeChange && !cap
                     && l.text.trimmingCharacters(in: .whitespaces).first?.isLowercase == true && !Self.isDOILine(l.text) {
                     seg = cur.count
@@ -1179,6 +1282,24 @@ final class PDFAnalyzer {
             x += 1
         }
         guard let maxN = cover.map(\.n).max() else { return (0.5 * W, 0) }
+        if maxN == 0 {
+            // no two lines side by side (a summary page: the graphical abstract above the Highlights on
+            // the left, the authors on the right): the middle of the widest stretch the fewest blocks
+            // cross, not the middle of the page, which may cut through the left column's longer lines
+            let crossing = cover.map { c in nodes.filter { crosses(pno, $0, c.x) }.count }
+            guard let least = crossing.min() else { return (0.5 * W, 0) }
+            var run: (lo: Int, hi: Int)?
+            var k = 0
+            while k < crossing.count {
+                guard crossing[k] == least else { k += 1; continue }
+                var m = k
+                while m + 1 < crossing.count && crossing[m + 1] == least { m += 1 }
+                if run.map({ m - k > $0.hi - $0.lo }) ?? true { run = (k, m) }
+                k = m + 1
+            }
+            let (a, b) = run ?? (0, cover.count - 1)
+            return ((cover[a].x + cover[b].x) / 2, 0)
+        }
         // stretches covered nearly as often as the best one; in each, the middle of its longest most-covered run
         let thr = maxN == 0 ? 0 : max(1, Int((0.7 * Double(maxN)).rounded(.up)))
         var best: (crossing: Int, peak: Int, run: Int, x: CGFloat)?
@@ -1650,7 +1771,7 @@ enum PDFBook {
         var autoID = 0
         func nextID() -> String { autoID += 1; return "s\(autoID)" }
         func close() {
-            if let c = cur { chapters.append(Chapter(title: c.title, html: "<section>\(c.html)</section>", headings: c.headings)) }
+            if let c = cur { chapters.append(Chapter(title: c.title, html: "<section>\(PDFAnalyzer.bulletLists(c.html))</section>", headings: c.headings)) }
             cur = nil
         }
         func open(_ title: String) {
@@ -1737,7 +1858,7 @@ enum PDFBook {
         if openBox != nil { cur?.html += "</div>" }
         close()
         _ = hasAbstractHeading
-        if !front.isEmpty && meta.affiliationsHTML.isEmpty { meta.affiliationsHTML = front }
+        if !front.isEmpty && meta.affiliationsHTML.isEmpty { meta.affiliationsHTML = PDFAnalyzer.bulletLists(front) }
         guard !chapters.isEmpty else { throw fail("Could not find any text in the PDF (is it a scanned image?).") }
         return Book(meta: meta, chapters: chapters, images: images, sourceLabel: "PDF (layout analysis)",
                     notes: ["Converted from the PDF without AI: equations and tables are kept as images."])
