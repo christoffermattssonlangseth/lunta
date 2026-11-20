@@ -131,7 +131,10 @@ public final class CitationAPI: @unchecked Sendable {
     /// Bumped when the API grows; the add-ins read it from /api/status.
     public static let version = 4
     /// Where the hosted Word panel lives (see .github/workflows/pages.yml).
-    public static let hostedPanelOrigin = "https://christoffermattssonlangseth.github.io"
+    public static let hostedPanelOrigin = "https://getlunta.app"
+    /// Where it was before the site moved (panels Word cached from there still ask).
+    public static let oldHostedPanelOrigin = "https://christoffermattssonlangseth.github.io"
+    static func isHostedPanel(_ origin: String) -> Bool { origin == hostedPanelOrigin || origin == oldHostedPanelOrigin }
     static let ownOrigins: Set<String> = ["https://localhost:\(port)", "https://127.0.0.1:\(port)"]
 
     private let library: Library?
@@ -157,7 +160,7 @@ public final class CitationAPI: @unchecked Sendable {
 
     /// Origins that are answered (CORS) at all; the Google sidebar still needs the key.
     public static func isKnownOrigin(_ origin: String) -> Bool {
-        ownOrigins.contains(origin) || origin == hostedPanelOrigin || isGoogleSidebar(origin)
+        ownOrigins.contains(origin) || isHostedPanel(origin) || isGoogleSidebar(origin)
     }
 
     public func corsHeaders(_ r: CitationRequest) -> [(String, String)] {
@@ -179,7 +182,7 @@ public final class CitationAPI: @unchecked Sendable {
         guard r.path.hasPrefix("/api/") else { return nil }   // the add-in files are public
         if r.method == "OPTIONS" { return nil }
         if let origin = r.headers["origin"] {
-            if Self.ownOrigins.contains(origin) || origin == Self.hostedPanelOrigin { return nil }
+            if Self.ownOrigins.contains(origin) || Self.isHostedPanel(origin) { return nil }
             if Self.isGoogleSidebar(origin) {
                 let sent = r.headers["x-lunta-token"] ?? r.headers["x-margins-token"] ?? ""
                 if !token.isEmpty, Self.same(sent, token) { return nil }
@@ -369,7 +372,7 @@ public final class CitationAPI: @unchecked Sendable {
             let metas = list.map { ($0 as? [String: Any]).flatMap(Self.meta) }
             let found = lib.matchCitedPapers(metas: metas.map { $0 ?? Self.emptyMeta })
             let matches: [Any] = zip(metas, found).map { m, f in
-                m == nil || f.paperId.isEmpty ? NSNull() : ["id": f.paperId, "how": f.how] as [String: Any]
+                m == nil || f.paperId.isEmpty ? NSNull() as Any : ["id": f.paperId, "how": f.how] as Any
             }
             return .json(200, ["matches": matches])
         default:

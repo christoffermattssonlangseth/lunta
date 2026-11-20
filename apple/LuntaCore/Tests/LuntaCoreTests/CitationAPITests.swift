@@ -54,6 +54,11 @@ final class CitationAPITests: XCTestCase {
         let hosted = send(request("GET", "/api/status", headers: ["Origin": CitationAPI.hostedPanelOrigin]))
         XCTAssertEqual(hosted.0, 200)
         XCTAssertEqual(hosted.2["Access-Control-Allow-Origin"], CitationAPI.hostedPanelOrigin)
+        XCTAssertEqual(CitationAPI.hostedPanelOrigin, "https://getlunta.app")
+        // the panel as Word cached it before the site moved
+        let old = send(request("GET", "/api/status", headers: ["Origin": "https://christoffermattssonlangseth.github.io"]))
+        XCTAssertEqual(old.0, 200)
+        XCTAssertEqual(old.2["Access-Control-Allow-Origin"], "https://christoffermattssonlangseth.github.io")
         // the Google Docs sidebar: only with the pairing key
         let g = "https://n-abc123-0lu-script.googleusercontent.com"
         let noKey = send(request("GET", "/api/search?q=x", headers: ["Origin": g]))
@@ -197,15 +202,15 @@ final class CitationAPITests: XCTestCase {
 
     func testCitationOptionsAndConvertingCitations() throws {
         try Self.testStyle.write(to: cache.appendingPathComponent("csl/test-author-date.csl"), atomically: true, encoding: .utf8)
-        let a = try lib.addPaper(meta: meta("Alpha cells in the islet of mice", ["Jane Smith"], "2020", doi: "10.1/alpha"), pdf: nil, epub: nil, fulltext: nil)
+        let a = try lib.addPaper(meta: meta("Alpha cells in the islet of mice", ["Jane Smith"], "2020", doi: "10.1000/alpha"), pdf: nil, epub: nil, fulltext: nil)
         // prefix, suffix and the author left out (the test style prints no locators)
         let body: [String: Any] = ["style": "test-author-date", "citations": [[a.id], [a.id], [a.id]],
                                    "options": [[a.id: ["prefix": "see", "suffix": "for a review"]], NSNull(), [a.id: ["mode": "suppress"]]]]
         let res = try XCTUnwrap(send(request("POST", "/api/render", json: body)).1 as? [String: Any])
         XCTAssertEqual((res["citations"] as? [[String: Any]])?.map { $0["text"] as? String }, ["(see Smith, 2020 for a review)", "(Smith, 2020)", "(2020)"])
         // the library's papers for citations from another reference manager
-        let items: [Any] = [["title": "x", "doi": "https://doi.org/10.1/ALPHA"],
-                            ["title": "Alpha cells in the islet of mice: a single-cell atlas", "authors": ["Smith, J."], "year": "2020"],
+        let items: [Any] = [["title": "x", "doi": "https://doi.org/10.1000/ALPHA"],
+                            ["title": "Alpha cells in the islet of mice: an atlas", "authors": ["Smith, J."], "year": "2020"],
                             ["title": "Nothing like it", "authors": ["Nobody"]], [:]]
         let m = try XCTUnwrap(send(request("POST", "/api/match", json: ["items": items])).1 as? [String: Any])
         let matches = try XCTUnwrap(m["matches"] as? [Any])
