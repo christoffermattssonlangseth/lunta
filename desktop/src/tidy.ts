@@ -32,20 +32,6 @@ export function setTidyReload(f: () => void) { onChange = f; }
 let findingDois = false;
 listen<string>('tidy-progress', (e) => { if (findingDois) status(e.payload, 'busy'); });
 
-/** "topic:<name>" as the core keys it (tidy/text.rs name_key): words folded, lower case, singular. */
-function topicKey(name: string): string {
-  const fold = (w: string) => w.replace(/[øØ]/g, 'o').replace(/[łŁ]/g, 'l').replace(/ß/g, 'ss').replace(/[æÆ]/g, 'ae').replace(/[œŒ]/g, 'oe')
-    .replace(/[đĐðÐ]/g, 'd').replace(/[þÞ]/g, 'th').replace(/ı/g, 'i').normalize('NFD').replace(/\p{M}/gu, '');
-  const singular = (w: string) => {
-    const n = [...w].length;
-    if (n > 4 && w.endsWith('ies') && !w.endsWith('eies')) return w.slice(0, -3) + 'y';
-    if (n > 4 && w.endsWith('s') && !['ss', 'is', 'us', 'ics', "'s"].some((x) => w.endsWith(x))) return w.slice(0, -1);
-    return w;
-  };
-  const words = name.match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu) || [];
-  return 'topic:' + words.map((w) => singular(fold(w).toLowerCase().replace(/’/g, "'"))).join(' ');
-}
-
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** Tidy Library…: the window. */
@@ -69,7 +55,7 @@ export async function openTidy() {
   const keep = new Map<string, string>();               // duplicate group -> paper to keep
   let dois: DoiReport | null = null;
   const doiTicks = new Set<string>();
-  // the topics shown (names editable); a dismissal keys the name as proposed
+  // the topics shown (names editable); a dismissal keys the name as proposed (the core normalizes it)
   const proposed = new WeakMap<GroupProposal, string>();
   const copyTopics = (ts: GroupProposal[]) => ts.map((t) => { const c = { ...t }; proposed.set(c, t.name); return c; });
   let topics: GroupProposal[] = copyTopics(report.topics);
@@ -350,7 +336,7 @@ export async function openTidy() {
             name, h('span.hint', { text: `— ${plural(t.paper_ids.length, 'paper', 'papers')}` }),
             h('span.tidy-grow'),
             link('Dismiss', async () => {
-              await invoke('tidy_dismiss', { key: topicKey(proposed.get(t) ?? t.name) }).catch((e) => status(String(e), 'error'));
+              await invoke('tidy_dismiss', { key: `topic:${proposed.get(t) ?? t.name}` }).catch((e) => status(String(e), 'error'));
               topics = topics.filter((x) => x !== t);
               topicTicks.delete(t);
               render();
