@@ -8,6 +8,11 @@ import LuntaCore
 /// The Mac is the bridge: the core's Syncer in bridge mode passes every device's changes both
 /// ways (the iPhone's arrive here through iCloud, Android's through Drive). Signed in with the
 /// same Google OAuth client as the Android app; tokens and sync state stay on this Mac.
+///
+/// Access is Google's `drive.file` scope: Lunta sees only the files its clients created (and what
+/// the user picks for it in Google's picker, "Choose Your Lunta Folder…"). A token from an older
+/// version still has the full scope; while it does, syncs adopt files other apps put into the
+/// folder (app-made copies, originals kept aside), and "Sign In Again" then narrows the access.
 @MainActor
 final class DriveBridge: ObservableObject {
     static let shared = DriveBridge()
@@ -26,6 +31,17 @@ final class DriveBridge: ObservableObject {
     @Published private(set) var lastSync: Date?
     @Published private(set) var lastSummary: String?
     @Published private(set) var error: String?
+    /// The last sync could not open the Drive folder: offer "Choose Your Lunta Folder…".
+    @Published private(set) var folderNotVisible = false
+    /// Something the last sync wants the user to know (files adopted for the narrower access).
+    @Published private(set) var notice: String?
+    /// Signed in by an older version with access to the whole Drive.
+    @Published private(set) var fullAccess = false
+    /// The folder chosen in Google's picker, if any (otherwise "Lunta" in My Drive, by name).
+    private var folderID: String? {
+        get { UserDefaults.standard.string(forKey: "driveFolderId").flatMap { $0.isEmpty ? nil : $0 } }
+        set { UserDefaults.standard.set(newValue, forKey: "driveFolderId") }
+    }
 
     private weak var model: LibraryModel?
     private var auth: DriveAuth?
@@ -43,9 +59,10 @@ final class DriveBridge: ObservableObject {
     /// Called once the library is open: resumes syncing if this Mac was connected before.
     func start(_ model: LibraryModel) {
         self.model = model
-        let auth = DriveAuth(clientId: Self.clientID, tokenFile: Self.dir.appendingPathComponent("google-tokens.json").path, fullAccess: true)
+        let auth = DriveAuth(clientId: Self.clientID, tokenFile: Self.dir.appendingPathComponent("google-tokens.json").path, fullAccess: false)
         self.auth = auth
         connected = auth.isConnected()
+        fullAccess = connected && auth.hasFullAccess()
         lastSync = (UserDefaults.standard.object(forKey: "driveLastSync") as? Date)
         if connected { begin() }
     }
@@ -56,7 +73,7 @@ final class DriveBridge: ObservableObject {
         do {
             sync = try LibrarySync.googleDriveBridge(root: model.libraryURL.path, device: LibraryModel.deviceID,
                                                      statePath: Self.dir.appendingPathComponent("drive-bridge-state.json").path,
-                                                     auth: auth, folderName: Self.folderName, progress: listener)
+                                                     auth: auth, folderName: Self.folderName, folderId: folderID, progress: listener)
         } catch {
             self.error = error.readable
             return
@@ -72,6 +89,7 @@ final class DriveBridge: ObservableObject {
         guard let sync, !syncing else { return }
         syncing = true
         error = nil
+        let auth = auth
         Task.detached {
             let result = Result { try sync.syncNow() }
             await MainActor.run {
@@ -87,12 +105,16 @@ final class DriveBridge: ObservableObject {
                     if s.deletedLocal + s.deletedRemote > 0 { parts.append("\(s.deletedLocal + s.deletedRemote) removed") }
                     self.lastSummary = parts.isEmpty ? "Up to date" : parts.joined(separator: ", ")
                     if !s.errors.isEmpty { self.error = "\(s.errors.count) file(s) failed: \(s.errors.first ?? "")" }
+                    if let n = s.notices.first { self.notice = n }
+                    self.folderNotVisible = false
+                    self.fullAccess = auth?.hasFullAccess() ?? false
                     if s.changed, let model = self.model {
                         try? model.lib.refresh()
                         model.reload()
                     }
                 case .failure(let e):
                     self.error = e.readable
+                    self.folderNotVisible = driveFolderNotVisible(message: e.readable)
                 }
             }
         }
@@ -104,7 +126,22 @@ final class DriveBridge: ObservableObject {
         error = nil
         let req: SignInRequest
         do { req = try auth.beginSignIn(redirectUri: Self.redirectURI) } catch { self.error = error.readable; return }
-        guard let url = URL(string: req.url) else { return }
+        signIn(req, picking: false)
+    }
+
+    /// "Choose Your Lunta Folder…": Google's picker inside the sign-in. Needed when the Drive folder
+    /// was made by another app (or Lunta's access to it was removed). Picking a folder grants the
+    /// folder, not files other apps put into it; those can be selected in the picker too.
+    func chooseFolder() {
+        guard let auth else { return }
+        error = nil
+        let req: SignInRequest
+        do { req = try auth.beginPick(redirectUri: Self.redirectURI, fileIds: []) } catch { self.error = error.readable; return }
+        signIn(req, picking: true)
+    }
+
+    private func signIn(_ req: SignInRequest, picking: Bool) {
+        guard let auth, let url = URL(string: req.url) else { return }
         let session = ASWebAuthenticationSession(url: url, callback: .customScheme(Self.redirectScheme)) { [weak self] callback, err in
             Task { @MainActor in
                 guard let self else { return }
@@ -117,10 +154,19 @@ final class DriveBridge: ObservableObject {
                 do {
                     let code = try auth.codeFromRedirect(redirectUrl: callback.absoluteString, expectedState: req.state)
                     self.syncing = true
-                    let ok = await Task.detached { Result { try auth.completeSignIn(code: code, verifier: req.verifier, redirectUri: Self.redirectURI) } }.value
+                    let picked = picking ? auth.pickedIdsFromRedirect(redirectUrl: callback.absoluteString) : []
+                    let ok = await Task.detached { () -> Result<[String], Error> in
+                        Result {
+                            try auth.completeSignIn(code: code, verifier: req.verifier, redirectUri: Self.redirectURI)
+                            return picking ? try auth.pickedFolder(ids: picked) : []
+                        }
+                    }.value
                     self.syncing = false
-                    try ok.get()
+                    let folder = try ok.get()
+                    if folder.count == 2 { self.folderID = folder[0] }
+                    else if picking { self.notice = "No folder was chosen, so Lunta keeps using its own “\(Self.folderName)” folder." }
                     self.connected = true
+                    self.fullAccess = auth.hasFullAccess()
                     self.begin()
                 } catch {
                     self.error = error.readable
@@ -138,9 +184,13 @@ final class DriveBridge: ObservableObject {
         timer = nil
         sync = nil
         let auth = auth
-        Task.detached { try? auth?.disconnect() }
+        Task.detached { try? auth?.disconnect() }   // forgets the tokens here; the grant stays (see the core)
         connected = false
         lastSummary = nil
+        notice = nil
+        folderNotVisible = false
+        fullAccess = false
+        folderID = nil
     }
 
     /// Progress lines from the core's Syncer ("upload papers/…/paper.pdf").
@@ -195,7 +245,22 @@ struct DriveBridgeView: View {
                             Text("Last sync \(last.formatted(.relative(presentation: .named)))\(bridge.lastSummary.map { ": \($0)" } ?? "")")
                                 .foregroundStyle(.secondary)
                         }
-                        Button("Disconnect", role: .destructive) { bridge.disconnect() }.buttonStyle(.link)
+                        if let n = bridge.notice {
+                            Text(n).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                        if bridge.fullAccess && !bridge.syncing && bridge.error == nil && bridge.lastSync != nil {
+                            HStack {
+                                Text("Lunta now asks Google only for access to the files it makes, not your whole Drive. The Drive folder has been prepared for it; sign in again to switch.")
+                                    .font(.callout).fixedSize(horizontal: false, vertical: true)
+                                Spacer()
+                                Button("Sign In Again…") { bridge.connect() }
+                            }
+                        }
+                        HStack {
+                            Button("Disconnect", role: .destructive) { bridge.disconnect() }.buttonStyle(.link)
+                            Spacer()
+                            Button("Choose Your Lunta Folder…") { bridge.chooseFolder() }.buttonStyle(.link).disabled(bridge.syncing)
+                        }
                     } else {
                         HStack {
                             Text("Sign in with the Google account the Android app uses.")
@@ -204,6 +269,9 @@ struct DriveBridgeView: View {
                         }
                     }
                     if let e = bridge.error { Text(e).foregroundStyle(.red).font(.callout) }
+                    if bridge.folderNotVisible {
+                        Button("Choose Your Lunta Folder…") { bridge.chooseFolder() }.disabled(bridge.syncing)
+                    }
                 }
                 .padding(6)
             }
