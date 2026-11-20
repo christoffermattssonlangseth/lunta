@@ -696,10 +696,14 @@ struct PaperDetail: View {
                 Button { openWindow(value: paper.id) } label: { Label("Read", systemImage: "book.fill") }
                     .buttonStyle(.borderedProminent).tint(.luntaTeal)
                     .disabled(!paper.hasEpub && !paper.hasPdf)
-                if let pdf = model.fileURL(paper.id, .pdf) {
+                // hasPdf also counts a PDF that is only in Google Drive (downloaded when opened):
+                // never Find PDF for it, which would replace it
+                if paper.hasPdf {
                     Button { ReaderWindow.open(paper.id, mode: .pdf, openWindow) } label: { Label("PDF", systemImage: "doc.richtext") }
                         .contextMenu {
-                            Button("Open in Preview") { NSWorkspace.shared.open(pdf) }
+                            if let pdf = model.fileURL(paper.id, .pdf) {
+                                Button("Open in Preview") { NSWorkspace.shared.open(pdf) }
+                            }
                             Button("Replace PDF…") { choosingPDF = true }
                         }
                 } else {

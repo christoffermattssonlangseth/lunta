@@ -785,6 +785,21 @@ impl Syncer {
         let r = st.remote.get(rel).cloned().ok_or_else(|| CoreError::NotFound(format!("{rel} is not on the remote (sync first?)")))?;
         let abs = self.abs(rel);
         let up_to_date = abs.exists() && st.synced.get(rel).is_some_and(|s| s.local && !s.remote.differs_from(&r));
+        // a copy here that isn't the one last synced (Replace PDF on a file that was only in the
+        // remote, or an edit not uploaded yet): never overwritten here, the next sync decides
+        // (upload, or a conflict where the newer copy wins)
+        if !up_to_date && abs.exists() {
+            if let Some(l) = file_sig(&abs) {
+                let changed_here = match st.synced.get(rel).cloned() {
+                    Some(mut s) if s.local => self.local_changed(rel, &mut s, l),
+                    // never recorded as here (or recorded as not downloaded): unless it is the remote's copy
+                    _ => !(r.md5.is_some() && l.0 == r.size && md5_file(&abs).ok() == r.md5),
+                };
+                if changed_here {
+                    return Ok(abs);
+                }
+            }
+        }
         if !up_to_date {
             let mut rep = SyncReport::default();
             self.download(&mut st, rel, &mut rep)?;

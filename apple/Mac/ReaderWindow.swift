@@ -322,6 +322,9 @@ struct ReaderWindow: View {
 
     private func load() async {
         guard let p = model.paper(paperID) else { return }
+        // "Remove Downloads Not Opened in …": every open counts, also a PDF that is already here
+        // (fetchFile records only what it is asked for, and the PDF pane doesn't ask when it's local)
+        if model.onDemand != nil { DriveLibrarySync.used(paperID) }
         if let m = Self.requestedMode.removeValue(forKey: paperID) { mode = m }
         if !p.hasEpub { mode = p.hasPdf ? .pdf : .reading; error = "Use “Make Reading View” in the library."; return }
         switch await model.fetchFile(paperID, .epub) {

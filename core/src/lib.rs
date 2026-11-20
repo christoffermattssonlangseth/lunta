@@ -725,8 +725,13 @@ impl Library {
 
     /// Searches open-access sources for the paper's PDF, downloads the best one and attaches it.
     /// Returns where it came from (e.g. "PubMed Central"), or None if no open copy was found.
+    /// Errors if the paper already has a PDF, also one only in the cloud (iCloud, or the Google
+    /// Drive folder of a library synced on demand): attaching would replace it.
     pub fn find_pdf(&self, id: String) -> Result<Option<String>> {
         let p = self.paper(id.clone()).ok_or(CoreError::NotFound(id.clone()))?;
+        if self.file_status(id.clone(), FileKind::Pdf) != FileStatus::Missing {
+            return Err(CoreError::Invalid("the paper already has a PDF (use Replace PDF to change it)".into()));
+        }
         for c in metadata::pdf_candidates(&p.meta) {
             if let Ok(data) = metadata::download_pdf(&c.url) {
                 self.attach_file(id, FileKind::Pdf, data)?;

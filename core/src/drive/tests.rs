@@ -541,6 +541,9 @@ fn remote_only_files_count_as_present_and_removed_downloads_are_not_deletions() 
     assert_eq!(ph.lib.file_status(aid.clone(), FileKind::Fulltext), FileStatus::Local);
     assert_eq!(ph.lib.file_status(bid.clone(), FileKind::Epub), FileStatus::Missing);
     assert!(ph.lib.file_path(aid.clone(), FileKind::Pdf).is_none());
+    // Find PDF never replaces a PDF that is only in Drive (it errors before looking online)
+    assert!(ph.lib.find_pdf(bid.clone()).is_err());
+    assert!(!ph.root.join(format!("papers/{bid}/paper.pdf")).exists());
     // a highlight needs the reading view itself (not the full text, which would put it on the PDF)
     let e = ph.lib.anchor_highlight(aid.clone(), "alpha text".into(), None).unwrap_err().to_string();
     assert!(e.contains("isn't downloaded"), "{e}");
@@ -599,6 +602,44 @@ fn remote_only_files_count_as_present_and_removed_downloads_are_not_deletions() 
     full.sync();
     assert!(full.syncer.as_ref().unwrap().remove_download(&aid).is_err());
     assert!(full.root.join(format!("papers/{aid}/paper.pdf")).exists());
+}
+
+/// A library synced on demand: a PDF replaced here while Drive's copy was not downloaded (or an
+/// edit not uploaded yet) is not overwritten by Download / opening the paper; the next sync sends it.
+#[test]
+fn fetching_never_overwrites_a_local_copy_not_uploaded_yet() {
+    let w = World::new();
+    let mac = w.mac();
+    let a = mac.lib.add_paper(meta("Alpha", ""), Some(b"pdf alpha".to_vec()), Some(b"epub alpha".to_vec()), None).unwrap();
+    let ph = w.api_with("phone", Box::new(LocalDirRemote::new(&w.remote)), true);
+    ph.sync();
+    let s = ph.syncer.as_ref().unwrap();
+    let aid = a.id.clone();
+    let pdf = ph.root.join(format!("papers/{aid}/paper.pdf"));
+    assert!(!pdf.exists());
+
+    // Replace PDF while the PDF is only in Drive, then Download (every file of the paper)
+    ph.lib.attach_file(aid.clone(), FileKind::Pdf, b"pdf alpha, replaced here".to_vec()).unwrap();
+    set_time(&pdf, now_ms() + 5_000);
+    assert_eq!(s.fetch_paper(&aid, &[]).unwrap(), 1); // the epub came down, the pdf was left alone
+    assert_eq!(read(&pdf), b"pdf alpha, replaced here");
+    assert_eq!(read(&ph.root.join(format!("papers/{aid}/book.epub"))), b"epub alpha");
+    assert_eq!(s.fetch_file(&format!("papers/{aid}/paper.pdf")).unwrap(), pdf);
+    assert_eq!(read(&pdf), b"pdf alpha, replaced here");
+    let r = ph.sync();
+    assert_eq!(r.downloaded, 0, "{r:?}");
+    assert_eq!(read(&w.remote.join(format!("papers/{aid}/paper.pdf"))), b"pdf alpha, replaced here");
+    assert_eq!(read(&pdf), b"pdf alpha, replaced here");
+
+    // a file here that is the remote's copy, never recorded: fetched (recorded) as usual
+    let b = mac.lib.add_paper(meta("Beta", ""), Some(b"pdf beta".to_vec()), None, None).unwrap();
+    ph.sync();
+    let bpdf = ph.root.join(format!("papers/{}/paper.pdf", b.id));
+    fs::create_dir_all(bpdf.parent().unwrap()).unwrap();
+    fs::write(&bpdf, b"pdf beta").unwrap();
+    s.fetch_paper(&b.id, &[FileKind::Pdf]).unwrap(); // the same bytes: recorded as here
+    assert_eq!(read(&bpdf), b"pdf beta");
+    assert_eq!(s.remove_download(&b.id).unwrap().0, 1);
 }
 
 #[test]
