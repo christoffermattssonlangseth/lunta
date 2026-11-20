@@ -118,8 +118,10 @@ PDF" is off. SwiftUI modifiers new in 26 go through `Shared/Compat.swift`.
 
 ## Citations in Word and Google Docs
 
-**Lunta › Citations in Word & Google Docs…** sets them up. Both talk to the Mac app over
-`https://localhost:47481` (a certificate made for this Mac only; trusting it needs your password once).
+**Lunta › Citations in Word & Google Docs…** sets them up (Windows and Linux: **Settings ▾ › Citations in Word &
+Google Docs…**, see [Word on Windows and Linux](#word-on-windows-and-linux)). Both talk to the app over
+`https://localhost:47481` (a certificate made for this computer only; trusting it needs your password once on the
+Mac, a Yes on Windows).
 
 - **Word:** *Install in Word*, restart Word, then **Cite** on the Home tab. Search, pick papers, *Insert
   Citation*; *Insert Bibliography* where the references go; *Update All* after edits or a style change.
@@ -162,6 +164,64 @@ as Lunta for Mac runs it for Safari: `gdocs-safari.test.js`, and `gdocs-safari-s
 `GoogleDocsScript.swift` with a test driver), `swift test --filter CitationAPITests` in `apple/LuntaCore` (the API on a
 scratch library, the access rules, certificates), and the citation tests in `core` (`cargo test cit`).
 What only Word and Google Docs can show is in [citations-testing.md](citations-testing.md).
+
+### Word on Windows and Linux
+
+At KI most people write in Word on Windows, so Lunta for Windows serves the same add-in as the Mac: the same
+`manifest.xml` (sideloaded) and `manifest-store.xml` (the store, panel from getlunta.app) work unchanged.
+
+- **Server** (`desktop/src-tauri/src/citeserver.rs`): HTTPS on 127.0.0.1:47481 with rustls (ring, as the updater
+  already has it), a thread per connection, idle connections closed after 30 s, the port retried for a while if
+  taken. It serves `apple/citations` at the Mac's paths (`/word/index.html`, `/common.js`, `/icons/…`), compiled
+  into the app with `include_bytes!` (no resource paths to get wrong between the MSI, NSIS, AppImage and dev
+  runs; a test fails when a file in `apple/citations` is missing from the list), and `/api/…` as the extension's
+  `/cite/…` in `citeapi.rs` (one implementation of the routes for both). The access rules are
+  `CitationAPI.refusal` / `corsHeaders` ported rule for rule (`Access`), with the hosted panel at both
+  `https://getlunta.app` and the earlier GitHub Pages origin. On a Mac it stays off (Lunta for Mac has the port;
+  `LUNTA_CITATION_PORT` in debug builds).
+- **Certificates** (`citecerts.rs`, rcgen): `CitationCertificates`' scheme. An authority (ECDSA P-256, 10 years,
+  `pathlen:0`, critical name constraints: DNS `localhost`, IP `127.0.0.1/32`) and a localhost certificate it
+  signs (820 days, serverAuth, SANs `localhost` and `127.0.0.1`), renewed a month before it runs out, checked
+  daily while the app runs and swapped into the server without a restart; a new authority only when its key is
+  gone or damaged or the next certificate would outlive it. In `<app data>/citations/tls`; the keys are DPAPI-
+  protected on Windows (`CryptProtectData`, this user only), 0600 in a 0700 folder elsewhere.
+- **Setup** (`citesetup.rs`, the window in `desktop/src/citations.ts`):
+  - *Trust, Windows*: `CertAddEncodedCertificateToStore` into `CERT_SYSTEM_STORE_CURRENT_USER` `Root`. No
+    administrator; Windows itself shows "Security Warning: You are about to install a certificate from a
+    certification authority (CA) claiming to represent: Lunta Local CA (this computer only, localhost)… Do you want
+    to install this certificate?" (Yes / No; No is reported as such). Word (WebView2), Edge and Chrome use that
+    store. This is the store `office-addin-dev-certs` uses for Office's own add-in development. Trusted = the
+    authority's bytes are in the user's Root view (which includes the machine's).
+  - *Trust, Linux*: browsers keep their own NSS databases. With `certutil` (libnss3-tools / nss-tools) Lunta adds
+    the authority (`-t C,,`, nickname "Lunta Local CA") to `~/.pki/nssdb` (Chrome, Chromium; made if missing)
+    and every Firefox profile (also Snap and Flatpak); without it the window explains the import in each browser's
+    settings and saves `ca.pem`.
+  - *Install in Word* (Windows): the manifest goes to `<app data>/citations/manifest.xml` and is registered as
+    `HKCU\Software\Microsoft\Office\16.0\WEF\Developer`, value `6a1f3b2c-…` (the add-in's id) = the
+    manifest's path: what `office-addin-dev-settings sideload` does, per user, no administrator. Word 2016, 2019,
+    2021, 2024 and Microsoft 365 read it at start; Cite appears on the Home tab (and under Developer Add-ins).
+    Rejected: a shared-folder catalog (`WEF\TrustedCatalogs`) needs a UNC share, which needs an administrator
+    to create; the store listing (when it's there) needs no installing at all.
+  - *Word on the web*: Save Manifest…, then Home › Add-ins › More Settings › Upload My Add-in (kept by that
+    browser).
+  - *Remove*: the registry value, the authority from the user's Root store (Windows asks again) or the NSS
+    databases, and the certificate files; a new authority is made at once, so no key remains that a trusted
+    certificate came from.
+  - Status: serving or why not, trusted, installed, and "Word is connected" when an add-in asked in the last
+    ten minutes.
+- **Limits.** Not tried on a real Windows PC yet (see [citations-testing.md](citations-testing.md)): the trust
+  dialog's wording and owner window, group policies that block user root certificates or developer add-ins
+  (managed PCs: IT can deploy `ca.pem` and the manifest centrally instead), and old Office builds that use
+  Internet Explorer for add-ins. Linux has no desktop Word; LibreOffice isn't supported. The panel's
+  "Can't reach Lunta" text in `common.js` still names the Mac's menu.
+
+Tests: `cargo test cite` in `desktop/src-tauri`: the access rules (`CitationAPITests.testOnlyTheAddInsMayAsk`
+rule for rule, plus getlunta.app), the parser, the files (every URL in `manifest.xml`), the API through
+`/api/…`, certificates (made, renewed with the same authority, name constraints refuse a certificate the
+authority signs for another name, keys 0600, a damaged key), and HTTPS end to end with a rustls client that
+trusts only the authority in a temporary folder (no system store is touched). The Windows code is checked with
+`cargo check --target x86_64-pc-windows-gnu` on a copy of the `win` module (the full crate needs llama.cpp's
+toolchain for Windows).
 
 ### Resolve Citations: write first, cite later
 
@@ -1085,6 +1145,8 @@ runs on macOS, for testing.
   iframe and images from `lunta://`, PDF.js worker from blob:/self, IPC). Debug runs of the packaged
   frontend: `npm run build`, then `cargo build --features tauri/custom-protocol` in `src-tauri`
   (plain `cargo build` loads the Vite dev server, which has no CSP).
+- **Citing in Word** (Windows; Word on the web on Linux too): **Settings ▾ › Citations in Word & Google Docs…**,
+  served on https://localhost:47481 as on the Mac; see [Word on Windows and Linux](#word-on-windows-and-linux).
 - **Adding papers** uses the core's metadata lookup and the Rust converter (`core/src/convert`). It
   can't analyse PDFs yet, so a paper whose only full text is a PDF gets no reading view (the converter's
   reason is shown); its PDF still opens.
@@ -1112,7 +1174,7 @@ For scripted UI checks, debug builds run any `*.js` dropped into `$LUNTA_DEV_EVA
 Not in the desktop app yet (the Mac app has them): highlighting in the PDF (PDF highlights made on the
 Mac or iPhone are listed, not drawn), reading views from PDFs, adding a paper from a PDF alone,
 import (Papers, BibTeX, RIS), Discover,
-Clean Up, Ask's proposals (tag, add…), the MCP server and the Word / Google Docs add-ins; Make Natural Narration (no AAC encoder
+Clean Up, Ask's proposals (tag, add…) and the MCP server; Make Natural Narration (no AAC encoder
 everywhere: a narration made on the Mac or Android plays).
 
 ## Listen on Windows, Linux and Android

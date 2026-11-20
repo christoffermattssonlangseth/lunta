@@ -2,7 +2,7 @@
 
 The formatting, the API and the Google script run in automated tests (see "Citations in Word and Google
 Docs" in [development.md](development.md)). What only the real Word and Google Docs can show is below: go
-through it after changing `apple/citations/`, `extension/gdocs/`, `CitationAPI` or `CitationServer`. Use a scratch document and
+through it after changing `apple/citations/`, `extension/gdocs/`, `CitationAPI`, `CitationServer` or the Windows app's `citeserver.rs` / `citesetup.rs`. Use a scratch document and
 a few papers you don't mind citing; a long document is quickest made by pasting the same paragraphs many
 times.
 
@@ -63,6 +63,53 @@ Other computers, other people
       document's copy or found in their library by DOI).
 - [ ] A citation of a paper that is in neither (an old document from another library, made before this
       version): Update All selects it, says what to do, and changes nothing.
+
+## Word on Windows (a real PC; Lunta for Windows)
+
+Not yet done on real hardware: go through it on a Windows 10/11 PC with Microsoft 365 Word (and, if at hand, Word
+2019/2021 and a managed KI PC), with an ordinary (non-administrator) account. Install Lunta from the NSIS setup
+(per user), open a library with a few papers.
+
+Setup
+- [ ] Settings ▾ › Citations in Word & Google Docs…: "Lunta is ready for the add-in on https://localhost:47481";
+      step 1 not done, step 2 not done.
+- [ ] Before trusting: `https://localhost:47481/word/index.html` in Edge shows a certificate warning (the server
+      runs); `%APPDATA%\com.cmlangseth.lunta.desktop\citations\tls` has ca.pem, ca.key, server.pem, server.key,
+      and ca.key is not readable PEM (DPAPI).
+- [ ] Trust Certificate…: Windows' "Security Warning … Lunta Local CA (this computer only, localhost) … Do you
+      want to install this certificate?" appears in front of Lunta (note if it hides behind the window). No: the
+      window says you answered No, step 1 stays open. Again, Yes: step 1 ticked, no administrator prompt.
+- [ ] certmgr.msc › Trusted Root Certification Authorities › Certificates: "Lunta Local CA…"; its details show
+      Name Constraints (Permitted: DNS localhost, IP 127.0.0.1) as critical.
+- [ ] Edge and Chrome: `https://localhost:47481/word/index.html` opens without a warning (padlock);
+      `https://127.0.0.1:47481/api/status` gives `{"ok":true,…}`.
+- [ ] Install in Word: step 2 ticked; regedit shows `HKCU\Software\Microsoft\Office\16.0\WEF\Developer`,
+      value `6a1f3b2c-6d0e-4c8e-9b8e-4d2f3a7c9e15` = the manifest's path under `%APPDATA%\…\citations`.
+- [ ] Quit Word (also from the tray / Task Manager), open it: Cite on the Home tab (or Home › Add-ins ›
+      Developer Add-ins › Lunta Citations). The panel says "Connected to Lunta · N papers"; within a few
+      seconds the Lunta window says "Word is connected".
+- [ ] A managed PC (KI): note whether the certificate or the developer add-in is blocked by policy, and what the
+      window and Word say.
+
+Citing (the Mac list above, the starred items at least)
+- [ ] * Insert Citation, Insert Bibliography, change style (APA → Vancouver → a journal style via Find journal
+      style…), Update All twice changes nothing.
+- [ ] * Resolve Citations with "(Lee et al., 2020)" placeholders; Confirm adds an outside paper: it appears in
+      Lunta's list.
+- [ ] Quit Lunta: the panel says Lunta isn't running; open Lunta, Update All works without reloading.
+- [ ] Leave Lunta open overnight (or set the clock forward a day): still connects (the daily renewal check).
+
+Word on the web (Edge or Chrome on the same PC; and on Linux with Chrome and Firefox)
+- [ ] Save Manifest…, then Home › Add-ins › More Settings › Upload My Add-in: the panel connects as in Word.
+- [ ] The store add-in (manifest-store.xml, panel from getlunta.app): connects (CORS and Private Network Access
+      from getlunta.app to localhost).
+- [ ] Linux with certutil: Trust Certificate adds it to Chrome and each Firefox profile (restart the browser);
+      without certutil: Save Certificate… and the import steps in the window work.
+
+Removing
+- [ ] Remove…: Windows asks to delete the root certificate (Yes); the registry value is gone; after restarting
+      Word the add-in is gone; the window shows step 1 and 2 open again; Trust Certificate works again (a new
+      authority, a new Windows prompt).
 
 ## Google Docs (Chrome and Safari)
 

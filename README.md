@@ -105,6 +105,12 @@ library (and you, with Lunta closed) can still update them.
 - **Word (Mac):** in Lunta, **Lunta › Citations in Word & Google Docs…** › **Trust Certificate** (your Mac asks
   for your password once) › **Install in Word**. Restart Word and open **Home › Add-ins › Lunta Citations** once;
   from then on **Cite** is on the Home tab. Lunta for Mac must be open while you cite.
+- **Word (Windows):** in Lunta, **Settings ▾ › Citations in Word & Google Docs…** › **Trust Certificate…** (Windows
+  asks "Do you want to install this certificate?" for *Lunta Local CA*: **Yes**; no administrator needed) ›
+  **Install in Word**. Quit Word and open it again: **Cite** is on the Home tab. Lunta must be open while you cite.
+- **Word on the web (Windows, Linux, Mac):** trust the certificate as above (on Linux, Lunta adds it to Chrome and
+  Firefox if `certutil` is installed, `libnss3-tools`; otherwise the window says how to import it), then **Save
+  Manifest…** in the same window and, in Word on the web, **Home › Add-ins › More Settings › Upload My Add-in**.
 - **Google Docs (Chrome, Edge, Firefox; with Lunta for Mac, Windows or Linux):** with the
   [browser extension](#browser-extension-chrome-edge-firefox-mac-windows-linux) installed, every Google Docs
   document has a **Lunta** button at the bottom right. Click it, **Connect Google account** (once), click in your
