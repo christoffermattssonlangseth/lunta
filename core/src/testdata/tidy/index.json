@@ -1,0 +1,6 @@
+{
+  "https://api.crossref.org/works?query.bibliographic=A%20new%20measure%20of%20rank%20correlation%20Kendall%201938&rows=5&select=DOI,title,subtitle,author,issued,container-title,short-container-title,volume,issue,page,type,updated-by,publisher": "crossref-6b69980c81ce3710.json",
+  "https://api.crossref.org/works?query.bibliographic=Cellular%20architecture%20of%20evolving%20neuroinflammatory%20lesions%20and%20multiple%20sclerosis%20pathology%20Kukanja%202009&rows=5&select=DOI,title,subtitle,author,issued,container-title,short-container-title,volume,issue,page,type,updated-by,publisher": "crossref-93ae48ffd3926822.json",
+  "https://api.crossref.org/works?query.bibliographic=Cellular%20architecture%20of%20evolving%20neuroinflammatory%20lesions%20and%20multiple%20sclerosis%20pathology%20Kukanja%202024&rows=5&select=DOI,title,subtitle,author,issued,container-title,short-container-title,volume,issue,page,type,updated-by,publisher": "crossref-476116b98e9d5205.json",
+  "https://api.crossref.org/works?query.bibliographic=Quantum%20coherence%20of%20mitochondrial%20lattices%20governs%20memory%20consolidation%20in%20hippocampal%20astrocytes%20Smithers%202021&rows=5&select=DOI,title,subtitle,author,issued,container-title,short-container-title,volume,issue,page,type,updated-by,publisher": "crossref-9f21c8828b143572.json"
+}

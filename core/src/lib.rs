@@ -32,12 +32,17 @@ pub mod index;
 pub mod llm;
 pub mod metadata;
 pub mod model;
+/// Outline from Highlights: a folder's (tag's, search's, selection's) highlights and notes as a
+/// Markdown outline with citations.
+pub mod outline;
 /// Resolve Citations: placeholders typed while writing, and the papers they may mean.
 pub mod placeholders;
 pub mod refcite;
 #[cfg(feature = "convert")]
 pub mod pagetext;
 pub mod store;
+/// Tidy the Library: duplicates, missing details, tags and folders to suggest.
+pub mod tidy;
 #[cfg(feature = "tts")]
 pub mod tts;
 pub mod worktype;
