@@ -1,5 +1,5 @@
-//! A DOI for a paper that has none. An arXiv paper's is its arXiv DOI (10.48550/arXiv.…, no
-//! lookup). Otherwise Crossref's bibliographic search for the title, first author and year, and
+//! A DOI for a paper that has none. An arXiv preprint's is its arXiv DOI (10.48550/arXiv.…, no
+//! lookup; not for a published paper that also has an arXiv id). Otherwise Crossref's bibliographic search for the title, first author and year, and
 //! a record is taken only when it is plainly the same work: its title is the paper's
 //! (`refcite::title_in` both ways, or the same title with a subtitle left out), the years are at
 //! most one apart, the first author is among its authors, and a published paper isn't given a
@@ -62,7 +62,8 @@ pub(crate) fn query(m: &PaperMeta) -> String {
 /// A DOI for this paper, with the record it comes from; None when nothing is plainly it.
 /// Err only when Crossref couldn't be asked.
 pub(crate) fn find(net: &dyn Net, id: &str, m: &PaperMeta) -> Result<Option<DoiSuggestion>> {
-    if !m.arxiv.trim().is_empty() {
+    // the arXiv DOI only for the preprint itself: a published paper with an arXiv id is searched for
+    if !m.arxiv.trim().is_empty() && (checks::is_preprint(m) || m.journal.trim().is_empty()) {
         let id_ = m.arxiv.trim().trim_start_matches("arXiv:");
         let bare = match id_.rfind('v') {
             Some(i) if i + 1 < id_.len() && id_[i + 1..].chars().all(|c| c.is_ascii_digit()) => &id_[..i],

@@ -126,6 +126,20 @@ fn a_preprint_and_its_published_version() {
 }
 
 #[test]
+fn a_preprint_alike_with_two_published_works_does_not_chain_them() {
+    let (_d, l) = lib();
+    let t = "Graph neural networks for predicting protein function from structure";
+    let pre = add(&l, PaperMeta { work_type: "posted-content".into(), ..meta(t, "Mia Berg", "2021", "arXiv", "10.48550/arXiv.2101.00001") });
+    // two different published works with (nearly) the same title: a conference and a journal paper
+    let conf = add(&l, PaperMeta { work_type: "proceedings-article".into(), ..meta(t, "Mia Berg", "2021", "NeurIPS", "10.5555/neurips.2021.1") });
+    let jour = add(&l, PaperMeta { work_type: "journal-article".into(), ..meta(t, "Mia Berg", "2022", "Bioinformatics", "10.1093/bioinformatics/btac001") });
+    let groups = l.tidy_duplicates();
+    assert!(!groups.iter().any(|g| g.paper_ids.contains(&conf) && g.paper_ids.contains(&jour)), "{groups:#?}");
+    // the preprint is still offered with one of them
+    assert!(groups.iter().any(|g| g.paper_ids.contains(&pre) && g.paper_ids.len() == 2), "{groups:#?}");
+}
+
+#[test]
 fn merging_keeps_everything_on_the_paper_kept() {
     let (_d, l) = lib();
     let keep = add(&l, meta(KUKANJA, "Petra Kukanja", "2024-04-11", "Cell", "10.1016/j.cell.2024.02.030"));
@@ -224,6 +238,32 @@ fn dois_found_with_the_title_year_and_author_guard() {
     assert!(r.suggestions[0].duplicate_of.is_some());
 }
 
+/// Answers nothing (Crossref without a record), and counts the requests.
+struct Nothing(std::sync::Mutex<usize>);
+impl crate::checks::net::Net for Nothing {
+    fn get(&self, _url: &str) -> crate::model::Result<Option<String>> {
+        *self.0.lock().unwrap() += 1;
+        Ok(Some(r#"{"message":{"items":[]}}"#.into()))
+    }
+}
+
+#[test]
+fn a_published_paper_with_an_arxiv_id_is_not_given_the_arxiv_doi() {
+    let net = Nothing(Default::default());
+    let t = "Graph neural networks for predicting protein function from structure";
+    // the conference paper, imported with its eprint: searched for, not given the preprint's DOI
+    let conf = PaperMeta { work_type: "inproceedings".into(), ..meta(t, "Mia Berg", "2021", "NeurIPS", "") };
+    let conf = PaperMeta { arxiv: "2101.00001v2".into(), ..conf };
+    assert!(doi::find(&net, "p", &conf).unwrap().is_none());
+    assert_eq!(*net.0.lock().unwrap(), 1, "Crossref was asked");
+    // the preprint itself (no journal, or arXiv's): its arXiv DOI, no lookup
+    let pre = PaperMeta { arxiv: "2101.00001v2".into(), ..meta(t, "Mia Berg", "2021", "", "") };
+    assert_eq!(doi::find(&net, "p", &pre).unwrap().unwrap().doi, "10.48550/arXiv.2101.00001");
+    let pre = PaperMeta { arxiv: "2101.00001".into(), ..meta(t, "Mia Berg", "2021", "arXiv", "") };
+    assert_eq!(doi::find(&net, "p", &pre).unwrap().unwrap().doi, "10.48550/arXiv.2101.00001");
+    assert_eq!(*net.0.lock().unwrap(), 1);
+}
+
 #[test]
 fn the_guard_takes_only_the_same_work() {
     let m = meta(KUKANJA, "Petra Kukanja", "2024", "Cell", "");
@@ -235,8 +275,10 @@ fn the_guard_takes_only_the_same_work() {
     f.authors = vec!["John Smith".into()];
     assert!(!doi::is_this(&m, &f), "another first author");
     f.authors = vec!["Petra Kukanja".into()];
-    f.title = "Cellular architecture of evolving neuroinflammatory lesions".into();
+    f.title = format!("{KUKANJA}: a single-nucleus and spatial atlas");
     assert!(doi::is_this(&m, &f), "a subtitle left out");
+    f.title = "Cellular architecture of evolving neuroinflammatory lesions".into();
+    assert!(!doi::is_this(&m, &f), "only the start of the title: another work");
     f.title = "Molecular architecture of chronic lesions in multiple sclerosis".into();
     assert!(!doi::is_this(&m, &f), "another title");
     // a published paper never gets its preprint's DOI

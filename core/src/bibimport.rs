@@ -446,7 +446,15 @@ impl Library {
             }
             let (paper, new) = self.add_or_merge(meta, &e.key)?;
             self.set_membership(collection.to_string(), paper.clone(), true)?;
-            self.set_bib_fields(paper.clone(), own.into_iter().map(|(name, value)| BibField { name, value }).collect())?;
+            // the paper's kept fields are added to, never cleared or replaced: they may have come
+            // from another folder's .bib, whose export would change
+            let mut fields = self.bib_fields(paper.clone());
+            for (name, value) in own {
+                if !fields.iter().any(|f| f.name.eq_ignore_ascii_case(&name)) {
+                    fields.push(BibField { name, value });
+                }
+            }
+            self.set_bib_fields(paper.clone(), fields)?;
             item.paper_id = paper.clone();
             item.cite_key = self.keep_key(&paper, new, &e.key, &keyed, &mut item.notes);
             if item.cite_key == e.key {
@@ -799,6 +807,30 @@ mod tests {
         assert!(r.text.contains("Citation keys: 0 kept, 3 not"), "{}", r.text);
         // the other paper keeps its key
         assert_eq!(l.paper(other.id).unwrap().cite_key, "kendall1938");
+    }
+
+    #[test]
+    fn a_second_bib_keeps_the_fields_another_bib_gave() {
+        let (_d, l) = lib();
+        let thesis = l.create_collection("Thesis".into(), None).unwrap();
+        let grant = l.create_collection("Grant".into(), None).unwrap();
+        let none = |_: &PaperMeta, _: usize, _: usize| None;
+        let first = "@techreport{epub33, title={{EPUB} 3.3}, author={{World Wide Web Consortium}}, institution={W3C}, type={W3C Recommendation}, note={Accessed today}, year={2023}, doi={10.9999/epub33}}";
+        let r = l.import_bib_with(first, &thesis.id, &none).unwrap();
+        let id = r.items[0].paper_id.clone();
+        let before = l.bib_fields(id.clone());
+        assert!(before.iter().any(|f| f.name == "note"), "{before:?}");
+        let thesis_bib = l.kept_bibtex(Some(thesis.id.clone())).unwrap();
+        // the same paper in another folder's .bib, without the note or type, with a month
+        let second = "@techreport{w3c-epub, title={EPUB 3.3}, author={{World Wide Web Consortium}}, institution={W3C}, year={2023}, month=5, doi={10.9999/EPUB33}}";
+        let r2 = l.import_bib_with(second, &grant.id, &none).unwrap();
+        assert_eq!(r2.items[0].paper_id, id, "the same paper");
+        let after = l.bib_fields(id.clone());
+        for f in &before {
+            assert!(after.contains(f), "{f:?} kept: {after:?}");
+        }
+        assert!(after.iter().any(|f| f.name == "month"), "the new field added: {after:?}");
+        assert!(l.kept_bibtex(Some(thesis.id.clone())).unwrap().contains("note = {Accessed today}"), "{thesis_bib}");
     }
 
     #[test]

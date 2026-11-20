@@ -263,10 +263,29 @@ pub fn unmarked_title(t: &str) -> &str {
 }
 
 /// Whether two titles are the same, allowing a subtitle that one leaves out, a "RETRACTED:" mark
-/// and differences in punctuation, accents and case.
+/// and differences in punctuation, accents and case. The one without a subtitle must be all of
+/// the other's title up to a subtitle separator (":", "?", ". ", " – "…): "A single-cell atlas of
+/// the mouse brain" is not "A single-cell atlas of the mouse brain vasculature".
 pub fn same_title(a: &str, b: &str) -> bool {
-    let (wa, wb) = (title_words(unmarked_title(a)).concat(), title_words(unmarked_title(b)).concat());
-    !wa.is_empty() && (wa == wb || (wa.len() >= 10 && wb.starts_with(&wa)) || (wb.len() >= 10 && wa.starts_with(&wb)))
+    let (ua, ub) = (unmarked_title(a), unmarked_title(b));
+    let (wa, wb) = (title_words(ua).concat(), title_words(ub).concat());
+    if wa.is_empty() {
+        return false;
+    }
+    if wa == wb {
+        return true;
+    }
+    // the short title is the long one's main title, which ends at a subtitle separator
+    let main_title = |short: &str, long: &str| short.len() >= 10 && subtitle_heads(long).any(|h| title_words(h).concat() == short);
+    main_title(&wa, ub) || main_title(&wb, ua)
+}
+
+/// The parts of a title before each of its subtitle separators ("PDFFigures 2.0" of "PDFFigures
+/// 2.0: Mining Figures…").
+fn subtitle_heads(t: &str) -> impl Iterator<Item = &str> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"\s*(?:[:?!;|]|\.\s|\s[-–—]+\s|—|--)").unwrap());
+    re.find_iter(t).map(move |m| &t[..m.start()])
 }
 
 /// A family name as compared: folded, letters only ("Müller-Lüdenscheidt" → "mullerludenscheidt").

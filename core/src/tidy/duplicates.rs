@@ -206,15 +206,26 @@ pub(crate) fn find(papers: &[Paper], updates: &HashMap<String, PaperUpdates>, di
         }
         r
     }
+    // Two groups are joined only when every paper of one is alike with every paper of the other,
+    // so a preprint alike with two different published works (two DOIs) doesn't chain them into
+    // one group, where merging would delete one of them.
+    let mut members: HashMap<usize, Vec<usize>> = (0..papers.len()).map(|i| (i, vec![i])).collect();
     let mut reason: HashMap<(usize, usize), DuplicateReason> = HashMap::new();
     for (i, j) in pairs {
-        if let Some(r) = alike(&papers[i], &papers[j], updates.get(&papers[i].id), updates.get(&papers[j].id)) {
-            let (a, b) = (root(&mut parent, i), root(&mut parent, j));
-            if a != b {
-                parent[a] = b;
+        let Some(r) = alike(&papers[i], &papers[j], updates.get(&papers[i].id), updates.get(&papers[j].id)) else { continue };
+        let (a, b) = (root(&mut parent, i), root(&mut parent, j));
+        if a != b {
+            let all_alike = members[&a].iter().all(|&x| {
+                members[&b].iter().all(|&y| (x == i && y == j) || alike(&papers[x], &papers[y], updates.get(&papers[x].id), updates.get(&papers[y].id)).is_some())
+            });
+            if !all_alike {
+                continue;
             }
-            reason.insert((i, j), r);
+            parent[a] = b;
+            let moved = members.remove(&a).unwrap_or_default();
+            members.get_mut(&b).unwrap().extend(moved);
         }
+        reason.insert((i, j), r);
     }
     let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for i in 0..papers.len() {

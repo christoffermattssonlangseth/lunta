@@ -404,6 +404,12 @@ fn compares_venues_titles_and_pages() {
     assert!(same_title("Deep Learning", "Deep learning."));
     assert!(same_title("PDFFigures 2.0", "PDFFigures 2.0: Mining Figures from Research Papers"));
     assert!(!same_title("Deep learning", "Attention is all you need"));
+    assert!(same_title("Why do people read papers? A study", "Why do people read papers"), "a question as the main title");
+    assert!(same_title("Cellular architecture of evolving neuroinflammatory lesions", "Cellular architecture of evolving neuro-inflammatory lesions — a single-cell study"));
+    // a longer title that only starts with the same letters or words is another work
+    assert!(!same_title("A single-cell atlas of the mouse brain", "A single-cell atlas of the mouse brain vasculature"));
+    assert!(!same_title("Graph neural network for molecules", "Graph neural networks for molecules"));
+    assert!(!same_title("Graph neural network", "Graph neural networks: a review"));
     assert_eq!(first_page("436–44"), "436");
     assert_eq!(first_page("e1002"), "e1002");
     assert_eq!(long_date("2010-02-06"), "6 February 2010");
