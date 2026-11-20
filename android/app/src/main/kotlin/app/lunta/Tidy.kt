@@ -68,6 +68,10 @@ class LibraryTidy(private val model: AppModel) {
 
     fun show() {
         open = true
+        // an Undo or message left from the last time (the dialog closed while its snackbar was up)
+        // is for an old change: not offered again
+        undoable = null
+        message = null
         dois = null
         topicsByModel = false
         topicsNote = null
