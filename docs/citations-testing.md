@@ -217,3 +217,66 @@ A document with: "(Name et al. 2024)" for a paper in the library (only one by th
 - [ ] LaTeX: File › Resolve Citations in a .tex File… on a file with `\cite{?name2024}`, `\citep[p.~2]{a,name2024?}`,
       a commented `% \cite{?x2020}` and "(Name et al. 2024)": three listed; Write puts the keys in, keeps `a` and the
       options, leaves the comment, writes `.tex.bak`, and the folder's kept .bib has the papers. The project compiles.
+
+## A paper's options: page, prefix, suffix, author (Word, Google Docs)
+
+In Word (Mac, Windows, on the web), the extension's panel (Chrome and Safari) and the Apps Script sidebar
+(Edit Citation at Cursor).
+
+- [ ] Click a citation of two papers, **Page…** next to the first: the form opens with the cursor in the number.
+      Type 12, Tab to the prefix, "see", Enter: "(see Smith, 2020, p. 12; Lee, 2021)" (APA). Escape closes without
+      changing anything. Tab reaches every field and both buttons.
+- [ ] Kind Figure, 3–5: "figs. 3–5". Without author: "(2020, p. 12)". Author in the text: "Smith (2020, p. 12)".
+      A suffix ", emphasis added" keeps its comma; "for a review" gets a space.
+- [ ] The same in Vancouver ("[see 1, p. 12]"), Nature (superscript "1(p12)"; author in the text is not raised:
+      "Smith [1]"), Chicago ("(Smith 2020, 12)"), MLA ("(Smith 12)"), and a journal style (Find journal style…, e.g.
+      "Cell"): the journal's own locator form.
+- [ ] Update All twice: nothing changes the second time; the options are still there after saving, closing and
+      opening the document, and on another computer with Lunta.
+- [ ] Word: open the document with an older add-in (the hosted panel cached before version 13, or Lunta for Mac
+      before this release): the citation keeps its papers (no "isn't in your library"), Update All writes it without
+      its page; the current panel's Update All puts the page back.
+- [ ] Google Docs: the same document in the extension and the Apps Script sidebar shows the same options. An older
+      `Code.gs` (3) rewriting the citation drops its options (expected), not its papers.
+- [ ] Remove a paper (✕) from a citation with options: the other paper keeps its own.
+- [ ] Type text right before and after a citation with options (Google Docs), Update All: the options stay on that
+      citation, not on the typed text.
+
+## Converting citations from Zotero, EndNote and Mendeley
+
+Use copies of real manuscripts (or make test documents with each program: a few citations, one with a page, a
+prefix and "Omit Author" / "Exclude Author", one with several papers, one long EndNote citation with 10+ papers,
+and the bibliography). Keep the originals; compare the converted copy side by side.
+
+Word (Mac, then Windows, then Word on the web)
+- [ ] Zotero (Store citations as: Fields): Convert Citations from Zotero, EndNote or Mendeley…: the review says
+      "N citations, M papers: X in your library, Y to add", from Zotero, the papers to add listed. Nothing in the
+      document has changed (Track Changes on: no revisions yet), nothing was added to Lunta.
+- [ ] Untick one paper, Convert: the ticked papers appear in Lunta, every citation whose papers are all there is a
+      Lunta citation (click it: the panel shows its papers and Page… shows Zotero's page and prefix), the text around
+      each keeps its font, size, italics and spacing (also inside a sentence, before a full stop, in a table).
+      The citation with the unticked paper is unchanged and listed; Zotero's bibliography stays (listed).
+      Convert again, tick it: now all converted, Zotero's bibliography becomes Lunta's (its place and paragraph
+      style kept), the style is the document's.
+- [ ] After converting, Zotero's own Refresh finds no Zotero citations left (Zotero tab › Refresh).
+- [ ] Zotero with "Store citations as bookmarks": the panel says to switch Zotero to fields; nothing changes.
+- [ ] EndNote 20/21 (Mac and Windows): citations with Cite While You Write formatting, one with a page
+      ("Pages" in Edit & Manage Citations), prefix/suffix, Exclude Author, Display as Author (Year); a citation
+      of many papers (stored as EN.CITE.DATA); EndNote's bibliography. All converted with their options; the
+      bibliography becomes Lunta's. Titles with italics, non-English characters (å, ü, Chinese) and "&" come through.
+- [ ] Mendeley Cite (the add-in) and Mendeley Desktop (legacy fields): both converted; a document with both too.
+- [ ] A document mixing Lunta citations with Zotero ones: the Lunta ones are untouched, numbering covers all after.
+- [ ] Undo: Word's Undo after converting undoes one citation at a time (Word has no undo group for add-ins):
+      the review's advice to keep a copy is there.
+- [ ] Word 2019 or older (no WordApi 1.5): Mendeley Cite citations convert; field citations are listed as left,
+      with the reason.
+- [ ] A long thesis (200+ citations, 150 papers): the review comes within ~20 s; Convert finishes (note the time).
+
+Google Docs (extension in Chrome, then Safari through Lunta for Mac; then the Apps Script sidebar)
+- [ ] A document cited with Zotero's Google Docs plugin: Convert Citations from Zotero…: the review as above.
+      Convert: citations relinked (click one: its papers and Zotero's page), Zotero's bibliography becomes
+      Lunta's, Update All formats them; the version history shows one change for the conversion.
+- [ ] Zotero's plugin afterwards: it no longer lists the converted citations (Zotero › Refresh).
+- [ ] A document with Paperpile citations: the panel says they can't be converted; nothing changes.
+- [ ] Someone types in the document during Convert (long document): it starts over or says to try again; no
+      citation gets the wrong papers.

@@ -223,6 +223,95 @@ trusts only the authority in a temporary folder (no system store is touched). Th
 `cargo check --target x86_64-pc-windows-gnu` on a copy of the `win` module (the full crate needs llama.cpp's
 toolchain for Windows).
 
+### A paper's options in a citation: page, prefix, suffix, author
+
+As in Zotero's citation dialog, each paper in a citation can have a **locator** (a CSL locator type, page by
+default, and its number: "p. 12", "chaps. 3–5", "fig. 7"), a **prefix** ("see"), a **suffix** ("for a review")
+and an author **mode**: as the style has it, *suppress* (without the author, "(2024)", for when the name is in
+the sentence already) or *narrative* (the author in the text: "Kukanja et al. (2024)"). Click a citation; each
+paper has **Page…** (Word panel, extension panel; the Apps Script sidebar's **Edit Citation at Cursor**), a form
+built by `LuntaCite.optionsForm` (kind of locator, number, prefix, suffix, author; Enter applies, Escape closes).
+
+- **Stored outside the paper ids**, so add-ins from before still read the citation: in Word in the content
+  control's **title**, `Citation lunta-o:<code>` (the tag stays `margins:<ids>`); in Google Docs in **named
+  ranges over the citation's text**, `lunta-o:<key>:<i>:<n>:<part>` (Docs names are 256 characters at most;
+  the parts put together in order). The code is base64url of the JSON with short keys (`p`, `s`, `l`, `t`, `m`),
+  written and read by `common.js` (`encodeOptions`, `optionsTitle`, `optionRangeNames`, `optionsCodeOf`; the
+  extension's `docs-model.js` reads the names itself, a test checks they agree). Update All re-creates a
+  citation's ranges over its new text (the extension deletes them by id first; `Code.gs` re-adds them).
+- **Older add-ins** with a newer document: Word's (before 13) read the papers from the tag, format the citation
+  without its options and leave the title, so a newer panel puts them back at the next Update All. Google Docs'
+  (`Code.gs` 3, and the extension as released before this change) don't see the ranges; when they rewrite a citation's text, Docs drops the
+  ranges with the old text and that citation's options are lost (its papers aren't). `Sidebar.html` 4 asks for
+  `Code.gs` 4.
+- **Formatting.** Built-in styles in `common.js` `format(style, citations, entries, store, options)`: author–date
+  "(see Smith, 2020, p. 12)", Chicago and MLA without "p." ("(Smith 2020, 12)", "(Smith 12)"), works with
+  options not merged into "Smith, 2020a, 2020b"; numbered "[see 1, p. 12]", "[1–3; 4, p. 2]" (ranges only
+  between plain numbers), superscript "1(p12)"; *narrative* "Smith (2020, p. 12)", or "Smith [3]" in a numbered
+  style (that citation isn't raised: `superscripts`). Journal styles: `/render` takes `options` (one per citation,
+  `{id: {locator, label, prefix, suffix, mode}}`); the core (`csl::render_items`, `Library::cite_csl_items`)
+  gives hayagriva each paper's `SpecificLocator` and, for *narrative*, `CitePurpose::Prose`; the prefix and
+  suffix go around the paper's part of the engine's output (marked `ElemMeta::Entry`), and *suppress* takes the
+  first names element out of it (hayagriva has no per-item affixes, and its `CitePurpose::Year` drops the
+  citation's brackets and year suffixes).
+
+### Converting citations from Zotero, EndNote and Mendeley
+
+Researchers bring manuscripts written with other reference managers. **Convert Citations from Zotero, EndNote or
+Mendeley…** (Word panel) and **Convert Citations from Zotero…** (Google Docs: the extension and the Apps Script
+sidebar) read the other manager's citations, find their papers, show a review ("12 citations, 34 papers: 30 in
+your library, 4 to add", the papers to add with a tick each, what can't be read), and change nothing until
+**Convert**. Then the papers ticked are added (`/add`), every citation whose papers are all in the library
+becomes a Lunta citation with the options the manager kept, the manager's bibliography becomes Lunta's (or goes,
+if there is one already) once none of its citations is left, and Update All formats everything in the document's
+style. A citation with a paper not found or not added stays exactly as it was and is listed afterwards.
+
+- **What is read** (`word/fields.js` for Word, `common.js` for the shared parts):
+  - Zotero in Word: fields `ADDIN ZOTERO_ITEM CSL_CITATION {CSL citation JSON}` (the JSON right after
+    `CSL_CITATION`, possibly with text after it, so the object is taken by brace matching), bibliography
+    `ADDIN ZOTERO_BIBL {…} CSL_BIBLIOGRAPHY`. Items: `itemData` (CSL-JSON: title, author with particles or
+    `literal`, `issued` date-parts / raw, container-title, DOI, PMID…), `locator`, `label`, `prefix`, `suffix`,
+    `suppress-author`, `author-only` (as narrative). "Store citations as bookmarks" documents (bookmarks
+    `ZOTERO_BREF_…`, the codes in document properties) aren't read: the panel says to switch Zotero to fields.
+  - Mendeley Desktop: `ADDIN CSL_CITATION {…}` (older: `ADDIN Mendeley Citation{uuid} CSL_CITATION`, a
+    `mendeley` object), bibliography `ADDIN Mendeley Bibliography CSL_BIBLIOGRAPHY`. Mendeley Cite: content
+    controls tagged `MENDELEY_CITATION_v3_<base64 JSON>` (same CSL items), bibliography `MENDELEY_BIBLIOGRAPHY`.
+  - EndNote: `ADDIN EN.CITE <EndNote><Cite>…<record>…</record></Cite></EndNote>` in the field code, or (long
+    citations) the same XML base64 in the field's `<w:fldData>` with an `ADDIN EN.CITE.DATA` field nested inside
+    (UTF-8, or UTF-16 if it looks so). `<record>`: titles (EndNote's `<style>` wrappers dropped), authors
+    "Family, Given", year, secondary-title / periodical, volume, number, pages, `electronic-resource-num`
+    (the DOI in it), `accession-num` (a PubMed id when it is one), urls. `<Cite>`: `<Prefix>`, `<Suffix>`
+    (EndNote's "`" for a kept space), `<Pages>` (the cited pages, only before `<record>`, whose `<pages>` are the
+    article's), `ExcludeAuth="1"` (suppress), `AuthorYear="1"` (narrative). Bibliography `ADDIN EN.REFLIST`.
+    Unformatted temporary citations ("{Smith, 2020 #12}") aren't read (Resolve Citations can take them).
+  - Zotero in Google Docs: text linked to `https://www.zotero.org/google-docs/?<key>` (6 characters), the code in
+    named ranges `Z_F<key><000…><part>` ("ITEM CSL_CITATION {…}"; "BIBL …" for the bibliography, whose
+    paragraphs are linked to its key), as zotero-google-docs-integration writes them. Paperpile's links
+    (`paperpile.com/c/…`) are counted and reported: their details are on Paperpile's server. Mendeley and
+    EndNote have no Google Docs citations to read.
+- **Finding the papers**: `POST /match {items: [meta]}` (API 4; `Library::match_cited_papers`,
+  `core/src/citeimport.rs`): DOI, PubMed id, the same title (with years at most one apart), or the same first
+  author, year and nearly the same title (shared words ≥ 0.8). Works are taken once (by DOI, else title and
+  year) across citations.
+- **Writing, Word**: the document's OOXML (`body.getOoxml()`) is read for the fields (instructions split over
+  runs and paragraphs, entities, `fldData`, nesting); Word's own `body.fields` come in the same order and are
+  matched by their code (`LuntaFields.sameCode`); a field is replaced by selecting it (`Field.select`, WordApi
+  1.5) and inserting a Lunta citation (content control) in its place, so the text around it keeps its
+  formatting; the last first. Mendeley Cite's controls just get Lunta's tag and title. Word has no undo group
+  for add-ins: the review says to keep a copy. Needs WordApi 1.5 (Word 2021, Microsoft 365, Word on the web) for
+  fields; citations in footnotes aren't read (`body` only).
+- **Writing, Google Docs**: one `batchUpdate` for the revision read (extension `flow.js` `convertZotero`,
+  `docs-model.js` `zoteroRequests`; `Code.gs` `zoteroConvert`): the citation's text relinked to
+  `margins.local/cite?ids=…` with its options' ranges, the bibliography's paragraphs relinked to
+  `margins.local/bib` (or deleted), the converted keys' `Z_F` ranges deleted; then Update All. The version
+  history keeps the document as it was.
+
+Tests: `node --test apple/citations-tests/` (`fixtures-word.js`: Zotero with its code split over three runs and a
+title with `<&>`, EndNote inline and as `fldData` with a nested field, Mendeley Desktop and Mendeley Cite, a
+`HYPERLINK` field between them, the bibliographies; Zotero in Google Docs for the extension and `Code.gs`),
+`cargo test citeimport` and `cargo test locators` in `core`, `cargo test citeapi` in `desktop/src-tauri`,
+`swift test --filter CitationAPITests`. Real documents: see citations-testing.md.
+
 ### Resolve Citations: write first, cite later
 
 Writers type placeholders while writing and let Lunta turn them into citations, **confirming each one**: Lunta
@@ -248,7 +337,7 @@ proposes, the writer decides. Nothing is written into a document or added to the
   years around), or OpenAlex when Crossref has nothing; a work the library has (DOI or title) shows as the
   library's. `search_citation` is the panels' Search; `add_found_paper` adds a confirmed outside paper (its record
   from the DOI).
-- **The citation API** (version 3; `CitationAPI.swift`, `desktop/src-tauri/src/citeapi.rs`): `POST
+- **The citation API** (version 3, now 4; `CitationAPI.swift`, `desktop/src-tauri/src/citeapi.rs`): `POST
   placeholders {texts, latex?}`, `POST suggest {cite} | {query}`, `POST add {meta}` (the app then shows the paper
   and looks for its PDF).
 - **Word and Google Docs** share `apple/citations/resolve.js` (the extension's `gdocs/citations-resolve.js` is a

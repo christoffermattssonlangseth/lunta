@@ -99,7 +99,9 @@ sign in there if needed, and tap **Use this page's full text**.
 
 Cite from your library while you write: citations in 12 styles or any of ~10,000 journal styles, several papers
 in one citation, a reference list that updates itself, and renumbering after edits. **Click a citation** to see
-its papers, remove one or add more. Documents keep a copy of the papers they cite, so co-authors without your
+its papers, remove one or add more, and give a paper a page or another locator ("p. 12", "fig. 3"), a prefix
+("see"), a suffix, or leave the author out ("(2024)") or put it in the text ("Kukanja et al. (2024)"), with
+**Page…** next to it. Documents keep a copy of the papers they cite, so co-authors without your
 library (and you, with Lunta closed) can still update them.
 
 - **Word (Mac):** in Lunta, **Lunta › Citations in Word & Google Docs…** › **Trust Certificate** (your Mac asks
@@ -125,6 +127,14 @@ your library first, else from Crossref. Lunta proposes, you decide: **Confirm** 
 **Skip**) one by one, or **Confirm All Exact Matches** for those with exactly one paper in your library that
 fits. Only then does a placeholder become a citation (a paper not yet in your library is added to it), and the
 reference list updates. Ordinary brackets like "(see Fig. 2)" or "(n = 2025)" are left alone.
+
+**Moving a manuscript from EndNote, Zotero or Mendeley.** Open it and click **Convert Citations from Zotero,
+EndNote or Mendeley…** in Lunta's Word panel (in Google Docs: **Convert Citations from Zotero…**). Lunta reads
+the citations those programs left in the document (with their pages, prefixes and suffixes), finds the papers in
+your library and lists those it would add: "12 citations, 34 papers: 30 in your library, 4 to add". Nothing
+changes until you click **Convert**; then the citations become Lunta's, the old bibliography Lunta's, and Update
+All formats them. A citation whose papers can't all be found stays as it was and is listed. Keep a copy of the
+document first (File › Save a Copy in Word; Google Docs keeps the old version in its version history).
 
 More: [Lunta Citations](https://getlunta.app/support.html).
 

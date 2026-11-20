@@ -48,11 +48,13 @@ Lunta Citations brings your Lunta library into Word. Search your papers, insert 
 • 12 built-in styles (APA 7, Harvard, Chicago, Vancouver, IEEE, AMA, MLA, Nature, Science, Cell, PNAS, ACS) and about 10,000 journal styles from the Citation Style Language.
 • Several papers in one citation: pick them together, or click inside a citation and add more.
 • Update All renumbers citations, rebuilds the bibliography and switches styles in one step, and is safe to run as often as you like.
+• Pages, prefixes and suffixes per paper ("see Smith, 2020, p. 12"), and the author left out "(2020)" or in the text "Smith (2020)".
+• Convert Citations from Zotero, EndNote or Mendeley: a manuscript's existing citations become Lunta citations, with their pages and prefixes, after you review the papers Lunta found in your library and the ones it would add.
 • Documents keep the details of the papers they cite, so co-authors without your library, and you with Lunta closed, can still update them.
 • Private: the add-in talks only to the Lunta app on your own computer. No account, no server, nothing collected.
 
 REQUIRES THE LUNTA APP
-Lunta Citations needs Lunta for Mac or Windows (free) running on the same computer: https://github.com/christoffermattssonlangseth/lunta/releases/latest. In Lunta, choose Citations in Word & Google Docs… (on the Mac in the Lunta menu, on Windows under Settings) and click Trust Certificate once.
+Lunta Citations needs Lunta for Mac, Windows or Linux (free) running on the same computer: https://github.com/christoffermattssonlangseth/lunta/releases/latest. In Lunta, choose Citations in Word & Google Docs… (on the Mac in the Lunta menu, on Windows and Linux under Settings) and click Trust Certificate once.
 
 Lunta is a free, open-source reader and reference manager for scientific papers, for Mac, iPhone, iPad, Android, Windows and Linux.
 ```
@@ -64,12 +66,12 @@ numbered citations and the bibliography; the style menu. (Add the Lunta icon log
 
 **Notes for certification (testing instructions):**
 ```
-Lunta Citations is a citation tool for the Lunta reference manager. It needs the Lunta desktop app, which is free and has no account: Lunta for Mac or Windows, https://github.com/christoffermattssonlangseth/lunta/releases/latest (Mac: download Lunta-<version>-Mac-AppleSilicon.zip, unzip, open; Windows: Lunta-<version>-Windows-Setup.exe).
+Lunta Citations is a citation tool for the Lunta reference manager. It needs the Lunta desktop app, which is free and has no account: Lunta for Mac, Windows or Linux, https://github.com/christoffermattssonlangseth/lunta/releases/latest (Mac: download Lunta-<version>-Mac-AppleSilicon.zip, unzip, open; Windows: Lunta-<version>-Windows-Setup.exe).
 
 The add-in talks only to the Lunta app on the same computer, at https://localhost:47481. To test on a Mac:
-1. Install and open Lunta. Add a paper: click + and paste the DOI 10.1038/s41586-023-06139-9 (and a second, 10.1038/s41592-025-02814-z).
+1. Install and open Lunta. Add a paper: click + and paste the DOI 10.1016/j.cell.2024.02.030 (and a second, 10.1038/s41592-025-02814-z).
 2. In Lunta: Lunta › Citations in Word & Google Docs… › Trust Certificate (macOS asks for the password once; this trusts Lunta's certificate for localhost only).
-3. In Word: Home › Cite. The panel says "Connected to Lunta". Search "Geneformer", pick the paper, Insert Citation; click Insert Bibliography; change the style to Vancouver and click Update All.
+3. In Word: Home › Cite. The panel says "Connected to Lunta". Search "neuroinflammatory", pick the paper, Insert Citation; click Insert Bibliography; change the style to Vancouver and click Update All. Click inside the citation, click Page… next to the paper, type 12 and press Enter: the citation shows the page.
 
 On Windows: install and open Lunta, add the papers as in step 1, then Settings ▾ › Citations in Word & Google Docs… › Trust Certificate… (Windows asks to install "Lunta Local CA": Yes; it is valid for localhost only), then step 3.
 
