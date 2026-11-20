@@ -11,9 +11,10 @@ import Foundation
 //          details the document keeps) as {fromDocument: true}, or found again by DOI or title
 //          ({libraryId}), or else {missing: true}
 //   GET  /api/styles?q=…                     → journal styles in the CSL catalogue [{id, title, format}]
-//   POST /api/render {style, citations, papers?}
+//   POST /api/render {style, citations, papers?, options?}
 //        → a journal style: {title, citations: [{text, superscript}], bibliography: [{id, text}],
-//          items: [item], missing: [id]}
+//          items: [item], missing: [id]}; `options` (api 4), one per citation (null: none):
+//          {id: {locator, label, prefix, suffix, mode}} (mode "", "suppress" or "narrative")
 //   Resolve Citations (api 3; core/src/placeholders):
 //   POST /api/placeholders {texts: [text], latex?}
 //        → {placeholders: [[{start, end, text, kind, cites: [cite]}]]} (UTF-16 offsets; cite: text,
@@ -22,6 +23,9 @@ import Foundation
 //        → {candidates: [item + {source, confidence, exact, inLibrary, citeKey}], exact, note}; a
 //          candidate from outside the library has id "" and its details in meta
 //   POST /api/add {meta} → item + {added}: a paper the writer confirmed, added (or the library's)
+//   Converting citations from Zotero, EndNote and Mendeley (api 4):
+//   POST /api/match {items: [meta]} → {matches: [{id, how} | null]}: the library's paper for each
+//        (by DOI, PubMed id, title, or first author, year and nearly the same title); nothing added
 //
 // Who may ask: pages from this server, the hosted Word panel, and the Google Docs sidebar (served
 // from *.googleusercontent.com, so it must also present the pairing key). Requests a web page
@@ -125,7 +129,7 @@ public enum CitationHTTP {
 public final class CitationAPI: @unchecked Sendable {
     public static let port: UInt16 = 47481
     /// Bumped when the API grows; the add-ins read it from /api/status.
-    public static let version = 3
+    public static let version = 4
     /// Where the hosted Word panel lives (see .github/workflows/pages.yml).
     public static let hostedPanelOrigin = "https://christoffermattssonlangseth.github.io"
     static let ownOrigins: Set<String> = ["https://localhost:\(port)", "https://127.0.0.1:\(port)"]
@@ -308,10 +312,13 @@ public final class CitationAPI: @unchecked Sendable {
                     missing.append(id)
                 }
             }
-            let mapped = cites.map { $0.map { swap[$0] ?? $0 } }
+            let options = (j["options"] as? [Any]) ?? []
+            let mapped = cites.enumerated().map { (n, list) in
+                list.map { id in Self.citeItem(id: swap[id] ?? id, options: (options.indices.contains(n) ? options[n] as? [String: Any] : nil)?[id] as? [String: Any]) }
+            }
             let back = Dictionary(swap.map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
             do {
-                let out = try lib.citeCslWith(cacheDir: cacheDir, styleId: style, citations: mapped, extra: extra)
+                let out = try lib.citeCslItems(cacheDir: cacheDir, styleId: style, citations: mapped, extra: extra)
                 return .json(200, [
                     "title": out.styleTitle,
                     "citations": out.citations.map { ["text": $0.text, "superscript": $0.superscript] },
@@ -355,9 +362,30 @@ public final class CitationAPI: @unchecked Sendable {
             } catch {
                 return .error(502, "Couldn’t add the paper (\(Self.describe(error))).")
             }
+        case ("POST", "/api/match"):
+            guard let list = Self.object(r.body)?["items"] as? [Any], list.count <= 5000 else {
+                return .error(400, "Expected {items}.")
+            }
+            let metas = list.map { ($0 as? [String: Any]).flatMap(Self.meta) }
+            let found = lib.matchCitedPapers(metas: metas.map { $0 ?? Self.emptyMeta })
+            let matches: [Any] = zip(metas, found).map { m, f in
+                m == nil || f.paperId.isEmpty ? NSNull() : ["id": f.paperId, "how": f.how] as [String: Any]
+            }
+            return .json(200, ["matches": matches])
         default:
             return .error(404, "Not found.")
         }
+    }
+
+    static let emptyMeta = PaperMeta(title: "", authors: [], date: "", journal: "", volume: "", issue: "", pages: "", publisher: "", doi: "",
+                                     pmid: "", pmcid: "", arxiv: "", url: "", abstractText: "", keywords: [], license: "")
+
+    /// One cited paper with the options a document keeps for it (`/api/render`'s `options`).
+    static func citeItem(id: String, options o: [String: Any]?) -> CslCiteItem {
+        let s = { (k: String, n: Int) in String(((o?[k] as? String) ?? "").prefix(n)) }
+        let mode = s("mode", 20)
+        return CslCiteItem(id: id, locator: s("locator", 200), label: s("label", 40), prefix: s("prefix", 500), suffix: s("suffix", 500),
+                           mode: ["suppress", "narrative"].contains(mode) ? mode : "")
     }
 
     // MARK: - Resolve Citations

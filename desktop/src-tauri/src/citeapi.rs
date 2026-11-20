@@ -10,9 +10,10 @@
 //!          details the document keeps) as {fromDocument: true}, or found again by DOI or title
 //!          ({libraryId}), or else {missing: true}
 //!   GET  /cite/styles?q=…                   → journal styles in the CSL catalogue [{id, title, format}]
-//!   POST /cite/render {style, citations, papers?}
+//!   POST /cite/render {style, citations, papers?, options?}
 //!        → a journal style: {title, citations: [{text, superscript}], bibliography: [{id, text}],
-//!          items: [item], missing: [id]}
+//!          items: [item], missing: [id]}; `options` (api 4), one per citation (null: none):
+//!          {id: {locator, label, prefix, suffix, mode}} (mode "", "suppress" or "narrative")
 //!   Resolve Citations (api 3; core/src/placeholders):
 //!   POST /cite/placeholders {texts: [text], latex?}
 //!        → {placeholders: [[{start, end, text, kind, cites: [cite]}]]} (UTF-16 offsets; cite:
@@ -21,14 +22,18 @@
 //!        → {candidates: [item + {source, confidence, exact, inLibrary, citeKey}], exact, note};
 //!          a candidate from outside the library has id "" and its details in meta
 //!   POST /cite/add {meta} → item + {added}: a paper the writer confirmed, added (or the library's)
+//!   Converting citations from Zotero, EndNote and Mendeley (api 4):
+//!   POST /cite/match {items: [meta]} → {matches: [{id, how} | null]}: the library's paper for each
+//!        (by DOI, PubMed id, title, or first author, year and nearly the same title); nothing added
 
+use lunta_core::csl::CslCiteItem;
 use lunta_core::model::{CitationStyle, CitedPaper, Paper, PaperFilter, PaperMeta, SortKey};
 use lunta_core::{placeholders, Library};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 
 /// The API's version, as /cite/status says it (CitationAPI.version on the Mac).
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
 
 /// Answers one `/cite/…` request. `cache_dir`: where journal styles are kept.
 pub(crate) fn route(lib: &Library, cache_dir: &str, method: &str, path: &str, query: &HashMap<String, String>, body: &[u8]) -> (u16, Value) {
@@ -118,9 +123,18 @@ pub(crate) fn route(lib: &Library, cache_dir: &str, method: &str, path: &str, qu
                     missing.push(id);
                 }
             }
-            let mapped: Vec<Vec<String>> = cites.iter().map(|l| l.iter().map(|id| swap.get(id).cloned().unwrap_or_else(|| id.clone())).collect()).collect();
+            let options = j.get("options").and_then(Value::as_array).cloned().unwrap_or_default();
+            let mapped: Vec<Vec<CslCiteItem>> = cites
+                .iter()
+                .enumerate()
+                .map(|(n, l)| {
+                    l.iter()
+                        .map(|id| cite_item(swap.get(id).cloned().unwrap_or_else(|| id.clone()), options.get(n).and_then(|o| o.get(id)).and_then(Value::as_object)))
+                        .collect()
+                })
+                .collect();
             let back: HashMap<&String, &String> = swap.iter().map(|(doc, lib_id)| (lib_id, doc)).collect();
-            match lib.cite_csl_with(cache_dir.to_string(), style, mapped, extra) {
+            match lib.cite_csl_items(cache_dir.to_string(), style, mapped, extra) {
                 Ok(out) => (
                     200,
                     json!({
@@ -173,6 +187,19 @@ pub(crate) fn route(lib: &Library, cache_dir: &str, method: &str, path: &str, qu
                 Err(e) => error(502, &format!("Couldn’t add the paper ({e}).")),
             }
         }
+        ("POST", "/cite/match") => {
+            let Some(list) = object(body).and_then(|j| j.get("items").and_then(Value::as_array).cloned()).filter(|l| l.len() <= 5000) else {
+                return error(400, "Expected {items}.");
+            };
+            let metas: Vec<Option<PaperMeta>> = list.iter().map(|v| v.as_object().and_then(meta)).collect();
+            let found = lib.match_cited_papers(metas.iter().map(|m| m.clone().unwrap_or_default()).collect());
+            let matches: Vec<Value> = metas
+                .iter()
+                .zip(found)
+                .map(|(m, f)| if m.is_none() || f.paper_id.is_empty() { Value::Null } else { json!({"id": f.paper_id, "how": f.how}) })
+                .collect();
+            (200, json!({"matches": matches}))
+        }
         _ => error(404, "Not found."),
     }
 }
@@ -207,6 +234,20 @@ pub(crate) fn candidate_json(c: &placeholders::CitationCandidate) -> Value {
     d["inLibrary"] = json!(!c.paper_id.is_empty());
     d["citeKey"] = json!(c.cite_key);
     d
+}
+
+/// One cited paper with the options a document keeps for it (`/cite/render`'s `options`).
+fn cite_item(id: String, o: Option<&Map<String, Value>>) -> CslCiteItem {
+    let s = |k: &str, n: usize| o.and_then(|o| o.get(k)).and_then(Value::as_str).map(|v| cap(v, n)).unwrap_or_default();
+    let mode = s("mode", 20);
+    CslCiteItem {
+        id,
+        locator: s("locator", 200),
+        label: s("label", 40),
+        prefix: s("prefix", 500),
+        suffix: s("suffix", 500),
+        mode: if mode == "suppress" || mode == "narrative" { mode } else { String::new() },
+    }
 }
 
 fn error(status: u16, message: &str) -> (u16, Value) {
@@ -374,6 +415,36 @@ mod tests {
         assert_eq!((st, j["added"].clone(), j["year"].clone()), (200, json!(true), json!("2021")));
         assert!(lib.paper(j["id"].as_str().unwrap().into()).is_some());
         assert_eq!(call("/cite/add", json!({"meta": {}})).0, 400);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn converting_citations_and_options() {
+        let (lib, dir) = lib();
+        let meta = PaperMeta { title: "Alpha cells in the islet of mice".into(), authors: vec!["Ada Lee".into()], date: "2020".into(),
+                               doi: "10.1234/alpha".into(), ..Default::default() };
+        let p = lib.add_paper(meta, None, None, None).unwrap();
+        let cache = dir.join("cache").to_string_lossy().to_string();
+        std::fs::create_dir_all(dir.join("cache/csl")).unwrap();
+        std::fs::write(dir.join("cache/csl/test-loc.csl"), r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" default-locale="en-US">
+  <info><title>Loc</title><id>test-loc</id><updated>2024-01-01T00:00:00+00:00</updated></info>
+  <citation><layout prefix="(" suffix=")" delimiter="; "><group delimiter=", "><names variable="author"><name form="short"/></names><date variable="issued"><date-part name="year"/></date><group delimiter=" "><label variable="locator" form="short"/><text variable="locator"/></group></group></layout></citation>
+  <bibliography><layout><text variable="title"/></layout></bibliography>
+</style>"#).unwrap();
+        let none = HashMap::new();
+        let call = |path: &str, body: Value| route(&lib, &cache, "POST", path, &none, &serde_json::to_vec(&body).unwrap());
+        let (st, j) = call("/cite/match", json!({"items": [{"title": "x", "doi": "https://doi.org/10.1234/ALPHA"},
+            {"title": "Alpha cells in the islet of mice: a study", "authors": ["Lee, A."], "year": "2020"}, {"title": "Unknown work here", "authors": ["Nobody"]}, {}]}));
+        assert_eq!(st, 200, "{j}");
+        assert_eq!(j["matches"][0], json!({"id": p.id, "how": "doi"}));
+        assert_eq!(j["matches"][1]["how"], json!("close"));
+        assert_eq!((j["matches"][2].clone(), j["matches"][3].clone()), (Value::Null, Value::Null));
+        let (st, j) = call("/cite/render", json!({"style": "test-loc", "citations": [[p.id], [p.id]],
+            "options": [{(p.id.clone()): {"locator": "12", "prefix": "see"}}, null]}));
+        assert_eq!(st, 200, "{j}");
+        assert_eq!(j["citations"][0]["text"], json!("(see Lee, 2020, p. 12)"));
+        assert_eq!(j["citations"][1]["text"], json!("(Lee, 2020)"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

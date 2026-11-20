@@ -195,6 +195,27 @@ final class CitationAPITests: XCTestCase {
         XCTAssertEqual(send(request("POST", "/api/render", json: ["style": "../../etc/passwd", "citations": [[a.id]]])).0, 502)
     }
 
+    func testCitationOptionsAndConvertingCitations() throws {
+        try Self.testStyle.write(to: cache.appendingPathComponent("csl/test-author-date.csl"), atomically: true, encoding: .utf8)
+        let a = try lib.addPaper(meta: meta("Alpha cells in the islet of mice", ["Jane Smith"], "2020", doi: "10.1/alpha"), pdf: nil, epub: nil, fulltext: nil)
+        // prefix, suffix and the author left out (the test style prints no locators)
+        let body: [String: Any] = ["style": "test-author-date", "citations": [[a.id], [a.id], [a.id]],
+                                   "options": [[a.id: ["prefix": "see", "suffix": "for a review"]], NSNull(), [a.id: ["mode": "suppress"]]]]
+        let res = try XCTUnwrap(send(request("POST", "/api/render", json: body)).1 as? [String: Any])
+        XCTAssertEqual((res["citations"] as? [[String: Any]])?.map { $0["text"] as? String }, ["(see Smith, 2020 for a review)", "(Smith, 2020)", "(2020)"])
+        // the library's papers for citations from another reference manager
+        let items: [Any] = [["title": "x", "doi": "https://doi.org/10.1/ALPHA"],
+                            ["title": "Alpha cells in the islet of mice: a single-cell atlas", "authors": ["Smith, J."], "year": "2020"],
+                            ["title": "Nothing like it", "authors": ["Nobody"]], [:]]
+        let m = try XCTUnwrap(send(request("POST", "/api/match", json: ["items": items])).1 as? [String: Any])
+        let matches = try XCTUnwrap(m["matches"] as? [Any])
+        XCTAssertEqual((matches[0] as? [String: Any])?["how"] as? String, "doi")
+        XCTAssertEqual((matches[1] as? [String: Any])?["id"] as? String, a.id)
+        XCTAssertTrue(matches[2] is NSNull)
+        XCTAssertTrue(matches[3] is NSNull)
+        XCTAssertEqual(send(request("POST", "/api/match", json: [:])).0, 400)
+    }
+
     func testSearchStaysFastInALargeLibrary() throws {
         for i in 0..<1200 {
             _ = try lib.addPaper(meta: meta("Paper \(i) on single-cell spatial transcriptomics of the brain", ["Author \(i)", "Ada Lee"], "20\(10 + i % 15)",

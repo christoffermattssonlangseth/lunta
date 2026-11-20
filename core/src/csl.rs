@@ -9,7 +9,11 @@ use crate::export::split_name;
 use crate::metadata::get_text;
 use crate::model::{CoreError, Paper};
 use hayagriva::citationberg::{json::Item, IndependentStyle, Locale, LocaleCode};
-use hayagriva::{BibliographyDriver, BibliographyRequest, BufWriteFormat, CitationItem, CitationRequest};
+use hayagriva::citationberg::taxonomy::Locator;
+use hayagriva::{
+    BibliographyDriver, BibliographyRequest, BufWriteFormat, CitationItem, CitationRequest, CitePurpose, ElemChild, ElemChildren, ElemMeta,
+    Formatted, LocatorPayload, SpecificLocator,
+};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
@@ -44,6 +48,36 @@ pub struct CslCitation {
 pub struct CslEntry {
     pub id: String,
     pub text: String,
+}
+
+/// One paper in a citation, with what the writer added to it (as in Zotero's citation dialog).
+/// Only `id` is needed; the rest empty is a plain citation.
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Default)]
+pub struct CslCiteItem {
+    pub id: String,
+    /// Where in the work: "12", "3–5" (the style adds the label: "p. 12").
+    #[uniffi(default = "")]
+    pub locator: String,
+    /// The locator's kind, a CSL locator type: "page" (also when empty), "chapter", "section",
+    /// "figure", "table", "paragraph", "line", "note", "volume", "equation", "supplement", "appendix"…
+    #[uniffi(default = "")]
+    pub label: String,
+    /// Before the paper's part of the citation ("see ").
+    #[uniffi(default = "")]
+    pub prefix: String,
+    /// After it (", for a review").
+    #[uniffi(default = "")]
+    pub suffix: String,
+    /// "" as the style has it; "suppress": without the author ("(2024)"); "narrative": the author
+    /// in the text, the rest in brackets ("Kukanja et al. (2024)").
+    #[uniffi(default = "")]
+    pub mode: String,
+}
+
+impl CslCiteItem {
+    pub fn plain(id: &str) -> Self {
+        CslCiteItem { id: id.to_string(), ..Default::default() }
+    }
 }
 
 /// Citations (in the order asked for) and the reference list (in the style's order).
@@ -259,22 +293,49 @@ fn item(p: &Paper) -> Item {
 
 /// Formats citations (each a list of paper ids, in document order) and the reference list.
 pub fn render(cache_dir: &str, style_id: &str, papers: &[Paper], citations: &[Vec<String>]) -> Result<CslRendered> {
+    let items: Vec<Vec<CslCiteItem>> = citations.iter().map(|ids| ids.iter().map(|id| CslCiteItem::plain(id)).collect()).collect();
+    render_items(cache_dir, style_id, papers, &items)
+}
+
+/// `render`, with each cited paper's locator, prefix, suffix and author mode (`CslCiteItem`).
+/// The locator and the narrative form are the engine's (the style decides "p. 12" and its place);
+/// the prefix and suffix go around the paper's part of the citation, and "suppress" takes the
+/// author's names out of it.
+pub fn render_items(cache_dir: &str, style_id: &str, papers: &[Paper], citations: &[Vec<CslCiteItem>]) -> Result<CslRendered> {
     let (style, title, locale) = load_style(cache_dir, style_id)?;
     let locale = locale.map(LocaleCode);
     let items: Vec<Item> = papers.iter().map(item).collect();
     let find = |id: &str| papers.iter().position(|p| p.id == id).map(|i| &items[i]);
     let mut driver = BibliographyDriver::new();
-    for ids in citations {
-        let cited: Vec<CitationItem<Item>> = ids.iter().filter_map(|id| find(id)).map(CitationItem::with_entry).collect();
+    // per citation, the options of the papers in the order given to the engine
+    let mut asked: Vec<Vec<&CslCiteItem>> = Vec::new();
+    for list in citations {
+        let mut cited: Vec<CitationItem<Item>> = Vec::new();
+        let mut opts = Vec::new();
+        for c in list {
+            let Some(entry) = find(&c.id) else { continue };
+            let locator = (!c.locator.trim().is_empty()).then(|| {
+                SpecificLocator(locator_kind(&c.label), LocatorPayload::Str(c.locator.trim()))
+            });
+            let purpose = (c.mode == "narrative").then_some(CitePurpose::Prose);
+            cited.push(CitationItem::new(entry, locator, None, false, purpose));
+            opts.push(c);
+        }
         driver.citation(CitationRequest::new(cited, &style, locale.clone(), locales(), None));
+        asked.push(opts);
     }
     let out = driver.finish(BibliographyRequest::new(&style, locale, locales()));
     let citations = out
         .citations
         .iter()
-        .map(|c| {
+        .zip(asked.iter())
+        .map(|(c, opts)| {
+            let mut tree = c.citation.clone();
+            if opts.iter().any(|o| !o.prefix.is_empty() || !o.suffix.is_empty() || o.mode == "suppress") {
+                tree = with_options(tree, opts);
+            }
             let mut html = String::new();
-            let _ = c.citation.write_buf(&mut html, BufWriteFormat::Html);
+            let _ = tree.write_buf(&mut html, BufWriteFormat::Html);
             let t = html.trim();
             CslCitation { text: unguard(&tidy(&strip_tags(t))), superscript: all_superscript(t) }
         })
@@ -297,6 +358,123 @@ pub fn render(cache_dir: &str, style_id: &str, papers: &[Paper], citations: &[Ve
         })
         .unwrap_or_default();
     Ok(CslRendered { citations, bibliography, style_title: title })
+}
+
+/// A CSL locator type by name ("page" when empty or unknown).
+fn locator_kind(label: &str) -> Locator {
+    let l = label.trim().to_lowercase();
+    if l.is_empty() {
+        return Locator::Page;
+    }
+    l.parse().unwrap_or(Locator::Page)
+}
+
+/// The engine's citation with each paper's prefix and suffix around its part, and the author's
+/// names taken out of a part whose paper is cited without them ("suppress"). The engine marks
+/// each paper's part (`ElemMeta::Entry`, by its place in the request).
+fn with_options(tree: ElemChildren, opts: &[&CslCiteItem]) -> ElemChildren {
+    fn first_format(c: &ElemChildren) -> Option<hayagriva::Formatting> {
+        c.0.iter().find_map(|x| match x {
+            ElemChild::Text(t) => Some(t.formatting),
+            ElemChild::Elem(e) => first_format(&e.children),
+            _ => None,
+        })
+    }
+    /// Removes the first names element and the punctuation after it ("Kukanja et al., 2024" → "2024").
+    fn drop_names(c: &mut ElemChildren) -> bool {
+        for i in 0..c.0.len() {
+            if let ElemChild::Elem(e) = &mut c.0[i] {
+                if matches!(e.meta, Some(ElemMeta::Names(_))) {
+                    c.0.remove(i);
+                    // the delimiter that followed the names
+                    while i < c.0.len() {
+                        match &mut c.0[i] {
+                            ElemChild::Text(t) if t.text.trim_start_matches(|ch: char| ch.is_whitespace() || ",;:".contains(ch)).is_empty() => {
+                                c.0.remove(i);
+                            }
+                            ElemChild::Text(t) => {
+                                t.text = t.text.trim_start_matches(|ch: char| ch.is_whitespace() || ",;:".contains(ch)).to_string();
+                                break;
+                            }
+                            _ => break,
+                        }
+                    }
+                    return true;
+                }
+                if drop_names(&mut e.children) {
+                    // a group that started with the names: its own leading delimiter
+                    if let Some(ElemChild::Text(t)) = e.children.0.first_mut() {
+                        t.text = t.text.trim_start_matches(|ch: char| ch.is_whitespace() || ",;:".contains(ch)).to_string();
+                    }
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    fn walk(c: ElemChildren, opts: &[&CslCiteItem], seen: &mut Vec<bool>) -> ElemChildren {
+        let mut out = Vec::new();
+        for child in c.0 {
+            match child {
+                ElemChild::Elem(mut e) => {
+                    if let Some(ElemMeta::Entry(i)) = e.meta {
+                        if let Some(o) = opts.get(i) {
+                            seen[i] = true;
+                            if o.mode == "suppress" {
+                                drop_names(&mut e.children);
+                            }
+                            let f = first_format(&e.children).unwrap_or_default();
+                            if !o.prefix.is_empty() {
+                                e.children.0.insert(0, ElemChild::Text(Formatted { text: guard(&affix(&o.prefix, true)), formatting: f }));
+                            }
+                            if !o.suffix.is_empty() {
+                                e.children.0.push(ElemChild::Text(Formatted { text: guard(&affix(&o.suffix, false)), formatting: f }));
+                            }
+                        }
+                        out.push(ElemChild::Elem(e));
+                    } else {
+                        e.children = walk(e.children, opts, seen);
+                        out.push(ElemChild::Elem(e));
+                    }
+                }
+                other => out.push(other),
+            }
+        }
+        ElemChildren(out)
+    }
+    let mut seen = vec![false; opts.len()];
+    let mut tree = walk(tree, opts, &mut seen);
+    // a part the engine merged into another (a collapsed range "1–3"): its prefix at the start and
+    // its suffix at the end of the citation, so nothing the writer typed is lost
+    let f = first_format(&tree).unwrap_or_default();
+    for (i, o) in opts.iter().enumerate() {
+        if seen[i] {
+            continue;
+        }
+        if !o.prefix.is_empty() {
+            tree.0.insert(0, ElemChild::Text(Formatted { text: guard(&affix(&o.prefix, true)), formatting: f }));
+        }
+        if !o.suffix.is_empty() {
+            tree.0.push(ElemChild::Text(Formatted { text: guard(&affix(&o.suffix, false)), formatting: f }));
+        }
+    }
+    tree
+}
+
+/// A prefix ends with a space and a suffix starts with one, unless the writer gave punctuation
+/// ("see" → "see ", "for a review" → " for a review", ", emphasis added" stays).
+fn affix(s: &str, prefix: bool) -> String {
+    let t = s.trim();
+    if t.is_empty() {
+        return String::new();
+    }
+    if prefix {
+        format!("{t} ")
+    } else if t.starts_with(|c: char| ",.;:)]".contains(c)) {
+        t.to_string()
+    } else {
+        format!(" {t}")
+    }
 }
 
 /// Whether every piece of text in the citation is raised (`<sup>` or vertical-align: super).
@@ -348,4 +526,82 @@ fn html_to_markdown(html: &str) -> String {
     let re_b = regex::Regex::new(r#"<span style="font-weight:\s*bold;?">(.*?)</span>"#).unwrap();
     s = re_b.replace_all(&s, "**$1**").into_owned();
     strip_tags(&s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::PaperMeta;
+
+    /// An author–date style that prints locators ("(Smith, 2020, p. 12)"), and a numbered one.
+    const AUTHOR_DATE: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" default-locale="en-US">
+  <info><title>Test Locators</title><id>http://www.zotero.org/styles/test-locators</id><category citation-format="author-date"/><updated>2024-01-01T00:00:00+00:00</updated></info>
+  <macro name="author"><names variable="author"><name form="short" and="symbol" et-al-min="3" et-al-use-first="1"/></names></macro>
+  <macro name="year"><date variable="issued"><date-part name="year"/></date></macro>
+  <citation>
+    <sort><key macro="author"/><key macro="year"/></sort>
+    <layout prefix="(" suffix=")" delimiter="; "><group delimiter=", "><text macro="author"/><text macro="year"/><group delimiter=" "><label variable="locator" form="short"/><text variable="locator"/></group></group></layout>
+  </citation>
+  <bibliography><layout><names variable="author"><name/></names><text prefix=" " variable="title"/></layout></bibliography>
+</style>"#;
+    const NUMERIC: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" default-locale="en-US">
+  <info><title>Test Numeric Locators</title><id>http://www.zotero.org/styles/test-numeric-locators</id><category citation-format="numeric"/><updated>2024-01-01T00:00:00+00:00</updated></info>
+  <citation>
+    <layout prefix="[" suffix="]" delimiter="; "><group delimiter=", "><text variable="citation-number"/><group delimiter=" "><label variable="locator" form="short"/><text variable="locator"/></group></group></layout>
+  </citation>
+  <bibliography><layout><text variable="citation-number" suffix=". "/><text variable="title"/></layout></bibliography>
+</style>"#;
+
+    fn cache() -> String {
+        let dir = std::env::temp_dir().join(format!("lunta-csl-items-{}-{}", std::process::id(), rand_suffix()));
+        std::fs::create_dir_all(dir.join("csl")).unwrap();
+        std::fs::write(dir.join("csl/test-locators.csl"), AUTHOR_DATE).unwrap();
+        std::fs::write(dir.join("csl/test-numeric-locators.csl"), NUMERIC).unwrap();
+        dir.to_string_lossy().into()
+    }
+
+    fn rand_suffix() -> u128 {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    }
+
+    fn paper(id: &str, family: &str, year: &str, title: &str) -> Paper {
+        crate::cited_paper(id, PaperMeta { title: title.into(), authors: vec![format!("Ann {family}")], date: year.into(), ..Default::default() })
+    }
+
+    fn it(id: &str, f: impl FnOnce(&mut CslCiteItem)) -> CslCiteItem {
+        let mut c = CslCiteItem::plain(id);
+        f(&mut c);
+        c
+    }
+
+    #[test]
+    fn locators_affixes_and_author_modes() {
+        let dir = cache();
+        let papers = [paper("a", "Smith", "2020", "Alpha"), paper("b", "Lee", "2021", "Beta <&>")];
+        let cites = vec![
+            vec![it("a", |c| c.locator = "12".into())],
+            vec![it("a", |c| { c.locator = "3-5".into(); c.label = "chapter".into(); c.prefix = "see".into(); }), it("b", |c| c.suffix = "for a review".into())],
+            vec![it("a", |c| c.mode = "suppress".into())],
+            vec![it("b", |c| { c.mode = "narrative".into(); c.locator = "7".into(); })],
+            vec![it("b", |c| { c.prefix = "e.g. <x>".into(); c.suffix = ", & more".into(); })],
+            vec![it("a", |_| {})],
+        ];
+        let r = render_items(&dir, "test-locators", &papers, &cites).unwrap();
+        let t: Vec<&str> = r.citations.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(t[0], "(Smith, 2020, p. 12)");
+        assert_eq!(t[1], "(Lee, 2021 for a review; see Smith, 2020, chaps. 3–5)");
+        assert_eq!(t[2], "(2020)");
+        assert_eq!(t[3], "Lee (2021, p. 7)");
+        assert_eq!(t[4], "(e.g. <x> Lee, 2021, & more)");
+        assert_eq!(t[5], "(Smith, 2020)");
+
+        let r = render_items(&dir, "test-numeric-locators", &papers, &[
+            vec![it("a", |c| c.locator = "12".into())],
+            vec![it("b", |c| { c.prefix = "see".into(); c.mode = "suppress".into(); })],
+        ]).unwrap();
+        let t: Vec<&str> = r.citations.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(t, ["[1, p. 12]", "[see 2]"]);
+    }
 }

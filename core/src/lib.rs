@@ -15,6 +15,7 @@ pub mod adder;
 pub mod bibimport;
 /// Checks against the published record: reference lists, retractions, published preprints.
 pub mod checks;
+pub mod citeimport;
 pub mod csl;
 #[cfg(feature = "convert")]
 pub mod convert;
