@@ -300,6 +300,11 @@ fn topics_without_a_model() {
     // no topic that is only a word of a phrase chosen, nor generic words
     assert!(!names.iter().any(|n| n.eq_ignore_ascii_case("transcriptomics") || n.eq_ignore_ascii_case("sclerosis") || n.eq_ignore_ascii_case("study")), "{names:?}");
 
+    // dismissed by the name as shown
+    l.tidy_dismiss("topic:Protein Structure Prediction".into()).unwrap();
+    assert!(!l.tidy_report().topics.iter().any(|t| t.name.eq_ignore_ascii_case("Protein structure prediction")));
+    l.tidy_reset_dismissed().unwrap();
+
     // an existing tag isn't proposed again; created as tags, then undone
     l.set_tag(ms[0].clone(), "Multiple Sclerosis".into(), true).unwrap();
     let topics = l.tidy_topics();

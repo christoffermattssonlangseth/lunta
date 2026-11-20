@@ -318,6 +318,11 @@ impl Library {
     /// Don't suggest this again (on this device): a duplicate group's key ("Not Duplicates"),
     /// "doi:<id>" (has no DOI), "pdf:<id>", "epub:<id>", "tag:<id>:<tag>", "topic:<name>".
     pub fn tidy_dismiss(&self, key: String) -> Result<()> {
+        // a topic's name as written ("Spatial Transcriptomics") is kept as compared
+        let key = match key.strip_prefix("topic:") {
+            Some(name) => format!("topic:{}", text::name_key(name)),
+            None => key,
+        };
         let mut d = self.dismissed();
         d.insert(key);
         let f = dismissed_file(&self.inner.lock().unwrap().cache);
