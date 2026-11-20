@@ -724,7 +724,10 @@ and attaches it (`--check` does all but the upload).
 The Android APK is signed with the release key `~/.lunta/lunta-android-release.jks` (alias `lunta`; its
 password is in the macOS Keychain as "Lunta Android release key"), which the release job gets from
 the repository secrets `ANDROID_KEYSTORE_BASE64` and `ANDROID_KEYSTORE_PASSWORD`. Every update must be
-signed with the same key, so **keep a backup of the key file and its password** somewhere safe. Its
+signed with the same key, so **keep a backup of the key file and its password** somewhere safe. The same
+job builds the Google Play bundle (`Lunta-<version>-Google-Play.aab`: the same app, key and version code,
+without the updater) and attaches it too; Play App Signing uses this key as well
+([Google Play](google-play.md)). Its
 SHA-256 fingerprint: `E3:B3:4F:21:4A:50:95:CF:F7:6A:4F:AA:19:CE:1B:51:A8:EF:CD:42:8A:45:C2:55:14:D1:AD:21:F6:C9:BB:41`.
 
 ### Updates
@@ -740,8 +743,8 @@ is updated by the App Store and has none of this):
 
 Each checks at most once a day (on by default; a switch in each app's settings) and on demand. The
 Linux .deb can't replace itself: it offers the release page. Android's updater is a build flag
-(`lunta.selfUpdate`, on; a Play Store build would set it to false, which also leaves out the
-REQUEST_INSTALL_PACKAGES permission).
+(`lunta.selfUpdate`, on; the Google Play build sets it to false, which also leaves out the
+REQUEST_INSTALL_PACKAGES permission: see [Google Play](google-play.md)).
 
 **Once:** put the Tauri key in the repository secrets (the desktop release builds fail without them):
 
@@ -1358,7 +1361,7 @@ library, optionally synced with a plain folder as the "remote":
 
 Not in the Android app yet: highlighting in the PDF, Discover, Ask about the library, import,
 Clean Up, creating or editing smart folders, editing metadata, Keystore-backed token storage (tokens
-are in the app's private, non-backed-up folder), a release build and signing.
+are in the app's private, non-backed-up folder).
 
 ## On-device AI (Windows, Linux, Android)
 

@@ -30,6 +30,12 @@ fun setting(env: String, prop: String): String? = (System.getenv(env) ?: local.g
 // (which updates apps itself and doesn't allow REQUEST_INSTALL_PACKAGES for this) sets
 // lunta.selfUpdate=false or LUNTA_SELF_UPDATE=false: no update checks, no permission, no provider.
 val selfUpdate: Boolean = setting("LUNTA_SELF_UPDATE", "lunta.selfUpdate")?.toBooleanStrictOrNull() ?: true
+// The Google Play build (docs/google-play.md): an AAB, with the same application id, key and version
+// code as the GitHub APK, made with  LUNTA_SELF_UPDATE=false ./gradlew :app:bundleRelease . An AAB is
+// only ever for Play, so one with the updater (and REQUEST_INSTALL_PACKAGES, which Play rejects) is refused.
+if (selfUpdate && gradle.startParameter.taskNames.any { it.substringAfterLast(':').startsWith("bundle") }) {
+    throw GradleException("An AAB is for Google Play, which updates the app itself: build it with LUNTA_SELF_UPDATE=false (docs/google-play.md)")
+}
 val releaseKeystore = setting("LUNTA_KEYSTORE", "lunta.keystore")
 val releasePassword = setting("LUNTA_KEYSTORE_PASSWORD", "lunta.keystorePassword")
 

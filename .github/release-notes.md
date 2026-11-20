@@ -13,6 +13,7 @@ Lunta is a reference manager for scientific papers: your library, a reading view
 | iPhone | — | Not on this page; it comes through TestFlight or the App Store. |
 
 **Source code** (zip / tar.gz) is the project's code at this version; you don't need it to use Lunta.
+`Lunta-VERSION-Google-Play.aab` is the same Android app packaged for the Google Play Store; phones can't install it directly, so take the `.apk`.
 
 ## Sharing one library
 

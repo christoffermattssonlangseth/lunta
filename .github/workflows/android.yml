@@ -1,6 +1,9 @@
 # Builds the Android app (android/): the Rust core for arm64-v8a with UniFFI Kotlin bindings and
 # PDFium, then the debug APK, uploaded as a workflow artifact; for a release (release.yml), the APK
-# signed with the release key from the repository secrets. Google sign-in needs an OAuth client
+# signed with the release key from the repository secrets, and the Google Play bundle (AAB: the same
+# app, key and version code, without the GitHub updater; docs/google-play.md), both attached to the
+# release. With the secret PLAY_SERVICE_ACCOUNT_JSON the bundle also goes to a Play track (variable
+# PLAY_TRACK, default internal); without it that step is skipped. Google sign-in needs an OAuth client
 # id (repository variable LUNTA_GOOGLE_CLIENT_ID); without it the app builds and explains that.
 name: Android app
 
@@ -66,8 +69,10 @@ jobs:
           name: lunta-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
 
-      # a release: signed with the release key (repository secrets), so later versions install over it
-      - name: Signed release APK
+      # a release: signed with the release key (repository secrets), so later versions install over it.
+      # The APK for GitHub (with the updater), then the bundle for Google Play (LUNTA_SELF_UPDATE=false:
+      # no updater, no REQUEST_INSTALL_PACKAGES), with the same key and version code
+      - name: Signed release APK and Play bundle
         if: inputs.release_tag != ''
         working-directory: android
         env:
@@ -78,9 +83,10 @@ jobs:
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then echo "::error::ANDROID_KEYSTORE_BASE64 secret missing"; exit 1; fi
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          trap 'rm -f "$RUNNER_TEMP/release.jks"' EXIT
           export LUNTA_KEYSTORE="$RUNNER_TEMP/release.jks" LUNTA_VERSION_NAME="${LUNTA_VERSION_NAME#v}"
           ./gradlew :app:assembleRelease --no-daemon
-          rm -f "$RUNNER_TEMP/release.jks"
+          LUNTA_SELF_UPDATE=false ./gradlew :app:bundleRelease --no-daemon
 
       - name: Attach to the release
         if: inputs.release_tag != ''
@@ -89,4 +95,29 @@ jobs:
         run: |
           v="${{ inputs.release_tag }}"; v="${v#v}"
           cp android/app/build/outputs/apk/release/app-release.apk "Lunta-$v-Android.apk"
-          gh release upload "${{ inputs.release_tag }}" --clobber -R "${{ github.repository }}" "Lunta-$v-Android.apk"
+          cp android/app/build/outputs/bundle/release/app-release.aab "Lunta-$v-Google-Play.aab"
+          gh release upload "${{ inputs.release_tag }}" --clobber -R "${{ github.repository }}" "Lunta-$v-Android.apk" "Lunta-$v-Google-Play.aab"
+
+      # optional: the bundle to a Google Play track through the Play Developer API, with a service
+      # account's JSON key (docs/google-play.md, "Uploading from CI"); skipped without the secret
+      - name: Play upload configured?
+        id: play
+        if: inputs.release_tag != ''
+        env:
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -n "$PLAY_JSON" ]; then echo "upload=true" >> "$GITHUB_OUTPUT"
+          else echo "No PLAY_SERVICE_ACCOUNT_JSON secret: not uploading to Google Play"; fi
+
+      - name: Upload to Google Play
+        if: steps.play.outputs.upload == 'true'
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: app.lunta
+          releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
+          releaseName: ${{ inputs.release_tag }}
+          track: ${{ vars.PLAY_TRACK || 'internal' }}
+          # "draft" until the app's first release has been sent for review in Play Console (Play
+          # refuses anything else for a draft app); then "completed"
+          status: ${{ vars.PLAY_RELEASE_STATUS || 'draft' }}
