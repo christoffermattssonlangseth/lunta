@@ -5,9 +5,9 @@ name: Desktop app
 on:
   push:
     branches: [main]
-    paths: ['desktop/**', 'core/**', 'apple/Shared/**', 'scripts/extract-reader-assets.mjs', 'scripts/reader-tests/**', '.github/workflows/desktop.yml']
+    paths: ['desktop/**', 'core/**', 'apple/Shared/**', 'apple/citations/**', 'scripts/extract-reader-assets.mjs', 'scripts/reader-tests/**', '.github/workflows/desktop.yml']
   pull_request:
-    paths: ['desktop/**', 'core/**', 'apple/Shared/**', 'scripts/extract-reader-assets.mjs', 'scripts/reader-tests/**', '.github/workflows/desktop.yml']
+    paths: ['desktop/**', 'core/**', 'apple/Shared/**', 'apple/citations/**', 'scripts/extract-reader-assets.mjs', 'scripts/reader-tests/**', '.github/workflows/desktop.yml']
   workflow_dispatch:
   # release.yml runs this for a version tag and attaches the result to the release
   workflow_call:

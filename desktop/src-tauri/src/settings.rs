@@ -18,6 +18,9 @@ pub struct Settings {
     /// "Check for Updates Automatically" (updates.rs); unset means on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_update: Option<bool>,
+    /// The Google Docs sidebar's pairing key for the citation server (citeserver.rs).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub citation_token: String,
 }
 
 impl Settings {
