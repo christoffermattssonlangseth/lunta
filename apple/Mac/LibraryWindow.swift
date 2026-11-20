@@ -229,7 +229,7 @@ struct Sidebar: View {
                     .modifier(SidebarDrop.Target { items in model.setStarred(SidebarDrop.paperIDs(items), true) })
                 Label("Must Read", systemImage: "bookmark").badge(model.counts.mustRead).tag(SidebarItem.mustRead)
                     .modifier(SidebarDrop.Target { items in model.setMustRead(SidebarDrop.paperIDs(items), true) })
-                Label("Unread", systemImage: "circle.badge").badge(model.counts.unread).tag(SidebarItem.unread)
+                Label("Unread", systemImage: "smallcircle.filled.circle").badge(model.counts.unread).tag(SidebarItem.unread)
             }
             Section("Beyond your library") {
                 Label("Discover New Papers", systemImage: "globe.europe.africa").tag(SidebarItem.discover)

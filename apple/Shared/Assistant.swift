@@ -771,11 +771,11 @@ final class AskEngine: ObservableObject {
 
     static let openModelPending = "open-model"
 
-    /// Before macOS/iOS 26 there is no FoundationModels: neither Apple's model nor the open model (which plugs into it).
+    /// Before macOS/iOS 26 there is no FoundationModels: no Apple model; the open model (which plugs into it) needs 27.
     #if os(iOS)
-    static let needsNewerSystem = "The assistant needs iOS 26 or newer (Apple Intelligence, or the open model). The rest of Lunta works without it."
+    static let needsNewerSystem = "The assistant needs Apple Intelligence, on iOS 26 or newer (the open model, for devices without it, needs iOS 27). The rest of Lunta works without it."
     #else
-    static let needsNewerSystem = "The assistant needs macOS 26 or newer (Apple Intelligence, or the open model). The rest of Lunta works without it."
+    static let needsNewerSystem = "The assistant needs Apple Intelligence, on macOS 26 or newer (the open model, for devices without it, needs macOS 27). The rest of Lunta works without it."
     #endif
 
     /// Apple Intelligence isn't usable here (e.g. iPhones in the EU) or the user picked the open model.

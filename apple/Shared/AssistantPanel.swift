@@ -37,24 +37,29 @@ struct AssistantPanel: View {
         .onAppear { engine.model = model }
     }
 
+    private var tooOld: Bool { engine.unavailableReason == AskEngine.needsNewerSystem }
+
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "sparkles").foregroundStyle(Color.luntaTeal)
             VStack(alignment: .leading, spacing: 1) {
                 Text(engine.scope == .library ? "Ask your library" : "Ask this paper").font(.headline)
-                Text(engine.modelLabel).font(.caption2).foregroundStyle(.secondary)
+                // (no model and nothing to choose before macOS/iOS 26)
+                if !tooOld { Text(engine.modelLabel).font(.caption2).foregroundStyle(.secondary) }
             }
             Spacer()
-            Menu {
-                Picker("Model", selection: $engine.choice) {
-                    ForEach(AskModelChoice.allCases.filter { $0 != .privateCloud || AskEngine.cloudEntitled }) { Text($0.title).tag($0) }
-                }
-                Divider()
-                Button("New Conversation", systemImage: "square.and.pencil") { engine.reset() }
-                    .disabled(engine.messages.isEmpty)
-            } label: { Image(systemName: "ellipsis.circle") }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            if !tooOld {
+                Menu {
+                    Picker("Model", selection: $engine.choice) {
+                        ForEach(AskModelChoice.allCases.filter { $0 != .privateCloud || AskEngine.cloudEntitled }) { Text($0.title).tag($0) }
+                    }
+                    Divider()
+                    Button("New Conversation", systemImage: "square.and.pencil") { engine.reset() }
+                        .disabled(engine.messages.isEmpty)
+                } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
     }

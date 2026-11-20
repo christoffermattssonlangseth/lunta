@@ -138,6 +138,12 @@ final class SummaryMaker: ObservableObject {
         else { stop(); hide() }
     }
 
+    #if os(iOS)
+    static let noModel = "Can't write a new summary on this iPhone: summaries need Apple Intelligence (iOS 26 or newer), or the open model (iOS 27)."
+    #else
+    static let noModel = "Can't write a new summary on this Mac: summaries need Apple Intelligence (macOS 26 or newer), or the open model (macOS 27)."
+    #endif
+
     private func menu(_ action: String) {
         switch action {
         case "regenerate":
@@ -170,7 +176,12 @@ final class SummaryMaker: ObservableObject {
             show("done", saved.text, note: SummaryModel.note(saved.model))
             return
         }
-        guard !Task.isCancelled, let engine = SummaryModel.current, #available(macOS 26.0, iOS 26.0, *) else { if !force { hide() }; return }
+        guard !Task.isCancelled, let engine = SummaryModel.current, #available(macOS 26.0, iOS 26.0, *) else {
+            if !force { hide() }
+            // Regenerate with no model here (a summary that synced from another device): say why
+            else if !Task.isCancelled, let s = shown, s.state == "done" { show("done", s.text, note: Self.noModel) }
+            return
+        }
         show("loading", "Summarizing…")
         let started = Date()
         do {
