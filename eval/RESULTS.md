@@ -3,12 +3,20 @@
 Run on 2026-11-17 (macOS, Apple M1 Pro), converters of Lunta 1.0.4 (commit 86e764b); extended on
 2026-11-18 with outside reference points (pdftotext, GROBID) on the same 200 PDFs and with reading
 views made from the journal's article page (see the two sections after the headline numbers).
+**Sixth run on 2026-11-20, both converters, commits 02a1e7f (Swift) and e1e82f0 (Rust)**: glyphs of
+symbol fonts that name them like letters (Elsevier's and Springer's "Pi" fonts: Cell's Highlights
+bullets as "d", "©" as "ª") read as what they show, lines starting with a bullet become list items,
+and a page with no two lines side by side takes its gutter where the fewest blocks cross; see "What
+the symbol-font fix changed" below. All Swift and Rust numbers in this file are from that run (the
+batch speed line of `results/summary_tables.md` is not comparable: the Rust batch shared the machine
+with another job); the speed numbers are still those of the 1.0.4 timing pass. The fifth-run version
+of this file is kept as [RESULTS-2026-11-19b.md](RESULTS-2026-11-19b.md), its result files, figures,
+examples, binaries and Swift and Rust outputs in `data/prev-2026-11-20/`.
 **Fifth run on 2026-11-19, both converters, commit 7dd5b88**: the Rust converter leaves out text a
 page does not show (b25a922) and puts accents drawn away from the text back on their letter
 (7dd5b88); the Swift converter restores ligatures PDFKit leaves out, folds accents drawn before their
 letter, and leaves out lines of glyphs drawn twice (58eaa6d); see "What the hidden-text (Rust),
-ligature and accent fixes changed" below. All Swift and Rust numbers in this file are from that run;
-the speed numbers are still those of the 1.0.4 timing pass. The fourth-run version of this file is
+ligature and accent fixes changed" below. The fourth-run version of this file is
 kept as [RESULTS-2026-11-19.md](RESULTS-2026-11-19.md), its result files, figures, examples, binaries
 and Swift outputs in `data/prev-2026-11-19/`, with the third run's Rust outputs (regenerated with the
 kept third-run binary, which the fourth run did not change: identical scores on the papers checked).
@@ -38,18 +46,18 @@ bootstrap CI (of the mean, unless stated otherwise).
 
 | | Swift, current | Swift, baseline (38d2bdc^) | Rust (PDFium) |
 |---|---|---|---|
-| Token F1 vs XML, median (IQR) | **0.955** (0.918–0.979) | 0.890 (0.798–0.948) | 0.960 (0.913–0.982) |
-| Token F1, mean [CI] | 0.927 [0.913, 0.940] | 0.860 [0.841, 0.877] | 0.932 [0.919, 0.943] |
-| Token recall of abstract+body, median | **0.987** | 0.966 | 0.993 |
+| Token F1 vs XML, median (IQR) | **0.955** (0.918–0.980) | 0.890 (0.798–0.948) | 0.960 (0.912–0.982) |
+| Token F1, mean [CI] | 0.927 [0.914, 0.940] | 0.860 [0.841, 0.877] | 0.932 [0.919, 0.944] |
+| Token recall of abstract+body, median | **0.988** | 0.966 | 0.993 |
 | Token precision, median | 0.940 | 0.861 | 0.939 |
 | Word error rate, median | 0.087 | 0.221 | 0.079 |
-| Broken words / 1000 tokens, mean [CI] | **0.80** [0.46, 1.29] | 4.15 [2.65, 5.93] | 0.47 [0.27, 0.73] |
+| Broken words / 1000 tokens, mean [CI] | **0.79** [0.45, 1.28] | 4.15 [2.65, 5.93] | 0.46 [0.25, 0.71] |
 | Paragraph order, Kendall's τ, median (mean) | 1.000 (0.986) | 1.000 (0.982) | 1.000 (0.989) |
 | Papers with ≥ 1 interleaving event | **20.5 %** [15.0, 26.0] | 34.0 % [27.5, 40.5] | 12.5 % [8.0, 17.5] |
-| Papers with any boilerplate leak | **41.5 %** [34.5, 48.5] | 63.5 % [56.5, 70.0] | 42.0 % [35.5, 49.0] |
+| Papers with any boilerplate leak | **41.0 %** [34.0, 48.0] | 63.5 % [56.5, 70.0] | 41.5 % [35.0, 48.5] |
 | Figure images, count-based recall (precision) | 96.0 % (72.7 %) | 96.2 % (62.5 %) | 96.0 % (72.5 %) |
 | Figures identified (image + matching label/caption) | 66.0 % [58.6, 73.0] | 65.7 % | 72.2 % [65.6, 79.0] |
-| Highlights re-anchored correctly in the XML view | **88.9 %** [87.2, 90.5] | 82.9 % [80.6, 84.9] | 90.6 % [88.9, 92.0] |
+| Highlights re-anchored correctly in the XML view | **89.4 %** [87.6, 91.0] | 82.9 % [80.6, 84.9] | 90.5 % [88.8, 92.0] |
 | Tables identified (image + matching label/caption) | 65.9 % [58.5, 72.9] | 56.0 % | 66.7 % [59.2, 73.8] |
 | Papers with XML references but no reference items | 2 (40 in the first 2026-11-18 run) | – | 2 (40) |
 | Speed, s/page (one conversion at a time), median | 0.124 (CPU 0.085) | 0.190* (CPU 0.085*) | 0.047 (CPU 0.046) |
@@ -59,6 +67,72 @@ in this run, same binary); in that run the Swift CLI of the day took 0.199 s/pag
 this run are about 30 % shorter than on 2026-11-16 for both converters, but the 2026-11-16 and current
 `p2e` binaries took the same time when run side by side on four slow papers (e.g. 1.70 vs 1.46 s,
 1.33 vs 1.27 s, 1.06 vs 1.05 s, 1.40 vs 1.39 s): the difference is load on the machine, not code.
+
+**What the symbol-font fix changed (2026-11-20, sixth run vs fifth run; same papers, same
+scripts).** Prompted by the author's Cell paper (Kukanja et al. 2024), whose reading view showed the
+Highlights as "d ISS elucidates … d Active EAE lesions …", the bullets a superscript "d", and the
+footer as "April 11, 2024 ª 2024 The Author(s)". Cause: Elsevier's and Springer's typesetters (Advent)
+set bullets, ©, Greek and math in "Pi" and symbol fonts whose glyphs are named like letters, with no
+ToUnicode map or one that only restates the names (AdvPSMPi6 draws the bullet as "d"; AdvPSSym the ©
+as "ordfeminine" at 0xAA, its map `<aa> <00AA>`). PDFKit and PDFium read the names. Fixes (Swift
+02a1e7f, `PDFSymbolFonts.swift`, `PDFContent.swift`, `PDFAnalyzer.swift`; Rust e1e82f0,
+`core/src/convert/pdf/symbols.rs`, `extract.rs`, `layout.rs`):
+
+- *Tables per font family, from the glyphs themselves.* Every glyph of the symbol fonts without a
+  ToUnicode map in the 200 PDFs and the 40 library PDFs was drawn from the embedded font program and
+  read by eye: AdvPSSym and AdvP697C follow Symbol's layout under StandardEncoding's names and "Cnnn"
+  (Symbol's code: "C211" ©); AdvP4C4E74 is TeX's cmsy (OMS layout: "C2" ×, "C0" −, "exclam" →) with
+  ( ) + = as "eth" "Thorn" "thorn" "onequarter" (the "ð1Þ" of Springer and Elsevier equations, as in
+  TeX CM Maths Symbols); Elsevier's Mathematical Pi and Universal Greek with Math Pi name theirs
+  "H9251" α … "H9262" μ and "H11001" +, "H11002" −, "H11003" × …; AdvPi1/2/3 hold Greek, ×, •, the
+  legend shapes □ ○ △ ■ ● ▲ and Springer's © and ®; AdvTir_symb has × at "nine" and + at "question";
+  AdvPSMP4/10/13 and AdvPS3F4C13 set Greek by Latin letter ("150 ll" for 150 μl). A name no table has
+  stays as it is.
+- *Swift.* The content scanner gives each code of such a font its text, by the Differences name or the
+  base encoding (also when the font's ToUnicode map gives the code only what its name or code stands
+  for). The glyph replaces the character PDFKit read for it (that character, starting where the glyph
+  starts, on its baseline: "d", "ª", "Ó" for "C211"; put back in order where PDFKit read it out of
+  order), or goes in between the letters either side where PDFKit read nothing ("239 240Pu" →
+  "239+240Pu", "2 10 5" → "2×10 5"), never into a word whose letters leave no room for it; it takes the
+  height of the letters next to it (no superscript bullet).
+- *Rust.* PDFium gives such a glyph its name's character, so the tables go by that character; a name
+  without one ("C211", "H11001") PDFium gives as its code, which says nothing without the font's
+  Differences (pdfium-render has no access to them): these glyphs are still missing in the Rust view.
+  For AdvP4C4E74, which often has a right ToUnicode map giving "(" or "=", only its Latin-1 stand-ins
+  are mapped.
+- *Lists (both).* A line starting with a bullet (• ● ▪ ◦ ‣) starts a paragraph, the item's lines
+  indented to its text go on with it, and paragraphs that start with one become a list (`<ul>`).
+- *Gutter (both).* A page with no two lines side by side took the middle of the page as its column
+  gutter; on Cell's summary page (graphical abstract over the Highlights on the left, authors on the
+  right) that cut through the longer Highlights lines and put the first item before the authors and
+  the rest after "In brief". Such a page now takes the middle of the widest stretch the fewest blocks
+  cross. The Highlights are now one list of four items after "Highlights", then Authors,
+  Correspondence and In brief, in both converters.
+
+Stray symbol-font glyphs (counted in the views: "ª", "Ó"/"#"/"&" before "The Author(s)" or a year,
+"ð", "Þ", "¼", "þ", a superscript "d" bullet, "5 9 10"-style products): **Swift 223 → 111 in 59 → 36
+papers, Rust 143 → 24 in 43 → 20 papers**; most of what is left are Swift's math in a font with its
+own encoding and Rust's "Cnnn"/"Hnnnnn" glyphs, which it still drops. Token F1 medians unchanged
+(Swift 0.955, Rust 0.960), Swift better in 25 papers (20 by more than 0.0005; most PMC1974791 +0.018,
+"lM" → "μM", "a,b-meATP" → "α,β-meATP"; PMC5270734 +0.013), worse in 2 by at most 0.001; Rust better in
+21, worse in 2 (PMC6083737 −0.029: a table set as text read in another order after the gutter change;
+PMC3549477 −0.001). Broken words Swift 0.80 → 0.79, Rust 0.47 → 0.46 per 1000; papers with a leaked
+boilerplate line 41.5 → 41.0 % (Swift), 42.0 → 41.5 % (Rust): fewer leaks in 5 papers each (licence
+lines and running footers whose "©" now makes them alike on every page, page numbers), more in
+PMC2747712 for both (its "© 2004 Cancer Research UK" line, before "& 2004", now caught by the licence
+detector) and in 2 for Swift (one page number each in PMC2712078 and PMC5315376, whose equations now
+read differently). Highlights → XML: Swift 88.9 → 89.4 %, Rust 90.6 →
+90.5 %; fifth run's views → this run's 99.2 % (Swift) and 99.3 % (Rust), the lost ones on the text
+the fix changed ("lM" now "μM"). Rust display equations kept as images 131 → 135.
+
+40 PDFs from the author's library, old vs new views: stray glyphs Swift 183 → 120 in 12 → 11 PDFs (most left in the equations of two PDFs set in TeX CM Maths Symbols, 47c2d86f and 6cde3fb6; not traced further), Rust 188 → 16 in
+9 → 4 PDFs. Changes checked by eye: Cell's and Neuron's Highlights (471f70fb) and 7f1b8a38's bullets
+became lists (Swift and Rust 738/752 "•" now list items); ©, ™, ®, μm, α, ×, ∼ in R formulas
+("count ∼ lesion_type"), (1)…(6) and = in equations. Wrong ones: in 3ab24f09 (a 2005 PDF whose
+second column's text runs do not match PDFKit's glyphs) one μ lands in the wrong word gap, and a δ
+next to a letter PDFKit widened over it loses its space ("hepatitisδ antigen"; the δ was missing
+before). An intermediate Swift build also put glyphs inside words there ("nhαibited"); glyphs no
+longer go where the letters leave no room, and the Swift run was redone.
 
 **What the hidden-text (Rust), ligature and accent fixes changed (2026-11-19, fifth run vs fourth
 run for Swift, vs third run for Rust; same papers, same scripts).** Prompted by the fourth run, after
@@ -345,7 +419,7 @@ One small regression: leftover line-break hyphens ("transfor-mation") +0.07 per 
 [+0.02, +0.13] (22 papers worse, 5 better), from lines whose hyphen is now kept as a compound hyphen.
 
 **Swift vs Rust:** the two implementations agree closely — token F1 between their outputs median
-0.993 [0.990, 0.995] (IQR 0.963–0.998; 0.989 in the fourth and third, 0.988 in the second and 0.990 in
+0.992 [0.989, 0.995] (IQR 0.963–0.998; 0.993 in the fifth, 0.989 in the fourth and third, 0.988 in the second and 0.990 in
 the first run); their per-paper F1 vs XML correlates at r = 0.83 (0.73 in the fourth run, when Rust
 still read the hidden manuscript text of MDPI's figure pages; MDPI median F1 now 0.985 Rust, 0.983
 Swift). Both found a reference list in the same 197 papers. Rust is level on precision (+0.000
@@ -365,11 +439,12 @@ the reader's own `locate()` from `apple/Shared/Highlights.swift`):
 
 | Highlight made on → re-anchored in | exact | whitespace fallback | quote/dash/case fallback | start/end fallback | lost | anchored correctly | anchored to wrong text |
 |---|---|---|---|---|---|---|---|
-| current PDF view → XML view | 72.8 | 6.4 | 8.3 | 2.7 | 9.8 | 88.9 [87.2, 90.5] | 1.3 |
+| current PDF view → XML view | 73.0 | 6.6 | 8.5 | 2.6 | 9.3 | 89.4 [87.6, 91.0] | 1.3 |
 | baseline PDF view → XML view | 66.3 | 5.1 | 9.9 | 3.8 | 14.9 | 82.9 [80.6, 84.9] | 2.3 |
-| Rust PDF view → XML view | 76.0 | 5.9 | 7.5 | 2.2 | 8.4 | 90.6 [88.9, 92.0] | 1.0 |
-| baseline PDF view → current PDF view | 90.8 | 0.7 | 3.3 | 0.6 | 4.5 | 94.7 [93.0, 96.1] | 0.8 |
-| fourth run's PDF view → current PDF view | 99.7 | 0.0 | 0.1 | 0.1 | 0.1 | 99.8 | 0.0 |
+| Rust PDF view → XML view | 76.0 | 5.8 | 7.6 | 2.0 | 8.6 | 90.5 [88.8, 92.0] | 0.9 |
+| baseline PDF view → current PDF view | 90.0 | 0.7 | 3.3 | 0.9 | 5.0 | 94.1 [92.4, 95.6] | 0.8 |
+| fifth run's PDF view → current PDF view (Swift) | 98.7 | 0.0 | 0.2 | 0.4 | 0.7 | 99.2 | 0.1 |
+| fifth run's PDF view → current PDF view (Rust) | 99.0 | 0.0 | 0.2 | 0.1 | 0.6 | 99.3 | 0.1 |
 | third run's Rust PDF view → current Rust PDF view | 98.0 | 0.0 | 0.1 | 0.3 | 1.5 | 98.4 | 0.1 |
 | author manuscripts: current PDF view → XML view | 89.3 | 4.3 | 2.0 | 1.2 | 3.2 | 96.5 [94.7, 98.2] | 0.3 |
 
@@ -401,13 +476,13 @@ GROBID's deep-learning models (the `-full` image) are amd64-only and were not ru
 
 | | pdftotext | GROBID 0.9.1 (CRF) | Lunta Swift | Lunta Rust |
 |---|---|---|---|---|
-| Token F1, median (IQR) | 0.716 (0.658–0.767) | 0.947 (0.895–0.974) | 0.955 (0.918–0.979) | **0.960** (0.913–0.982) |
+| Token F1, median (IQR) | 0.716 (0.658–0.767) | 0.947 (0.895–0.974) | 0.955 (0.918–0.980) | **0.960** (0.912–0.982) |
 | Token F1, mean | 0.702 | 0.926 | 0.927 | 0.932 |
-| Recall, median | 0.975 | 0.985 | 0.987 | 0.993 |
+| Recall, median | 0.975 | 0.985 | 0.988 | 0.993 |
 | Precision, median | 0.570 | 0.930 | 0.940 | 0.939 |
-| Broken words / 1000, mean | 0.87 | 0.43 | 0.80 | 0.47 |
+| Broken words / 1000, mean | 0.87 | 0.43 | 0.79 | 0.46 |
 | Papers with interleaving, % | 60.5 | 14.5 | 20.5 | 12.5 |
-| Papers with any boilerplate leak, % | 100.0 | 47.0 | 41.5 | 42.0 |
+| Papers with any boilerplate leak, % | 100.0 | 47.0 | 41.0 | 41.5 |
 | Figures identified (image + label), % | – | – | 66.0 | 72.2 |
 | Papers with XML references but no reference items found | (no split) | 0 | 2 | 2 |
 | s per page, median | 0.005 | 0.173* | 0.124 | 0.047 |
@@ -475,17 +550,17 @@ papers, all views scored against the XML:
 
 | | page view | PDF view (Swift) | PDF view (Rust) | GROBID | pdftotext | XML view |
 |---|---|---|---|---|---|---|
-| Token F1, median (IQR) | **0.956** (0.943–0.968) | 0.908 (0.832–0.956) | 0.934 (0.865–0.968) | 0.938 (0.889–0.964) | 0.628 | 1.000 |
-| Recall, median | 0.995 | 0.972 | 0.978 | 0.967 | 0.903 | 1.000 |
+| Token F1, median (IQR) | **0.956** (0.943–0.968) | 0.909 (0.833–0.957) | 0.934 (0.866–0.969) | 0.938 (0.889–0.964) | 0.628 | 1.000 |
+| Recall, median | 0.995 | 0.973 | 0.978 | 0.967 | 0.903 | 1.000 |
 | Precision, median | 0.924 | 0.862 | 0.909 | 0.928 | 0.484 | 0.999 |
 | Broken words / 1000, mean | 0.05 | 0.55 | 0.46 | 0.74 | 0.64 | 0.01 |
-| Papers with interleaving, % | 0.0 | 26.7 | 13.3 | 16.7 | 66.7 | 0.0 |
+| Papers with interleaving, % | 0.0 | 26.7 | 10.0 | 16.7 | 66.7 | 0.0 |
 | Papers with licence/copyright lines in the text | 21 | 14 (second run) | – | – | – | 0 |
 | Figures identified (image + label), % | 82.4 (112/136) | 84.6 | 85.3 | – | – | – |
 | Reference items / XML refs, median | 1.00 | 1.00 | 1.00 | 1.00 | – | 1.00 |
 | Conversion time per paper, median (s) | 0.33 (Swift), 0.30 (Rust) | | | | | |
 
-- Page − PDF view (Swift) token F1: mean +0.048 [+0.013, +0.083] (Wilcoxon p = 4e-3), better in 23
+- Page − PDF view (Swift) token F1: mean +0.048 [+0.012, +0.082] (Wilcoxon p = 4e-3), better in 23
   of 30 papers (+0.052 before the figure and front-matter fixes, PDF median 0.900; +0.063 before the
   reference-list fix, 0.880). By family (page / PDF median F1): nature.com 0.986 / 0.918, PLOS 0.938 /
   0.908, Frontiers 0.956 / 0.844, others 0.964 / 0.926.
@@ -509,14 +584,14 @@ per paper as in the main test):
 
 | from → to (30 papers, 600 highlights) | exact | spacing | folded | ends | lost | correct [CI] | wrong place |
 |---|---|---|---|---|---|---|---|
-| PDF view (Swift) → page view | 69.2 | 8.5 | 6.2 | 5.0 | 11.2 | **87.7** [84.2, 91.0] | 1.2 |
-| PDF view (Rust) → page view (Rust) | 73.0 | 8.0 | 5.8 | 2.5 | 10.7 | 88.3 [84.0, 92.2] | 1.0 |
-| PDF view (Swift) → XML view, same papers | 63.8 | 8.8 | 9.0 | 5.0 | 13.3 | 85.8 [81.3, 89.8] | 0.8 |
+| PDF view (Swift) → page view | 69.5 | 8.5 | 6.3 | 4.8 | 10.8 | **88.0** [84.5, 91.2] | 1.2 |
+| PDF view (Rust) → page view (Rust) | 73.5 | 8.0 | 5.7 | 2.3 | 10.5 | 88.5 [84.3, 92.3] | 1.0 |
+| PDF view (Swift) → XML view, same papers | 64.0 | 9.8 | 8.3 | 4.8 | 13.0 | 86.2 [81.7, 90.2] | 0.8 |
 | XML view → page view | 86.2 | 8.2 | 4.2 | 0.5 | 1.0 | 98.8 [97.7, 99.7] | 0.2 |
 
 The replace rule ("every highlight must be found", `PageFullText.swift`), applied to k highlights
 drawn from each paper's 20 (share of papers that would pass, k = 1/3/5/10/20): PDF view → page view
-0.89 / 0.71 / 0.58 / 0.37 / 0.17 (PDF → XML, all 200 papers: 0.89 / 0.73 / 0.61 / 0.43 / 0.25;
+0.89 / 0.72 / 0.58 / 0.37 / 0.17 (PDF → XML, all 200 papers: 0.91 / 0.77 / 0.66 / 0.48 / 0.28;
 XML view → page view 0.99 / 0.97 / 0.95 / 0.91 / 0.83).
 
 ## Setup
@@ -612,11 +687,12 @@ found (no references heading recognised) and the list stayed in the body text; s
 reference-list fix 3 (two with little usable text, one without references in the XML).
 
 ### 7. Highlight survival
-See the table above. Moving from the current PDF view to the XML view keeps 88.9 % of highlights on
-the right text (72.8 % verbatim), Rust 90.6 % (89.5 % before its hidden-text fix), author manuscripts 96.5 % (87.2 % for Swift before the
+See the table above. Moving from the current PDF view to the XML view keeps 89.4 % of highlights on
+the right text (73.0 % verbatim; 88.9 % before the symbol-font fix), Rust 90.5 % (90.6 % before it,
+89.5 % before its hidden-text fix), author manuscripts 96.5 % (87.2 % for Swift before the
 word-spacing and hidden-text fixes; 87.2 %, 89.2 % and 96.0 % before the figure and front-matter
-fixes; 84.2 %, 68.4 % and 87.0 % before the reference-list fix). Of the 9.8 % lost (current Swift;
-11.2 % in the third run, 14.3 % before the reference-list fix), a heuristic split (2026-11-16 run): ~18 % are passages that have no counterpart in the XML reading view (table
+fixes; 84.2 %, 68.4 % and 87.0 % before the reference-list fix). Of the 9.3 % lost (current Swift;
+9.8 % in the fifth run, 11.2 % in the third run, 14.3 % before the reference-list fix), a heuristic split (2026-11-16 run): ~18 % are passages that have no counterpart in the XML reading view (table
 text, reference entries, boilerplate, extra PDF matter), ~37 % contain garbled or broken words, ~2 %
 differ only in citation format ("[12–14]" vs "[12,13,14]"), the rest in run-in captions, merged
 columns, symbols or inline math. A cruder re-check on 2026-11-17 (quote's 3-word shingles < 20 % found in the XML view = no counterpart; else any word missing from the XML vocabulary = garbled) gives 16 % / 43 % for this run and 15 % / 44 % for the 2026-11-16 run: the split did not change.
