@@ -277,16 +277,17 @@ pub fn doi_line(s: &str) -> bool {
     re!(r"(?i)^(https?://(dx\.)?doi\.org/|doi:?\s*)10\.\d{4,9}/\S+$").is_match(trim(s))
 }
 
-/// A list item's bullet at the start of a line ("• ISS elucidates…").
+/// A list item's bullet at the start of a line ("• ISS elucidates…"), with a space after it: LaTeX's
+/// degree sign (\circ, "◦C") and other marks used as symbols ("•OH") are text, and so is "◦ C".
 pub fn is_bullet(s: &str) -> bool {
-    re!(r"^\s*[•●▪◦‣]\s*\S").is_match(s)
+    re!(r"^\s*[•●▪◦‣]\s+\S").is_match(s) && !re!(r"^\s*◦\s*[CFK]\b").is_match(s)
 }
 
-/// Paragraphs that start with a bullet, one after another, become a list: `<p>• a</p><p>• b</p>`
-/// → `<ul><li>a</li><li>b</li></ul>`.
+/// Paragraphs that start with a bullet (and a space; ◦ not as a degree sign), one after another,
+/// become a list: `<p>• a</p><p>• b</p>` → `<ul><li>a</li><li>b</li></ul>`.
 pub fn bullet_lists(html: &str) -> String {
-    let run = re!(r"(?:<p>\s*(?:<sup>[•●▪◦‣]</sup>|[•●▪◦‣])\s*.*?</p>)+");
-    let item = re!(r"<p>\s*(?:<sup>[•●▪◦‣]</sup>|[•●▪◦‣])\s*(.*?)</p>");
+    let run = re!(r"(?:<p>\s*(?:(?:<sup>[•●▪‣]</sup>|[•●▪‣])\s+\S|(?:<sup>◦</sup>|◦)\s+(?:[^CFK\s]|[CFK]\w)).*?</p>)+");
+    let item = re!(r"<p>\s*(?:<sup>[•●▪◦‣]</sup>|[•●▪◦‣])\s+(.*?)</p>");
     run.replace_all(html, |c: &regex::Captures| format!("<ul>{}</ul>", item.replace_all(&c[0], "<li>$1</li>"))).into_owned()
 }
 

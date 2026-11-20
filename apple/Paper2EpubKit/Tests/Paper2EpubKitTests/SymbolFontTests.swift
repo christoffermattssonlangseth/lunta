@@ -85,6 +85,16 @@ final class SymbolFontTests: XCTestCase {
         XCTAssertEqual(PDFAnalyzer.bulletLists(html),
                        "<p>Highlights</p><ul><li>One item</li><li>Two</li></ul><p>Authors</p><ul><li>Alone</li></ul>")
         XCTAssertEqual(PDFAnalyzer.bulletLists("<p>No • here</p>"), "<p>No • here</p>")
+        // ◦ and • as symbols, not bullets: LaTeX's degree sign ("37 ◦C" wrapped before it), a radical
+        for s in ["◦C for 2 h, then washed", "◦ C for 2 h", "•OH radicals formed"] {
+            XCTAssertFalse(PDFAnalyzer.bulletRE.test(s), s)
+        }
+        for s in ["◦ Cells were counted", "◦ second level item", "• ISS elucidates"] {
+            XCTAssertTrue(PDFAnalyzer.bulletRE.test(s), s)
+        }
+        let degrees = "<p><sup>◦</sup>C for 2 h</p><p>◦ C overnight</p><p>•OH</p>"
+        XCTAssertEqual(PDFAnalyzer.bulletLists(degrees), degrees)
+        XCTAssertEqual(PDFAnalyzer.bulletLists("<p>◦ Cells</p><p>◦ more</p>"), "<ul><li>Cells</li><li>more</li></ul>")
     }
 
     // MARK: -

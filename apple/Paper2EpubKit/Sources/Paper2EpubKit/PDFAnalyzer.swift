@@ -121,15 +121,17 @@ final class PDFAnalyzer {
     /// P2E_DEBUG_SYMBOLS: each symbol font glyph (see SymbolFonts) and the characters PDFKit read around it.
     static let debugSymbols = ProcessInfo.processInfo.environment["P2E_DEBUG_SYMBOLS"] != nil
 
-    /// A list item's bullet at the start of a line ("• ISS elucidates…").
-    static let bulletRE = re(#"^\s*[•●▪◦‣]\s*\S"#)
+    /// A list item's bullet at the start of a line ("• ISS elucidates…"), with a space after it: LaTeX's
+    /// degree sign (\circ, "◦C") and other marks used as symbols ("•OH") are text, and so is "◦ C".
+    static let bulletRE = re(#"^\s*(?:[•●▪‣]|◦(?!\s*[CFK]\b))\s+\S"#)
     static func isBullet(_ l: PLine) -> Bool { bulletRE.test(l.text) }
 
-    /// Paragraphs that start with a bullet, one after another, become a list: `<p>• a</p><p>• b</p>`
-    /// → `<ul><li>a</li><li>b</li></ul>`.
+    /// Paragraphs that start with a bullet (and a space; ◦ not as a degree sign), one after another,
+    /// become a list: `<p>• a</p><p>• b</p>` → `<ul><li>a</li><li>b</li></ul>`.
     static func bulletLists(_ html: String) -> String {
-        let item = try! NSRegularExpression(pattern: #"<p>\s*(?:<sup>[•●▪◦‣]</sup>|[•●▪◦‣])\s*(.*?)</p>"#)
-        let run = try! NSRegularExpression(pattern: #"(?:<p>\s*(?:<sup>[•●▪◦‣]</sup>|[•●▪◦‣])\s*.*?</p>)+"#)
+        let mark = #"(?:<sup>[•●▪‣]</sup>|[•●▪‣]|(?:<sup>◦</sup>|◦)(?!\s*[CFK]\b))\s+"#
+        let item = try! NSRegularExpression(pattern: #"<p>\s*"# + mark + #"(.*?)</p>"#)
+        let run = try! NSRegularExpression(pattern: #"(?:<p>\s*"# + mark + #"\S.*?</p>)+"#)
         let ns = html as NSString
         var out = ""
         var last = 0

@@ -1478,6 +1478,26 @@ fn bullet_items_are_paragraphs_and_lists() {
         bullet_lists("<p>Highlights</p><p>• One</p><p><sup>•</sup> Two</p><p>Authors</p><p>No • here</p>"),
         "<p>Highlights</p><ul><li>One</li><li>Two</li></ul><p>Authors</p><p>No • here</p>"
     );
+    // ◦ and • as symbols, not bullets: LaTeX's degree sign ("37 ◦C" wrapped before it), a radical
+    assert!(!is_bullet("◦C for 2 h, then washed"));
+    assert!(!is_bullet("◦ C for 2 h, then washed"));
+    assert!(!is_bullet("•OH radicals formed"));
+    assert!(is_bullet("◦ Cells were counted"));
+    assert!(is_bullet("◦ second level item"));
+    assert_eq!(bullet_lists("<p><sup>◦</sup>C for 2 h</p><p>◦ C overnight</p><p>•OH</p>"), "<p><sup>◦</sup>C for 2 h</p><p>◦ C overnight</p><p>•OH</p>");
+    assert_eq!(bullet_lists("<p>◦ Cells</p><p>◦ more</p>"), "<ul><li>Cells</li><li>more</li></ul>");
+    // a sentence wrapped before the degree sign goes on in the same paragraph
+    let lines = vec![
+        line("Samples were incubated at 37", 0, 53.0, 491.0, 9.0),
+        line("◦C for 2 h and then washed twice in buffer before", 0, 53.0, 505.0, 9.0),
+        line("they were imaged.", 0, 53.0, 519.0, 9.0),
+    ];
+    let page = Page { width: 612.0, height: 792.0, lines, graphics: PageGraphics::default() };
+    let mut r = White;
+    let log = |_: &str| {};
+    let an = Analyzer::new(vec![page.clone()], &mut r, &log);
+    let paras: Vec<String> = an.paragraphs(0, page.lines.clone(), vec![]).iter().map(|p| p.text()).collect();
+    assert_eq!(paras.len(), 1, "{paras:?}");
 }
 
 /// Cell's Highlights: the bullets drawn as "d" in AdvPSMPi6 and the © as "ª" in AdvPSSym (no
