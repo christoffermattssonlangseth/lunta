@@ -5,6 +5,7 @@ import PDFKit
 /// Reads a paper's title, authors and venue from the first page of its PDF with Apple's on-device model.
 /// Nothing leaves the device, so this is safe for confidential manuscripts.
 enum PDFDetails {
+    @available(macOS 26.0, iOS 26.0, *)
     @Generable
     struct Extracted {
         @Guide(description: "The paper's full title exactly as printed on the page, without 'Title:' labels")
@@ -27,10 +28,14 @@ enum PDFDetails {
         var doi = ""
     }
 
-    static var available: Bool { SystemLanguageModel.default.isAvailable }
+    /// Apple's on-device model is ready (never before macOS/iOS 26: no FoundationModels there).
+    static var available: Bool {
+        guard #available(macOS 26.0, iOS 26.0, *) else { return false }
+        return SystemLanguageModel.default.isAvailable
+    }
 
     static func extract(fromPDF data: Data) async -> Result? {
-        guard available, let doc = PDFDocument(data: data), doc.pageCount > 0 else { return nil }
+        guard available, #available(macOS 26.0, iOS 26.0, *), let doc = PDFDocument(data: data), doc.pageCount > 0 else { return nil }
         // the first page, plus the second when the first is a short cover page
         var text = doc.page(at: 0)?.string ?? ""
         if text.count < 600, doc.pageCount > 1 { text += "\n" + (doc.page(at: 1)?.string ?? "") }

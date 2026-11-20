@@ -19,7 +19,7 @@ struct AssistantPanel: View {
             if engine.unavailableReason == AskEngine.openModelPending {
                 if #available(iOS 27.0, macOS 27.0, *) { OpenModelDownload(engine: engine) }
             } else if let why = engine.unavailableReason {
-                ContentUnavailableView("Assistant unavailable", systemImage: "apple.intelligence", description: Text(why))
+                ContentUnavailableView("Assistant unavailable", systemImage: why == AskEngine.needsNewerSystem ? "sparkles" : "apple.intelligence", description: Text(why))
                     .frame(maxHeight: .infinity)
                     .task {
                         // check again every few seconds; the panel switches on when the model is ready

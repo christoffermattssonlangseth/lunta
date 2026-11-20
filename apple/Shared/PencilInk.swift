@@ -282,10 +282,20 @@ final class PDFInk: NSObject, ObservableObject, PDFPageOverlayViewProvider {
     // MARK: markup (iPad)
 
     #if os(iOS)
+    /// The tool chosen in the picker (PKToolPickerItem.tool is iOS 26; before it, each kind of item has its own).
+    private var pickedTool: PKTool? {
+        let item = toolPicker.selectedToolItem
+        if #available(iOS 26.0, *) { return item.tool }
+        if let i = item as? PKToolPickerInkingItem { return i.inkingTool }
+        if let e = item as? PKToolPickerEraserItem { return e.eraserTool }
+        if let l = item as? PKToolPickerLassoItem { return l.lassoTool }
+        return nil
+    }
+
     private func prepare(_ o: InkOverlay) {
         toolPicker.addObserver(o)
         toolPicker.setVisible(markup, forFirstResponder: o)
-        if let t = toolPicker.selectedToolItem.tool { o.tool = t }
+        if let t = pickedTool { o.tool = t }
         o.isUserInteractionEnabled = markup
     }
 
@@ -294,7 +304,7 @@ final class PDFInk: NSObject, ObservableObject, PDFPageOverlayViewProvider {
         for o in overlays.values {
             o.isUserInteractionEnabled = markup
             toolPicker.setVisible(markup, forFirstResponder: o)
-            if markup, let t = toolPicker.selectedToolItem.tool { o.tool = t }
+            if markup, let t = pickedTool { o.tool = t }
         }
         guard let r = responder else { return }
         toolPicker.setVisible(markup, forFirstResponder: r)

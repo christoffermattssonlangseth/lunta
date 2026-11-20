@@ -3,8 +3,8 @@ name: Lunta
 options:
   bundleIdPrefix: com.cmlangseth
   deploymentTarget:
-    macOS: "26.0"
-    iOS: "26.0"
+    macOS: "15.0"
+    iOS: "18.0"
   createIntermediateGroups: true
 
 packages:
@@ -112,7 +112,8 @@ targets:
         ENABLE_APP_SANDBOX: NO
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_USER_SCRIPT_SANDBOXING: NO
-        OTHER_LDFLAGS: ["-lc++"]
+        # FoundationModels exists from macOS 26: weak, so the app launches on macOS 15 (the code checks #available)
+        OTHER_LDFLAGS: ["-lc++", "-weak_framework", "FoundationModels"]
         # Apple silicon only: the Rust core is built for arm64 (scripts/build-core.sh), and Apple
         # Intelligence and the MLX models need Apple silicon anyway
         ARCHS: arm64
@@ -184,6 +185,8 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
         TARGETED_DEVICE_FAMILY: "1,2"
+        # FoundationModels exists from iOS 26: weak, so the app launches on iOS 18 (the code checks #available)
+        OTHER_LDFLAGS: ["-weak_framework", "FoundationModels"]
 
   LuntaShare:
     type: app-extension

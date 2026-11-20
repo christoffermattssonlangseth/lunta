@@ -278,6 +278,7 @@ private func paperLine(_ p: Paper) -> String {
 
 // MARK: - Tools: inside one paper
 
+@available(macOS 26.0, iOS 26.0, *)
 struct FindInPaperTool: Tool {
     let ctx: AskContext
     let name = "find_in_paper"
@@ -304,6 +305,7 @@ struct FindInPaperTool: Tool {
     }
 }
 
+@available(macOS 26.0, iOS 26.0, *)
 struct ReadSectionTool: Tool {
     let ctx: AskContext
     let name = "read_section"
@@ -341,6 +343,7 @@ struct ReadSectionTool: Tool {
     }
 }
 
+@available(macOS 26.0, iOS 26.0, *)
 struct HighlightPassageTool: Tool {
     let ctx: AskContext
     let paperID: String
@@ -375,6 +378,7 @@ struct HighlightPassageTool: Tool {
 
 // MARK: - Tools: the library
 
+@available(macOS 26.0, iOS 26.0, *)
 struct FindHighlightsTool: Tool {
     let ctx: AskContext
     let name = "find_highlights"
@@ -409,6 +413,7 @@ struct FindHighlightsTool: Tool {
     }
 }
 
+@available(macOS 26.0, iOS 26.0, *)
 struct SearchLibraryTool: Tool {
     let ctx: AskContext
     let name = "search_library"
@@ -450,6 +455,7 @@ struct SearchLibraryTool: Tool {
     }
 }
 
+@available(macOS 26.0, iOS 26.0, *)
 struct ListPapersTool: Tool {
     let ctx: AskContext
     let name = "list_papers"
@@ -482,6 +488,7 @@ struct ListPapersTool: Tool {
     }
 }
 
+@available(macOS 26.0, iOS 26.0, *)
 struct PaperDetailsTool: Tool {
     let ctx: AskContext
     let name = "paper_details"
@@ -511,6 +518,7 @@ struct PaperDetailsTool: Tool {
     }
 }
 
+@available(macOS 26.0, iOS 26.0, *)
 struct SearchInsidePaperTool: Tool {
     let ctx: AskContext
     let name = "search_inside_paper"
@@ -541,6 +549,7 @@ struct SearchInsidePaperTool: Tool {
     }
 }
 
+@available(macOS 26.0, iOS 26.0, *)
 struct FindNewPapersTool: Tool {
     let ctx: AskContext
     let name = "find_new_papers"
@@ -571,6 +580,7 @@ struct FindNewPapersTool: Tool {
     }
 }
 
+@available(macOS 26.0, iOS 26.0, *)
 struct ProposeChangeTool: Tool {
     let ctx: AskContext
     let name = "propose_change"
@@ -638,7 +648,13 @@ final class AskEngine: ObservableObject {
     var passages: (() async -> [NarrationItem])?
     var selection: (() async -> String?)?
 
-    private var session: LanguageModelSession?
+    /// The model session (a LanguageModelSession; kept untyped because FoundationModels only exists from macOS/iOS 26).
+    private var sessionBox: AnyObject?
+    @available(macOS 26.0, iOS 26.0, *)
+    private var session: LanguageModelSession? {
+        get { sessionBox as? LanguageModelSession }
+        set { sessionBox = newValue }
+    }
     private var ctx: AskContext?
     private var task: Task<Void, Never>?
 
@@ -725,6 +741,7 @@ final class AskEngine: ObservableObject {
 
     /// nil when a model is ready, otherwise why not.
     var unavailableReason: String? {
+        guard #available(macOS 26.0, iOS 26.0, *) else { return Self.needsNewerSystem }
         if cloudAvailable { return nil }
         if usesOpenModel { return needsOpenModel ? Self.openModelPending : nil }
         switch SystemLanguageModel.default.availability {
@@ -754,6 +771,13 @@ final class AskEngine: ObservableObject {
 
     static let openModelPending = "open-model"
 
+    /// Before macOS/iOS 26 there is no FoundationModels: neither Apple's model nor the open model (which plugs into it).
+    #if os(iOS)
+    static let needsNewerSystem = "The assistant needs iOS 26 or newer (Apple Intelligence, or the open model). The rest of Lunta works without it."
+    #else
+    static let needsNewerSystem = "The assistant needs macOS 26 or newer (Apple Intelligence, or the open model). The rest of Lunta works without it."
+    #endif
+
     /// Apple Intelligence isn't usable here (e.g. iPhones in the EU) or the user picked the open model.
     var usesOpenModel: Bool {
         guard #available(iOS 27.0, macOS 27.0, *) else { return false }
@@ -770,7 +794,7 @@ final class AskEngine: ObservableObject {
 
     func reset() {
         task?.cancel()
-        session = nil
+        sessionBox = nil
         ctx = nil
         messages = []
         sources = [:]
@@ -784,7 +808,7 @@ final class AskEngine: ObservableObject {
 
     func ask(_ question: String, shown: String? = nil) {
         let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty, !busy else { return }
+        guard !q.isEmpty, !busy, #available(macOS 26.0, iOS 26.0, *) else { return }
         messages.append(AskMessage(role: .user, text: shown ?? q))
         busy = true
         // nudge toward propose_change only when the user's own words ask for a change
@@ -798,6 +822,7 @@ final class AskEngine: ObservableObject {
         save()
     }
 
+    @available(macOS 26.0, iOS 26.0, *)
     private func run(_ q: String, wantsChange: Bool = false) async {
         defer { busy = false; save() }
         do {
@@ -853,7 +878,7 @@ final class AskEngine: ObservableObject {
     }
 
     static func isOverflow(_ e: Error) -> Bool {
-        if let g = e as? LanguageModelSession.GenerationError, case .exceededContextWindowSize = g { return true }
+        if #available(macOS 26.0, iOS 26.0, *), let g = e as? LanguageModelSession.GenerationError, case .exceededContextWindowSize = g { return true }
         let d = String(describing: e)
         return d.contains("contextSizeExceeded") || d.contains("exceededContextWindowSize") || d.contains("maximum allowed")
     }
@@ -865,12 +890,13 @@ final class AskEngine: ObservableObject {
         }
         if Task.isCancelled { return }
         var text = error.readable
-        if let e = error as? LanguageModelSession.GenerationError, case .guardrailViolation = e {
+        if #available(macOS 26.0, iOS 26.0, *), let e = error as? LanguageModelSession.GenerationError, case .guardrailViolation = e {
             text = "Apple's model declined to answer that (its safety filter). Try rephrasing."
         }
         messages.append(AskMessage(role: .notice, text: text))
     }
 
+    @available(macOS 26.0, iOS 26.0, *)
     private func stream(_ q: String) async throws {
         guard let session else { return }
         ctx?.newQuestion()
@@ -883,6 +909,7 @@ final class AskEngine: ObservableObject {
         if messages[i].text.trimmingCharacters(in: .whitespaces).isEmpty { messages.remove(at: i) }
     }
 
+    @available(macOS 26.0, iOS 26.0, *)
     private func start() async throws {
         guard let model else { return }
         let items = await passages?() ?? []
@@ -914,6 +941,7 @@ final class AskEngine: ObservableObject {
         session = await makeSession(tools: tools, instructions: instructions)
     }
 
+    @available(macOS 26.0, iOS 26.0, *)
     private func makeSession(tools: [any Tool], instructions: String) async -> LanguageModelSession {
         usingCloud = false
         if #available(macOS 27.0, iOS 27.0, *), usesOpenModel {
@@ -929,7 +957,7 @@ final class AskEngine: ObservableObject {
     /// One prompt, no tools, no history: the model's plain answer (nil without a model, or on failure).
     /// Used by New for You to write searches and screen abstracts.
     func plainAnswer(_ prompt: String, instructions: String) async -> String? {
-        guard unavailableReason == nil else { return nil }
+        guard unavailableReason == nil, #available(macOS 26.0, iOS 26.0, *) else { return nil }
         let s = await makeSession(tools: [], instructions: instructions)
         return try? await s.respond(to: prompt, options: GenerationOptions(temperature: 0.2)).content
     }
@@ -937,7 +965,7 @@ final class AskEngine: ObservableObject {
     /// Answers a prompt that already holds everything needed, without tools (so the model can't wander
     /// off searching). The main conversation then picks it up as earlier context.
     private func answerDirectly(_ prompt: String, shown: String) async {
-        guard !busy else { return }
+        guard !busy, #available(macOS 26.0, iOS 26.0, *) else { return }
         messages.append(AskMessage(role: .user, text: shown))
         busy = true
         defer { busy = false; save() }
@@ -1060,7 +1088,7 @@ final class AskEngine: ObservableObject {
 
     /// Numbered digests of papers (title, year, journal, abstract), fitted to the model's budget.
     private func paperDigests(_ ids: [String], perPaper: Int? = nil) async -> String? {
-        if session == nil { try? await start() }
+        if sessionBox == nil, #available(macOS 26.0, iOS 26.0, *) { try? await start() }
         guard let ctx, let model else { return nil }
         let papers = ids.compactMap { model.paper($0) }
         guard !papers.isEmpty else { return nil }
@@ -1147,7 +1175,7 @@ final class AskEngine: ObservableObject {
 
     /// Opening sentences of each section, numbered as citable passages, within the model's budget.
     private func digest() async -> String? {
-        if session == nil { try? await start() }
+        if sessionBox == nil, #available(macOS 26.0, iOS 26.0, *) { try? await start() }
         guard let ctx, !ctx.passages.isEmpty else { return nil }
         let items = ctx.passages
         let paras = items.filter { $0.kind == "text" }

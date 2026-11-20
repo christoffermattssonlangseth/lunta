@@ -31,6 +31,8 @@ enum SummaryModel: String {
         var open = false
         if #available(macOS 27.0, iOS 27.0, *) { open = UserDefaults.standard.bool(forKey: "openModelDownloaded") }
         if choice == .openModel, open { return .open }
+        // before macOS/iOS 26 there is no FoundationModels, so no model at all (and no card)
+        guard #available(macOS 26.0, iOS 26.0, *) else { return nil }
         if SystemLanguageModel.default.isAvailable { return .apple }
         return open ? .open : nil
     }
@@ -48,6 +50,7 @@ enum SummaryModel: String {
         return "Made on device by \(who). It can be wrong."
     }
 
+    @available(macOS 26.0, iOS 26.0, *)
     @MainActor func session() async -> LanguageModelSession {
         if self == .open, #available(macOS 27.0, iOS 27.0, *) {
             await OpenModel.shared.prepare()
@@ -167,7 +170,7 @@ final class SummaryMaker: ObservableObject {
             show("done", saved.text, note: SummaryModel.note(saved.model))
             return
         }
-        guard !Task.isCancelled, let engine = SummaryModel.current else { if !force { hide() }; return }
+        guard !Task.isCancelled, let engine = SummaryModel.current, #available(macOS 26.0, iOS 26.0, *) else { if !force { hide() }; return }
         show("loading", "Summarizing…")
         let started = Date()
         do {

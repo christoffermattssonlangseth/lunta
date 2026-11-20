@@ -74,6 +74,7 @@ enum SummaryWriter {
     /// Writes the summary, calling `partial` with the text so far (already cleaned) as it comes.
     /// Throws what the model throws (guardrails, refusals, context); returns nil for an answer that
     /// isn't a summary.
+    @available(macOS 26.0, iOS 26.0, *)
     static func write(_ session: LanguageModelSession, prompt: String,
                       partial: @MainActor (String) -> Void) async throws -> String? {
         var last = ""
@@ -89,6 +90,7 @@ enum SummaryWriter {
 
     /// Apple's on-device model, with the guardrails meant for working on text it is given (papers
     /// on drugs, suicide or violence are otherwise often refused).
+    @available(macOS 26.0, iOS 26.0, *)
     static var appleModel: SystemLanguageModel {
         SystemLanguageModel(useCase: .general, guardrails: .permissiveContentTransformations)
     }

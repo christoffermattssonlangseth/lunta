@@ -72,7 +72,7 @@ struct LibraryWindow: View {
             // never narrower than the toolbar's search field above it, and a solid edge under the
             // toolbar: on macOS 26 the content otherwise slides under the floating search field
             .navigationSplitViewColumnWidth(min: 340, ideal: 460)
-            .scrollEdgeEffectStyle(.hard, for: .top)
+            .hardTopScrollEdge()
             .inspector(isPresented: $asking) {
                 AssistantPanel(engine: ask, onPaper: { id in
                     if model.source == .discover { model.source = .all }
