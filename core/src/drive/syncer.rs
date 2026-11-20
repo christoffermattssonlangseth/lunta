@@ -75,6 +75,8 @@ pub struct SyncReport {
     /// Paths where both sides changed (resolved, see module docs).
     pub conflicts: Vec<String>,
     pub errors: Vec<String>,
+    /// Messages for the user that are not errors (see `Listing::notices`).
+    pub notices: Vec<String>,
     /// Big files left on the remote because of `lazy`.
     pub skipped_lazy: u32,
     /// Something in the working folder changed: the caller should `Library::refresh()`.
@@ -296,7 +298,7 @@ impl Syncer {
         let mut dup_notes = Vec::new();
         if listing.full {
             if listing.files.is_empty() && !st.synced.is_empty() {
-                return Err(CoreError::Invalid("the remote folder looks empty although files were synced before; refusing to continue (wrong folder or account?)".into()));
+                return Err(CoreError::Invalid("the remote folder looks empty although files were synced before; refusing to continue (wrong folder or account? Lunta sees only the files it put into Google Drive itself: files added by other apps, such as Google Drive for desktop, are not visible to it)".into()));
             }
             st.remote.clear();
         } else {
@@ -322,6 +324,7 @@ impl Syncer {
         }
         st.cursor = listing.cursor;
         rep.errors.extend(dup_notes);
+        rep.notices.extend(listing.notices);
 
         // 2. decide per path
         let local = self.scan_local();

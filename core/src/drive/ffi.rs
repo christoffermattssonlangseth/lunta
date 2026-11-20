@@ -25,8 +25,8 @@ pub struct DriveAuth {
 
 #[uniffi::export]
 impl DriveAuth {
-    /// `full_access`: the `drive` scope (needed to share a library with a Mac that uses Google
-    /// Drive for desktop) instead of `drive.file`.
+    /// `full_access`: ask for the restricted `drive` scope instead of `drive.file`. The apps pass
+    /// false; Lunta works with `drive.file` (see `auth::Scope`).
     #[uniffi::constructor]
     pub fn new(client_id: String, token_file: String, full_access: bool) -> Arc<Self> {
         let client = OAuthClient::new(client_id, None).with_scope(if full_access { Scope::Full } else { Scope::File });
@@ -44,6 +44,35 @@ impl DriveAuth {
         Ok(SignInRequest { url: self.auth.client.authorization_url(&redirect_uri, &pkce, &state), verifier: pkce.verifier, state })
     }
 
+    /// True if the stored grant is the old full `drive` scope (signed in with an older version).
+    /// Syncs then still adopt files other apps put into the folder; signing in again (no need to
+    /// disconnect first) switches to the narrower `drive.file`.
+    pub fn has_full_access(&self) -> bool {
+        self.auth.has_full_drive_access()
+    }
+
+    /// "Choose your Lunta folder": a sign-in that shows Google's file picker (folders and files,
+    /// several at once). Open the URL like `begin_sign_in`'s; the redirect comes back to the same
+    /// URI, and `picked_ids_from_redirect` gives what was chosen. `file_ids` narrows what the picker
+    /// shows (empty: everything).
+    pub fn begin_pick(&self, redirect_uri: String, file_ids: Vec<String>) -> Result<SignInRequest> {
+        let pkce = auth::Pkce::generate()?;
+        let state = auth::random_state()?;
+        Ok(SignInRequest { url: self.auth.client.picker_url(&redirect_uri, &pkce, &state, &file_ids), verifier: pkce.verifier, state })
+    }
+
+    /// The ids picked in Google's picker (`begin_pick`), from the redirect URL.
+    pub fn picked_ids_from_redirect(&self, redirect_url: String) -> Vec<String> {
+        auth::picked_file_ids(&redirect_url)
+    }
+
+    /// The first folder among `ids` (what `picked_ids_from_redirect` gave), as [id, name]; empty if
+    /// none was a folder. Network; call after `complete_sign_in`.
+    pub fn picked_folder(&self, ids: Vec<String>) -> Result<Vec<String>> {
+        let d = GoogleDrive::new(self.auth.clone(), DriveRoot::default());
+        Ok(d.first_folder(&ids)?.map(|(id, name)| vec![id, name]).unwrap_or_default())
+    }
+
     /// Checks the redirect the browser ended up at and returns the authorisation code.
     /// Errors if the user denied access or the state does not match.
     pub fn code_from_redirect(&self, redirect_url: String, expected_state: String) -> Result<String> {
@@ -58,7 +87,8 @@ impl DriveAuth {
         self.auth.complete(&code, &verifier, &redirect_uri)
     }
 
-    /// Revokes the grant (best effort) and forgets the tokens.
+    /// Forgets the tokens on this device (the grant at Google stays: revoking it would cut every
+    /// device off from the files Lunta made, see `Authenticator::disconnect`).
     pub fn disconnect(&self) -> Result<()> {
         self.auth.disconnect()
     }
@@ -72,6 +102,8 @@ pub struct SyncSummary {
     pub deleted_remote: u32,
     pub conflicts: Vec<String>,
     pub errors: Vec<String>,
+    /// Messages for the user that are not errors (e.g. files adopted for the narrower access).
+    pub notices: Vec<String>,
     pub skipped_lazy: u32,
     /// Something changed in the working folder: call `Library::refresh()`.
     pub changed: bool,
@@ -95,6 +127,20 @@ pub struct PaperRemoteFile {
     pub local: bool,
 }
 
+fn drive_root(name: String, id: Option<String>) -> DriveRoot {
+    match id.filter(|s| !s.trim().is_empty()) {
+        Some(id) => DriveRoot::Id(id),
+        None => DriveRoot::Named { name, create: true },
+    }
+}
+
+/// True if a sync error means Lunta cannot open its Google Drive folder (made by another app, or
+/// access removed): offer "Choose your Lunta folder" (`DriveAuth::begin_pick`).
+#[uniffi::export]
+pub fn drive_folder_not_visible(message: String) -> bool {
+    gdrive::is_folder_not_visible(&message)
+}
+
 /// Syncs a library working folder with a remote (Google Drive, or a plain folder for testing).
 #[derive(uniffi::Object)]
 pub struct LibrarySync {
@@ -112,10 +158,11 @@ fn options(state_path: String, lazy: bool, progress: Option<Arc<dyn ProgressList
 
 #[uniffi::export]
 impl LibrarySync {
-    /// Syncs `root` (the folder `Library::open` gets) with the folder `folder_name` in My Drive.
+    /// Syncs `root` (the folder `Library::open` gets) with the folder `folder_name` in My Drive, or
+    /// with the folder `folder_id` when the user chose one ("Choose your Lunta folder").
     #[uniffi::constructor]
-    pub fn google_drive(root: String, device: String, state_path: String, auth: Arc<DriveAuth>, folder_name: String, lazy: bool, progress: Option<Arc<dyn ProgressListener>>) -> Result<Arc<Self>> {
-        let remote = GoogleDrive::new(auth.auth.clone(), DriveRoot::Named { name: folder_name, create: true });
+    pub fn google_drive(root: String, device: String, state_path: String, auth: Arc<DriveAuth>, folder_name: String, folder_id: Option<String>, lazy: bool, progress: Option<Arc<dyn ProgressListener>>) -> Result<Arc<Self>> {
+        let remote = GoogleDrive::new(auth.auth.clone(), drive_root(folder_name, folder_id));
         Ok(Arc::new(LibrarySync { syncer: Syncer::new(root, device, Box::new(remote), options(state_path, lazy, progress))? }))
     }
 
@@ -123,8 +170,8 @@ impl LibrarySync {
     /// `folder_name` in My Drive: every device's changes are passed on both ways (`SyncOptions::bridge`),
     /// and paper files are all fetched (not lazy), so devices on either side see everything.
     #[uniffi::constructor]
-    pub fn google_drive_bridge(root: String, device: String, state_path: String, auth: Arc<DriveAuth>, folder_name: String, progress: Option<Arc<dyn ProgressListener>>) -> Result<Arc<Self>> {
-        let remote = GoogleDrive::new(auth.auth.clone(), DriveRoot::Named { name: folder_name, create: true });
+    pub fn google_drive_bridge(root: String, device: String, state_path: String, auth: Arc<DriveAuth>, folder_name: String, folder_id: Option<String>, progress: Option<Arc<dyn ProgressListener>>) -> Result<Arc<Self>> {
+        let remote = GoogleDrive::new(auth.auth.clone(), drive_root(folder_name, folder_id));
         let mut o = options(state_path, false, progress);
         o.bridge = true;
         Ok(Arc::new(LibrarySync { syncer: Syncer::new(root, device, Box::new(remote), o)? }))
@@ -147,6 +194,7 @@ impl LibrarySync {
             deleted_remote: r.deleted_remote,
             conflicts: r.conflicts,
             errors: r.errors,
+            notices: r.notices,
             skipped_lazy: r.skipped_lazy,
             changed: r.changed,
             finished_ms: r.finished_ms,

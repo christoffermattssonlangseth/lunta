@@ -13,6 +13,16 @@
 //!   8 MiB chunks (a chunk that fails is retried from the offset Drive reports).
 //! * **Delete** moves to the trash (recoverable, and Drive for desktop treats it as a deletion).
 //! * Requests retry with backoff on 429 / 5xx / network errors and refresh the token on 401.
+//! * **Access** (`drive.file`): Lunta sees only what this Cloud project's clients created, plus items
+//!   the user picked in Google's picker. The library folder is found by its id first (the last
+//!   cursor's root, or `DriveRoot::Id` for a picked folder) and only then by name, so a folder
+//!   Lunta can no longer see gives `FOLDER_NOT_VISIBLE` instead of a second, empty "Lunta" folder.
+//! * **Adoption** (moving to `drive.file`): while the token still carries the old full `drive` scope,
+//!   a full listing first makes every item in the library app-created (`isAppAuthorized`): a foreign
+//!   file gets an app-created copy (`files.copy`, same name, folder and time) and the original moves
+//!   to a backup folder in My Drive; a foreign folder is replaced by an app-created one with the same
+//!   name and its children moved over. Nothing is deleted. Until a run adopts everything, the cursor
+//!   says so and the next sync lists (and adopts) again.
 
 use super::auth::{agent, agent_noredirect, Authenticator};
 use super::remote::*;
@@ -28,7 +38,23 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const FOLDER_MIME: &str = "application/vnd.google-apps.folder";
-const FIELDS: &str = "id,name,mimeType,size,md5Checksum,modifiedTime,parents,trashed";
+const FIELDS: &str = "id,name,mimeType,size,md5Checksum,modifiedTime,parents,trashed,isAppAuthorized";
+
+/// Start of the error when the library folder (known by id) cannot be opened: with `drive.file`
+/// that means it was not created by Lunta, or Lunta's access to it was removed. The apps then offer
+/// "Choose your Lunta folder" (Google's picker). See `is_folder_not_visible`.
+pub const FOLDER_NOT_VISIBLE: &str = "Lunta can't open its folder in Google Drive";
+
+/// True if `message` is a `FOLDER_NOT_VISIBLE` error.
+pub fn is_folder_not_visible(message: &str) -> bool {
+    message.contains(FOLDER_NOT_VISIBLE)
+}
+
+fn not_visible(what: &str) -> CoreError {
+    CoreError::NotFound(format!(
+        "{FOLDER_NOT_VISIBLE} ({what}). Lunta only sees folders it made itself or that you chose for it: choose your Lunta folder to let it in again."
+    ))
+}
 const MULTIPART_MAX: u64 = 5 * 1024 * 1024;
 const CHUNK: u64 = 8 * 1024 * 1024; // multiple of 256 KiB
 
@@ -50,6 +76,8 @@ impl Default for DriveRoot {
 #[derive(Default)]
 struct Cache {
     root_id: Option<String>,
+    /// The library folder's id from the last cursor (tried before searching by name).
+    hint: Option<String>,
     /// folder id -> path relative to the library root ("" = the root)
     folders: BTreeMap<String, String>,
 }
@@ -59,6 +87,10 @@ struct Cursor {
     token: String,
     root: String,
     folders: BTreeMap<String, String>,
+    /// Every item was app-created when this listing was made (see "Adoption"). Missing in cursors
+    /// from older versions: their first sync with the full scope lists and adopts once.
+    #[serde(default)]
+    adopted: bool,
 }
 
 pub struct GoogleDrive {
@@ -87,6 +119,8 @@ struct DFile {
     modified_ms: i64,
     parents: Vec<String>,
     trashed: bool,
+    /// `isAppAuthorized`: created by this Cloud project, or opened/picked with it. Absent: assumed.
+    app: bool,
 }
 
 fn parse_file(v: &Value) -> Option<DFile> {
@@ -99,6 +133,7 @@ fn parse_file(v: &Value) -> Option<DFile> {
         modified_ms: v["modifiedTime"].as_str().and_then(parse_rfc3339).unwrap_or(0),
         parents: v["parents"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default(),
         trashed: v["trashed"].as_bool().unwrap_or(false),
+        app: v["isAppAuthorized"].as_bool().unwrap_or(true),
     })
 }
 
@@ -122,6 +157,27 @@ fn mime_for(path: &str) -> &'static str {
         "txt" => "text/plain",
         "m4a" => "audio/mp4",
         _ => "application/octet-stream",
+    }
+}
+
+#[derive(Default)]
+struct Adoption {
+    files: u32,
+    folders: u32,
+    failed: u32,
+    notices: Vec<String>,
+    backup_root: Option<String>,
+    backup_name: String,
+    /// path in the library -> backup folder id
+    backup_dirs: BTreeMap<String, String>,
+}
+
+impl Adoption {
+    fn fail(&mut self, what: &str, e: &CoreError) {
+        self.failed += 1;
+        if self.notices.len() < 10 {
+            self.notices.push(format!("Couldn't adopt {what}: {e}"));
+        }
     }
 }
 
@@ -243,14 +299,33 @@ impl GoogleDrive {
         }
         let id = match &self.root {
             DriveRoot::Id(id) => {
-                let v = self.get_json(&format!("/files/{id}"), &[("fields", FIELDS)])?;
-                let f = parse_file(&v).ok_or_else(|| CoreError::NotFound("library folder".into()))?;
+                let r = self.request("GET", &self.url(&format!("/files/{id}"), &[("fields", FIELDS)]), &[], None)?;
+                if r.status == 404 || r.status == 403 {
+                    return Err(not_visible("the folder chosen for Lunta"));
+                }
+                let f = parse_file(&Self::ok(&r)?).ok_or_else(|| CoreError::NotFound("library folder".into()))?;
                 if f.mime != FOLDER_MIME || f.trashed {
                     return Err(CoreError::Invalid("that Drive id is not a folder (or is in the trash)".into()));
                 }
                 f.id
             }
-            DriveRoot::Named { name, create } => {
+            DriveRoot::Named { name, create } => 'found: {
+                // the folder synced before, by id: it may have been renamed or moved, and with
+                // drive.file a name search would not see a folder Lunta no longer has access to
+                let hint = self.cache.lock().unwrap().hint.clone();
+                if let Some(h) = hint {
+                    let r = self.request("GET", &self.url(&format!("/files/{h}"), &[("fields", FIELDS)]), &[], None)?;
+                    if r.status == 404 || r.status == 403 {
+                        return Err(not_visible("the folder Lunta synced with before"));
+                    }
+                    let f = parse_file(&Self::ok(&r)?).ok_or_else(|| CoreError::Network("bad folder metadata".into()))?;
+                    if f.trashed {
+                        return Err(CoreError::Invalid(format!("Your \"{}\" folder is in the Google Drive trash: restore it, or choose another Lunta folder.", f.name)));
+                    }
+                    if f.mime == FOLDER_MIME {
+                        break 'found f.id;
+                    }
+                }
                 let q = format!("name = '{}' and 'root' in parents and mimeType = '{FOLDER_MIME}' and trashed = false", q_esc(name));
                 let v = self.get_json("/files", &[("q", &q), ("fields", &format!("files({FIELDS})")), ("orderBy", "createdTime"), ("pageSize", "10")])?;
                 match v["files"].as_array().and_then(|a| a.first()).and_then(parse_file) {
@@ -280,16 +355,211 @@ impl GoogleDrive {
         }
         let (parent_dir, name) = dir.rsplit_once('/').unwrap_or(("", dir));
         let parent = self.ensure_folder(parent_dir)?;
+        let id = self.find_or_create_folder(&parent, name)?;
+        self.cache.lock().unwrap().folders.insert(id.clone(), dir.to_string());
+        Ok(id)
+    }
+
+    /// The (oldest) folder `name` in `parent` that Lunta can see, created if there is none.
+    fn find_or_create_folder(&self, parent: &str, name: &str) -> Result<String> {
         let q = format!("name = '{}' and '{}' in parents and mimeType = '{FOLDER_MIME}' and trashed = false", q_esc(name), parent);
         let v = self.get_json("/files", &[("q", &q), ("fields", &format!("files({FIELDS})")), ("orderBy", "createdTime"), ("pageSize", "10")])?;
-        let id = match v["files"].as_array().and_then(|a| a.first()).and_then(parse_file) {
-            Some(f) => f.id,
-            None => {
-                let v = self.send_json("POST", "/files", &[("fields", FIELDS)], &json!({"name": name, "mimeType": FOLDER_MIME, "parents": [parent]}))?;
-                parse_file(&v).ok_or_else(|| CoreError::Network("Drive did not return the new folder".into()))?.id
+        let found: Vec<DFile> = v["files"].as_array().into_iter().flatten().filter_map(parse_file).collect();
+        match found.iter().find(|f| f.app).or(found.first()) {
+            Some(f) => Ok(f.id.clone()),
+            None => self.create_folder(parent, name),
+        }
+    }
+
+    fn create_folder(&self, parent: &str, name: &str) -> Result<String> {
+        let v = self.send_json("POST", "/files", &[("fields", FIELDS)], &json!({"name": name, "mimeType": FOLDER_MIME, "parents": [parent]}))?;
+        Ok(parse_file(&v).ok_or_else(|| CoreError::Network("Drive did not return the new folder".into()))?.id)
+    }
+
+    /// The non-trashed children of a folder (all pages).
+    fn children(&self, folder: &str) -> Result<Vec<DFile>> {
+        let q = format!("'{folder}' in parents and trashed = false");
+        let fields = format!("nextPageToken,files({FIELDS})");
+        let mut out = Vec::new();
+        let mut page: Option<String> = None;
+        loop {
+            let mut qq = vec![("q", q.as_str()), ("fields", fields.as_str()), ("pageSize", "1000"), ("includeItemsFromAllDrives", "true")];
+            if let Some(p) = &page {
+                qq.push(("pageToken", p));
             }
+            let v = self.get_json("/files", &qq)?;
+            out.extend(v["files"].as_array().into_iter().flatten().filter_map(parse_file));
+            page = v["nextPageToken"].as_str().map(String::from);
+            if page.is_none() {
+                return Ok(out);
+            }
+        }
+    }
+
+    /// Moves `id` from folder `from` to folder `to` (Drive keeps it, its id and its contents).
+    fn reparent(&self, id: &str, from: &str, to: &str, rename: Option<&str>) -> Result<()> {
+        let body = match rename {
+            Some(n) => json!({"name": n}),
+            None => json!({}),
         };
-        self.cache.lock().unwrap().folders.insert(id.clone(), dir.to_string());
+        self.send_json("PATCH", &format!("/files/{id}"), &[("addParents", to), ("removeParents", from), ("fields", "id")], &body)?;
+        Ok(())
+    }
+
+    /// The first folder among `ids` (e.g. what the user picked in Google's picker), with its name.
+    pub fn first_folder(&self, ids: &[String]) -> Result<Option<(String, String)>> {
+        for id in ids {
+            let r = self.request("GET", &self.url(&format!("/files/{id}"), &[("fields", FIELDS)]), &[], None)?;
+            if r.status == 404 || r.status == 403 {
+                continue;
+            }
+            if let Some(f) = parse_file(&Self::ok(&r)?) {
+                if f.mime == FOLDER_MIME && !f.trashed {
+                    return Ok(Some((f.id, f.name)));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    // ---- adoption (from the full `drive` scope to `drive.file`) ----
+
+    /// Makes every item in the library app-created while the token still has the full scope. Returns
+    /// the notices for the user and whether everything was adopted.
+    fn adopt(&self) -> Result<(Vec<String>, bool)> {
+        let mut a = Adoption::default();
+        let mut root = self.root_id()?;
+        let meta = parse_file(&self.get_json(&format!("/files/{root}"), &[("fields", FIELDS)])?).ok_or_else(|| CoreError::Network("bad folder metadata".into()))?;
+        if !meta.app {
+            match &self.root {
+                DriveRoot::Named { name, .. } => {
+                    // a new, app-created folder takes the old one's name and place, and its contents
+                    let parent = meta.parents.first().cloned().unwrap_or_else(|| "root".into());
+                    let new = self.create_folder(&parent, name)?;
+                    for c in self.children(&root)? {
+                        if let Err(e) = self.reparent(&c.id, &root, &new, None) {
+                            a.fail(&c.name, &e);
+                        }
+                    }
+                    // the old folder (now empty, unless something could not move) keeps the originals
+                    let backup = format!("{name} (originals from before the update)");
+                    match self.send_json("PATCH", &format!("/files/{root}"), &[("fields", "id")], &json!({"name": backup})) {
+                        Ok(_) => {
+                            a.backup_root = Some(root.clone());
+                            a.backup_name = backup;
+                        }
+                        Err(e) => a.fail(&meta.name, &e),
+                    }
+                    a.folders += 1;
+                    let mut c = self.cache.lock().unwrap();
+                    c.root_id = Some(new.clone());
+                    c.hint = Some(new.clone());
+                    c.folders.clear();
+                    c.folders.insert(new.clone(), String::new());
+                    root = new;
+                }
+                DriveRoot::Id(_) => a.notices.push(format!(
+                    "The folder \"{}\" was not made by Lunta. After you sign in to Google Drive again, choose it as your Lunta folder.",
+                    meta.name
+                )),
+            }
+        }
+        let mut queue = vec![(root, String::new())];
+        while let Some((folder, path)) = queue.pop() {
+            for c in self.children(&folder)? {
+                let cpath = join(&path, &c.name);
+                if c.mime == FOLDER_MIME {
+                    if c.app {
+                        queue.push((c.id, cpath));
+                        continue;
+                    }
+                    // folders cannot be copied: an app-created twin takes over the children
+                    let twin = match self.create_folder(&folder, &c.name) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            a.fail(&cpath, &e);
+                            continue;
+                        }
+                    };
+                    let mut all_moved = true;
+                    for g in self.children(&c.id)? {
+                        if let Err(e) = self.reparent(&g.id, &c.id, &twin, None) {
+                            a.fail(&join(&cpath, &g.name), &e);
+                            all_moved = false;
+                        }
+                    }
+                    if all_moved {
+                        match self.backup_dir(&mut a, &path) {
+                            Ok(b) => {
+                                if let Err(e) = self.reparent(&c.id, &folder, &b, None) {
+                                    a.fail(&cpath, &e);
+                                }
+                            }
+                            Err(e) => a.fail(&cpath, &e),
+                        }
+                    }
+                    a.folders += 1;
+                    queue.push((twin, cpath));
+                } else if c.mime.starts_with("application/vnd.google-apps.") {
+                    // Google Docs and the like are not part of a library; left alone
+                } else if !c.app {
+                    let body = json!({"name": c.name, "parents": [folder], "modifiedTime": format_rfc3339(c.modified_ms)});
+                    match self.send_json("POST", &format!("/files/{}/copy", c.id), &[("fields", FIELDS)], &body) {
+                        Ok(_) => {
+                            a.files += 1;
+                            match self.backup_dir(&mut a, &path).and_then(|b| self.reparent(&c.id, &folder, &b, None)) {
+                                Ok(()) => {}
+                                // the copy is there; the original stays next to it (same content)
+                                Err(e) => a.fail(&cpath, &e),
+                            }
+                        }
+                        Err(e) => a.fail(&cpath, &e),
+                    }
+                }
+            }
+        }
+        if a.files + a.folders > 0 {
+            a.notices.insert(
+                0,
+                format!(
+                    "Lunta now uses narrower Google Drive access, which only covers files it made itself. It made its own copies of {} file(s) (and {} folder(s)) in your Lunta folder that other apps had put there; the originals are in \"{}\" in My Drive. Nothing was deleted; you can remove that folder once everything looks right.",
+                    a.files,
+                    a.folders,
+                    if a.backup_name.is_empty() { "Lunta (originals from before the update)" } else { &a.backup_name }
+                ),
+            );
+        }
+        if a.failed > 0 {
+            a.notices.push(format!("{} item(s) could not be adopted and were left where they were; Lunta tries again at the next sync.", a.failed));
+        }
+        Ok((a.notices, a.failed == 0))
+    }
+
+    /// The backup folder for originals that lived at `dir` (mirrors the library's layout).
+    fn backup_dir(&self, a: &mut Adoption, dir: &str) -> Result<String> {
+        if let Some(id) = a.backup_dirs.get(dir) {
+            return Ok(id.clone());
+        }
+        let id = if dir.is_empty() {
+            match &a.backup_root {
+                Some(r) => r.clone(),
+                None => {
+                    let name = match &self.root {
+                        DriveRoot::Named { name, .. } => format!("{name} (originals from before the update)"),
+                        DriveRoot::Id(_) => "Lunta (originals from before the update)".to_string(),
+                    };
+                    a.backup_name = name.clone();
+                    let r = self.find_or_create_folder("root", &name)?;
+                    a.backup_root = Some(r.clone());
+                    r
+                }
+            }
+        } else {
+            let (parent, name) = dir.rsplit_once('/').unwrap_or(("", dir));
+            let p = self.backup_dir(a, parent)?;
+            self.find_or_create_folder(&p, name)?
+        };
+        a.backup_dirs.insert(dir.to_string(), id.clone());
         Ok(id)
     }
 
@@ -299,7 +569,8 @@ impl GoogleDrive {
         RemoteFile { path, id: f.id.clone(), size: f.size, modified_ms: f.modified_ms, md5: f.md5.clone() }
     }
 
-    fn full_list(&self) -> Result<Listing> {
+    fn full_list(&self, full_access: bool) -> Result<Listing> {
+        let (notices, adopted) = if full_access { self.adopt()? } else { (vec![], true) };
         let root = self.root_id()?;
         // token first: changes made while we list are then reported by the next incremental call
         let token = self.get_json("/changes/startPageToken", &[])?["startPageToken"].as_str().unwrap_or_default().to_string();
@@ -312,7 +583,8 @@ impl GoogleDrive {
             let q = format!("({}) and trashed = false", batch.iter().map(|i| format!("'{i}' in parents")).collect::<Vec<_>>().join(" or "));
             let mut page: Option<String> = None;
             loop {
-                let mut qq = vec![("q", q.as_str()), ("fields", "nextPageToken,files(id,name,mimeType,size,md5Checksum,modifiedTime,parents,trashed)"), ("pageSize", "1000")];
+                let fields = format!("nextPageToken,files({FIELDS})");
+                let mut qq = vec![("q", q.as_str()), ("fields", fields.as_str()), ("pageSize", "1000")];
                 if let Some(p) = &page {
                     qq.push(("pageToken", p));
                 }
@@ -336,8 +608,8 @@ impl GoogleDrive {
             }
         }
         self.cache.lock().unwrap().folders = folders.clone();
-        let cursor = serde_json::to_string(&Cursor { token, root, folders }).unwrap();
-        Ok(Listing { files, removed_ids: vec![], full: true, cursor: Some(cursor) })
+        let cursor = serde_json::to_string(&Cursor { token, root, folders, adopted }).unwrap();
+        Ok(Listing { files, removed_ids: vec![], full: true, cursor: Some(cursor), notices })
     }
 
     /// Path of folder `id` if it lies inside the library tree (fetching unknown ancestors).
@@ -370,7 +642,7 @@ impl GoogleDrive {
     }
 
     /// Delta since the cursor; None if it cannot be used (expired token, folder removed/renamed).
-    fn changes(&self, cur: Cursor) -> Result<Option<Listing>> {
+    fn changes(&self, cur: Cursor, full_access: bool) -> Result<Option<Listing>> {
         let mut folders = cur.folders;
         let mut outside = HashSet::new();
         let mut upserts: BTreeMap<String, RemoteFile> = BTreeMap::new();
@@ -422,6 +694,10 @@ impl GoogleDrive {
                     continue;
                 };
                 let path = join(&dir, &f.name);
+                if full_access && !f.app {
+                    // another app (Drive for desktop, the web) added something: adopt it while we can
+                    return Ok(None);
+                }
                 if f.mime == FOLDER_MIME {
                     folders.insert(f.id.clone(), path);
                 } else if !f.mime.starts_with("application/vnd.google-apps.") {
@@ -435,8 +711,8 @@ impl GoogleDrive {
             }
         };
         self.cache.lock().unwrap().folders = folders.clone();
-        let cursor = serde_json::to_string(&Cursor { token: new_token, root: cur.root, folders }).unwrap();
-        Ok(Some(Listing { files: upserts.into_values().collect(), removed_ids: removed, full: false, cursor: Some(cursor) }))
+        let cursor = serde_json::to_string(&Cursor { token: new_token, root: cur.root, folders, adopted: cur.adopted }).unwrap();
+        Ok(Some(Listing { files: upserts.into_values().collect(), removed_ids: removed, full: false, cursor: Some(cursor), notices: vec![] }))
     }
 
     // ---- uploads ----
@@ -525,15 +801,24 @@ impl RemoteStore for GoogleDrive {
     }
 
     fn list(&self, cursor: Option<&str>) -> Result<Listing> {
+        let cur = cursor.and_then(|c| serde_json::from_str::<Cursor>(c).ok());
+        if let Some(c) = &cur {
+            let mut cache = self.cache.lock().unwrap();
+            if cache.root_id.is_none() {
+                cache.hint = Some(c.root.clone());
+            }
+        }
         let root = self.root_id()?;
-        if let Some(cur) = cursor.and_then(|c| serde_json::from_str::<Cursor>(c).ok()) {
-            if cur.root == root {
-                if let Some(l) = self.changes(cur)? {
+        // a token from before drive.file: adopt foreign items (once, then whenever one shows up)
+        let full_access = self.auth.has_full_drive_access();
+        if let Some(cur) = cur {
+            if cur.root == root && (cur.adopted || !full_access) {
+                if let Some(l) = self.changes(cur, full_access)? {
                     return Ok(l);
                 }
             }
         }
-        self.full_list()
+        self.full_list(full_access)
     }
 
     fn download(&self, file: &RemoteFile, dest: &Path) -> Result<()> {

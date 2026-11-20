@@ -40,6 +40,9 @@ pub struct Listing {
     pub full: bool,
     /// Opaque; hand it back to the next `list` call to get only what changed.
     pub cursor: Option<String>,
+    /// Things the user should know that are not errors (e.g. files moved aside while Lunta adopted
+    /// a folder for the narrower Google Drive access); the Syncer passes them on in its report.
+    pub notices: Vec<String>,
 }
 
 pub trait RemoteStore: Send + Sync {
@@ -106,7 +109,7 @@ impl RemoteStore for LocalDirRemote {
         let mut files = Vec::new();
         self.walk(&self.root, "", &mut files)?;
         files.sort_by(|a, b| a.path.cmp(&b.path));
-        Ok(Listing { files, removed_ids: vec![], full: true, cursor: None })
+        Ok(Listing { files, removed_ids: vec![], full: true, cursor: None, notices: vec![] })
     }
 
     fn download(&self, file: &RemoteFile, dest: &Path) -> Result<()> {

@@ -7,7 +7,8 @@
 //! `Authenticator::complete`. Tokens go through a `TokenStore`, so each platform keeps them in its
 //! own keychain/keystore; `FileTokenStore` (mode 0600) is the fallback for the CLI.
 //!
-//! Scope: `drive` (see `Scope`). Client id / secret are never compiled in: they come from the
+//! Scope: `drive.file` (see `Scope`): Lunta sees only the files it created and the ones the user
+//! picked for it in Google's file picker (`picker_url`). Client id / secret are never compiled in: they come from the
 //! caller, or the environment variables `LUNTA_GOOGLE_CLIENT_ID` / `LUNTA_GOOGLE_CLIENT_SECRET`.
 
 use super::util::*;
@@ -29,15 +30,16 @@ pub const REVOKE_URI: &str = "https://oauth2.googleapis.com/revoke";
 /// What the app asks Google to let it do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scope {
-    /// `https://www.googleapis.com/auth/drive`: all of the user's files. Needed to share a library
-    /// with a Mac that uses Google Drive for desktop, because those files were not created by this
-    /// app. A *restricted* scope: fine for personal use and for test users of an unverified Google
-    /// Cloud project; publishing the app to the public needs Google's verification and a security
-    /// assessment.
+    /// `https://www.googleapis.com/auth/drive`: all of the user's files. A *restricted* scope (Google's
+    /// verification with a yearly security assessment). The apps no longer ask for it; tokens granted
+    /// by older versions still carry it, and while they do the Drive client moves files Lunta did not
+    /// create into app-created copies (`GoogleDrive`, "adoption"), so nothing is lost when the token is
+    /// replaced by a `File` one. The CLI can still ask for it (`--scope full`).
     Full,
-    /// `https://www.googleapis.com/auth/drive.file`: only files this app created. No verification
-    /// needed, but it cannot see a library made by the Mac or by another install/client id, so it
-    /// only suits a library used solely through the API.
+    /// `https://www.googleapis.com/auth/drive.file` (the default): only files created by this Google
+    /// Cloud project's OAuth clients (the Mac bridge, Android and the CLI share one project) and the
+    /// files the user picked for it in Google's picker. Non-sensitive: no security assessment, no
+    /// "unverified app" screen once the brand is verified.
     File,
 }
 
@@ -66,7 +68,7 @@ impl OAuthClient {
         OAuthClient {
             client_id: client_id.into(),
             client_secret: client_secret.filter(|s| !s.is_empty()),
-            scope: Scope::Full,
+            scope: Scope::File,
             auth_uri: AUTH_URI.into(),
             token_uri: TOKEN_URI.into(),
         }
@@ -94,6 +96,31 @@ impl OAuthClient {
             pkce.challenge,
             urlenc(state)
         )
+    }
+
+    /// Sign-in that shows Google's file picker ("OnePick", the picker for desktop and mobile apps:
+    /// <https://developers.google.com/workspace/drive/picker/guides/desktop-mobile-picker>). The user
+    /// chooses files or folders while consenting; the redirect carries `picked_file_ids` (see
+    /// `picked_file_ids`) next to the usual `code`, and the token then reaches those items. Always
+    /// `drive.file` (the picker accepts no other scope). Needs the Google Picker API enabled in the
+    /// Cloud project; no API key. `file_ids` narrows what the picker shows (empty: everything).
+    ///
+    /// Picking a folder grants that folder, not the files already in it (Google grants `drive.file`
+    /// per item); files Lunta created inside it are visible anyway.
+    pub fn picker_url(&self, redirect_uri: &str, pkce: &Pkce, state: &str, file_ids: &[String]) -> String {
+        let mut u = format!(
+            "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&code_challenge={}&code_challenge_method=S256&state={}&access_type=offline&prompt=consent&trigger_onepick=true&allow_folder_selection=true&allow_multiple=true",
+            self.auth_uri,
+            urlenc(&self.client_id),
+            urlenc(redirect_uri),
+            urlenc(Scope::File.url()),
+            pkce.challenge,
+            urlenc(state)
+        );
+        if !file_ids.is_empty() {
+            u.push_str(&format!("&file_ids={}", urlenc(&file_ids.join(","))));
+        }
+        u
     }
 
     pub fn exchange_code(&self, code: &str, verifier: &str, redirect_uri: &str) -> Result<Tokens> {
@@ -143,6 +170,7 @@ impl OAuthClient {
             access_token: v["access_token"].as_str().unwrap_or_default().to_string(),
             refresh_token: v["refresh_token"].as_str().map(String::from).or_else(|| keep_refresh.map(String::from)),
             expires_at_ms: now_ms() + v["expires_in"].as_i64().unwrap_or(3600) * 1000,
+            scope: v["scope"].as_str().map(String::from),
         })
     }
 }
@@ -187,6 +215,21 @@ pub struct Tokens {
     pub access_token: String,
     pub refresh_token: Option<String>,
     pub expires_at_ms: i64,
+    /// The scopes Google granted (space-separated, from the token response). None in tokens saved
+    /// by versions that did not record it: those always asked for the full `drive` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+}
+
+impl Tokens {
+    /// True if the grant includes the full `drive` scope (or predates recording scopes, when the
+    /// apps always asked for it).
+    pub fn has_full_drive(&self) -> bool {
+        match &self.scope {
+            None => true,
+            Some(s) => s.split_whitespace().any(|x| x == Scope::Full.url()),
+        }
+    }
 }
 
 /// Where the platform keeps the tokens (Keychain, Android Keystore-backed storage, a file).
@@ -317,10 +360,19 @@ impl Authenticator {
     /// Refreshes now (after the API answered 401).
     pub fn force_refresh(&self) -> Result<String> {
         let t = self.current()?.ok_or_else(|| CoreError::Invalid("not connected to Google Drive".into()))?;
-        let n = self.client.refresh(&t)?;
+        let mut n = self.client.refresh(&t)?;
+        if n.scope.is_none() {
+            n.scope = t.scope.clone();
+        }
         self.store.save(&n)?;
         *self.cached.lock().unwrap() = Some(n.clone());
         Ok(n.access_token)
+    }
+
+    /// True if the stored grant is the old full `drive` scope (signed in with an older version).
+    /// Signing in again replaces it with `drive.file`.
+    pub fn has_full_drive_access(&self) -> bool {
+        matches!(self.current(), Ok(Some(t)) if t.has_full_drive())
     }
 
     /// Second half of the flow for callers that run the browser step themselves (Android).
@@ -343,8 +395,18 @@ impl Authenticator {
         self.complete(&code, &pkce.verifier, &redirect)
     }
 
-    /// Revokes the grant at Google (best effort) and forgets the tokens.
+    /// Forgets the tokens on this device. Does **not** revoke the grant at Google: with
+    /// `drive.file`, revoking takes away the app's access to every file it created (for every device
+    /// signed in to the same account, since they share the Cloud project), and signing in again
+    /// would not bring it back. Removing Lunta's access is left to the user's Google account page.
     pub fn disconnect(&self) -> Result<()> {
+        *self.cached.lock().unwrap() = None;
+        self.store.clear()
+    }
+
+    /// Revokes the grant at Google (best effort) and forgets the tokens. See `disconnect` for why
+    /// the apps do not use this.
+    pub fn revoke(&self) -> Result<()> {
         if let Ok(Some(t)) = self.current() {
             let tok = t.refresh_token.unwrap_or(t.access_token);
             let _ = agent()
@@ -352,8 +414,7 @@ impl Authenticator {
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .send(format!("token={}", urlenc(&tok)).as_bytes());
         }
-        *self.cached.lock().unwrap() = None;
-        self.store.clear()
+        self.disconnect()
     }
 }
 
@@ -382,6 +443,18 @@ pub fn parse_redirect(request_line: &str, expect_state: &str) -> Result<Option<S
         (Some(_), _) => Err(CoreError::Invalid("sign-in response had the wrong state; try again".into())),
         _ => Ok(None),
     }
+}
+
+/// The `picked_file_ids` of a picker redirect (`picker_url`), from the URL or its query.
+pub fn picked_file_ids(redirect_url: &str) -> Vec<String> {
+    let query = redirect_url.split_once('?').map(|(_, q)| q).unwrap_or(redirect_url);
+    let query = query.split('#').next().unwrap_or("");
+    query
+        .split('&')
+        .filter_map(|kv| kv.split_once('='))
+        .filter(|(k, _)| *k == "picked_file_ids")
+        .flat_map(|(_, v)| urldec(v).split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect::<Vec<_>>())
+        .collect()
 }
 
 fn wait_for_redirect(listener: &TcpListener, state: &str, timeout: Duration) -> Result<String> {
@@ -441,7 +514,14 @@ mod tests {
         let c = OAuthClient::new("id.apps.googleusercontent.com", None);
         let p = Pkce::from_verifier("v".repeat(43));
         let u = c.authorization_url("http://127.0.0.1:5555", &p, "st");
-        assert!(u.contains("code_challenge_method=S256") && u.contains("scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive&"));
+        assert!(u.contains("code_challenge_method=S256") && u.contains("scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.file&"), "{u}");
+        let full = c.clone().with_scope(Scope::Full).authorization_url("http://127.0.0.1:5555", &p, "st");
+        assert!(full.contains("scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive&"));
+        let pick = c.with_scope(Scope::Full).picker_url("app:/cb", &p, "st", &["a".into(), "b".into()]);
+        assert!(pick.contains("trigger_onepick=true") && pick.contains("allow_folder_selection=true") && pick.contains("file_ids=a%2Cb"), "{pick}");
+        assert!(pick.contains("scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.file&"), "the picker is always drive.file");
+        assert_eq!(picked_file_ids("app:/cb?state=st&code=x&picked_file_ids=id1%2Cid2&scope=s"), vec!["id1", "id2"]);
+        assert!(picked_file_ids("app:/cb?code=x").is_empty());
         assert!(u.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A5555") && u.contains("access_type=offline"));
         assert_eq!(parse_redirect("GET /?code=4%2Fabc&state=st HTTP/1.1", "st").unwrap(), Some("4/abc".into()));
         assert_eq!(parse_redirect("GET /favicon.ico HTTP/1.1", "st").unwrap(), None);
@@ -470,9 +550,14 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let s = FileTokenStore::new(d.path().join("sub/tokens.json"));
         assert_eq!(s.load().unwrap(), None);
-        let t = Tokens { access_token: "a".into(), refresh_token: Some("r".into()), expires_at_ms: 5 };
+        let t = Tokens { access_token: "a".into(), refresh_token: Some("r".into()), expires_at_ms: 5, scope: Some(Scope::File.url().into()) };
         s.save(&t).unwrap();
-        assert_eq!(s.load().unwrap(), Some(t));
+        assert_eq!(s.load().unwrap(), Some(t.clone()));
+        assert!(!t.has_full_drive());
+        // tokens saved before scopes were recorded came from the full scope
+        std::fs::write(&s.path, r#"{"access_token":"a","refresh_token":"r","expires_at_ms":5}"#).unwrap();
+        let old = s.load().unwrap().unwrap();
+        assert!(old.scope.is_none() && old.has_full_drive());
         s.clear().unwrap();
         assert_eq!(s.load().unwrap(), None);
     }

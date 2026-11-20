@@ -5,11 +5,11 @@
 //! lunta-sync sync       --library DIR     one sync round
 //! lunta-sync status     --library DIR     what is pending (no network)
 //! lunta-sync fetch ID   --library DIR     download all files of one paper (lazy mode)
-//! lunta-sync disconnect --library DIR     revoke and forget the tokens
+//! lunta-sync disconnect --library DIR     forget the tokens (--revoke: also revoke the grant at Google)
 //!
 //! options: --state-dir DIR (default LIBRARY/.lunta-sync: tokens, sync state, device id)
 //!          --device ID  --lazy  --folder-name NAME (default Lunta)  --folder-id ID
-//!          --scope full|file  --client-id ID --client-secret S (or LUNTA_GOOGLE_CLIENT_ID / _SECRET)
+//!          --scope file|full (default file; full is the restricted `drive` scope)  --client-id ID --client-secret S (or LUNTA_GOOGLE_CLIENT_ID / _SECRET)
 //!          --remote-dir DIR   use a plain folder as the "remote" instead of Google Drive (testing)
 //! ```
 
@@ -31,7 +31,7 @@ fn parse() -> Args {
     let (mut positional, mut flags) = (vec![], std::collections::HashMap::new());
     while let Some(a) = it.next() {
         if let Some(k) = a.strip_prefix("--") {
-            if k == "lazy" {
+            if k == "lazy" || k == "revoke" {
                 flags.insert(k.into(), "1".into());
             } else {
                 flags.insert(k.into(), it.next().unwrap_or_default());
@@ -68,8 +68,8 @@ fn main() {
     });
 
     let scope = match a.flags.get("scope").map(|s| s.as_str()) {
-        Some("file") => Scope::File,
-        _ => Scope::Full,
+        Some("full") => Scope::Full,
+        _ => Scope::File,
     };
     let auth = || {
         let client = match a.flags.get("client-id") {
@@ -97,7 +97,8 @@ fn main() {
             }
         }
         "disconnect" => {
-            auth().disconnect().unwrap_or_else(|e| fail(e));
+            let au = auth();
+            if a.flags.contains_key("revoke") { au.revoke() } else { au.disconnect() }.unwrap_or_else(|e| fail(e));
             println!("Disconnected.");
         }
         _ => {
@@ -129,6 +130,9 @@ fn main() {
                     );
                     for c in &r.conflicts {
                         println!("  conflict: {c}");
+                    }
+                    for n in &r.notices {
+                        println!("  note: {n}");
                     }
                     for e in &r.errors {
                         eprintln!("  error: {e}");

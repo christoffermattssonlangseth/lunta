@@ -548,13 +548,24 @@ mod gdrive_mock {
     use super::*;
     use crate::model::now_ms;
 
-    fn drive_for(m: &Mock, expires_in_ms: i64) -> GoogleDrive {
+    const FILE: &str = "https://www.googleapis.com/auth/drive.file";
+
+    /// A client whose stored grant is `scope` (None: a token saved by a version that did not record
+    /// scopes, i.e. the old full `drive` scope).
+    fn drive_with(m: &Mock, expires_in_ms: i64, scope: Option<&str>, root: DriveRoot) -> GoogleDrive {
         let mut client = OAuthClient::new("cid", Some("secret".into()));
         client.token_uri = format!("{}/token", m.addr);
         let store = Arc::new(MemoryTokenStore::default());
-        store.save(&Tokens { access_token: "tok-0".into(), refresh_token: Some("refresh".into()), expires_at_ms: now_ms() + expires_in_ms }).unwrap();
+        let token = m.inner.lock().unwrap().token.clone();
+        store.save(&Tokens { access_token: token, refresh_token: Some("refresh".into()), expires_at_ms: now_ms() + expires_in_ms, scope: scope.map(String::from) }).unwrap();
         let auth = Authenticator::new(client, store);
-        GoogleDrive::new(auth, DriveRoot::default()).with_endpoints(&m.api(), &m.upload_api(), std::time::Duration::from_millis(1))
+        GoogleDrive::new(auth, root).with_endpoints(&m.api(), &m.upload_api(), std::time::Duration::from_millis(1))
+    }
+
+    /// The protocol tests: a drive.file token, and a mock that shows everything (so `put` stands in
+    /// for any other device writing into the folder).
+    fn drive_for(m: &Mock, expires_in_ms: i64) -> GoogleDrive {
+        drive_with(m, expires_in_ms, Some(FILE), DriveRoot::default())
     }
 
     fn dev(w: &World, name: &str, m: &Mock) -> Dev {
@@ -664,7 +675,7 @@ mod gdrive_mock {
         let mut client = OAuthClient::new("cid", None);
         client.token_uri = format!("{}/token", m.addr);
         let store = Arc::new(MemoryTokenStore::default());
-        store.save(&Tokens { access_token: "tok-0".into(), refresh_token: Some("r".into()), expires_at_ms: now_ms() + 3_600_000 }).unwrap();
+        store.save(&Tokens { access_token: "tok-0".into(), refresh_token: Some("r".into()), expires_at_ms: now_ms() + 3_600_000, scope: Some(FILE.into()) }).unwrap();
         let auth = Authenticator::new(client, store);
         let d = GoogleDrive::new(auth, DriveRoot::Named { name: "Nope".into(), create: false }).with_endpoints(&m.api(), &m.upload_api(), std::time::Duration::from_millis(1));
         let e = d.list(None).unwrap_err();
@@ -675,13 +686,208 @@ mod gdrive_mock {
         ph.sync();
         assert_eq!(m.read("smart-folders.json").unwrap(), b"[]");
     }
+
+    // ---- drive.file: only what Lunta created, or the user picked, is visible ----
+
+    fn file_scope_dev(w: &World, name: &str, m: &Mock) -> Dev {
+        w.api_with(name, Box::new(drive_with(m, 3_600_000, Some(FILE), DriveRoot::default())), false)
+    }
+
+    fn try_sync(d: &Dev) -> Result<SyncReport> {
+        d.syncer.as_ref().unwrap().sync_now()
+    }
+
+    #[test]
+    fn drive_file_new_library_is_all_app_created() {
+        let m = Mock::start();
+        m.inner.lock().unwrap().file_scope = true;
+        let w = World::new();
+        let ph = file_scope_dev(&w, "phone", &m);
+        let p = ph.lib.add_paper(meta("New", "10.1/new"), Some(b"%PDF new".to_vec()), None, None).unwrap();
+        ph.lib.save_annotation(note(&p.id, "hi")).unwrap();
+        let r = ph.sync();
+        assert!(r.uploaded >= 2 && r.notices.is_empty(), "{r:?}");
+        let all = m.everything();
+        assert!(all.iter().any(|(p, _)| p == "Lunta/ops/phone.jsonl"), "{all:?}");
+        assert!(all.iter().all(|(_, app)| *app), "everything was made through the API: {all:?}");
+        // a second device signed in with drive.file finds the folder by name and gets everything
+        let tab = file_scope_dev(&w, "tablet", &m);
+        tab.sync();
+        assert_eq!(tab.titles(), vec!["New"]);
+        assert_eq!(tab.lib.annotations(p.id.clone()).len(), 1);
+    }
+
+    #[test]
+    fn drive_file_existing_library_is_found_by_its_id_even_when_renamed() {
+        let m = Mock::start();
+        m.inner.lock().unwrap().file_scope = true;
+        let w = World::new();
+        let a = file_scope_dev(&w, "a", &m);
+        a.lib.add_paper(meta("Kept", "10.1/kept"), Some(b"%PDF".to_vec()), None, None).unwrap();
+        a.sync();
+        let b = file_scope_dev(&w, "b", &m);
+        b.sync();
+        assert_eq!(b.titles(), vec!["Kept"]);
+        // the user renames the folder in Drive: both keep syncing with it (by id, not by name)
+        let root = m.id_of("Lunta").unwrap();
+        {
+            let mut g = m.inner.lock().unwrap();
+            g.files.iter_mut().find(|f| f.id == root).unwrap().name = "Lunta library".into();
+            g.log.push(root.clone());
+        }
+        let b2 = w.api_with("b", Box::new(drive_with(&m, 3_600_000, Some(FILE), DriveRoot::default())), false); // restarted app
+        b2.lib.add_paper(meta("After rename", "10.1/after"), None, None, None).unwrap();
+        let r = b2.sync();
+        assert!(r.uploaded >= 1, "{r:?}");
+        a.sync();
+        assert_eq!(a.titles(), vec!["After rename", "Kept"]);
+        assert!(m.everything().iter().all(|(p, _)| !p.starts_with("Lunta/")), "no second \"Lunta\" folder was created");
+    }
+
+    #[test]
+    fn drive_file_foreign_folder_needs_the_picker_and_picking_a_folder_is_not_enough() {
+        let m = Mock::start();
+        // a library put into Drive by another app (Drive for desktop, the web)
+        m.put("ops/mac.jsonl", b"{\"at\":1}\n", 1_700_000_000_000);
+        m.put("papers/p1/paper.pdf", b"pdf one", 1_700_000_000_000);
+        let root = m.id_of("Lunta").unwrap();
+        m.inner.lock().unwrap().file_scope = true;
+        let w = World::new();
+
+        // known by id (synced before, or chosen): not visible -> the "Choose your Lunta folder" error
+        let d = drive_with(&m, 3_600_000, Some(FILE), DriveRoot::Id(root.clone()));
+        let e = d.list(None).unwrap_err();
+        assert!(is_folder_not_visible(&e.to_string()), "{e}");
+        assert!(ffi::drive_folder_not_visible(e.to_string()));
+
+        // the user picks the folder: it opens, but the files already in it are still not granted
+        m.pick(&[root.clone()]);
+        let file = m.id_of("Lunta/ops/mac.jsonl").unwrap();
+        assert_eq!(d.first_folder(&[file, root.clone()]).unwrap(), Some((root.clone(), "Lunta".to_string())), "the picked folder among the ids");
+        let ph = w.api_with("phone", Box::new(drive_with(&m, 3_600_000, Some(FILE), DriveRoot::Id(root.clone()))), false);
+        let r = ph.sync();
+        assert_eq!(r.downloaded, 0, "{r:?}");
+        // picking the files too (multi-select in the picker) grants them
+        let ids: Vec<String> = ["Lunta/ops/mac.jsonl", "Lunta/papers/p1/paper.pdf", "Lunta/ops", "Lunta/papers", "Lunta/papers/p1"].iter().map(|p| m.id_of(p).unwrap()).collect();
+        m.pick(&ids);
+        let ph = w.api_with("phone2", Box::new(drive_with(&m, 3_600_000, Some(FILE), DriveRoot::Id(root.clone()))), false);
+        let r = ph.sync();
+        assert_eq!(r.downloaded, 2, "{r:?}");
+        assert_eq!(read(&ph.root.join("papers/p1/paper.pdf")), b"pdf one");
+    }
+
+    #[test]
+    fn drive_file_lost_folder_is_reported_not_replaced() {
+        let m = Mock::start();
+        m.inner.lock().unwrap().file_scope = true;
+        let w = World::new();
+        let ph = file_scope_dev(&w, "phone", &m);
+        ph.lib.add_paper(meta("One", "10.1/one"), None, None, None).unwrap();
+        ph.sync();
+        // access to the folder is gone (made by another app / access removed): no new empty folder
+        m.inner.lock().unwrap().files.iter_mut().filter(|f| f.app).for_each(|f| f.app = false);
+        drop(ph);
+        let ph = file_scope_dev(&w, "phone", &m); // the app starts again with its saved sync state
+        let e = try_sync(&ph).unwrap_err();
+        assert!(is_folder_not_visible(&e.to_string()), "{e}");
+        assert_eq!(m.everything().iter().filter(|(p, _)| p == "Lunta").count(), 1);
+    }
+
+    #[test]
+    fn migration_adopts_foreign_files_with_the_old_token_and_deletes_nothing() {
+        let m = Mock::start();
+        // the library as Drive for desktop (or the web) made it: nothing in it is app-created
+        m.put("ops/mac.jsonl", b"{\"at\":1}\n", 1_700_000_000_000);
+        m.put("papers/p1/paper.pdf", b"pdf one", 1_700_000_000_000);
+        m.put("smart-folders.json", b"[]", 1_700_000_000_000);
+        let w = World::new();
+
+        // an Android phone signed in with the old full scope (token from before scopes were saved)
+        let ph = w.api_with("phone", Box::new(drive_with(&m, 3_600_000, None, DriveRoot::default())), false);
+        let r = ph.sync();
+        assert!(r.errors.is_empty(), "{r:?}");
+        assert_eq!(r.downloaded, 3, "{r:?}");
+        assert!(r.notices.first().is_some_and(|n| n.contains("3 file(s)") && n.contains("originals from before the update")), "{r:?}");
+        let all = m.everything();
+        let inside: Vec<_> = all.iter().filter(|(p, _)| p == "Lunta" || p.starts_with("Lunta/")).collect();
+        assert!(inside.iter().all(|(_, app)| *app), "everything in the library is app-created now: {all:?}");
+        // the originals are kept, same content, in the backup folder (the old folder, renamed)
+        let backup = "Lunta (originals from before the update)";
+        assert_eq!(m.read_full(&format!("{backup}/papers/p1/paper.pdf")).unwrap(), b"pdf one");
+        assert_eq!(m.read_full(&format!("{backup}/ops/mac.jsonl")).unwrap(), b"{\"at\":1}\n");
+        assert_eq!(m.read_full(&format!("{backup}/smart-folders.json")).unwrap(), b"[]");
+        assert!(m.inner.lock().unwrap().files.iter().all(|f| !f.trashed), "nothing deleted");
+        // same names, folders, times and content in the library
+        assert_eq!(m.read("papers/p1/paper.pdf").unwrap(), b"pdf one");
+        assert_eq!(util::file_sig(&ph.root.join("papers/p1/paper.pdf")).unwrap().1, 1_700_000_000_000);
+
+        // next sync: incremental, nothing to transfer although the ids changed
+        let lists = m.count("GET /files");
+        let r = ph.sync();
+        assert_eq!((r.uploaded, r.downloaded, r.deleted_local, r.deleted_remote), (0, 0, 0, 0), "{r:?}");
+        assert_eq!(m.count("GET /files"), lists, "adopted once: no more listing");
+
+        // still on the old scope, another app adds a paper in a new folder: adopted at once
+        m.put("papers/p2/paper.pdf", b"pdf two", 1_700_000_100_000);
+        let r = ph.sync();
+        assert_eq!(r.downloaded, 1, "{r:?}");
+        assert!(m.everything().iter().filter(|(p, _)| p.starts_with("Lunta/")).all(|(_, app)| *app), "{:?}", m.everything());
+        assert_eq!(m.read_full(&format!("{backup}/papers/p2/paper.pdf")).unwrap(), b"pdf two");
+
+        // the phone writes; then the user signs in again: the token is drive.file from now on
+        ph.lib.add_paper(meta("Phone paper", "10.1/ph"), Some(b"%PDF ph".to_vec()), None, None).unwrap();
+        ph.sync();
+        {
+            let mut g = m.inner.lock().unwrap();
+            g.file_scope = true;
+            g.grant_scope = Some(FILE.into());
+            g.token = "rotated".into(); // 401 -> refresh -> a drive.file token
+        }
+        let r = ph.sync();
+        assert!(r.errors.is_empty() && (r.uploaded, r.downloaded, r.deleted_local) == (0, 0, 0), "{r:?}");
+        // a new device with drive.file sees the whole library
+        let tab = file_scope_dev(&w, "tablet", &m);
+        let r = tab.sync();
+        assert!(r.errors.is_empty(), "{r:?}");
+        assert_eq!(read(&tab.root.join("papers/p1/paper.pdf")), b"pdf one");
+        assert_eq!(read(&tab.root.join("papers/p2/paper.pdf")), b"pdf two");
+        assert_eq!(read(&tab.root.join("ops/mac.jsonl")), b"{\"at\":1}\n");
+        assert_eq!(tab.titles(), vec!["Phone paper"]);
+        // the limit: what another app adds now stays invisible to Lunta
+        m.put("papers/p3/paper.pdf", b"pdf three", 1_700_000_200_000);
+        let r = tab.sync();
+        assert_eq!(r.downloaded, 0, "{r:?}");
+        assert!(!tab.root.join("papers/p3/paper.pdf").exists());
+    }
+
+    #[test]
+    fn migration_inside_an_app_created_library_adopts_only_the_foreign_items() {
+        let m = Mock::start();
+        let w = World::new();
+        // the Mac bridge made the library through the API (old full scope)...
+        let mac = w.api_with("mac", Box::new(drive_with(&m, 3_600_000, None, DriveRoot::default())), false);
+        let p = mac.lib.add_paper(meta("Bridged", "10.1/b"), Some(b"%PDF b".to_vec()), None, None).unwrap();
+        let r = mac.sync();
+        assert!(r.notices.is_empty(), "nothing to adopt: {r:?}");
+        let root = m.id_of("Lunta").unwrap();
+        // ...and the user dropped a PDF into the paper's folder by hand
+        m.put(&format!("papers/{}/extra.pdf", p.id), b"dropped", 1_700_000_000_000);
+        let r = mac.sync();
+        assert!(r.notices.first().is_some_and(|n| n.contains("1 file(s)")), "{r:?}");
+        assert_eq!(m.id_of("Lunta").unwrap(), root, "an app-created library folder stays");
+        assert_eq!(m.read(&format!("papers/{}/extra.pdf", p.id)).unwrap(), b"dropped");
+        assert_eq!(m.read_full(&format!("Lunta (originals from before the update)/papers/{}/extra.pdf", p.id)).unwrap(), b"dropped");
+        assert!(m.everything().iter().filter(|(p, _)| p.starts_with("Lunta/")).all(|(_, app)| *app));
+    }
 }
 
 // ---- real Google Drive (needs credentials; run with `cargo test --features drive -- --ignored`) ----
 //
 // LUNTA_GOOGLE_CLIENT_ID / LUNTA_GOOGLE_CLIENT_SECRET: the OAuth client; LUNTA_TEST_TOKEN_FILE: a tokens
 // file made by `lunta-sync connect` (state-dir/google-tokens.json); LUNTA_TEST_DRIVE_FOLDER: id of an
-// empty scratch folder in Drive (all test files are created inside it).
+// empty scratch folder in Drive that Lunta can see (all test files are created inside it). With the
+// drive.file scope that folder must be made by Lunta (e.g. `lunta-sync sync --folder-name lunta-scratch`
+// on an empty library) or chosen in the picker. Never point it at a real library.
 
 mod real_drive {
     use super::*;

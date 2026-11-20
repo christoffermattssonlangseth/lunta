@@ -1,6 +1,11 @@
 //! A small in-memory imitation of the parts of the Drive v3 API the client uses, served on 127.0.0.1.
 //! Good enough to exercise request shapes, listing, `changes`, multipart/resumable uploads, token
 //! refresh and retries without credentials. (Real Drive is covered by the #[ignore]d tests.)
+//!
+//! `drive.file` is imitated too: every item remembers whether the API created it (`app`) or the user
+//! picked it (`picked`); with `file_scope` on, nothing else is visible to the client (listing,
+//! metadata, changes, downloads, updates), as with a real `drive.file` token. Items written with
+//! `put` are "foreign", like files Google Drive for desktop or the web put into the folder.
 
 use super::util::*;
 use regex::Regex;
@@ -21,6 +26,16 @@ pub struct MFile {
     pub data: Vec<u8>,
     pub modified: i64,
     pub trashed: bool,
+    /// created through the API (by "this Cloud project")
+    pub app: bool,
+    /// chosen by the user in the picker
+    pub picked: bool,
+}
+
+impl MFile {
+    fn authorized(&self) -> bool {
+        self.app || self.picked
+    }
 }
 
 #[derive(Default)]
@@ -35,6 +50,16 @@ pub struct Inner {
     /// accepted access token; anything else gets 401
     pub token: String,
     pub tokens_issued: u32,
+    /// the client's token is drive.file: only `app`/`picked` items exist for it
+    pub file_scope: bool,
+    /// `scope` returned by the token endpoint (None: omitted, like some refresh answers)
+    pub grant_scope: Option<String>,
+}
+
+impl Inner {
+    fn visible(&self, f: &MFile) -> bool {
+        !self.file_scope || f.authorized() || f.id == "ROOT"
+    }
 }
 
 #[derive(Clone)]
@@ -48,7 +73,7 @@ impl Mock {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = format!("http://{}", l.local_addr().unwrap());
         let inner = Arc::new(Mutex::new(Inner { token: "tok-0".into(), ..Default::default() }));
-        inner.lock().unwrap().files.push(MFile { id: "ROOT".into(), name: "My Drive".into(), parents: vec![], mime: FOLDER.into(), data: vec![], modified: 0, trashed: false });
+        inner.lock().unwrap().files.push(MFile { id: "ROOT".into(), name: "My Drive".into(), parents: vec![], mime: FOLDER.into(), data: vec![], modified: 0, trashed: false, app: false, picked: false });
         let m = Mock { inner: inner.clone(), addr: addr.clone() };
         let m2 = m.clone();
         std::thread::spawn(move || {
@@ -95,7 +120,7 @@ impl Mock {
             }
             None => {
                 let id = Self::new_id(&mut g);
-                g.files.push(MFile { id: id.clone(), name: name.into(), parents: vec![parent], mime: "application/octet-stream".into(), data: data.to_vec(), modified, trashed: false });
+                g.files.push(MFile { id: id.clone(), name: name.into(), parents: vec![parent], mime: "application/octet-stream".into(), data: data.to_vec(), modified, trashed: false, app: false, picked: false });
                 id
             }
         };
@@ -107,12 +132,13 @@ impl Mock {
             return f.id.clone();
         }
         let id = Self::new_id(g);
-        g.files.push(MFile { id: id.clone(), name: name.into(), parents: vec![parent.into()], mime: FOLDER.into(), data: vec![], modified: 1, trashed: false });
+        g.files.push(MFile { id: id.clone(), name: name.into(), parents: vec![parent.into()], mime: FOLDER.into(), data: vec![], modified: 1, trashed: false, app: false, picked: false });
         g.log.push(id.clone());
         id
     }
 
-    pub fn path_of(g: &Inner, f: &MFile) -> String {
+    /// Full path from My Drive ("Lunta/papers/p1/paper.pdf").
+    pub fn full_path(g: &Inner, f: &MFile) -> String {
         let mut parts = vec![f.name.clone()];
         let mut cur = f.parents.first().cloned();
         while let Some(p) = cur {
@@ -124,32 +150,65 @@ impl Mock {
             cur = pf.parents.first().cloned();
         }
         parts.reverse();
-        parts[1..].join("/") // drop the "Lunta" level
+        parts.join("/")
+    }
+
+    /// Path inside the "Lunta" folder (None for anything elsewhere).
+    pub fn path_of(g: &Inner, f: &MFile) -> Option<String> {
+        Self::full_path(g, f).strip_prefix("Lunta/").map(String::from)
     }
 
     pub fn read(&self, path: &str) -> Option<Vec<u8>> {
         let g = self.inner.lock().unwrap();
-        g.files.iter().find(|f| f.mime != FOLDER && !f.trashed && Self::path_of(&g, f) == path).map(|f| f.data.clone())
+        g.files.iter().find(|f| f.mime != FOLDER && !f.trashed && Self::path_of(&g, f).as_deref() == Some(path)).map(|f| f.data.clone())
     }
 
     pub fn trash(&self, path: &str) {
         let mut g = self.inner.lock().unwrap();
-        let id = g.files.iter().find(|f| !f.trashed && f.mime != FOLDER && Self::path_of(&g, f) == path).unwrap().id.clone();
+        let id = g.files.iter().find(|f| !f.trashed && f.mime != FOLDER && Self::path_of(&g, f).as_deref() == Some(path)).unwrap().id.clone();
         g.files.iter_mut().find(|f| f.id == id).unwrap().trashed = true;
         g.log.push(id);
     }
 
     pub fn paths(&self) -> Vec<String> {
         let g = self.inner.lock().unwrap();
-        let mut v: Vec<String> = g.files.iter().filter(|f| f.mime != FOLDER && !f.trashed).map(|f| Self::path_of(&g, f)).collect();
+        let mut v: Vec<String> = g.files.iter().filter(|f| f.mime != FOLDER && !f.trashed).filter_map(|f| Self::path_of(&g, f)).collect();
         v.sort();
         v
+    }
+
+    /// Every non-trashed file and folder in My Drive by full path, with whether the app may see it.
+    pub fn everything(&self) -> Vec<(String, bool)> {
+        let g = self.inner.lock().unwrap();
+        let mut v: Vec<(String, bool)> = g.files.iter().filter(|f| f.id != "ROOT" && !f.trashed).map(|f| (Self::full_path(&g, f), f.authorized())).collect();
+        v.sort();
+        v
+    }
+
+    /// Content of the non-trashed file at a full path (`everything`'s form).
+    pub fn read_full(&self, full: &str) -> Option<Vec<u8>> {
+        let g = self.inner.lock().unwrap();
+        g.files.iter().find(|f| f.mime != FOLDER && !f.trashed && Self::full_path(&g, f) == full).map(|f| f.data.clone())
+    }
+
+    /// Id of the non-trashed item at a full path.
+    pub fn id_of(&self, full: &str) -> Option<String> {
+        let g = self.inner.lock().unwrap();
+        g.files.iter().find(|f| f.id != "ROOT" && !f.trashed && Self::full_path(&g, f) == full).map(|f| f.id.clone())
+    }
+
+    /// The user chose these items in Google's picker.
+    pub fn pick(&self, ids: &[String]) {
+        let mut g = self.inner.lock().unwrap();
+        for f in g.files.iter_mut().filter(|f| ids.contains(&f.id)) {
+            f.picked = true;
+        }
     }
 
     // ---- HTTP ----
 
     fn meta(f: &MFile) -> Value {
-        let mut v = json!({"id": f.id, "name": f.name, "mimeType": f.mime, "parents": f.parents, "trashed": f.trashed, "modifiedTime": format_rfc3339(f.modified)});
+        let mut v = json!({"id": f.id, "name": f.name, "mimeType": f.mime, "parents": f.parents, "trashed": f.trashed, "modifiedTime": format_rfc3339(f.modified), "isAppAuthorized": f.authorized()});
         if f.mime != FOLDER {
             v["size"] = json!(f.data.len().to_string());
             v["md5Checksum"] = json!(md5_bytes(&f.data));
@@ -210,14 +269,41 @@ impl Mock {
         if path == "/token" {
             g.tokens_issued += 1;
             g.token = format!("tok-{}", g.tokens_issued);
-            return j(200, json!({"access_token": g.token, "expires_in": 3600}));
+            let mut v = json!({"access_token": g.token, "expires_in": 3600});
+            if let Some(sc) = &g.grant_scope {
+                v["scope"] = json!(sc);
+            }
+            return j(200, v);
         }
         if h.get("authorization").map(|a| a.as_str()) != Some(&format!("Bearer {}", g.token)) {
             return j(401, json!({"error": {"message": "Invalid Credentials"}}));
         }
         let path = path.trim_start_matches("/upload").trim_start_matches("/drive/v3");
         let now = crate::model::now_ms();
+        // drive.file: items the app may not see do not exist for it
+        if let Some(id) = path.strip_prefix("/files/").map(|r| r.split('/').next().unwrap_or("")) {
+            if let Some(f) = g.files.iter().find(|f| f.id == id) {
+                if !g.visible(f) {
+                    return j(404, json!({"error": {"message": format!("File not found: {id}.")}}));
+                }
+            }
+        }
         match (method, path) {
+            ("POST", p) if p.starts_with("/files/") && p.ends_with("/copy") => {
+                let src = p[7..p.len() - 5].to_string();
+                let v: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
+                let Some(orig) = g.files.iter().find(|f| f.id == src).cloned() else { return j(404, json!({"error": {"message": "File not found"}})) };
+                let id = Self::new_id(&mut g);
+                let parents = match v["parents"].as_array() {
+                    Some(a) => a.iter().map(|p| if p == "root" { "ROOT".to_string() } else { p.as_str().unwrap().to_string() }).collect(),
+                    None => orig.parents.clone(),
+                };
+                let modified = v["modifiedTime"].as_str().and_then(parse_rfc3339).unwrap_or(now);
+                let name = v["name"].as_str().map(String::from).unwrap_or_else(|| format!("Copy of {}", orig.name));
+                g.files.push(MFile { id: id.clone(), name, parents, mime: orig.mime.clone(), data: orig.data.clone(), modified, trashed: false, app: true, picked: false });
+                g.log.push(id.clone());
+                j(200, Self::meta(g.files.iter().find(|f| f.id == id).unwrap()))
+            }
             ("GET", "/changes/startPageToken") => j(200, json!({"startPageToken": g.log.len().to_string()})),
             ("GET", "/changes") => {
                 let from: usize = q["pageToken"].parse().unwrap_or(usize::MAX);
@@ -228,9 +314,9 @@ impl Mock {
                 let changes: Vec<Value> = g.log[from..]
                     .iter()
                     .filter(|id| seen.insert((*id).clone()))
-                    .map(|id| {
+                    .filter_map(|id| {
                         let f = g.files.iter().find(|f| &f.id == id).unwrap();
-                        json!({"fileId": id, "removed": false, "file": Self::meta(f)})
+                        g.visible(f).then(|| json!({"fileId": id, "removed": false, "file": Self::meta(f)}))
                     })
                     .collect();
                 j(200, json!({"changes": changes, "newStartPageToken": g.log.len().to_string()}))
@@ -243,7 +329,7 @@ impl Mock {
                 let files: Vec<Value> = g
                     .files
                     .iter()
-                    .filter(|f| f.id != "ROOT" && !f.trashed)
+                    .filter(|f| f.id != "ROOT" && !f.trashed && g.visible(f))
                     .filter(|f| parents.is_empty() || f.parents.iter().any(|p| parents.contains(p) || (p == "ROOT" && parents.contains(&"root".to_string()))))
                     .filter(|f| name.as_ref().is_none_or(|n| &f.name == n))
                     .filter(|f| !folder_only || f.mime == FOLDER)
@@ -253,7 +339,7 @@ impl Mock {
             }
             ("GET", p) if p.starts_with("/files/") => {
                 let id = &p[7..];
-                match g.files.iter().find(|f| f.id == id) {
+                match g.files.iter().find(|f| f.id == id && g.visible(f)) {
                     None => j(404, json!({"error": {"message": "File not found"}})),
                     Some(f) if q.get("alt").map(|a| a.as_str()) == Some("media") => (200, vec![], f.data.clone()),
                     Some(f) => j(200, Self::meta(f)),
@@ -264,14 +350,32 @@ impl Mock {
                 if method == "POST" {
                     let id = Self::new_id(&mut g);
                     let parents: Vec<String> = v["parents"].as_array().unwrap().iter().map(|p| if p == "root" { "ROOT".to_string() } else { p.as_str().unwrap().to_string() }).collect();
-                    g.files.push(MFile { id: id.clone(), name: v["name"].as_str().unwrap().into(), parents, mime: v["mimeType"].as_str().unwrap_or("application/octet-stream").into(), data: vec![], modified: now, trashed: false });
+                    g.files.push(MFile { id: id.clone(), name: v["name"].as_str().unwrap().into(), parents, mime: v["mimeType"].as_str().unwrap_or("application/octet-stream").into(), data: vec![], modified: now, trashed: false, app: true, picked: false });
                     g.log.push(id.clone());
                     j(200, Self::meta(g.files.iter().find(|f| f.id == id).unwrap()))
                 } else {
                     let id = path[7..].to_string();
+                    let map = |p: &str| if p == "root" { "ROOT".to_string() } else { p.to_string() };
+                    let add = q.get("addParents").map(|p| map(p));
+                    let remove = q.get("removeParents").map(|p| map(p));
+                    if let Some(a) = &add {
+                        // the new parent must exist for the app too
+                        if !g.files.iter().any(|f| &f.id == a && g.visible(f)) {
+                            return j(404, json!({"error": {"message": format!("File not found: {a}.")}}));
+                        }
+                    }
                     let f = g.files.iter_mut().find(|f| f.id == id).unwrap();
                     if v["trashed"] == json!(true) {
                         f.trashed = true;
+                    }
+                    if let Some(n) = v["name"].as_str() {
+                        f.name = n.into();
+                    }
+                    if let Some(r) = remove {
+                        f.parents.retain(|p| *p != r);
+                    }
+                    if let Some(a) = add {
+                        f.parents.push(a);
                     }
                     let m = Self::meta(f);
                     g.log.push(id);
@@ -344,7 +448,7 @@ impl Mock {
             None => {
                 let id = Self::new_id(g);
                 let parents = meta["parents"].as_array().unwrap().iter().map(|p| p.as_str().unwrap().to_string()).collect();
-                g.files.push(MFile { id: id.clone(), name: meta["name"].as_str().unwrap().into(), parents, mime: "application/octet-stream".into(), data, modified, trashed: false });
+                g.files.push(MFile { id: id.clone(), name: meta["name"].as_str().unwrap().into(), parents, mime: "application/octet-stream".into(), data, modified, trashed: false, app: true, picked: false });
                 id
             }
         };
