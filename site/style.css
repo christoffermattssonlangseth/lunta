@@ -300,10 +300,6 @@ p:last-child { margin-bottom: 0; }
 .screen.read { background: #fffdf9; color: #1d1d1d; padding: 0 calc(var(--pw) * .06); font-family: var(--font-read); font-size: calc(var(--pw) * .052); line-height: 1.52; text-align: left; }
 .read .status { display: flex; justify-content: space-between; align-items: center; padding: calc(var(--pw) * .052) calc(var(--pw) * .05) 0; font: 600 calc(var(--pw) * .042)/1 var(--font-body); }
 .read .status i { width: calc(var(--pw) * .1); height: calc(var(--pw) * .04); border-radius: 3px; background: #1d1d1d; }
-.read .toolbar { display: flex; justify-content: space-between; margin: calc(var(--pw) * .06) 0 calc(var(--pw) * .05); }
-.read .toolbar span { height: calc(var(--pw) * .1); border-radius: 999px; background: #f2f2f0; border: 1px solid #e6e4df; }
-.read .toolbar span:first-child { width: calc(var(--pw) * .1); }
-.read .toolbar span:last-child { width: calc(var(--pw) * .5); background: linear-gradient(90deg, transparent 12%, #2a6478 12% 17%, transparent 17% 32%, #2a6478 32% 37%, transparent 37% 52%, #2a6478 52% 57%, transparent 57% 72%, #2a6478 72% 77%, transparent 77%) 0 50% / 100% 20% no-repeat, #f2f2f0; }
 .read h4 { font: 700 calc(var(--pw) * .068)/1.2 var(--font-body); letter-spacing: -.01em; color: #111; margin: 0 0 .5em; }
 .read p { margin: 0 0 .8em; hyphens: auto; }
 .read sup { font-size: .62em; color: #2a6478; text-decoration: underline; text-underline-offset: 1px; }
