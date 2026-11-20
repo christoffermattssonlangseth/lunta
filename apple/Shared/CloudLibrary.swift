@@ -1,7 +1,9 @@
 import Foundation
 
-/// Where the library lives: the app's iCloud Drive container when iCloud is available, otherwise a
-/// local folder. The layout is sync-safe (see core/src/store.rs), so both devices can write to it.
+/// Where the library lives: where the user chose (LibraryStorage, StorageDecision.swift), or, for
+/// people who used Lunta before the choice existed, the app's iCloud Drive container when iCloud is
+/// available, otherwise a local folder. The layout is sync-safe (see core/src/store.rs), so every
+/// device can write to it.
 enum CloudLibrary {
     static let containerID = "iCloud.com.cmlangseth.margins"
 
@@ -10,9 +12,28 @@ enum CloudLibrary {
             .appendingPathComponent("Margins/Library", isDirectory: true)
     }
 
+    /// The Google Drive library's folder on this device (synced by DriveLibrarySync.swift).
+    static var driveURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Margins/DriveLibrary", isDirectory: true)
+    }
+
+    /// The library folder in iCloud Drive, or nil when iCloud isn't available (blocks: off the main thread).
+    static func iCloudURL() -> URL? {
+        FileManager.default.url(forUbiquityContainerIdentifier: containerID)?
+            .appendingPathComponent("Documents/Library", isDirectory: true)
+    }
+
     /// Resolves the library folder. Blocks on the first iCloud call, so run it off the main thread.
-    /// On first use with iCloud, an existing local library is copied into iCloud (the local copy is kept).
+    /// The place the user chose; without a choice (or with iCloud chosen), iCloud when it's available,
+    /// else the local folder. On first use with iCloud, an existing local library is copied into
+    /// iCloud (the local copy is kept).
     static func resolve() -> (url: URL, inCloud: Bool) {
+        switch LibraryStorage.stored {
+        case .device?: return (localURL, false)
+        case .googleDrive?: return (driveURL, false)
+        case .iCloud?, nil: break
+        }
         guard let container = FileManager.default.url(forUbiquityContainerIdentifier: containerID) else {
             return (localURL, false)
         }
@@ -21,7 +42,7 @@ enum CloudLibrary {
         return (lib, true)
     }
 
-    private static func hasLogs(_ lib: URL) -> Bool {
+    static func hasLogs(_ lib: URL) -> Bool {
         let ops = (try? FileManager.default.contentsOfDirectory(atPath: lib.appendingPathComponent("ops").path)) ?? []
         return ops.contains { $0.hasSuffix(".jsonl") || $0.hasSuffix(".jsonl.icloud") }
     }

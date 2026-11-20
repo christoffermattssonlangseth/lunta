@@ -180,7 +180,7 @@ struct LibraryView: View {
                         ContentUnavailableView.search(text: model.query)
                     } else if model.counts.all == 0 {
                         ContentUnavailableView("No papers yet", systemImage: "books.vertical",
-                                               description: Text(model.inCloud ? "Your library is syncing from iCloud…" : "Tap + to add a paper by DOI or link, or to import your library from Zotero, Mendeley…"))
+                                               description: Text(EmptyLibraryText.text(model, otherwise: "Tap + to add a paper by DOI or link, or to import your library from Zotero, Mendeley…")))
                     }
                 }
             }
@@ -200,6 +200,7 @@ struct LibraryHome: View {
     @State private var newSmart = false
     @State private var editingSmart: SmartFolder?
     @State private var prompt: NameRequest?
+    @State private var storage = false
 
     var body: some View {
         Group {
@@ -212,6 +213,7 @@ struct LibraryHome: View {
         .navigationTitle("Lunta")
         .namePrompt($prompt)
         .sheet(isPresented: $managing) { ManageFoldersView().environmentObject(model) }
+        .sheet(isPresented: $storage) { LibraryStorageSheet().environmentObject(model) }
         .sheet(isPresented: $newSmart) { SmartFolderEditor(folder: SmartFolder(), isNew: true).environmentObject(model) }
         .sheet(item: $editingSmart) { f in SmartFolderEditor(folder: f).environmentObject(model) }
         .sheet(isPresented: $cleaning) {
@@ -282,6 +284,18 @@ struct LibraryHome: View {
                 ImportMenuItems()
             } label: { Label("Import Library…", systemImage: "square.and.arrow.down.on.square") }
             AppearancePicker().pickerStyle(.menu)
+            Button { storage = true } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Library Storage…")
+                        if LibraryStorage.stored == .googleDrive {
+                            DriveSyncSummary().font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Text(LibraryLocation.current(inCloud: model.inCloud).name).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                } icon: { Image(systemName: StorageText.icon(LibraryLocation.current(inCloud: model.inCloud))) }
+            }
         }
     }
 

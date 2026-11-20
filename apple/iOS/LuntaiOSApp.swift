@@ -16,6 +16,13 @@ struct LuntaiOSApp: App {
             Group {
                 if let model = holder.model {
                     AdaptiveLibrary().environmentObject(model)
+                        .alert(FoundInICloud.title, isPresented: $holder.foundInICloud) {
+                            Button(FoundInICloud.switchButton) { holder.showStorage = true }
+                            Button("OK", role: .cancel) {}
+                        } message: { Text(FoundInICloud.message) }
+                        .sheet(isPresented: $holder.showStorage) { LibraryStorageSheet().environmentObject(model) }
+                } else if let ask = holder.asking {
+                    StorageChoiceView(recommended: ask.recommended, iCloudAvailable: ask.iCloudAvailable) { holder.choose($0) }
                 } else if let error = holder.error {
                     ContentUnavailableView("Can't open the library", systemImage: "exclamationmark.triangle", description: Text(error))
                 } else {
@@ -33,7 +40,10 @@ struct LuntaiOSApp: App {
             .onOpenURL { _ in if let m = holder.model { Task { await m.importShared() } } }
         }
         .onChange(of: phase) { _, p in
-            if p == .active, let m = holder.model { m.refresh(); m.freshenReadingViews(); Task { await m.importShared() } }
+            if p == .active, let m = holder.model {
+                m.refresh(); m.freshenReadingViews(); Task { await m.importShared() }
+                DriveLibrarySync.shared.cameToFront()   // a library in Google Drive: sync unless it just did
+            }
             if p == .background { MorningNotice.schedule() }
         }
         .backgroundTask(.appRefresh(MorningNotice.taskID)) { await MorningNotice.refresh() }
@@ -44,14 +54,92 @@ struct LuntaiOSApp: App {
     }
 }
 
+/// The first-launch question's settings (StorageChoiceView).
+struct StorageAsk: Equatable {
+    var recommended: LibraryStorage
+    var iCloudAvailable: Bool
+}
+
+/// Library Storage (where the library lives, moving it), from the library's list or the
+/// found-in-iCloud alert.
+struct LibraryStorageSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var mover = LibraryMover.shared
+    var body: some View {
+        NavigationStack {
+            LibraryStorageView()
+                .navigationTitle("Library Storage")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { mover.clear(); dismiss() }.disabled(mover.working) } }
+        }
+        .interactiveDismissDisabled(mover.working)
+    }
+}
+
 @MainActor
 final class ModelHolder: ObservableObject {
     @Published var model: LibraryModel?
     @Published var error: String?
     @Published var progress = "Opening library…"
+    /// No library on this device yet: where should it live? (StorageDecision.swift)
+    @Published var asking: StorageAsk?
+    /// A new device found the library in iCloud and opened it: say so once.
+    @Published var foundInICloud = false
+    @Published var showStorage = false
 
     init() {
+        LibraryMover.shared.reopen = { [weak self] _ in Task { await self?.reopen() } }
         Task {
+            let (decision, iCloud) = await LibraryLocation.startupDecision { line in Task { @MainActor in self.progress = line } }
+            switch decision {
+            case .ask(let recommended):
+                asking = StorageAsk(recommended: recommended, iCloudAvailable: iCloud)
+                return   // choose(_:) opens the library
+            case .openFoundInICloud:
+                LibraryStorage.stored = .iCloud
+                foundInICloud = true
+            case .open, .lookInICloud:
+                break
+            }
+            await open()
+        }
+    }
+
+    /// The first-launch answer (for Google Drive, after signing in).
+    func choose(_ s: LibraryStorage) {
+        LibraryStorage.stored = s
+        asking = nil
+        Task { await open() }
+    }
+
+    /// The library moved (Library Storage): open it in its new place. The old model stays on
+    /// screen until the new one is ready.
+    func reopen() async {
+        DriveLibrarySync.shared.stop()
+        let (url, cloud) = await Task.detached { CloudLibrary.resolve() }.value
+        if cloud { await CloudLibrary.prepareLogs(url) { _ in } }
+        do {
+            let lib = try await Task.detached { try LibraryModel.openLibrary(root: url) }.value
+            let m = LibraryModel(lib: lib, root: url, inCloud: cloud)
+            model = m
+            started(m)
+        } catch {
+            LibraryMover.shared.failedToReopen(error.readable)
+        }
+    }
+
+    /// What runs once a library is open.
+    private func started(_ model: LibraryModel) {
+        // the citation card in a reader: add the cited paper (or say it's already there)
+        ExternalLinks.onLunta = { url, web in Task { @MainActor in web.citationDone(await model.paperForCitation(url).label) } }
+        Task { await model.importShared() }
+        WatchCenter.shared.start(model)
+        model.freshenReadingViews()
+        if LibraryStorage.stored == .googleDrive { DriveLibrarySync.shared.start(model) }
+    }
+
+    private func open() async {
+        do {
             let t0 = Date()
             NSLog("Lunta: resolving iCloud container")
             let (url, cloud) = await Task.detached { CloudLibrary.resolve() }.value
@@ -65,10 +153,8 @@ final class ModelHolder: ObservableObject {
                 let m = try await Task.detached { try LibraryModel.openLibrary(root: url) }.value
                 NSLog("Lunta: core opened after %.1fs", Date().timeIntervalSince(t0))
                 model = LibraryModel(lib: m, root: url, inCloud: cloud)
-                // the citation card in a reader: add the cited paper (or say it's already there)
-                if let model { ExternalLinks.onLunta = { url, web in Task { @MainActor in web.citationDone(await model.paperForCitation(url).label) } } }
                 NSLog("Lunta: ready after %.1fs, %d papers", Date().timeIntervalSince(t0), model?.counts.all ?? -1)
-                if let model { Task { await model.importShared() }; WatchCenter.shared.start(model); model.freshenReadingViews() }
+                if let model { started(model) }
                 if ProcessInfo.processInfo.arguments.contains("-testDownload"), let model {
                     // diagnostics: fetch a few reading views from iCloud and report how long it took
                     for p in model.papers.filter(\.hasEpub).prefix(4) {

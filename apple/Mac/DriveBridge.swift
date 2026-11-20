@@ -19,9 +19,9 @@ final class DriveBridge: ObservableObject {
 
     /// The Google OAuth client (an "iOS" client, which allows the app's own redirect scheme; the
     /// Android app uses it too). Not a secret.
-    nonisolated static let clientID = "340661790250-jvrurgnq8d8ctjf4mhq1p4nd9sugh4en.apps.googleusercontent.com"
-    nonisolated static var redirectScheme: String { "com.googleusercontent.apps." + clientID.replacingOccurrences(of: ".apps.googleusercontent.com", with: "") }
-    nonisolated static var redirectURI: String { redirectScheme + ":/oauth2redirect" }
+    nonisolated static var clientID: String { GoogleDriveClient.clientID }
+    nonisolated static var redirectScheme: String { GoogleDriveClient.redirectScheme }
+    nonisolated static var redirectURI: String { GoogleDriveClient.redirectURI }
     static let folderName = "Lunta"
     static let interval: TimeInterval = 5 * 60
 
@@ -58,6 +58,8 @@ final class DriveBridge: ObservableObject {
 
     /// Called once the library is open: resumes syncing if this Mac was connected before.
     func start(_ model: LibraryModel) {
+        // a library that lives in Google Drive syncs itself (DriveLibrarySync): nothing to bridge
+        guard LibraryStorage.stored != .googleDrive else { return }
         self.model = model
         let auth = DriveAuth(clientId: Self.clientID, tokenFile: Self.dir.appendingPathComponent("google-tokens.json").path, fullAccess: false)
         self.auth = auth
@@ -207,13 +209,28 @@ final class DriveBridge: ObservableObject {
     }
 }
 
-/// Lunta › Google Drive for Android…
+/// Lunta › Also Sync with Google Drive… (for an iCloud library; a library kept in Google Drive
+/// syncs by itself, see Library Storage)
 struct DriveBridgeView: View {
     @ObservedObject var bridge = DriveBridge.shared
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Label("Google Drive for Android", systemImage: "externaldrive.badge.icloud").font(.title2.weight(.semibold))
+            Label("Also Sync with Google Drive", systemImage: "externaldrive.badge.icloud").font(.title2.weight(.semibold))
+            if LibraryStorage.stored == .googleDrive {
+                Text("Your library already lives in Google Drive, so there is nothing more to sync here. Where it lives is in Library Storage.")
+                    .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button("Library Storage…") { openWindow(id: "storage") }
+            } else {
+                bridgeBody
+            }
+        }
+        .padding(20)
+        .frame(width: 560)
+    }
+
+    @ViewBuilder private var bridgeBody: some View {
             Text("Your library stays in iCloud for the Mac and the iPhone. This Mac also keeps a copy in a “Lunta” folder in your Google Drive, which the Android app (and Lunta on Windows and Linux) use. Changes go both ways: papers, notes, stars, Must Read, reading positions.")
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             GroupBox {
@@ -227,19 +244,7 @@ struct DriveBridgeView: View {
                         }
                         if bridge.syncing {
                             // "312 of 2676 · upload papers/…": a bar with the count, the file below
-                            if let p = bridge.progress, let m = p.firstMatch(of: /^(\d+) of (\d+) · (.*)$/),
-                               let done = Double(m.1), let total = Double(m.2), total > 0 {
-                                ProgressView(value: done, total: total) {
-                                    Text("\(Int(done).formatted()) of \(Int(total).formatted()) files · \(Int(total - done).formatted()) left")
-                                } currentValueLabel: {
-                                    Text(String(m.3)).lineLimit(1).truncationMode(.middle)
-                                }
-                            } else {
-                                HStack(spacing: 8) {
-                                    ProgressView().controlSize(.small)
-                                    Text(bridge.progress ?? "Syncing…").lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
-                                }
-                            }
+                            SyncProgressLine(progress: bridge.progress)
                             Text("The first sync copies the whole library to Drive, which can take a while.").font(.caption).foregroundStyle(.secondary)
                         } else if let last = bridge.lastSync {
                             Text("Last sync \(last.formatted(.relative(presentation: .named)))\(bridge.lastSummary.map { ": \($0)" } ?? "")")
@@ -267,6 +272,9 @@ struct DriveBridgeView: View {
                             Spacer()
                             Button("Connect Google Drive…") { bridge.connect() }.buttonStyle(.borderedProminent).disabled(bridge.syncing)
                         }
+                        if let note = GoogleDriveClient.unverifiedNote {
+                            Text(note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     if let e = bridge.error { Text(e).foregroundStyle(.red).font(.callout) }
                     if bridge.folderNotVisible {
@@ -275,8 +283,5 @@ struct DriveBridgeView: View {
                 }
                 .padding(6)
             }
-        }
-        .padding(20)
-        .frame(width: 560)
     }
 }

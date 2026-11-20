@@ -19,8 +19,11 @@ struct LuntaApp: App {
                 if let model = holder.model {
                     LibraryWindow().environmentObject(model)
                         .handlesExternalEvents(preferring: ["lunta", "margins"], allowing: ["*"])
+                        .modifier(FoundInICloudAlert(isPresented: $holder.foundInICloud))
+                } else if let ask = holder.asking {
+                    StorageChoiceView(recommended: ask.recommended, iCloudAvailable: ask.iCloudAvailable) { holder.choose($0) }
                 } else {
-                    Text(holder.error ?? "Opening library…").padding()
+                    Text(holder.error ?? holder.progress).padding()
                 }
             }
             .frame(minWidth: 980, minHeight: 600)
@@ -48,7 +51,11 @@ struct LuntaApp: App {
 
         Window("Connect AI Agents", id: "agents") { AgentConnectView().tint(.luntaTeal) }
         Window("Citations in Word & Google Docs", id: "citations") { CitationsView().tint(.luntaTeal) }
-        Window("Google Drive for Android", id: "drive") { DriveBridgeView().tint(.luntaTeal) }
+        Window("Also Sync with Google Drive", id: "drive") { DriveBridgeView().tint(.luntaTeal) }
+            .windowResizability(.contentSize)
+        Window("Library Storage", id: "storage") {
+            if let model = holder.model { LibraryStorageView().environmentObject(model).tint(.luntaTeal) }
+        }
             .windowResizability(.contentSize)
         Window("Clean Up Library", id: "cleanup") {
             if let model = holder.model { NavigationStack { CleanupView() }.environmentObject(model).tint(.luntaTeal) }
@@ -65,21 +72,84 @@ struct LuntaApp: App {
     }
 }
 
+/// A new Mac found the library in iCloud and opened it: say so, with the way to Google Drive instead.
+struct FoundInICloudAlert: ViewModifier {
+    @Binding var isPresented: Bool
+    @Environment(\.openWindow) private var openWindow
+    func body(content: Content) -> some View {
+        content.alert(FoundInICloud.title, isPresented: $isPresented) {
+            Button(FoundInICloud.switchButton) { openWindow(id: "storage") }
+            Button("OK", role: .cancel) {}
+        } message: { Text(FoundInICloud.message) }
+    }
+}
+
+/// The first-launch question's settings (StorageChoiceView).
+struct StorageAsk: Equatable {
+    var recommended: LibraryStorage
+    var iCloudAvailable: Bool
+}
+
 @MainActor
 final class ModelHolder: ObservableObject {
     @Published var model: LibraryModel?
     @Published var error: String?
+    @Published var progress = "Opening library…"
+    /// No library on this Mac yet: where should it live? (StorageDecision.swift)
+    @Published var asking: StorageAsk?
+    /// A new Mac found the library in iCloud and opened it: say so once.
+    @Published var foundInICloud = false
     private var server: ExtensionServer?
     private var citations: CitationServer?
     init() {
+        Task { await start() }
+    }
+
+    private func start() async {
+        LibraryMover.shared.reopen = { text in ModelHolder.restart(after: text) }
+        if LibraryModel.testLibrary == nil {
+            let (decision, iCloud) = await LibraryLocation.startupDecision { line in Task { @MainActor in self.progress = line } }
+            switch decision {
+            case .ask(let recommended):
+                asking = StorageAsk(recommended: recommended, iCloudAvailable: iCloud)
+                return   // choose(_:) opens the library
+            case .openFoundInICloud:
+                LibraryStorage.stored = .iCloud
+                foundInICloud = true
+            case .open, .lookInICloud:
+                break
+            }
+        }
+        await open()
+    }
+
+    /// The first-launch answer (for Google Drive, after signing in).
+    func choose(_ s: LibraryStorage) {
+        LibraryStorage.stored = s
+        asking = nil
         Task { await open() }
+    }
+
+    /// The library moved (Library Storage): say where, and restart Lunta to open it there.
+    static func restart(after text: String) {
+        let alert = NSAlert()
+        alert.messageText = "Your library has moved"
+        alert.informativeText = text
+        alert.addButton(withTitle: "Restart Lunta")
+        alert.runModal()
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$0\"", Bundle.main.bundlePath, String(pid)]
+        try? p.run()
+        NSApp.terminate(nil)
     }
 
     private func open() async {
         let test = LibraryModel.testLibrary
         let (url, cloud) = test != nil ? (test!.appendingPathComponent("Library", isDirectory: true), false)
             : await Task.detached { CloudLibrary.resolve() }.value
-        if cloud { await CloudLibrary.prepareLogs(url) { _ in } }
+        if cloud { await CloudLibrary.prepareLogs(url) { line in Task { @MainActor in self.progress = line } } }
         do {
             let lib = try await Task.detached { try LibraryModel.openLibrary(root: url) }.value
             model = LibraryModel(lib: lib, root: url, inCloud: cloud)
@@ -104,7 +174,12 @@ final class ModelHolder: ObservableObject {
             citations?.start()
             model.watchForOutsideChanges()
             NarrationRenderer.shared.model = model
-            DriveBridge.shared.start(model)   // resumes the Google Drive copy (for Android) if connected
+            LibraryLocation.publishRoot(url)   // where lunta-mcp (AI agents) finds the library
+            if LibraryStorage.stored == .googleDrive {
+                DriveLibrarySync.shared.start(model)   // the library lives in Google Drive: sync it
+            } else {
+                DriveBridge.shared.start(model)   // resumes the copy in Google Drive (Also Sync with Google Drive…) if connected
+            }
             if !ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("-ask") || $0 == "-cleanupReport" || $0 == "-forYouReport" }) {
                 WatchCenter.shared.start(model)
             }
@@ -226,7 +301,8 @@ struct LuntaCommands: Commands {
         CommandGroup(after: .appSettings) {
             Button("Connect AI Agents…") { openWindow(id: "agents") }
             Button("Citations in Word & Google Docs…") { openWindow(id: "citations") }
-            Button("Google Drive for Android…") { openWindow(id: "drive") }
+            Button("Library Storage…") { openWindow(id: "storage") }
+            Button("Also Sync with Google Drive…") { openWindow(id: "drive") }
             Button("Clean Up Library…") { openWindow(id: "cleanup") }
         }
         CommandGroup(after: .newItem) {

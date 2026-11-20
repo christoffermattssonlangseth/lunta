@@ -49,6 +49,8 @@ struct AppearancePicker: View {
 struct AppSettingsView: View {
     var body: some View {
         Form {
+            LibraryStorageSettingRow()
+            Divider().padding(.vertical, 6)
             AppearancePicker()
             Text("System follows your Mac's light or dark mode. The reader's own themes (Paper, Quiet, Black…) are in the reader toolbar.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -65,6 +67,20 @@ struct AppSettingsView: View {
         }
         .padding(24)
         .frame(width: 420)
+    }
+}
+
+/// Settings: where the library is, and the way to Library Storage (moving it).
+struct LibraryStorageSettingRow: View {
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        LabeledContent("Library") {
+            HStack {
+                Text(LibraryStorage.stored?.name ?? "Automatic (iCloud Drive when available)")
+                Spacer()
+                Button("Change…") { openWindow(id: "storage") }
+            }
+        }
     }
 }
 #endif

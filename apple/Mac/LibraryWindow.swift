@@ -290,6 +290,12 @@ struct Sidebar: View {
                     }
                 }
             }
+            if LibraryStorage.stored == .googleDrive {
+                // the library lives in Google Drive: how its sync is going (Library Storage has the details)
+                Section {
+                    DriveSidebarRow()
+                }
+            }
         }
         .listStyle(.sidebar)
 
@@ -834,6 +840,21 @@ struct AddedCard: View {
 
     private func color(_ k: LibraryModel.AddOutcome.Kind) -> Color {
         switch k { case .added: return .luntaTeal; case .attached: return .luntaCopper; case .failed: return .orange }
+    }
+}
+
+/// The Google Drive library's sync, at the bottom of the sidebar; opens Library Storage.
+struct DriveSidebarRow: View {
+    @ObservedObject private var drive = DriveLibrarySync.shared
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        Button { openWindow(id: "storage") } label: {
+            Label { DriveSyncSummary().font(.caption).lineLimit(1) } icon: {
+                if drive.syncing { ProgressView().controlSize(.mini) } else { Image(systemName: "externaldrive.badge.icloud") }
+            }
+        }
+        .buttonStyle(.plain)
+        .help(drive.error ?? "Library Storage…")
     }
 }
 

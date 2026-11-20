@@ -240,7 +240,7 @@ struct iPadLibrary: View {
                         ContentUnavailableView.search(text: model.query)
                     } else if model.counts.all == 0 {
                         ContentUnavailableView("No papers yet", systemImage: "books.vertical",
-                                               description: Text(model.inCloud ? "Your library is syncing from iCloud…" : "Tap + to add a paper by DOI or link or to import your library from Zotero, Mendeley…, or drop a PDF here."))
+                                               description: Text(EmptyLibraryText.text(model, otherwise: "Tap + to add a paper by DOI or link or to import your library from Zotero, Mendeley…, or drop a PDF here.")))
                     }
                 }
             }
