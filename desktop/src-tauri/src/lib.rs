@@ -23,6 +23,7 @@ mod positions;
 mod settings;
 mod smart;
 mod texresolve;
+mod tidy;
 mod updates;
 
 use lunta_core::model::{Annotation, AnnotationKind, CitationStyle, FileKind, Paper, PaperFilter, PaperMeta, SortKey};
@@ -903,6 +904,18 @@ pub fn run() {
             checks::link_published_version,
             checks::keep_preprint,
             checks::save_report,
+            tidy::tidy_report,
+            tidy::tidy_dismiss,
+            tidy::tidy_reset_dismissed,
+            tidy::tidy_merge,
+            tidy::tidy_find_dois,
+            tidy::tidy_apply_dois,
+            tidy::tidy_model_ready,
+            tidy::tidy_topics_ai,
+            tidy::tidy_create_groups,
+            tidy::tidy_apply_tags,
+            tidy::tidy_undo,
+            tidy::outline_make,
             open_book,
             annotations,
             add_highlight,

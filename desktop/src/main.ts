@@ -16,6 +16,8 @@ import { showForYou, hideForYou, forYouCount, setForYouHooks, startForYou, watch
 import { importLibrary, importPdfFolder, makeMissingReadingViews, setImportReload } from './importer';
 import { resolveTexCitations } from './texresolve';
 import { loadUpdates, updatesBadge, updatesBanner, checkMenuItems, paperCheckItems, folderCheckItem, setChecksReload } from './checks';
+import { openTidy, setTidyReload } from './tidy';
+import { outlineDialog, setOutlineOpener } from './outline';
 
 let source: Source = { kind: 'all' };
 let query = '';
@@ -171,7 +173,7 @@ function renderSidebar() {
     ]);
   fill($('#sidebar'),
     h('h4', { text: 'Library' }),
-    place(bibLabel('All Papers', '*'), { kind: 'all' }, s.all, '📚', { onmenu: (e) => menu(e.clientX, e.clientY, [...bibItems('*', 'All Papers'), folderCheckItem(null, 'All Papers')]) }),
+    place(bibLabel('All Papers', '*'), { kind: 'all' }, s.all, '📚', { onmenu: (e) => menu(e.clientX, e.clientY, [...bibItems('*', 'All Papers'), folderCheckItem(null, 'All Papers'), outlineItem({ kind: 'all' }, 'all papers')]) }),
     place('Starred', { kind: 'starred' }, s.starred, '★'),
     place('Must Read', { kind: 'must_read' }, s.must_read, '🔖'),
     place('Unread', { kind: 'unread' }, s.unread, '●'),
@@ -182,7 +184,7 @@ function renderSidebar() {
     h('h4', {}, 'Smart Folders', h('button.mini', { title: 'New smart folder', text: '＋', onclick: () => newSmart() })),
     ...s.smart.map(([id, name]) => place(name, { kind: 'smart', id }, undefined, '⚙', { onmenu: (e) => smartMenu(e, id, name) })),
     s.tags.length ? h('h4', { text: 'Tags' }) : null,
-    ...s.tags.map((t) => place(t, { kind: 'tag', id: t }, undefined, '#')),
+    ...s.tags.map((t) => place(t, { kind: 'tag', id: t }, undefined, '#', { onmenu: (e) => menu(e.clientX, e.clientY, [outlineItem({ kind: 'tag', id: t }, `the papers tagged “${t}”`)]) })),
   );
 }
 
@@ -195,6 +197,8 @@ async function newSmart() {
 
 async function smartMenu(e: MouseEvent, id: string, name: string) {
   menu(e.clientX, e.clientY, [
+    outlineItem({ kind: 'smart', id }, `“${name}”`),
+    '-',
     { label: 'Edit Smart Folder…', action: async () => {
       const f = (await smartApi.list()).find((x) => x.id === id);
       if (f && await editSmart(f, side?.tags || [], side?.folders || [])) reload();
@@ -212,13 +216,21 @@ async function newFolder(parent: string | null) {
   if (name) after(api.createFolder(name, parent));
 }
 
+/** Outline from Highlights… for a place in the sidebar (tidy.ts, outline.ts): its papers' highlights. */
+function outlineItem(s: Source, what: string): MenuItem {
+  return { label: 'Outline from Highlights…', action: async () => {
+    const r = await api.list(s, '', 'added').catch((e) => { status(String(e), 'error'); return null; });
+    if (r) outlineDialog(r.map((x) => x.paper.id), what);
+  } };
+}
+
 function folderMenu(e: MouseEvent, f: Folder) {
   const items: MenuItem[] = [
     { label: 'New Subfolder…', action: () => newFolder(f.id) },
     { label: 'Rename…', action: async () => { const n = await prompt('Rename folder', f.name, '', 'Rename'); if (n) after(api.renameFolder(f.id, n)); } },
   ];
   if (f.parent) items.push({ label: 'Move to Top Level', action: () => after(api.moveFolder(f.id, null)) });
-  items.push('-', ...bibItems(f.id, f.name), folderCheckItem(f.id, f.name));
+  items.push('-', ...bibItems(f.id, f.name), folderCheckItem(f.id, f.name), outlineItem({ kind: 'folder', id: f.id }, `“${f.name}”`));
   const others = side!.folders.filter((x) => x.id !== f.id && x.id !== f.parent);
   if (others.length) items.push('-', ...others.map((o) => ({ label: `Move into “${o.name}”`, action: () => after(api.moveFolder(f.id, o.id)) })));
   items.push('-', {
@@ -321,6 +333,8 @@ function pickedMenu(e: MouseEvent) {
     { label: all((p) => p.read) ? `Mark ${n} as Unread` : `Mark ${n} as Read`, action: () => after(Promise.all(ps.map((p) => api.setRead(p.id, !all((q) => q.read))))) },
     '-',
     ...citeItems(ps.map((p) => p.id)),
+    '-',
+    { label: 'Outline from Highlights…', action: () => outlineDialog(ps.map((p) => p.id), `the ${n} selected papers`) },
     '-',
     { label: `Delete ${n} Papers…`, danger: true, action: () => deletePapers(ps) },
   ]);
@@ -551,10 +565,20 @@ const importItems = (): MenuItem[] => [
   ...checkMenuItems(),
   '-',
   { label: 'Make Missing Reading Views', action: makeMissingReadingViews },
+  { label: 'Tidy Library…', action: openTidy },
+  ...(query.trim() && rows.length ? [{ label: `Outline from Highlights of the ${rows.length} Search Results…`, action: () => outlineDialog(rows.map((r) => r.paper.id), `the search results for “${query.trim()}”`) }] : []),
 ];
 $('#add-more').onclick = () => menuBelow($('#add-more'), importItems());
 setImportReload(() => { reload(); });
 setChecksReload(() => { reload(); });
+setTidyReload(() => { reload(); });
+// an outline's link to a paper opens it in the reader
+setOutlineOpener(async (id) => {
+  const p = await api.paper(id);
+  if (!p) return;
+  if (readerPaper()) await closeReader();
+  read(p, p.has_epub ? 'reading' : 'pdf');
+});
 // Ask about the library (ai.ts), next to Settings; a paper it cites opens in the reader
 $('#settings').before(libraryAskButton());
 setAskOpener(async (id) => {

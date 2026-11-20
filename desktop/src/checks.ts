@@ -119,7 +119,8 @@ async function choice(command: string, id: string) {
   onChange();
 }
 
-async function switchTo(p: Paper, v: PublishedVersion) {
+/** Switch to the Published Version…, after a confirm (also Tidy Library's Published preprints, tidy.ts). */
+export async function switchTo(p: Paper, v: PublishedVersion) {
   const ok = await ask(`The paper's details become the published version's (${v.journal || v.doi}). Highlights, notes, tags and the citation key stay. You can undo this from the details.`,
     { title: 'Switch to the published version?', kind: 'info', okLabel: 'Switch', cancelLabel: 'Cancel' });
   if (!ok) return;

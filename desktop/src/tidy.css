@@ -1,0 +1,31 @@
+/* Tidy Library and Outline from Highlights (tidy.ts, outline.ts) */
+.tidy-modal { width: min(820px, 94vw); }
+.tidy-list .check-section > h4 { position: sticky; top: 0; background: var(--bg); padding: 4px 0; z-index: 1; }
+.tidy-group { padding: 8px 0 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.tidy-reason { font-weight: 600; }
+.tidy-pick { display: flex; gap: 8px; align-items: flex-start; padding: 3px 0; cursor: pointer; }
+.tidy-pick input { margin-top: 3px; }
+.tidy-paper { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.tidy-title { font-weight: 500; }
+.tidy-paper .badge { font-size: 10px; }
+.tidy-head { display: flex; gap: 10px; align-items: center; }
+.tidy-actions { display: flex; gap: 8px; margin-top: 4px; }
+.tidy-row { display: flex; gap: 8px; align-items: flex-start; padding: 3px 0; font-size: 13px; }
+.tidy-row input[type=checkbox] { margin-top: 3px; }
+.tidy-grow { flex: 1; min-width: 0; }
+.tidy-results { margin-top: 4px; padding-left: 6px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.tidy-topic { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.tidy-name { width: 260px; font-size: 13px; padding: 2px 6px; }
+.tidy-indent { margin-left: 24px; }
+.tidy-small { font-size: 12px; padding: 1px 0; }
+.tidy-undo { font-size: 12px; color: var(--dim); margin-top: 4px; }
+.tidy-list details summary { cursor: pointer; font-size: 12px; color: var(--dim); }
+.tidy-list details { margin: 2px 0; }
+.tidy-list details .tidy-row { padding-left: 12px; }
+.outline-modal { width: min(820px, 94vw); }
+.outline-modal input[type=text] { width: 100%; box-sizing: border-box; }
+.outline-modal label.chk { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.outline-preview { overflow: auto; flex: 1; min-height: 120px; max-height: 56vh; border: 1px solid var(--line); border-radius: 8px; padding: 6px 14px;
+  font-size: 13px; line-height: 1.5; user-select: text; }
+.outline-preview h1 { font-size: 18px; } .outline-preview h2 { font-size: 15px; } .outline-preview h3 { font-size: 14px; }
+.outline-preview li { margin: 3px 0; }
