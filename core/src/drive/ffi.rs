@@ -25,11 +25,12 @@ pub struct DriveAuth {
 
 #[uniffi::export]
 impl DriveAuth {
-    /// `full_access`: ask for the restricted `drive` scope instead of `drive.file`. The apps pass
-    /// false; Lunta works with `drive.file` (see `auth::Scope`).
+    /// `full_access`: always ask for the restricted `drive` scope. The apps pass false, which
+    /// follows the narrow-access switch (`narrow_drive_access`): `drive.file` when it is on, the
+    /// full `drive` scope while it is off (see `auth::NARROW_DRIVE_ACCESS`).
     #[uniffi::constructor]
     pub fn new(client_id: String, token_file: String, full_access: bool) -> Arc<Self> {
-        let client = OAuthClient::new(client_id, None).with_scope(if full_access { Scope::Full } else { Scope::File });
+        let client = OAuthClient::new(client_id, None).with_scope(sign_in_scope(full_access, auth::narrow_drive_access()));
         Arc::new(DriveAuth { auth: Authenticator::new(client, Arc::new(FileTokenStore::new(token_file))) })
     }
 
@@ -152,6 +153,24 @@ fn drive_root(name: String, id: Option<String>) -> DriveRoot {
     }
 }
 
+/// The scope `DriveAuth::new` asks for.
+fn sign_in_scope(full_access: bool, narrow: bool) -> Scope {
+    if full_access || !narrow {
+        Scope::Full
+    } else {
+        Scope::File
+    }
+}
+
+/// Whether Lunta asks for the narrow `drive.file` scope (`auth::NARROW_DRIVE_ACCESS`). The apps
+/// show "Choose your Lunta folder" (Google's picker, which only grants `drive.file`) and the
+/// "sign in again to narrow the access" prompt only while this is on: picking with it off would
+/// replace a full-scope token with a `drive.file` one.
+#[uniffi::export]
+pub fn narrow_drive_access() -> bool {
+    auth::narrow_drive_access()
+}
+
 /// True if a sync error means Lunta cannot open its Google Drive folder (made by another app, or
 /// access removed): offer "Choose your Lunta folder" (`DriveAuth::begin_pick`).
 #[uniffi::export]
@@ -269,5 +288,36 @@ impl LibrarySync {
 
     pub fn reset_state(&self) -> Result<()> {
         self.syncer.reset_state()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scope_of(a: &DriveAuth) -> Scope {
+        a.auth.client.scope
+    }
+
+    #[test]
+    fn sign_in_asks_for_the_full_scope_while_narrow_access_is_off() {
+        assert_eq!(sign_in_scope(false, false), Scope::Full);
+        assert_eq!(sign_in_scope(true, false), Scope::Full);
+        // The apps pass full_access = false: with the switch off that must not mean drive.file.
+        let url = OAuthClient::new("id", None).with_scope(sign_in_scope(false, false)).authorization_url("x:/r", &auth::Pkce::generate().unwrap(), "s");
+        assert!(url.contains(&format!("scope={}&", util::urlenc(Scope::Full.url()))), "{url}");
+        assert!(!url.contains("drive.file"), "{url}");
+    }
+
+    #[test]
+    fn sign_in_asks_for_drive_file_with_narrow_access_on() {
+        assert_eq!(sign_in_scope(false, true), Scope::File);
+        assert_eq!(sign_in_scope(true, true), Scope::Full);
+        // Tests run with the switch on (`narrow_drive_access` is cfg!(test)-on).
+        assert!(narrow_drive_access());
+        let dir = tempfile::tempdir().unwrap();
+        let tokens = dir.path().join("t.json").to_string_lossy().into_owned();
+        assert_eq!(scope_of(&DriveAuth::new("id".into(), tokens.clone(), false)), Scope::File);
+        assert_eq!(scope_of(&DriveAuth::new("id".into(), tokens, true)), Scope::Full);
     }
 }

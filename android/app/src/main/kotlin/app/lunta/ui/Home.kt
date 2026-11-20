@@ -136,7 +136,13 @@ fun HomeScreen(model: AppModel) {
                     item { Text("Sync problem: $e", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                     if (model.driveFolderNotVisible) item {
                         val ctx = androidx.compose.ui.platform.LocalContext.current
-                        FilledTonalButton({ model.beginPickFolder(ctx) }, Modifier.padding(horizontal = 16.dp)) { Text("Choose your Lunta folder…") }
+                        // The picker grants only drive.file: offer it only while Lunta asks for that
+                        // scope; otherwise signing in again (full drive scope) reaches the folder.
+                        if (uniffi.lunta_core.narrowDriveAccess()) {
+                            FilledTonalButton({ model.beginPickFolder(ctx) }, Modifier.padding(horizontal = 16.dp)) { Text("Choose your Lunta folder…") }
+                        } else {
+                            FilledTonalButton({ model.beginGoogleSignIn(ctx) }, Modifier.padding(horizontal = 16.dp)) { Text("Sign in again") }
+                        }
                     }
                 }
             }
@@ -238,7 +244,10 @@ private fun SettingsSheet(model: AppModel, onDismiss: () -> Unit) {
                         )
                         OutlinedButton({ onDismiss(); model.beginGoogleSignIn(ctx) }, enabled = !model.syncing) { Text("Sign in again") }
                     }
-                    TextButton({ onDismiss(); model.beginPickFolder(ctx) }) { Text("Choose your Lunta folder…") }
+                    // Google's picker grants only drive.file, which would replace a full-scope token.
+                    if (uniffi.lunta_core.narrowDriveAccess()) {
+                        TextButton({ onDismiss(); model.beginPickFolder(ctx) }) { Text("Choose your Lunta folder…") }
+                    }
                 }
                 Text("Lunta also syncs in the background about every ${model.settings.syncMinutes} minutes.", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall)
             }

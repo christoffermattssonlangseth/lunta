@@ -9,10 +9,11 @@ import LuntaCore
 /// ways (the iPhone's arrive here through iCloud, Android's through Drive). Signed in with the
 /// same Google OAuth client as the Android app; tokens and sync state stay on this Mac.
 ///
-/// Access is Google's `drive.file` scope: Lunta sees only the files its clients created (and what
-/// the user picks for it in Google's picker, "Choose Your Lunta Folder…"). A token from an older
-/// version still has the full scope; while it does, syncs adopt files other apps put into the
-/// folder (app-made copies, originals kept aside), and "Sign In Again" then narrows the access.
+/// Access is Google's full `drive` scope while the core's narrow-access switch is off
+/// (`narrowDriveAccess()`), so the bridge also sees what Drive for desktop puts into the folder.
+/// With it on, it is `drive.file`: Lunta sees only the files its clients created (and what the user
+/// picks in Google's picker, "Choose Your Lunta Folder…"); a full-scope token from before then
+/// adopts other apps' files, and "Sign In Again" narrows the access.
 @MainActor
 final class DriveBridge: ObservableObject {
     static let shared = DriveBridge()
@@ -253,7 +254,7 @@ struct DriveBridgeView: View {
                         if let n = bridge.notice {
                             Text(n).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         }
-                        if bridge.fullAccess && !bridge.syncing && bridge.error == nil && bridge.lastSync != nil {
+                        if narrowDriveAccess() && bridge.fullAccess && !bridge.syncing && bridge.error == nil && bridge.lastSync != nil {
                             HStack {
                                 Text("Lunta now asks Google only for access to the files it makes, not your whole Drive. The Drive folder has been prepared for it; sign in again to switch.")
                                     .font(.callout).fixedSize(horizontal: false, vertical: true)
@@ -264,7 +265,11 @@ struct DriveBridgeView: View {
                         HStack {
                             Button("Disconnect", role: .destructive) { bridge.disconnect() }.buttonStyle(.link)
                             Spacer()
-                            Button("Choose Your Lunta Folder…") { bridge.chooseFolder() }.buttonStyle(.link).disabled(bridge.syncing)
+                            // Google's picker grants only drive.file: offered only while Lunta asks for
+                            // that scope, or it would replace the full-scope token Drive for desktop needs
+                            if narrowDriveAccess() {
+                                Button("Choose Your Lunta Folder…") { bridge.chooseFolder() }.buttonStyle(.link).disabled(bridge.syncing)
+                            }
                         }
                     } else {
                         HStack {
@@ -278,7 +283,11 @@ struct DriveBridgeView: View {
                     }
                     if let e = bridge.error { Text(e).foregroundStyle(.red).font(.callout) }
                     if bridge.folderNotVisible {
-                        Button("Choose Your Lunta Folder…") { bridge.chooseFolder() }.disabled(bridge.syncing)
+                        if narrowDriveAccess() {
+                            Button("Choose Your Lunta Folder…") { bridge.chooseFolder() }.disabled(bridge.syncing)
+                        } else {
+                            Button("Sign In Again…") { bridge.connect() }.disabled(bridge.syncing)
+                        }
                     }
                 }
                 .padding(6)

@@ -1,4 +1,5 @@
 import SwiftUI
+import LuntaCore
 
 // Where the library lives: the first-launch question, Settings' Library Storage (see what it is,
 // move it), and Google Drive's sync status. Decisions: StorageDecision.swift; moving:
@@ -406,7 +407,11 @@ struct DriveSyncStatusView: View {
                 HStack {
                     Button("Sign Out of Google", role: .destructive) { drive.disconnect() }
                     Spacer()
-                    Button("Choose Your Lunta Folder…") { Task { await drive.chooseFolder() } }.disabled(drive.syncing || drive.signingIn)
+                    // Google's picker grants only drive.file: offered only while Lunta asks for that
+                    // scope, or it would replace a full-scope token
+                    if narrowDriveAccess() {
+                        Button("Choose Your Lunta Folder…") { Task { await drive.chooseFolder() } }.disabled(drive.syncing || drive.signingIn)
+                    }
                 }
                 #if os(macOS)
                 .buttonStyle(.link)
@@ -423,7 +428,12 @@ struct DriveSyncStatusView: View {
             }
             if let e = drive.error { Text(e).foregroundStyle(.red).font(.callout).fixedSize(horizontal: false, vertical: true) }
             if drive.folderNotVisible {
-                Button("Choose Your Lunta Folder…") { Task { await drive.chooseFolder() } }.disabled(drive.syncing || drive.signingIn)
+                if narrowDriveAccess() {
+                    Button("Choose Your Lunta Folder…") { Task { await drive.chooseFolder() } }.disabled(drive.syncing || drive.signingIn)
+                } else {
+                    // a drive.file token from an earlier sign-in: the full scope reaches the folder
+                    Button("Sign In Again…") { Task { await drive.signIn() } }.disabled(drive.syncing || drive.signingIn)
+                }
             }
         }
     }

@@ -159,8 +159,8 @@ class AppModel(val app: Application) {
         positions = Positions(root, device, "${Build.MODEL} (Android)")
     }
 
-    // drive.file: Lunta sees only the files it made (and what the user picks for it). Tokens from
-    // older versions still have the full scope until the next sign-in; syncs adopt foreign files then.
+    // false = follow the core's narrow-access switch (narrowDriveAccess()): the full drive scope
+    // while it is off, drive.file (only the files Lunta made or the user picked) once it is on.
     private fun makeAuth() = DriveAuth(
         BuildConfig.GOOGLE_CLIENT_ID, File(app.noBackupFilesDir, "google-tokens.json").absolutePath, false,
     )
