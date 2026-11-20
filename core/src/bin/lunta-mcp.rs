@@ -45,7 +45,10 @@ fn library_root() -> PathBuf {
 }
 
 fn open() -> Result<Arc<Library>, String> {
-    let root = library_root();
+    open_at(&library_root())
+}
+
+fn open_at(root: &std::path::Path) -> Result<Arc<Library>, String> {
     if !root.exists() {
         return Err(format!("No Lunta library at {} (open the Lunta app once first)", root.display()));
     }
@@ -62,7 +65,7 @@ fn open() -> Result<Arc<Library>, String> {
         }
     };
     let lib = Library::open(root.display().to_string(), cache.display().to_string(), device).map_err(|e| e.to_string())?;
-    apply_remote_files(&lib);
+    apply_remote_files(&lib, root);
     Ok(lib)
 }
 
@@ -71,20 +74,23 @@ fn open() -> Result<Arc<Library>, String> {
 /// doesn't download them itself (it has no Drive sign-in, and two syncs of one folder would race):
 /// they count as present (no find_pdf over a PDF that's in Drive, no "no reading view"), and what
 /// needs the file itself says it isn't downloaded. Full texts are always on the Mac, so read_paper
-/// and search see every paper. Re-read when the file changes.
-fn apply_remote_files(lib: &Library) {
-    static SEEN: std::sync::Mutex<Option<std::time::SystemTime>> = std::sync::Mutex::new(None);
+/// and search see every paper. Re-read when the file changes, or when `root` (the library open
+/// in `lib`) does.
+fn apply_remote_files(lib: &Library, root: &std::path::Path) {
+    #[allow(clippy::type_complexity)]
+    static SEEN: std::sync::Mutex<Option<(Option<std::time::SystemTime>, PathBuf)>> = std::sync::Mutex::new(None);
     let f = home().join("Library/Application Support/Lunta/remote-files.json");
     let modified = std::fs::metadata(&f).and_then(|m| m.modified()).ok();
     let mut seen = SEEN.lock().unwrap();
-    if seen.is_some() && *seen == modified {
+    let now = (modified, root.to_path_buf());
+    if seen.as_ref() == Some(&now) {
         return;
     }
-    *seen = modified;
+    *seen = Some(now);
     let files = std::fs::read_to_string(&f)
         .ok()
         .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-        .filter(|v| v.get("root").and_then(|r| r.as_str()).map(|r| PathBuf::from(r) == library_root()).unwrap_or(false))
+        .filter(|v| v.get("root").and_then(|r| r.as_str()).map(|r| std::path::Path::new(r) == root).unwrap_or(false))
         .and_then(|v| v.get("files").and_then(|f| f.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>()))
         .unwrap_or_default();
     lib.set_remote_files(files);
@@ -693,13 +699,22 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
 
 // ---------------------------------------------------------------- MCP over stdio
 
+/// Full text joins the search index in the background, until `stop` (the library was reopened elsewhere).
+fn index_in_background(lib: &Arc<Library>) -> Arc<std::sync::atomic::AtomicBool> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let stop = Arc::new(AtomicBool::new(false));
+    let (l, s) = (lib.clone(), stop.clone());
+    std::thread::spawn(move || while !s.load(Ordering::Relaxed) && matches!(l.index_fulltext(25), Ok(n) if n > 0) {});
+    stop
+}
+
 fn serve() {
-    let lib = match open() {
+    let mut root = library_root();
+    let mut lib = match open_at(&root) {
         Ok(l) => l,
         Err(e) => { eprintln!("lunta-mcp: {e}"); std::process::exit(1); }
     };
-    // full text joins the search index in the background
-    { let l = lib.clone(); std::thread::spawn(move || while matches!(l.index_fulltext(25), Ok(n) if n > 0) {}); }
+    let mut indexing = index_in_background(&lib);
     let stdin = std::io::stdin();
     let mut out = std::io::stdout();
     for line in stdin.lock().lines() {
@@ -728,8 +743,22 @@ fn serve() {
             "tools/call" => {
                 let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let args = params.get("arguments").cloned().unwrap_or(json!({}));
+                // the user may have moved the library in the app (iCloud, Google Drive, this Mac)
+                // since this server started: follow it, or changes would go to the old folder
+                let now = library_root();
+                if now != root {
+                    match open_at(&now) {
+                        Ok(l) => {
+                            indexing.store(true, std::sync::atomic::Ordering::Relaxed);
+                            lib = l;
+                            root = now;
+                            indexing = index_in_background(&lib);
+                        }
+                        Err(e) => eprintln!("lunta-mcp: the library moved to {}, but it couldn't be opened there: {e}", now.display()),
+                    }
+                }
                 let _ = lib.refresh(); // see changes made in the apps since the last call
-                apply_remote_files(&lib);
+                apply_remote_files(&lib, &root);
                 Ok(match call(&lib, name, &args) {
                     Ok(v) => json!({"content": [{"type": "text", "text": serde_json::to_string_pretty(&v).unwrap()}], "isError": false}),
                     Err(e) => json!({"content": [{"type": "text", "text": e}], "isError": true}),
