@@ -246,10 +246,13 @@ var LuntaFields = (function () {
   /** Whether the document has Zotero citations stored as bookmarks (no fields to read). */
   function zoteroBookmarks(xml) { return /<w:bookmarkStart\b[^>]*w:name="ZOTERO_BREF_/.test(String(xml || '')); }
 
-  /** Field codes compared loosely (Word's Field.code and the OOXML's instruction). */
+  /** Field codes compared loosely (Word's Field.code and the OOXML's instruction): the same start
+   *  (Word may give a field's code with a nested field's after it, EndNote's EN.CITE.DATA). */
   function sameCode(a, b) {
     var n = function (s) { return String(s || '').replace(/\s+/g, ' ').trim().slice(0, 60); };
-    return n(a) === n(b);
+    var x = n(a), y = n(b);
+    if (!x || !y) return x === y;
+    return x === y || (x.length < y.length ? y.indexOf(x) === 0 : x.indexOf(y) === 0);
   }
 
   return { scan: scan, classify: classify, classifyTag: classifyTag, endnoteCitation: endnoteCitation, endnoteMeta: endnoteMeta,

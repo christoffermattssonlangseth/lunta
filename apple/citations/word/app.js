@@ -552,11 +552,12 @@ function readForeign(ctx) {
     var k = 0;
     scan.fields.forEach(function (f) {
       var c = LuntaFields.classify(f.instr, f.data);
+      // only the citations and bibliographies are looked for (Word may not list nested fields)
+      if (!c || c.kind === 'data') return;
       var at = -1;
       for (var j = k; j < fields.items.length; j++) {
         if (LuntaFields.sameCode(fields.items[j].code, f.instr)) { at = j; k = j + 1; break; }
       }
-      if (!c || c.kind === 'data') return;
       if (at < 0) { out.unreadable++; return; }
       var ref = { field: at, code: fields.items[at].code };
       if (c.kind === 'bib') out.bibs.push({ ref: ref, source: c.source });

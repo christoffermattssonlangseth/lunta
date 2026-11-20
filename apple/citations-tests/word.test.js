@@ -528,3 +528,14 @@ test('Convert: a document with nothing to convert says so; Zotero bookmarks are 
   await q.ctx.convertCitations();
   assert.match(q.status(), /no citations from Zotero, EndNote or Mendeley/);
 });
+
+test('Convert: Word listing EndNote’s nested field inside the outer one’s code still lines up', async () => {
+  const nodes = X.NODES.filter((n) => !n.parent).map((n) => (n.name === 'en-outer' ? { field: ' ADDIN EN.CITE  ADDIN EN.CITE.DATA ', name: 'en-outer' } : n));
+  const p = await panel({ settings: { luntaStyle: 'vancouver' }, ooxml: X.documentXML(), nodes });
+  await p.ctx.convertCitations();
+  const plan = p.ctx.conversion.plan;
+  await p.ctx.runConversion(plan.works.filter((w) => !w.id).map((w) => w.key));
+  assert.deepEqual(p.doc.nodes.filter((n) => n.kind === 'field').map((n) => n.code.trim().split(' ')[0]), ['HYPERLINK']);
+  assert.match(p.status(), /Converted 5 citations \(2 papers added to your library\)\./);
+  assert.deepEqual(texts(p).slice(0, 5), ['[see 1, p. 12; 2]', '[3, p. 4]', '[e.g. 4, for the method]', '[5]', '[3, fig. 7]']);
+});
