@@ -277,6 +277,19 @@ pub fn doi_line(s: &str) -> bool {
     re!(r"(?i)^(https?://(dx\.)?doi\.org/|doi:?\s*)10\.\d{4,9}/\S+$").is_match(trim(s))
 }
 
+/// A list item's bullet at the start of a line ("• ISS elucidates…").
+pub fn is_bullet(s: &str) -> bool {
+    re!(r"^\s*[•●▪◦‣]\s*\S").is_match(s)
+}
+
+/// Paragraphs that start with a bullet, one after another, become a list: `<p>• a</p><p>• b</p>`
+/// → `<ul><li>a</li><li>b</li></ul>`.
+pub fn bullet_lists(html: &str) -> String {
+    let run = re!(r"(?:<p>\s*(?:<sup>[•●▪◦‣]</sup>|[•●▪◦‣])\s*.*?</p>)+");
+    let item = re!(r"<p>\s*(?:<sup>[•●▪◦‣]</sup>|[•●▪◦‣])\s*(.*?)</p>");
+    run.replace_all(html, |c: &regex::Captures| format!("<ul>{}</ul>", item.replace_all(&c[0], "<li>$1</li>"))).into_owned()
+}
+
 pub fn caption_re() -> &'static Regex {
     // the label must be followed by punctuation, a capitalised word or nothing: running text that
     // wraps onto a line starting "Figure S2G). Top genes…" or "Fig. 1a and …" is not a caption
@@ -949,6 +962,9 @@ impl<'a> Analyzer<'a> {
             let size_change = (l.size - a.size).abs() >= 1.0;
             let style_break = (a.bold > 0.9) != (l.bold > 0.9) && (count(at) < 120 || count(&l.text) < 120);
             let cap = caption_re().is_match(trim(&l.text));
+            // a bullet starts a list item; the item's next lines are indented to its text
+            let bullet = is_bullet(&l.text);
+            let in_item = is_bullet(&cur[0].text);
             if jumped
                 || gap > 0.75 * l.size.max(a.size)
                 || short_a
@@ -957,7 +973,8 @@ impl<'a> Analyzer<'a> {
                 || size_change
                 || style_break
                 || cap
-                || (cur.len() == 1 && l.bbox.x0 > a.bbox.x0 + 8.0 && gap > 0.3 * l.size && !numbered_item)
+                || bullet
+                || (cur.len() == 1 && l.bbox.x0 > a.bbox.x0 + 8.0 && gap > 0.3 * l.size && !numbered_item && !in_item)
             {
                 if jumped
                     && gap <= 0.75 * l.size
@@ -1108,6 +1125,32 @@ impl<'a> Analyzer<'a> {
         let max_n = cover.iter().map(|c| c.1).max().unwrap_or(0);
         if cover.is_empty() {
             return (0.5 * w, 0);
+        }
+        if max_n == 0 {
+            // no two lines side by side (a summary page: the graphical abstract above the Highlights
+            // on the left, the authors on the right): the middle of the widest stretch the fewest
+            // blocks cross, not the middle of the page, which may cut through the left column's
+            // longer lines
+            let crossing: Vec<usize> = cover.iter().map(|c| nodes.iter().filter(|n| self.crosses(pno, n, c.0)).count()).collect();
+            let least = *crossing.iter().min().unwrap();
+            let mut run: Option<(usize, usize)> = None;
+            let mut k = 0;
+            while k < crossing.len() {
+                if crossing[k] != least {
+                    k += 1;
+                    continue;
+                }
+                let mut m = k;
+                while m + 1 < crossing.len() && crossing[m + 1] == least {
+                    m += 1;
+                }
+                if run.map(|(lo, hi)| m - k > hi - lo).unwrap_or(true) {
+                    run = Some((k, m));
+                }
+                k = m + 1;
+            }
+            let (a, b) = run.unwrap_or((0, cover.len() - 1));
+            return ((cover[a].0 + cover[b].0) / 2.0, 0);
         }
         // stretches covered nearly as often as the best one; in each, the middle of its longest
         // most-covered run

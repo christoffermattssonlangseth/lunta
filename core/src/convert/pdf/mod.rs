@@ -9,6 +9,7 @@
 pub mod extract;
 pub mod layout;
 pub mod refs;
+pub mod symbols;
 
 use super::{esc, fail, net, Book, BookImage, Chapter, ConvertError, Heading, Options, PaperMeta, Result};
 use layout::{re, styled, Analyzer, Kind, Para};
@@ -445,7 +446,7 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
     };
     fn close(cur: &mut Option<Cur>, chapters: &mut Vec<Chapter>) {
         if let Some(c) = cur.take() {
-            chapters.push(Chapter { title: c.title, html: format!("<section>{}</section>", c.html), headings: c.headings });
+            chapters.push(Chapter { title: c.title, html: format!("<section>{}</section>", layout::bullet_lists(&c.html)), headings: c.headings });
         }
     }
     let open = |title: &str, id: String, cur: &mut Option<Cur>, chapters: &mut Vec<Chapter>| {
@@ -591,7 +592,7 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
     }
     close(&mut cur, &mut chapters);
     if !front.is_empty() && meta.affiliations_html.is_empty() {
-        meta.affiliations_html = front;
+        meta.affiliations_html = layout::bullet_lists(&front);
     }
     if chapters.is_empty() {
         return Err(fail("Could not find any text in the PDF (is it a scanned image?)."));

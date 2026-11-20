@@ -208,6 +208,7 @@ fn is_space(c: char) -> bool {
 /// a line is also cut where the text jumps back left or across a column gutter.
 pub fn extract_lines(text: &PdfPageText, mb: &MediaBox, pno: usize, hidden: &Hidden) -> Vec<PLine> {
     let mut styles: HashMap<(String, bool, bool), Style> = HashMap::new();
+    let mut symbol_fonts: HashMap<String, Option<&'static [(&'static str, &'static str)]>> = HashMap::new();
     let mut raw_lines: Vec<Vec<C>> = vec![vec![]];
     let mut pending_break = false;
     // inside a run of text the page does not show (and the spaces and breaks PDFium puts after it)
@@ -231,7 +232,22 @@ pub fn extract_lines(text: &PdfPageText, mb: &MediaBox, pno: usize, hidden: &Hid
                 b.map(|r| (r.left().value as i32, r.top().value as i32, r.right().value as i32, r.bottom().value as i32))
             );
         }
-        let Some(ch) = c.unicode_char() else { continue };
+        let Some(mut ch) = c.unicode_char() else { continue };
+        // a symbol font's glyph named like a letter ("d" for Cell's bullets): what it shows
+        if !is_space(ch) && (ch as u32) >= 0x20 {
+            let name = c.font_name();
+            let table = match symbol_fonts.get(&name) {
+                Some(t) => *t,
+                None => {
+                    let t = super::symbols::family(&name);
+                    symbol_fonts.insert(name, t);
+                    t
+                }
+            };
+            if let Some(m) = table.and_then(|t| super::symbols::map(t, ch)).and_then(|m| m.chars().next()) {
+                ch = m;
+            }
+        }
         if after_stray {
             if c.is_generated().unwrap_or(false) && is_space(ch) {
                 continue;

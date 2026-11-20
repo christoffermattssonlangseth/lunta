@@ -1429,3 +1429,70 @@ fn pdfium_accent_drawn_after_the_line() {
     let text: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
     assert!(text.iter().any(|t| t == "Sarah Jäkel and Ruth Smith wrote it."), "{text:?}");
 }
+
+/// Symbol fonts named like letters (see `symbols`): Advent's Math Pi 6 bullet "d", AdvPSSym's "ª"
+/// for ©, Springer's prefixed AdvPi3; the cmsy stand-ins only where a right ToUnicode map can't
+/// give the same character.
+#[test]
+fn symbol_font_tables() {
+    let t = |f: &str, c: char| super::symbols::family(f).and_then(|t| super::symbols::map(t, c));
+    assert_eq!(t("HBKIKE+AdvPSMPi6", 'd'), Some("•"));
+    assert_eq!(t("HBKKJK+AdvPSSym", 'ª'), Some("©"));
+    assert_eq!(t("AdvPSSym", 'a'), Some("α"));
+    assert_eq!(t("XcyghdAdvPi3", '#'), Some("©"));
+    assert_eq!(t("AdvPi2", '&'), Some("□"));
+    assert_eq!(t("AdvTir_symb", '9'), Some("×"));
+    assert_eq!(t("TeX_CM_Maths_Symbols10", 'ð'), Some("("));
+    assert_eq!(t("AdvP4C4E74", 'ð'), Some("("));
+    assert_eq!(t("AdvP4C4E74", '('), None); // its ToUnicode may give "(" for "eth"
+    assert_eq!(t("AdvPSMPi6", 'e'), None);
+    assert_eq!(t("AdvPi10", '.'), None);
+    assert_eq!(t("Helvetica", 'd'), None);
+}
+
+/// Paragraphs that start with a bullet are list items, each line after one indented to its text
+/// goes on with it, and the items become a list.
+#[test]
+fn bullet_items_are_paragraphs_and_lists() {
+    let mut lines = vec![line("Highlights", 0, 53.0, 473.0, 9.0)];
+    lines.push(line("• ISS elucidates cellular dynamics of EAE model and", 0, 53.0, 491.0, 9.0));
+    lines.push(line("architecture of human MS lesions", 0, 66.0, 505.0, 9.0));
+    lines.push(line("• Active EAE lesions propagate in a centrifugal manner", 0, 53.0, 519.0, 9.0));
+    lines.push(line("• EAE DA-glia are induced independently of lesions and", 0, 53.0, 533.0, 9.0));
+    lines.push(line("dynamically resolved", 0, 66.0, 547.0, 9.0));
+    let page = Page { width: 612.0, height: 792.0, lines, graphics: PageGraphics::default() };
+    let mut r = White;
+    let log = |_: &str| {};
+    let an = Analyzer::new(vec![page.clone()], &mut r, &log);
+    let paras: Vec<String> = an.paragraphs(0, page.lines.clone(), vec![]).iter().map(|p| p.text()).collect();
+    assert_eq!(
+        paras,
+        vec![
+            "Highlights",
+            "• ISS elucidates cellular dynamics of EAE model and architecture of human MS lesions",
+            "• Active EAE lesions propagate in a centrifugal manner",
+            "• EAE DA-glia are induced independently of lesions and dynamically resolved",
+        ],
+    );
+    assert_eq!(
+        bullet_lists("<p>Highlights</p><p>• One</p><p><sup>•</sup> Two</p><p>Authors</p><p>No • here</p>"),
+        "<p>Highlights</p><ul><li>One</li><li>Two</li></ul><p>Authors</p><p>No • here</p>"
+    );
+}
+
+/// Cell's Highlights: the bullets drawn as "d" in AdvPSMPi6 and the © as "ª" in AdvPSSym (no
+/// ToUnicode maps) come out as • and ©.
+#[test]
+#[ignore]
+fn pdfium_cell_highlights_bullets() {
+    let content = "BT /F2 7 Tf 72 700 Td (d) Tj ET BT /F1 10 Tf 84 700 Td (ISS elucidates cellular dynamics) Tj ET\n\
+                   BT /F1 8 Tf 72 640 Td (April 11, 2024 ) Tj ET BT /F3 8 Tf 128.5 640 Td (\\252) Tj ET \
+                   BT /F1 8 Tf 135 640 Td ( 2024 The Author\\(s\\)) Tj ET\n"
+        .to_string();
+    let data = pdf_with_fonts(&[content], "Symbols", &["Helvetica", "HBKIKE+AdvPSMPi6", "HBKKJK+AdvPSSym"]);
+    let (lines, _) = super::text_lines(&data).unwrap();
+    let text = lines.iter().map(|l| l.text.clone()).collect::<Vec<_>>().join("\n");
+    assert!(text.contains("• ISS elucidates cellular dynamics"), "{text}");
+    assert!(text.contains("© 2024 The Author(s)"), "{text}");
+    assert!(!text.contains('ª'), "{text}");
+}
