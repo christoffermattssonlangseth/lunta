@@ -92,7 +92,7 @@ claude mcp add --scope user lunta -- /Applications/Lunta.app/Contents/MacOS/lunt
 Tools: `search_papers`, `list_papers`, `get_paper`, `read_paper` (full text, or the passages matching a query), `cite`
 (APA, Vancouver, Nature, …, BibTeX with the fixed keys, `latex` for `\cite{…}`, RIS), `library_overview`, `find_new_papers` (OpenAlex), `add_paper`, `find_pdf`,
 `tag_papers`, `add_to_collection`, `set_status`, `add_note`, `update_paper`, `resolve_citations` (the placeholders in a text the
-user is writing, "(Smith et al. 2019)" or `\cite{?smith2019}`, each with up to five candidate papers; read-only, see Resolve Citations), `check_references` (a reference list checked against the published record) and `library_status` (papers flagged retracted or corrected, preprints since published; both read-only, see Checks against the published record), and for highlights `list_highlights` (across the library; filter by paper, colour, tag, collection or words), `add_highlight` (quote a passage; it shows in the reading view and the PDF) and `update_highlight` (note, colour, delete).
+user is writing, "(Smith et al. 2019)" or `\cite{?smith2019}`, each with up to five candidate papers; read-only, see Resolve Citations), `check_references` (a reference list checked against the published record) and `library_status` (papers flagged retracted or corrected, preprints since published; both read-only, see Checks against the published record), `outline_from_highlights` (a Markdown outline of the highlights in some papers, read-only), and for highlights `list_highlights` (across the library; filter by paper, colour, tag, collection or words), `add_highlight` (quote a passage; it shows in the reading view and the PDF) and `update_highlight` (note, colour, delete).
 
 The agent writes through its own change log (`ops/agent-….jsonl`), exactly like another device, so it can work while the
 apps are open and its changes sync to the Mac and iPhone. The same binary is a command-line tool:
@@ -494,6 +494,68 @@ check that writes nothing; another device reading the same; switch, undo, link b
 preprint; the answer cache and the pacing. `cargo test checks -- --ignored record_check_fixtures`
 asks the services and records the answers again (and is the live test). `cargo test refcite`: a PDF's
 whole reference list.
+
+## Tidy the library and Outline from Highlights
+
+Both follow the checks' rule: **Lunta proposes, the researcher decides.** Suggestions are listed to approve one by one
+or all at once; nothing changes until then, and what is applied goes through the change log (synced). Tags, folders and
+DOIs that were applied can be undone (`TidyChange` → `undo_tidy_change`); a merge deletes papers, so the apps ask first.
+The prompts and heuristics live in the core so every app proposes the same.
+
+**Tidy** (`core/src/tidy/`; Clean Up Library on the Mac, iPhone and iPad, Tidy Library on Windows, Linux and Android):
+
+- *Duplicates* (`duplicates.rs`): the same DOI (normalized); the same title allowing small differences (Dice ≥ 0.9 on
+  words, punctuation, accents, a subtitle left out) with the same first author, years at most one apart and no two
+  different DOIs; a preprint and its published version (title Dice ≥ 0.7, same first author, not earlier, or the
+  published DOI the checks found). Pairs come from shared rare title words, not every pair. Each group names the paper to
+  keep (the published version, else the most complete). `merge_papers(keep, others)` fills empty details, moves tags,
+  folders, star, read and Must Read state, highlights and notes, a PDF, reading view or full text the kept paper lacks,
+  and a fixed citation key, then deletes the others. A preprint whose published version is *not* in the library is
+  listed with the checks' Switch to the Published Version (`use_published_version`), not handled here.
+- *Missing details*: no DOI (articles, conference papers, chapters, preprints), no PDF (the apps' Find PDF), no reading
+  view (Make Reading Views). `find_missing_dois` (`doi.rs`) gives an arXiv paper its arXiv DOI without asking anyone,
+  otherwise asks Crossref's bibliographic search (title, first author, year; through the checks' polite, cached `Net`)
+  and takes a record only when the titles agree (`refcite::title_in` both ways, or a subtitle left out), the years are
+  at most one apart, the first author is among its authors and a published paper isn't given a preprint's DOI. A DOI
+  another paper already has is marked as a duplicate to merge. `apply_doi_suggestions` sets the DOI and fills empty fields.
+- *Topics* (`groups.rs`): up to ten tags or folders to make, each with its papers ("Spatial transcriptomics — 34
+  papers"). Without a model: title words and two- and three-word phrases, keywords and the abstract's start, kept when
+  several papers share them (≥ 3 and ≥ 2 %, ≤ 50 %, mostly in titles or keywords), scored by coverage and specificity, a
+  word giving way to its phrase, picked so that no two cover mostly the same papers, plus journals with many papers;
+  names of existing tags and folders are left out. With a model: `tidy_topic_prompt(max_papers)` lists the latest titles
+  by number (60 for Apple's on-device model, 150 for Qwen3 4B via MLX, about 110 on Windows and Linux, whose model runs with a 4096-token context), the model answers `Topic: 3, 8, 15`, and
+  `tidy_groups_from_answer` keeps only numbers from the prompt, topics of two papers or more, no vague names
+  ("Other", "Methods"). `create_groups(…, as_folders)` makes the ticked ones (a folder of the same name is reused).
+- *Existing tags for untagged papers*: a tag whose name is in the paper's title or keywords, or whose papers share
+  distinctive terms with it (at most two per paper, with why).
+- Dismissed suggestions ("Not Duplicates", `doi:<id>`, `tag:<id>:<tag>`, `topic:<name>`) are kept in the device's cache.
+
+**Outline from Highlights** (`core/src/outline.rs`): the highlights and notes of a set of papers (a folder with its
+subfolders, a tag, a search's results, a selection), optionally about a topic, as Markdown: a heading per theme, a point
+per highlight with its quote word for word, or the researcher's note marked *Note:*, cited `([Kukanja et al. 2024](lunta://open?id=…), [@Kukanja2024cellular])`
+(2019a/2019b when two labels are alike), then the Sources (APA, citation key, link). Without a model the themes are the
+papers, and within a paper the reading view's sections (the headings before each highlight) or the PDF page; with a topic,
+only the highlights that mention it (all, with a note, when none does). With a model, `outline_prompt(ids, topic,
+max_items)` numbers the highlights (30 for Apple's model, 100 for Qwen3 via MLX, about 50 on Windows and Linux) and asks for `Theme:`, `Summary:`, `Items:`;
+`outline_from_highlights(ids, topic, prompt, answer)` takes the themes and numbers only, puts each highlight once, keeps
+what the model left out under Other highlights, and marks the one-line summaries as the model's. The model never writes a
+point. `outline_check` verifies an outline: every point must be a highlight's quote or a note; the tests also feed it
+invented, altered and paraphrased points. Copy Markdown, Save as .md, and on the Mac (and iPhone, iPad) Copy as Rich Text
+(the outline's HTML).
+
+UI: Mac: Clean Up Library window (Lunta menu) with the suggestions under the duplicates; Outline from Highlights… in a
+folder's and a tag's menu, the papers' menu (the selection) and the File menu (the papers listed, so a search's).
+iPhone and iPad: Clean Up Library… in the library's list; Outline from Highlights… in a folder's and a tag's menu and the
+list's ⋯ menu. The on-device model is Apple's or Qwen3 via MLX (`AskEngine.plainAnswer`); without one the heuristics.
+Windows, Linux and Android: see their sections; they run Qwen3 through `tidy_topics_with_model` and `outline_with_model`.
+
+MCP: `outline_from_highlights(ids | collection | tag, topic?)`, read-only, by paper and section (the agent may regroup
+the points, keeping the quotes).
+
+Tests: `cargo test tidy outline` (duplicates by DOI and by a title that differs a little, preprint pairs, merging, DOIs on
+Crossref answers recorded in `testdata/tidy/` — `cargo test tidy -- --ignored record_tidy_fixtures` re-records them —, the
+guard, topics and tag suggestions without a model, the model's answers, the outline's Markdown, citations, sections and
+the no-invented-text check).
 
 ## Releases
 
