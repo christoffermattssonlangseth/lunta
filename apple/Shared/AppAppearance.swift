@@ -57,6 +57,10 @@ struct AppSettingsView: View {
             Text(SummarySettingToggle.explanation)
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider().padding(.vertical, 6)
+            BibtexAuthorsSetting()   // Mac/BibFiles.swift
+            Text(BibtexAuthorsSetting.explanation)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Divider().padding(.vertical, 6)
             UpdateSettings()   // Mac/Updates.swift
         }
         .padding(24)

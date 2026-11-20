@@ -22,6 +22,8 @@ final class BibFiles: ObservableObject {
     @Published private(set) var links: [Link] = []
     /// Last problem writing a file, per source (shown in its menu).
     @Published private(set) var problems: [String: String] = [:]
+    /// The open library (for Settings › BibTeX).
+    private(set) weak var model: LibraryModel?
     private var pending: Task<Void, Never>?
     private var writing = false
     private var again = false
@@ -76,6 +78,7 @@ final class BibFiles: ObservableObject {
 
     /// The library changed (called from `LibraryModel.reload`): rewrite the files shortly after.
     func libraryChanged(_ model: LibraryModel) {
+        self.model = model
         guard !links.isEmpty else { return }
         update(model, delay: 1.5)
     }
@@ -205,5 +208,44 @@ struct BibLinkedName: View {
         } else {
             Text(name)
         }
+    }
+}
+
+/// Settings › BibTeX: how long author lists are shortened in every BibTeX output (kept .bib
+/// files, Copy BibTeX, exports). The library's setting, synced, so every device writes the same .bib.
+struct BibtexAuthorsSetting: View {
+    @ObservedObject private var files = BibFiles.shared
+    @State private var options = BibtexOptions(maxAuthors: 15, shownAuthors: 10)
+    @State private var loaded = false
+
+    var body: some View {
+        let on = Binding(
+            get: { options.maxAuthors > 0 },
+            set: { options = $0 ? BibtexOptions(maxAuthors: 15, shownAuthors: 10) : BibtexOptions(maxAuthors: 0, shownAuthors: options.shownAuthors); save() })
+        let max = Binding(get: { Int(options.maxAuthors) }, set: { options.maxAuthors = UInt32($0); options.shownAuthors = min(options.shownAuthors, UInt32($0)); save() })
+        let shown = Binding(get: { Int(options.shownAuthors) }, set: { options.shownAuthors = UInt32($0); save() })
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("Shorten long author lists in BibTeX", isOn: on)
+            if options.maxAuthors > 0 {
+                Stepper("With more than \(options.maxAuthors) authors", value: max, in: 2...200)
+                Stepper("write the first \(options.shownAuthors) and “others”", value: shown, in: 1...Int(options.maxAuthors))
+            }
+        }
+        .disabled(files.model == nil)
+        .onAppear(perform: load)
+    }
+
+    static let explanation = "BibTeX styles print “and others” as “et al.” A .bib entry you imported with its own author list (an organization, or “and others”) keeps it. For the whole library, on every device."
+
+    private func load() {
+        guard let lib = files.model?.lib else { return }
+        options = lib.bibtexOptions()
+        loaded = true
+    }
+
+    private func save() {
+        guard loaded, let model = files.model else { return }
+        try? model.lib.setBibtexOptions(options: options)
+        BibFiles.shared.update(model, delay: 0.5)
     }
 }
