@@ -206,10 +206,19 @@ final class LibraryMover: ObservableObject {
         defer { working = false; progress = nil }
         if from == .googleDrive {
             progress = "Syncing with Google Drive first…"
-            await drive.syncAndWait()
-            // iPhone and iPad: papers whose files are only in Drive come down first, so the new place has them
-            if DriveLibrarySync.onDemand, let problem = await drive.fetchEverything(report: { self.progress = $0 }) {
+            // the copy is made from this device's files: they must have every change from the other devices first
+            if let problem = await drive.syncAndWait() {
+                error = "Your library stays in Google Drive, because the last sync with it didn’t finish, so \(StorageText.thisDevice) may not have every change yet. \(problem)"
+                return
+            }
+            // papers whose files are only in Drive (downloaded when opened) come down first, so the new place has them
+            if let problem = await drive.fetchEverything(report: { self.progress = $0 }) {
                 error = "Your library stays in Google Drive, because not every paper could be downloaded to \(StorageText.thisDevice) first. \(problem)"
+                return
+            }
+            let left = await drive.papersNotDownloaded()
+            if left > 0 {
+                error = "Your library stays in Google Drive, because \(left) paper(s) still have files only in Google Drive. Try again when you’re online."
                 return
             }
             drive.stop()
@@ -221,9 +230,8 @@ final class LibraryMover: ObservableObject {
             if from == .googleDrive { drive.start(model) }
             return
         }
-        let own = LibraryLocation.ownLogs
         let result = await Task.detached {
-            await LibraryLocation.copyLibrary(from: src, to: dst, ownLogs: own) { line in
+            await LibraryLocation.copyLibrary(from: src, to: dst) { line in
                 Task { @MainActor in LibraryMover.shared.progress = line }
             }
         }.value

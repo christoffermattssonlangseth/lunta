@@ -123,7 +123,8 @@ final class DriveLibrarySync: ObservableObject {
     private var lastSeen: [String: Int] = [:]
     private var session: ASWebAuthenticationSession?
     private let anchor = AuthAnchor()
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    /// Waiting for the running sync (`syncAndWait`); resumed with its problem, nil if it went well.
+    private var waiters: [CheckedContinuation<String?, Never>] = []
 
     private var folderID: String? {
         get { UserDefaults.standard.string(forKey: "driveLibraryFolderId").flatMap { $0.isEmpty ? nil : $0 } }
@@ -279,6 +280,7 @@ final class DriveLibrarySync: ObservableObject {
 
     private func finished(_ result: Result<SyncSummary, Error>) {
         syncing = false
+        var problem: String?
         progress = nil
         switch result {
         case .success(let s):
@@ -289,7 +291,7 @@ final class DriveLibrarySync: ObservableObject {
             if s.downloaded > 0 { parts.append("\(s.downloaded) received") }
             if s.deletedLocal + s.deletedRemote > 0 { parts.append("\(s.deletedLocal + s.deletedRemote) removed") }
             lastSummary = parts.isEmpty ? "Up to date" : parts.joined(separator: ", ")
-            if !s.errors.isEmpty { error = "\(s.errors.count) file(s) failed: \(s.errors.first ?? "")" }
+            if !s.errors.isEmpty { error = "\(s.errors.count) file(s) failed: \(s.errors.first ?? "")"; problem = error }
             if let n = s.notices.first { notice = n }
             folderNotVisible = false
             if s.changed, let model {
@@ -300,22 +302,46 @@ final class DriveLibrarySync: ObservableObject {
             refreshRemoteFiles()
         case .failure(let e):
             error = e.readable
+            problem = e.readable
             folderNotVisible = driveFolderNotVisible(message: e.readable)
         }
         lastSeen = logSizes()
         let w = waiters
         waiters = []
-        w.forEach { $0.resume() }
+        w.forEach { $0.resume(returning: problem) }
         if again, active { syncNow() }
     }
 
-    /// One sync, waited for (before the library moves elsewhere).
-    func syncAndWait() async {
-        guard sync != nil, connected else { return }
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+    /// One complete sync, waited for (before the library moves elsewhere): a sync already running
+    /// may have started before the latest changes, so another one follows it. Returns what went
+    /// wrong, nil if the sync went well (every file sent and received).
+    func syncAndWait() async -> String? {
+        guard sync != nil else { return "Lunta isn’t syncing with Google Drive right now." }
+        guard connected else { return "Lunta isn’t signed in to Google, so it can’t get the latest changes from Google Drive." }
+        if syncing { _ = await waitForSync() }
+        return await waitForSync()
+    }
+
+    private func waitForSync() async -> String? {
+        await withCheckedContinuation { (c: CheckedContinuation<String?, Never>) in
             waiters.append(c)
             if !syncing { syncNow() }
         }
+    }
+
+    /// How many of the library's papers have files that are in Google Drive but not on this device,
+    /// from the last sync's records.
+    func papersNotDownloaded() async -> Int {
+        guard let sync, let model else { return 0 }
+        let lib = model.lib
+        return await Task.detached {
+            let inLibrary = Set(lib.papers(filter: PaperFilter(collection: nil, tag: nil, starredOnly: false, unreadOnly: false), sort: .added).map(\.id))
+            let missing = Set(sync.remotePaperFiles().filter { !$0.local }.compactMap { f -> String? in
+                let parts = f.path.split(separator: "/")
+                return parts.count == 3 ? String(parts[1]) : nil
+            })
+            return missing.intersection(inLibrary).count
+        }.value
     }
 
     // MARK: - On demand (iPhone and iPad)

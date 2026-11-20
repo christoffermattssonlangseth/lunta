@@ -71,15 +71,23 @@ enum StartupDecision: Equatable, Sendable {
 }
 
 /// Copying a library from one place to another when the user changes where it lives. What to do
-/// with each file (paths relative to the library folder), given whether the destination has it.
+/// with each file (paths relative to the library folder), given whether the destination has it and
+/// whether the source's copy is newer. The destination may hold an older copy of the same library
+/// (a folder used before iCloud, or left by an earlier move), so nothing the source has is lost:
+/// change logs and reading positions are merged, other files are replaced when the source's is newer.
 enum LibraryCopyRule: Equatable, Sendable {
     case copy
-    /// This device's own change log, present in both places: add the lines the destination lacks
-    /// (logs are append-only, so nothing is lost either way).
+    /// A change log (ops/<device>.jsonl), present in both places: add the lines the destination
+    /// lacks (logs are append-only, so nothing is lost either way).
     case mergeLines
+    /// A device's reading positions (positions/<device>.json), present in both places: per paper,
+    /// the newer position wins.
+    case mergePositions
+    /// Present in both places and the source's copy is newer: overwrite the destination's.
+    case replace
     case skip
 
-    static func rule(for path: String, destinationHasIt: Bool, ownLogs: Set<String>) -> LibraryCopyRule {
+    static func rule(for path: String, destinationHasIt: Bool, sourceIsNewer: Bool) -> LibraryCopyRule {
         let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         if parts.contains(where: { $0.isEmpty || $0.hasPrefix(".") || $0 == ".." }) { return .skip }
         let wanted: Bool
@@ -92,9 +100,10 @@ enum LibraryCopyRule: Equatable, Sendable {
         }
         guard wanted else { return .skip }
         if !destinationHasIt { return .copy }
-        if parts.count == 2, parts[0] == "ops", ownLogs.contains(String(parts[1].dropLast(".jsonl".count))) { return .mergeLines }
-        // never overwrite: the destination's copy is another device's newer one, or the same file
-        return .skip
+        if parts.count == 2, parts[0] == "ops" { return .mergeLines }
+        if parts.count == 2, parts[0] == "positions" { return .mergePositions }
+        // the same file, or an older copy at the destination: the newer one wins
+        return sourceIsNewer ? .replace : .skip
     }
 
     /// The destination log with the source's missing lines added at the end, or nil if it has them all.
@@ -106,5 +115,24 @@ enum LibraryCopyRule: Equatable, Sendable {
         var out = destination
         if !out.isEmpty && !out.hasSuffix("\n") { out += "\n" }
         return out + missing.joined(separator: "\n") + "\n"
+    }
+
+    /// Two copies of one device's positions file ({paper: {offset, at, device}}) merged: every
+    /// paper from both, the one with the later `at` where both have it. nil if the destination
+    /// already has everything (or the source can't be read); a destination that can't be read is
+    /// replaced by the source.
+    static func mergedPositions(destination: Data, source: Data) -> Data? {
+        guard let src = (try? JSONSerialization.jsonObject(with: source)) as? [String: Any] else { return nil }
+        guard var out = (try? JSONSerialization.jsonObject(with: destination)) as? [String: Any] else { return source }
+        func at(_ v: Any?) -> Double? { ((v as? [String: Any])?["at"] as? NSNumber)?.doubleValue }
+        var changed = false
+        for (paper, spot) in src {
+            if let mine = out[paper], let a = at(mine), let b = at(spot), a >= b { continue }
+            if out[paper] != nil, at(spot) == nil { continue }
+            out[paper] = spot
+            changed = true
+        }
+        guard changed else { return nil }
+        return try? JSONSerialization.data(withJSONObject: out, options: [.sortedKeys])
     }
 }

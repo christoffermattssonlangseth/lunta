@@ -64,10 +64,11 @@ enum LibraryLocation {
     }
 
     /// Copies the library at `src` into `dst` (papers, change logs, reading positions, smart
-    /// folders, New for You): what `dst` lacks is copied, this device's own change logs are merged
-    /// line by line, and nothing at `src` is changed or deleted. Files still in iCloud are
-    /// downloaded first. Slow for a big library: reports progress.
-    static func copyLibrary(from src: URL, to dst: URL, ownLogs: Set<String>,
+    /// folders, New for You): what `dst` lacks is copied, change logs are merged line by line,
+    /// reading positions per paper, other files `dst` already has are replaced when `src`'s copy is
+    /// newer (`dst` may hold an older copy of this library), and nothing at `src` is changed or
+    /// deleted. Files still in iCloud are downloaded first. Slow for a big library: reports progress.
+    static func copyLibrary(from src: URL, to dst: URL,
                             report: @escaping @Sendable (String) -> Void) async -> CopyResult {
         let fm = FileManager.default
         try? fm.createDirectory(at: dst, withIntermediateDirectories: true)
@@ -92,8 +93,13 @@ enum LibraryLocation {
                 files.append(name)
             }
         }
+        func modified(_ u: URL) -> Date? { try? u.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate }
         let plan: [(String, LibraryCopyRule)] = files.compactMap { rel in
-            let rule = LibraryCopyRule.rule(for: rel, destinationHasIt: fm.fileExists(atPath: dst.appendingPathComponent(rel).path), ownLogs: ownLogs)
+            let from = src.appendingPathComponent(rel), to = dst.appendingPathComponent(rel)
+            let there = fm.fileExists(atPath: to.path)
+            // unknown dates (an iCloud placeholder on an older system): not newer, the destination's is kept
+            let newer = there && (modified(from).flatMap { a in modified(to).map { a > $0 } } ?? false)
+            let rule = LibraryCopyRule.rule(for: rel, destinationHasIt: there, sourceIsNewer: newer)
             return rule == .skip ? nil : (rel, rule)
         }
         // ask iCloud for everything at once; each file is then waited for in turn
@@ -113,6 +119,19 @@ enum LibraryLocation {
                 case .copy:
                     try fm.copyItem(at: from, to: to)
                     result.copied += 1
+                case .replace:
+                    // copied next to it first, so a failed copy leaves the destination's as it was
+                    let tmp = to.deletingLastPathComponent().appendingPathComponent(".lunta-move-\(UUID().uuidString)")
+                    try fm.copyItem(at: from, to: tmp)
+                    do { _ = try fm.replaceItemAt(to, withItemAt: tmp) } catch { try? fm.removeItem(at: tmp); throw error }
+                    result.copied += 1
+                case .mergePositions:
+                    let have = try Data(contentsOf: to)
+                    let add = try Data(contentsOf: from)
+                    if let merged = LibraryCopyRule.mergedPositions(destination: have, source: add) {
+                        try merged.write(to: to, options: .atomic)
+                        result.merged += 1
+                    }
                 case .mergeLines:
                     let have = try String(contentsOf: to, encoding: .utf8)
                     let add = try String(contentsOf: from, encoding: .utf8)
