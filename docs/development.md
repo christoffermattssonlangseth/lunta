@@ -730,8 +730,9 @@ iPhone and iPad (allow it on all websites).
 `core/src/drive/` (cargo feature `drive`, on by default for desktop and the CLI, and in the Apple build for the Mac's bridge: **Lunta › Google Drive for Android…** keeps the iCloud library and the Drive folder in sync)
 syncs a library through Google Drive's API, for devices that have no synced folder: the Android app,
 Linux, or anyone who prefers it. It uses **the same layout** as everything else (see
-[Library layout](#library-layout-sync-safe)), in a Drive folder called `Lunta`, so a Mac whose library
-folder lives inside "Google Drive for desktop" and API devices share one library.
+[Library layout](#library-layout-sync-safe)), in a Drive folder called `Lunta`. Lunta reaches only the
+files it created there (Google's `drive.file` scope, see [Access](#access-drivefile-only)), so devices share
+the folder through the API (Android, the Mac bridge, the CLI), not through Google Drive for desktop.
 
 ```
  working folder (the Library opens it)  <-- Syncer -->  RemoteStore: GoogleDrive | LocalDirRemote
@@ -793,34 +794,144 @@ cargo run --bin lunta-sync -- fetch <paper-id> --library ~/lunta-test
 # no Google account? any folder works as the remote:  --remote-dir /some/folder
 ```
 
+### Access: `drive.file` only
+
+Lunta asks Google for **`https://www.googleapis.com/auth/drive.file`** and nothing else: it sees only the
+files and folders created by the Cloud project's OAuth clients, plus the items the user picks for it in
+Google's picker. That scope is *non-sensitive* (brand verification only, no security assessment, no
+"unverified app" screen once verified). The full `drive` scope (all of the user's files) is *restricted*
+(a yearly CASA assessment, and 100 users until verified); older versions asked for it.
+
+**Who talks to Drive, and how** (Cloud project `lunta-514610`):
+
+| Platform | OAuth client | Drive calls |
+|---|---|---|
+| Android (`AppModel.kt`, `SyncWorker.kt`) | the "iOS"-type client `340661790250-jvrurg…` (`lunta.googleClientId`, redirect `com.googleusercontent.apps.…:/oauth2redirect`, Custom Tab + PKCE) | through the core's `LibrarySync.google_drive` (lazy) |
+| Mac bridge (`apple/Mac/DriveBridge.swift`) | the same client (`ASWebAuthenticationSession`) | through `LibrarySync.google_drive_bridge` |
+| CLI `lunta-sync` | any client of the project (`LUNTA_GOOGLE_CLIENT_ID`, a "Desktop app" client with its secret; loopback redirect) | `GoogleDrive` + `Syncer` |
+| Windows/Linux desktop app | none: it opens a library *folder* (e.g. inside Google Drive for desktop); no Drive API | — |
+| Google Docs extension / Mac (citations) | separate scope `auth/documents` (see google-docs-extension.md); no Drive API | — |
+
+The core's Drive client (`core/src/drive/gdrive.rs`) makes these calls, all under the library folder:
+`files.list` (`'<folder>' in parents`, 20 parents per query, and `name = 'Lunta' and 'root' in parents` to
+find the folder), `files.get` (folder metadata; a changed file's parents; `alt=media` downloads),
+`files.create` (folders; multipart and resumable uploads), `files.update` (new content of a file it
+uploaded; `trashed: true` for deletes; parents and name only during adoption), `files.copy` (adoption only),
+`changes.getStartPageToken` and `changes.list` (incremental syncs). No `permissions` calls, nothing outside
+the library folder (adoption also writes one backup folder in My Drive, see below). With `drive.file`,
+`files.list` and `changes.list` simply leave out what the app can't see.
+
+`drive.file` access belongs to the **Cloud project**, not the client: what the Mac bridge creates, Android
+sees, and the reverse (they use one client anyway). It is per item: a picked folder is granted, the files
+already inside it are not (Google's docs say nothing either way; developers report it, and the picker for
+apps grants exactly the ids it returns). Files the app created inside it are visible regardless.
+
+**How the folder is found.** By id first: the folder of the last sync (kept in the sync state's cursor),
+or the folder chosen in the picker (`DriveRoot::Id`, saved by the app); only a device that has never
+synced looks for "Lunta" in My Drive by name (and creates it if there is none it can see). A folder known
+by id that can no longer be opened gives the error `FOLDER_NOT_VISIBLE` ("Lunta can't open its folder in
+Google Drive …"; `drive_folder_not_visible()` for the apps) instead of quietly starting a second, empty
+"Lunta" folder; the apps then offer **Choose your Lunta folder**.
+
+**Who creates the files.** Android, the Mac bridge and the CLI create the folder and everything in it
+through the API, so a library made by them is fully visible. Not visible with `drive.file`: anything put
+into the folder by another app: Google Drive for desktop (a Windows/Linux desktop app or a Mac whose
+library folder is inside it), files dropped in through drive.google.com, or a "Lunta" folder made by hand.
+
+**Choose your Lunta folder** uses Google's picker for desktop and mobile apps ("OnePick"): the normal
+authorization URL plus `trigger_onepick=true&allow_folder_selection=true&allow_multiple=true`
+(`OAuthClient::picker_url`, `DriveAuth::begin_pick`), opened in the same Custom Tab /
+`ASWebAuthenticationSession` as sign-in, with the same redirect. The redirect carries `picked_file_ids`
+next to the `code` (`DriveAuth::picked_ids_from_redirect`); after the token exchange the first picked
+folder (`DriveAuth::picked_folder`) becomes the library (Android: `Settings.driveFolderId`; Mac:
+`UserDefaults` `driveFolderId`). It needs the Picker API enabled in the project, no API key, and only
+works with `drive.file`. Chosen alternatives: the web Picker in a Custom Tab needs a hosted page and an API
+key; Android's Storage Access Framework with the Drive provider gives content URIs, not Drive API access;
+"Open with" needs the Drive UI integration (`drive.install`) and grants one file at a time.
+
+**Moving existing users over (adoption).** Tokens keep the scopes they were granted, so a phone or Mac
+signed in by an older version still has the full scope after the update (`Tokens.scope`, recorded from
+the token response; a token saved without it came from the full scope). While it does, a full listing first
+**adopts** the library (`GoogleDrive::adopt`): every item is checked with `isAppAuthorized`;
+- a foreign **file** gets an app-created copy (`files.copy` with the same name, folder and
+  `modifiedTime`), and the original moves (`files.update` with `addParents`/`removeParents`, not deleted)
+  to "Lunta (originals from before the update)" in My Drive, under the same path;
+- a foreign **folder** (folders cannot be copied) gets an app-created twin with the same name in the same
+  place, its children move into it, and the emptied original goes to the backup folder;
+- a foreign **library folder** (a "Lunta" made by hand or by Drive for desktop) is replaced the same way:
+  a new "Lunta" in the same place takes its contents, and the old one, renamed "Lunta (originals from
+  before the update)", becomes the backup folder;
+- Google Docs and other native files are left alone (they are not part of a library).
+
+Ops logs are copied byte for byte under their own names, so the sync protocol does not change: ids change,
+md5s don't, so no device transfers anything again. The cursor records `adopted`; until a run adopts
+everything (a failed item stays where it was, is reported and retried at the next sync) every sync with the
+full scope lists and adopts again, and with the full scope a change from another app (Drive for desktop
+adding a file) also triggers a listing and adoption. With `drive.file` adoption is never needed (and would
+see nothing). The report's `notices` say what happened ("Lunta made its own copies of 3 file(s)… the
+originals are in …"), shown under Sync on Android and in the Mac's Google Drive window. Afterwards the apps
+offer **Sign in again**, which replaces the token with a `drive.file` one (no revoke needed).
+
+**Disconnect no longer revokes the grant**, only forgets the tokens on the device: with `drive.file`,
+revoking the grant removes the project's access to the files it created, for every device (they share
+the grant), and signing in again does not give it back. (`lunta-sync disconnect --revoke` still can.)
+
+**Limits.**
+- After the switch, what other apps add to the folder is invisible to Lunta, for good. In particular the
+  Windows/Linux desktop app, which keeps its library in a synced folder (Google Drive for desktop), does
+  not share with Android or the Mac bridge through the API any more for anything it *creates* (its own
+  op log, new papers); edits to files Lunta created stay visible. Until the desktop app syncs through the
+  API itself (the core's `Syncer` is ready for it), one device still on the full scope keeps adopting
+  those files.
+- Two devices adopting at the same moment can copy the same file twice; the duplicate is harmless (same
+  name and content; the syncer uses one and says "two files with this name").
+- A library in a *shared drive* or shared by another account was never supported and is not now.
+
 ### Setting up Google Cloud (once, by you)
 
 Lunta ships **no** Google credentials; you create an OAuth client in your own project.
 
 1. [console.cloud.google.com](https://console.cloud.google.com) → new project → *APIs & Services* → *Library* →
-   enable the **Google Drive API**.
-2. *OAuth consent screen* (Google Auth Platform → Branding/Audience): user type *External*, app name
-   "Lunta", your e-mail. Leave it in **Testing** and add your Google account(s) under *Test users*.
-   Add the scope `.../auth/drive` under *Data Access*.
+   enable the **Google Drive API** and the **Google Picker API** (for "Choose your Lunta folder").
+2. *Google Auth Platform* → *Branding*: app name "Lunta", support e-mail, logo, home page, privacy policy
+   (`site/app-privacy.html`) and terms; *Audience*: user type *External*. *Data access* → *Add or remove
+   scopes*: tick **`.../auth/drive.file`** ("See, edit, create and delete only the specific Google Drive files
+   you use with this app"), nothing else. It is non-sensitive, so the app can go *In production* and only
+   needs brand verification.
 3. *Credentials* → *Create credentials* → *OAuth client ID*:
-   - type **Desktop app** (desktop, CLI): gives a client id and a client secret. Put them in
+   - type **Desktop app** (CLI): gives a client id and a client secret. Put them in
      `LUNTA_GOOGLE_CLIENT_ID` / `LUNTA_GOOGLE_CLIENT_SECRET`. (A desktop client's "secret" is not confidential;
      Google still requires it at the token endpoint.)
-   - type **Android** (the Android app): needs the package name and the SHA-1 of the signing key; it has no
-     secret. Google redirects to `com.googleusercontent.apps.<id>:/oauth2redirect`.
-4. `lunta-sync connect` and sign in. The "Google hasn't verified this app" screen is expected in Testing:
-   *Advanced* → *Go to Lunta (unsafe)*.
+   - type **iOS** (what the Mac bridge and the Android app use: it allows the app's own redirect scheme,
+     `com.googleusercontent.apps.<id>:/oauth2redirect`; no secret), or **Android** (package name and the
+     SHA-1 of the signing key).
+   All clients must be in the same project: `drive.file` access is per project.
+4. `lunta-sync connect` and sign in.
 
-**Scope.** The default is `https://www.googleapis.com/auth/drive` (all files), because sharing with a Mac
-that uses Google Drive for desktop means seeing files this app did not create; the narrower `drive.file`
-only sees files the app itself created (so it works for a library used *only* through the API, `--scope file`,
-but not for one made by the Mac, and not even across two different OAuth clients). `drive` is a
-**restricted scope**: fine for personal use and test users, but publishing the app to the public needs
-Google's OAuth verification and an annual security assessment. Note that in *Testing* status Google expires
-refresh tokens after 7 days (you sign in again); *In production* (unverified, up to 100 users) tokens last.
-A narrower route (`drive.file` plus Google's file picker, where the user grants access to chosen files) was
-considered, but as far as the docs say it grants only the picked items, not whatever Drive for desktop adds to
-the folder later, and the picker is a web widget; so `drive` it is. If you know better, `Scope` is one enum.
+**Moving the existing project (`lunta-514610`) from `drive` to `drive.file`** (the author, once):
+
+1. Ship the apps with this change first (Android and the Mac), and let them sync once on each device that
+   was signed in before: that adopts the folder while the old tokens still have the full scope. Removing the
+   scope from the console does not take it away from tokens already granted, but don't rely on that for
+   long: see 5.
+2. *APIs & Services* → *Library* → **Google Picker API** → *Enable*. No API key is needed for the picker for
+   apps (the OAuth client is enough); if you ever add a web picker, create a key under *Credentials*, restrict
+   it to *Google Picker API* and to the site's HTTP referrer.
+3. *Google Auth Platform* → *Data access*: remove `https://www.googleapis.com/auth/drive`, add
+   `https://www.googleapis.com/auth/drive.file`, *Save*.
+4. *Verification center*: submit for (brand) verification. The scope justification for `drive.file`:
+   "Lunta is a reference manager. It keeps the user's library (paper metadata, PDFs, reading views,
+   highlights) in a 'Lunta' folder in their Google Drive and syncs it between their devices (Android, and
+   a Mac that bridges it to iCloud). It reads and writes only the files it creates in that folder, and a
+   folder the user chooses for it in Google's picker; it never accesses other files." Usually no demo
+   video is needed for non-sensitive scopes; if asked, record sign-in, the consent screen, a sync and the
+   folder in Drive.
+5. Tell users signed in before the update to tap **Sign in again** (Android: Settings sheet; Mac: Lunta ›
+   Google Drive for Android…), which replaces the restricted grant with `drive.file`. Users who don't keep
+   working on the old token until it is revoked or expires.
+
+**Scope in code.** `auth::Scope::File` is the default everywhere; `Scope::Full` remains for the CLI
+(`--scope full`) and for recognising old tokens.
 
 Tests: `cargo test` covers the syncer with a folder as the remote (a Mac-like device writing straight
 into it plus API devices: adds, edits, highlights, deletes, paper files, shared-file conflicts, interrupted
@@ -829,9 +940,18 @@ API (listing, changes, multipart and resumable uploads, token refresh, retries).
 
 ```sh
 LUNTA_GOOGLE_CLIENT_ID=... LUNTA_GOOGLE_CLIENT_SECRET=... \
-LUNTA_TEST_TOKEN_FILE=<state-dir>/google-tokens.json LUNTA_TEST_DRIVE_FOLDER=<id of an empty scratch folder> \
+LUNTA_TEST_TOKEN_FILE=<state-dir>/google-tokens.json LUNTA_TEST_DRIVE_FOLDER=<id of an empty scratch folder Lunta made> \
   cargo test drive::tests::real_drive -- --ignored
 ```
+
+(With `drive.file` the scratch folder must be one Lunta created or picked: e.g. `lunta-sync sync --folder-name
+lunta-scratch` on an empty library, then take the id from Drive's URL. Never use a real library or account.)
+The mock (`core/src/drive/mock.rs`) imitates `drive.file` too: items remember whether the API created
+them or the user picked them, and with `file_scope` on nothing else exists for the client. The tests
+`drive_file_*` and `migration_*` cover a new library, an existing app-made one (found by id even when
+renamed), a foreign folder (not visible; picking the folder is not enough, picking its files is), a lost
+folder (an error, not a new folder), and adoption with the old token (copies, originals kept, nothing
+trashed, nothing transferred again, then a `drive.file` token and a new device see everything).
 
 The Android app uses it through UniFFI (`core/src/drive/ffi.rs`: `DriveAuth` for sign-in, `LibrarySync`
 for the Syncer, also with a plain folder as the remote for testing). Not done yet: wiring into the desktop
@@ -941,8 +1061,9 @@ dark, an adaptive icon made from `design/logo-1024.png`) on the Rust core throug
 bindings. It follows the iPhone app's Mail-style layout.
 
 - **Setup:** on first run, choose where the library lives: **Google Drive** (sign in with a Custom Tab
-  and PKCE through the core's `DriveAuth`; the library is a "Lunta" folder in your Drive, in sync with a Mac
-  or PC) or **a local library** on the phone (for trying it out). Drive sync is lazy: it runs on start,
+  and PKCE through the core's `DriveAuth`, `drive.file` scope; the library is a "Lunta" folder in your Drive,
+  in sync with a Mac through its bridge; Settings has **Choose your Lunta folder…** (Google's picker) and, for a
+  token from an older version, **Sign in again**) or **a local library** on the phone (for trying it out). Drive sync is lazy: it runs on start,
   on pull-to-refresh and about every 30 minutes (WorkManager), and fetches a paper's EPUB or PDF
   when you open it.
 - **Library:** places (All, Starred, Unread with counts, New for You, folders as a tree,
