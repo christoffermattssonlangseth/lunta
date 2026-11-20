@@ -75,6 +75,18 @@
       .rs-done .rs-state { color: #2a6478; }
       .rs-q { flex: 1; min-width: 0; }
       .rlist .hit .m.rs-src { font-size: 11px; }
+      .crow .o { color: #2a6478; font-size: 11.5px; }
+      .crow .o:empty { display: none; }
+      button.co { all: unset; cursor: pointer; font-size: 11.5px; color: #2a6478; padding: 2px 4px; border-radius: 5px; flex: 0 0 auto; }
+      button.co:hover, button.co:focus { background: #eef4f6; outline: none; }
+      .opts { border: 1px solid #dde3e6; border-radius: 8px; padding: 6px; margin: 2px 0 8px; }
+      .orow { display: flex; gap: 5px; margin: 4px 0; }
+      .orow input, .orow select { flex: 1; min-width: 0; }
+      .orow select.olabel { flex: 0 0 auto; }
+      .cv-sum { font-weight: 600; margin: 4px 0; }
+      .cv-h { font-size: 12px; color: #2a6478; margin: 8px 0 2px; }
+      .cv-row { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; padding: 3px 0; }
+      .cv-note { font-size: 12px; color: #6e6e73; margin: 6px 0; }
       [hidden] { display: none !important; }
       @media (prefers-color-scheme: dark) {
         .card, .tab { background: #2a2a2c; color: #eee; } header strong { color: #9ec9d8; }
@@ -103,6 +115,11 @@
           <div class="buttons"><button class="btn primary insert" disabled>Insert Citation</button></div>
           <div class="buttons"><button class="btn bib" disabled>Insert Bibliography</button><button class="btn refresh" disabled>Update All</button></div>
           <div class="buttons"><button class="btn edit" disabled>Edit Citation…</button><button class="btn resolve" disabled title="Turn placeholders typed while writing, like (Langseth et al. 2025) or [Smith 2019 cortex], into citations: you confirm each one">Resolve Citations…</button></div>
+          <div class="buttons"><button class="btn convert" disabled title="Make citations inserted with Zotero Lunta citations: you review the papers first, nothing changes until you click Convert">Convert Citations from Zotero…</button></div>
+          <div class="cvbox box" hidden>
+            <div class="row"><strong>Convert Citations</strong><button class="link cvclose">Close</button></div>
+            <div class="cvlist"></div>
+          </div>
           <div class="rbox box" hidden>
             <div class="row"><strong>Resolve Citations</strong><button class="link rclose">Close</button></div>
             <p class="note">Lunta proposes, you decide: each placeholder becomes a citation only when you confirm it. Papers not in your library are added when confirmed.</p>
@@ -142,7 +159,8 @@
     }
   });
 
-  let current = null;   // the citation being edited: {index, ids, text}
+  let current = null;   // the citation being edited: {index, ids, text, opts}
+  let editingOpts = null;   // the paper whose options are open
   let picked = [], style = "apa", styleTitle = "", styleSaved = false, needsStyle = false, ready = false, busy = false, lastSearch = 0, opened = false;
   let viaApp = false;   // Safari on the Mac: Lunta for Mac signs in to Google and edits the document
   let luntaApi = 0;     // the citation API's version (3: Resolve Citations)
@@ -156,6 +174,7 @@
     $(".style").disabled = !can;
     $(".edit").disabled = !can || needsStyle;
     $(".resolve").disabled = !can || needsStyle;
+    $(".convert").disabled = !can || needsStyle;
     $(".cadd").disabled = !can || !current || !picked.length;
   }
   function show(which) {
@@ -302,8 +321,9 @@
     const st = check(await send({ op: "state", docId: docId() }));
     const texts = st.texts || [], lists = st.citations || [], key = ids.join(",");
     const same = lists.map((l, k) => (l.join(",") === key ? k : -1)).filter((k) => k >= 0);
-    if (same.length === 1) { await openCitation(same[0], lists[same[0]], texts[same[0]]); return true; }
-    if (same.length > 1) { chooseCitation(lists, texts, same, "These papers are cited in " + same.length + " places; which one?"); return true; }
+    const codes = st.options || [];
+    if (same.length === 1) { await openCitation(same[0], lists[same[0]], texts[same[0]], codes[same[0]]); return true; }
+    if (same.length > 1) { chooseCitation(lists, texts, same, "These papers are cited in " + same.length + " places; which one?", codes); return true; }
     return false;
   }
 
@@ -329,13 +349,13 @@
       }
     }
     status("");
-    if (i >= 0) { openCitation(i, lists[i], texts[i]); return; }
+    if (i >= 0) { openCitation(i, lists[i], texts[i], (st.options || [])[i]); return; }
     chooseCitation(lists, texts, lists.map((_, k) => k),
-      sel ? "The selected text isn’t one citation; pick it here." : "Tip: click a citation in the text while this panel is open, and it opens here by itself.");
+      sel ? "The selected text isn’t one citation; pick it here." : "Tip: click a citation in the text while this panel is open, and it opens here by itself.", st.options);
   }
 
   /** A list of citations (indexes `which`) to pick the one to edit. */
-  function chooseCitation(lists, texts, which, hint) {
+  function chooseCitation(lists, texts, which, hint, codes) {
     current = null; setButtons();
     $(".cbox").hidden = false;
     $(".ctitle").textContent = "Which citation?";
@@ -350,17 +370,19 @@
       row.innerHTML = '<div class="ct"><div class="t"></div><div class="m"></div></div>';
       row.querySelector(".t").textContent = texts[k] || "(…)";
       row.querySelector(".m").textContent = "Citation " + (k + 1) + " of " + lists.length + " · " + ids.length + (ids.length === 1 ? " paper" : " papers");
-      row.onclick = () => openCitation(k, ids, texts[k]);
+      row.onclick = () => openCitation(k, ids, texts[k], (codes || [])[k]);
       list.appendChild(row);
     });
   }
 
-  async function openCitation(index, ids, text) {
-    current = { index, ids: ids.slice(), text };
+  async function openCitation(index, ids, text, code) {
+    const same = current && current.index === index && current.ids.join(",") === ids.join(",");
+    current = { index, ids: ids.slice(), text: text || (same ? current.text : ""), opts: LuntaCite.decodeOptions(code) || {} };
+    if (!same) editingOpts = null;
     $(".cbox").hidden = false;
-    $(".ctitle").textContent = "This citation " + (text ? "· " + text : "");
+    $(".ctitle").textContent = "This citation " + (current.text ? "· " + current.text : "");
     $(".cadd-row").hidden = false;
-    $(".chint").textContent = "Search above and pick papers to add them; ✕ removes one.";
+    $(".chint").textContent = "Search above and pick papers to add them; Page… adds a page, prefix or suffix, or leaves the author out; ✕ removes one.";
     setButtons();
     const list = $(".clist");
     list.innerHTML = "";
@@ -368,10 +390,19 @@
     ids.forEach((id) => {
       const row = document.createElement("div");
       row.className = "crow";
-      row.innerHTML = '<div class="ct"><div class="t">…</div><div class="m"></div></div><button class="cx" title="Remove from this citation">✕</button>';
+      row.innerHTML = '<div class="ct"><div class="t">…</div><div class="m"></div><div class="o"></div></div>' +
+        '<button class="co" title="Page, prefix, suffix, author (for this paper in this citation)">Page…</button><button class="cx" title="Remove from this citation">✕</button>';
+      row.querySelector(".o").textContent = LuntaCite.optionsLabel(current.opts[id]);
       row.querySelector(".cx").onclick = () => changeCitation(current.ids.filter((x) => x !== id));
+      row.querySelector(".co").onclick = () => { editingOpts = editingOpts === id ? null : id; openCitation(current.index, current.ids, current.text, LuntaCite.encodeOptions(current.opts)); };
       rows[id] = row;
       list.appendChild(row);
+      if (editingOpts === id) {
+        const form = LuntaCite.optionsForm(document, current.opts[id], (o) => setPaperOptions(id, o),
+          () => { editingOpts = null; openCitation(current.index, current.ids, current.text, LuntaCite.encodeOptions(current.opts)); });
+        list.appendChild(form);
+        setTimeout(form.focusFirst, 0);
+      }
     });
     const d = await send({ op: "details", docId: docId(), ids });
     if (!current || current.index !== index || d.error) return;
@@ -392,11 +423,27 @@
         ...(styleSaved ? {} : { style, styleTitle }) }));
       done(r);
       if (!ids.length || r.removed) { closeCitation(); return; }
-      await openCitation(was.index, ids, "");
+      await openCitation(was.index, ids, "", LuntaCite.encodeOptions(LuntaCite.cleanOptions(was.opts, ids)));
     });
   }
 
-  function closeCitation() { current = null; $(".cbox").hidden = true; $(".clist").innerHTML = ""; setButtons(); }
+  /** One paper's options in the citation being edited, then Update All. */
+  function setPaperOptions(id, o) {
+    if (!current) return;
+    const was = current;
+    const map = LuntaCite.cleanOptions(Object.assign({}, was.opts, { [id]: o }), was.ids);
+    const code = LuntaCite.encodeOptions(map);
+    return exclusive(async () => {
+      status("Changing the citation…");
+      const r = check(await send({ op: "editCitation", docId: docId(), index: was.index, expect: was.ids, ids: was.ids, options: code,
+        ...(styleSaved ? {} : { style, styleTitle }) }));
+      done(r);
+      editingOpts = null;
+      await openCitation(was.index, was.ids, "", code);
+    });
+  }
+
+  function closeCitation() { current = null; editingOpts = null; $(".cbox").hidden = true; $(".clist").innerHTML = ""; setButtons(); }
 
   async function insert(ids) {
     const prep = check(await send({ op: "prepareInsert", docId: docId(), ids }));
@@ -553,6 +600,56 @@
     });
   }
   $(".resolve").onclick = openResolve;
+
+  // ---- Convert Citations from Zotero (its links and named ranges; common.js reads them) ----
+
+  let conversion = null;
+  function openConvert() {
+    if (!ready || busy) return;
+    if (luntaApi < 4) { status("This version of Lunta can’t convert citations. Update Lunta and try again.", true); return; }
+    exclusive(async () => {
+      status("Looking for Zotero citations…");
+      const z = check(await send({ op: "scanZotero", docId: docId() }));
+      const notes = [];
+      if (z.unreadable) notes.push(z.unreadable + " Zotero citation" + (z.unreadable === 1 ? "" : "s") + " had no details in the document and will stay as they are.");
+      if (z.paperpile) notes.push("Paperpile’s citations (" + z.paperpile + ") can’t be converted: Paperpile keeps their details on its own server.");
+      if (!z.cites.length) { status(notes.length ? notes.join(" ") : "This document has no Zotero citations.", notes.length > 0); return; }
+      const first = LuntaCite.convertPlan(z.cites);
+      const m = check(await send({ op: "match", items: first.works.map((w) => w.meta) }));
+      const plan = LuntaCite.convertPlan(z.cites, m.matches || []);
+      conversion = { plan, bibs: z.bibs };
+      if (z.bibs.length) notes.push("Zotero’s bibliography becomes Lunta’s once all its citations are converted.");
+      $(".cvbox").hidden = false;
+      LuntaCite.convertReview(document, $(".cvlist"), plan, notes, (keys) => runConversion(keys), closeConvert);
+      status(LuntaCite.convertSummary(plan) + ". Review, then Convert.");
+    });
+  }
+  function closeConvert() { conversion = null; $(".cvbox").hidden = true; $(".cvlist").innerHTML = ""; }
+  function runConversion(keys) {
+    const conv = conversion;
+    if (!conv) return;
+    exclusive(async () => {
+      const added = {};
+      let newPapers = 0;
+      for (const k of keys) {
+        const w = conv.plan.works[conv.plan.byKey[k]];
+        status("Adding “" + (w.meta.title || "a paper") + "” to your library…");
+        const p = check(await send({ op: "addPaper", meta: w.meta }));
+        if (p && p.id) { added[k] = p.id; if (p.added) newPapers++; }
+      }
+      const res = LuntaCite.convertResolve(conv.plan, added);
+      const left = res.left.map((l) => ({ text: conv.plan.citations[l.index].text, reason: l.reason }));
+      const cites = res.convert.map((c) => ({ key: conv.plan.citations[c.index].key, ids: c.ids, options: LuntaCite.encodeOptions(c.options) }));
+      if (left.length && conv.bibs.length) left.push({ text: "", reason: "Zotero’s bibliography stays until its citations are converted" });
+      status("Converting " + cites.length + " citations…");
+      const r = check(await send({ op: "convertZotero", docId: docId(), cites, bibs: left.length ? [] : conv.bibs, ...(styleSaved ? {} : { style, styleTitle }) }));
+      done(r);
+      closeConvert();
+      status(LuntaCite.convertDone(r.converted, left, newPapers) + " " + (r.summary || ""), left.length > 0);
+    });
+  }
+  $(".convert").onclick = openConvert;
+  $(".cvclose").onclick = closeConvert;
   $(".rclose").onclick = () => { $(".rbox").hidden = true; if (resolver) resolver.load([]); $(".rlist").innerHTML = ""; status(""); };
 
   async function connect(selectAccount) {

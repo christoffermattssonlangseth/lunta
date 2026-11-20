@@ -500,3 +500,63 @@ test('Resolve Citations in Google Docs: placeholders in the plain text only; eac
   assert.equal(api.calls.batchUpdate, n);
   assert.match(api.paragraphs().join('\n'), /Ek \(2018\)\. Delta rivers/);
 });
+
+// ---- a citation's options, and converting Zotero's citations ----
+
+test('options: set with Edit Citation, kept in named ranges across rewrites, read by the Apps Script too', async () => {
+  const api = new FakeDocsAPI({ paragraphs: [P('One ', link('(…)', CITE(['a'])), ' and ', link('(…)', CITE(['b', 'c'])), '.'), P(link('Refs', BIB))] });
+  const g = flow(api);
+  await g.update('doc', { style: 'apa' });
+  assert.equal(api.paragraphs()[0], 'One (Lee, 2020) and (Smith, 2019; Wu & Ng, 2021).');
+  await g.editCitation('doc', { index: 1, expect: ['b', 'c'], ids: ['b', 'c'], options: C.encodeOptions({ b: { locator: '4', prefix: 'see' }, c: { mode: 'suppress' } }) });
+  assert.equal(api.paragraphs()[0], 'One (Lee, 2020) and (2019; see Wu & Ng, 2021, p. 4).');
+  let st = await g.state('doc');
+  assert.deepEqual(C.decodeOptions(st.options[1]), { b: { prefix: 'see', locator: '4' }, c: { mode: 'suppress' } });
+  // the first citation gets longer: the second's options stay on its text
+  await g.editCitation('doc', { index: 0, expect: ['a'], ids: ['a'], options: C.encodeOptions({ a: { mode: 'narrative' } }) });
+  assert.equal(api.paragraphs()[0], 'One Lee (2020) and (2019; see Wu & Ng, 2021, p. 4).');
+  await g.update('doc', { style: 'vancouver' });
+  assert.equal(api.paragraphs()[0], 'One Lee [1] and [see 2, p. 4; 3].');
+  st = await g.state('doc');
+  assert.equal(st.options.filter(Boolean).length, 2);
+  const names = api.tab('t.0').named.filter((n) => n.name.startsWith('lunta-o:'));
+  const second = names.find((n) => C.decodeOptions(C.optionsCodeOf([n.name])).b);
+  assert.equal(api.text().slice(second.range.startIndex - 1, second.range.endIndex - 1), '[see 2, p. 4; 3]');
+  // a paper removed: its options go with it
+  await g.editCitation('doc', { index: 1, expect: ['b', 'c'], ids: ['b'] });
+  st = await g.state('doc');
+  assert.deepEqual(C.decodeOptions(st.options[1]), { b: { prefix: 'see', locator: '4' } });
+});
+
+test('Zotero in Google Docs: read from its links and named ranges, converted after the review, its bibliography made Lunta’s', async () => {
+  const ZURL = C.ZOTERO_DOCS_URL;
+  const api = new FakeDocsAPI({ paragraphs: [
+    P('Known ', link('(Lee, 2020, p. 3)', ZURL + 'Ab12Cd'), ' and new ', link('(Okafor, 2018)', ZURL + 'Qq77Rr'), ' and ', link('(Lee, 2020, p. 3)', ZURL + 'Ab12Cd'), '.'),
+    P('References'), P(link('Lee, A. (2020). Alpha cells.', ZURL + 'Bb00Bb')), P(link('Okafor, N. (2018). Epsilon.', ZURL + 'Bb00Bb'))
+  ] });
+  const t = api.tab('t.0');
+  const code = (items) => 'ITEM CSL_CITATION ' + JSON.stringify({ citationID: 'x', properties: { noteIndex: 0 }, citationItems: items, schema: 'https://github.com/citation-style-language/schema/raw/master/csl-citation.json' });
+  const put = (key, c) => { for (let i = 0, n = 0; i < c.length; i += 243, n++) t.named.push({ id: 'z' + key + n, name: 'Z_F' + key + String(n).padStart(3, '0') + c.slice(i, i + 243), range: { startIndex: 7, endIndex: 9 } }); };
+  put('Ab12Cd', code([{ id: 1, itemData: { title: 'Alpha cells', author: [{ family: 'Lee', given: 'Ada' }], issued: { 'date-parts': [['2020']] } }, locator: '3', label: 'page' }]));
+  put('Qq77Rr', code([{ id: 2, itemData: { title: 'Epsilon waves', author: [{ family: 'Okafor', given: 'Ngozi' }], issued: { 'date-parts': [['2018']] }, DOI: '10.5555/eps' } }]));
+  put('Bb00Bb', 'BIBL {"uncited":[],"omitted":[],"custom":[]} CSL_BIBLIOGRAPHY');
+  const g = flow(api);
+  const z = await g.scanZotero('doc');
+  assert.deepEqual(z.cites.map((c) => c.key), ['Ab12Cd', 'Qq77Rr']);
+  assert.deepEqual(z.bibs, ['Bb00Bb']);
+  assert.deepEqual(z.cites[0].works[0].options, { locator: '3' });
+  assert.equal(api.calls.batchUpdate, 0, 'nothing written by reading');
+  // Epsilon wasn't added: its citation stays, and so does Zotero's bibliography
+  await g.convertZotero('doc', { style: 'apa', cites: [{ key: 'Ab12Cd', ids: ['a'], options: C.encodeOptions({ a: { locator: '3' } }) }], bibs: [] });
+  assert.equal(api.paragraphs()[0], 'Known (Lee, 2020, p. 3) and new (Okafor, 2018) and (Lee, 2020, p. 3).');
+  assert.equal(api.linkAt(api.indexOf('(Lee')), CITE(['a']));
+  assert.equal(api.linkAt(api.indexOf('(Okafor')), ZURL + 'Qq77Rr');
+  assert.ok(!t.named.some((n) => n.name.startsWith('Z_FAb12Cd')), 'the converted code is gone');
+  assert.ok(t.named.some((n) => n.name.startsWith('Z_FQq77Rr')), 'the other stays');
+  // then Epsilon too (added meanwhile as d), with the bibliography: Zotero's becomes Lunta's
+  const r = await g.convertZotero('doc', { cites: [{ key: 'Qq77Rr', ids: ['d'] }], bibs: ['Bb00Bb'] });
+  assert.equal(r.converted, 1);
+  assert.equal(api.paragraphs()[0], 'Known (Lee, 2020, p. 3) and new (Ek, 2018) and (Lee, 2020, p. 3).');
+  assert.deepEqual(api.paragraphs().slice(2), ['Ek (2018). Delta rivers. Science.', 'Lee (2020). Alpha cells. Cell.']);
+  assert.ok(!t.named.some((n) => n.name.startsWith('Z_F')));
+});

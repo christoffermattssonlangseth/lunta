@@ -40,7 +40,7 @@ test('citations in document order, footnotes where their marks are, runs split b
   const body = Body(P(t1, c1), P('More ', note, cite('[2]', ['b'])), P(split));
   const gs = load(makeDocument({ body }));
   assert.deepEqual(gs.call('getState').citations, [['a'], ['n'], ['b'], ['b', 'c']]);
-  assert.equal(gs.call('version'), 3);
+  assert.equal(gs.call('version'), 4);
 });
 
 test('Update All writes each citation; twice changes nothing', () => {
@@ -233,4 +233,85 @@ test('the shared store: a half-written generation is ignored, the newest complet
   doc.addNamedRange('lunta:zzzz:0:3:H4sIAAAA', doc.newRange().build());
   assert.equal(gs.call('getState').style, 'harvard');
   assert.ok(good.length >= 1);
+});
+
+// ---- a citation's options, and converting Zotero's citations ----
+
+test('options: named ranges over a citation, kept when Update All rewrites it, set at the cursor', () => {
+  const c1 = cite('(…)', ['a']), c2 = cite('(…)', ['b']);
+  const body = Body(P(new Text('One '), c1), P(c2));
+  const doc = makeDocument({ body });
+  const gs = load(doc);
+  // the cursor in the second citation
+  doc.cursor = { text: c2, offset: 1 };
+  const at = gs.call('citationAtCursor');
+  assert.deepEqual(at, { index: 1, ids: ['b'], options: '', text: '(…)' });
+  const code = C.encodeOptions({ b: { locator: '12', prefix: 'see' } });
+  assert.equal(gs.call('setCitationOptions', 1, 'b', C.optionRangeNames(code, 'k1')), true);
+  assert.equal(gs.call('setCitationOptions', 1, 'a', []), false, 'a citation that changed meanwhile');
+  assert.deepEqual(gs.call('getState').options, ['', code]);
+  // Update All rewrites the text; the options move to the new text
+  const r = gs.call('applyPlan', plan(gs, ['(Lee, 2020)', '(see Wu, 2021, p. 12)']));
+  assert.equal(r.updated, 2);
+  assert.equal(c2.getText(), '(see Wu, 2021, p. 12)');
+  assert.deepEqual(gs.call('getState').options, ['', code]);
+  const nr = doc.named.find((x) => x.getName().indexOf('lunta-o:') === 0);
+  const el = nr.getRange().getRangeElements()[0];
+  assert.deepEqual([el.getStartOffset(), el.getEndOffsetInclusive()], [0, 20]);
+  // cleared
+  gs.call('setCitationOptions', 1, 'b', []);
+  assert.deepEqual(gs.call('getState').options, ['', '']);
+});
+
+const ZKEY = 'Ab12Cd', ZBIB = 'Xy98Zw';
+function zoteroDoc() {
+  const code = 'ITEM CSL_CITATION ' + JSON.stringify({
+    citationID: 'q1w2e3', properties: { formattedCitation: '(Smith, 2020, p. 3)', plainCitation: '(Smith, 2020, p. 3)', noteIndex: 0 },
+    citationItems: [{ id: 7, uris: ['http://zotero.org/users/1/items/AAAA1111'], itemData: { id: 7, type: 'article-journal', title: 'Alpha', DOI: '10.1000/alpha',
+      author: [{ family: 'Smith', given: 'Jane' }], issued: { 'date-parts': [['2020']] } }, locator: '3', label: 'page' }],
+    schema: 'https://github.com/citation-style-language/schema/raw/master/csl-citation.json'
+  });
+  const z = new Text('(Smith, 2020, p. 3)');
+  z.setLinkUrl(0, 18, C.ZOTERO_DOCS_URL + ZKEY);
+  const b1 = P('Smith, J. (2020). Alpha.'), b2 = P('Wu, P. (2019). Gamma.');
+  [b1, b2].forEach((p) => p.editAsText().setLinkUrl(0, p.getText().length - 1, C.ZOTERO_DOCS_URL + ZBIB));
+  const body = Body(P(new Text('Known '), z, new Text('.')), P('References'), b1, b2, P(''));
+  const doc = makeDocument({ body });
+  // Zotero's field codes: "Z_F<key><000><part>" (255 characters a name)
+  for (let i = 0, n = 0; i < code.length; i += 243, n++) doc.addNamedRange('Z_F' + ZKEY + String(n).padStart(3, '0') + code.slice(i, i + 243), doc.newRange().addElement(z, 0, 18).build());
+  doc.addNamedRange('Z_F' + ZBIB + '000BIBL {"uncited":[],"omitted":[],"custom":[]} CSL_BIBLIOGRAPHY', doc.newRange().addElement(b1.editAsText(), 0, 5).build());
+  return { doc, body, z };
+}
+
+test('Zotero in Google Docs: its links and named ranges read, converted to Lunta citations with their options', () => {
+  const { doc, body, z } = zoteroDoc();
+  const gs = load(doc);
+  const scan = gs.call('zoteroScan');
+  assert.deepEqual(scan.runs.map((r) => r.key), [ZKEY, ZBIB, ZBIB]);
+  const code = C.zoteroDocsCode(C.zoteroDocsJoin(scan.names, ZKEY));
+  assert.equal(code.kind, 'cite');
+  assert.deepEqual(code.works[0].meta.doi, '10.1000/alpha');
+  assert.deepEqual(code.works[0].options, { locator: '3' });
+  assert.equal(C.zoteroDocsCode(C.zoteroDocsJoin(scan.names, ZBIB)).kind, 'bib');
+  // nothing changes before the conversion is confirmed
+  assert.equal(z.getLinkUrl(0), C.ZOTERO_DOCS_URL + ZKEY);
+  const names = C.optionRangeNames(C.encodeOptions({ a: code.works[0].options }), 'k2');
+  const r = gs.call('zoteroConvert', [{ key: ZKEY, ids: ['a'], names }], [ZBIB], true);
+  assert.deepEqual(r, { converted: 1, bibliography: true });
+  assert.equal(z.getLinkUrl(0), LINK(['a']));
+  assert.equal(body.children[2].editAsText().getLinkUrl(0), BIB, 'Zotero’s bibliography is Lunta’s now');
+  const st = gs.call('getState');
+  assert.deepEqual(st.citations, [['a']]);
+  assert.deepEqual(C.decodeOptions(st.options[0]), { a: { locator: '3' } });
+  assert.equal(st.hasBibliography, true);
+  assert.ok(!doc.named.some((x) => x.getName().indexOf('Z_F') === 0), 'Zotero’s codes are gone');
+});
+
+test('Zotero in Google Docs: with a Lunta bibliography already, Zotero’s goes; unconverted keys stay', () => {
+  const { doc, body } = zoteroDoc();
+  body.children.push(bibPara('Lunta’s list'));
+  const gs = load(doc);
+  gs.call('zoteroConvert', [], [ZBIB], false);
+  assert.equal(bodyText(body), 'Known (Smith, 2020, p. 3).\nReferences\n\nLunta’s list');
+  assert.ok(doc.named.some((x) => x.getName().indexOf('Z_F' + ZKEY) === 0), 'the citation not converted keeps its code');
 });

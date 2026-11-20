@@ -21,10 +21,20 @@
 <div id="picked" class="picked"></div>
 <div class="buttons"><button id="insert" class="primary" disabled>Insert Citation</button></div>
 <div class="buttons"><button id="bib" disabled>Insert Bibliography</button><button id="refresh" disabled>Update All</button></div>
+<div class="buttons"><button id="edit" disabled title="The citation where the cursor is: a page, prefix or suffix for a paper, or the author left out or in the text">Edit Citation at Cursor</button></div>
+<div id="current" class="current" hidden>
+  <div class="current-h">This citation <button id="cclose" class="cite-x" title="Close">✕</button></div>
+  <div id="citelist"></div>
+</div>
+<div class="buttons"><button id="convert" disabled title="Make citations inserted with Zotero Lunta citations: you review the papers first, nothing changes until you click Convert">Convert Citations from Zotero…</button></div>
+<div id="convertBox" class="resolve" hidden>
+  <div class="current-h">Convert Citations <button id="cvclose" class="cite-x" title="Close">✕</button></div>
+  <div id="cvlist"></div>
+</div>
 <p id="status" class="status"></p>
 <script>
 // Sidebar version: Code.gs must be at least this (both are pasted from Lunta together).
-var SIDEBAR_VERSION = 2;
+var SIDEBAR_VERSION = 4;
 var BASE = 'https://localhost:47481/api', TOKEN = '{{TOKEN}}';
 var picked = [], style = null, styleTitle = '', key = TOKEN, busy = false, ready = false, lastSearch = 0;
 function $(id) { return document.getElementById(id); }
@@ -52,7 +62,7 @@ function server(fn) {
 function showError(e) { status(LuntaCite.describe(e, 'gdocs'), true); }
 function setButtons() {
   $('insert').disabled = busy || !ready || !picked.length;
-  $('bib').disabled = $('refresh').disabled = busy || !ready;
+  $('bib').disabled = $('refresh').disabled = $('edit').disabled = $('convert').disabled = busy || !ready;
   $('style').disabled = busy || !ready;
 }
 /** Runs one change to the document at a time. */
@@ -96,9 +106,12 @@ function update(attempt) {
   status('Updating…');
   return server('getState').then(function (st) {
     var lists = st.citations, ids = LuntaCite.citedIds(lists), papers = LuntaCite.detailsFor(st.papers, ids), offline = false;
+    var options = (st.options || []).map(LuntaCite.decodeOptions);
     var work;
     if (LuntaCite.isJournal(style)) {
-      work = api('/render', { style: style.slice(4), citations: lists, papers: papers }, 90000).then(function (res) {
+      var body = { style: style.slice(4), citations: lists, papers: papers }, opts = LuntaCite.renderOptions(options, lists);
+      if (opts) body.options = opts;
+      work = api('/render', body, 90000).then(function (res) {
         styleTitle = res.title || styleTitle;
         return LuntaCite.formatJournal(res, lists, st.papers);
       });
@@ -106,9 +119,7 @@ function update(attempt) {
       work = (ids.length ? api('/bibliography', { style: style, ids: ids, papers: papers }) : Promise.resolve({ entries: [] }))
         .catch(function (e) { if (e.kind !== 'offline') throw e; offline = true; return { entries: null }; })
         .then(function (res) {
-          var f = LuntaCite.format(style, lists, res.entries, st.papers);
-          f.superscripts = lists.map(function () { return f.superscript; });
-          return f;
+          return LuntaCite.format(style, lists, res.entries, st.papers, options);
         });
     }
     return work.then(function (f) {
@@ -153,6 +164,113 @@ var insertBib = exclusive(function () {
 });
 var updateAll = exclusive(function () { return update(); });
 
+// ---- a citation's options (each paper's page, prefix, suffix, author) ----
+var current = null, editing = null;
+var editCitation = exclusive(function () {
+  return server('citationAtCursor').then(function (c) {
+    if (!c) { status('Click inside a citation in the document first, then Edit Citation at Cursor.'); return; }
+    current = { index: c.index, ids: c.ids, opts: LuntaCite.decodeOptions(c.options) || {}, text: c.text };
+    editing = null;
+    showCurrent();
+  });
+});
+function showCurrent() {
+  var box = $('current'), list = $('citelist');
+  if (!current) { box.hidden = true; list.innerHTML = ''; return; }
+  box.hidden = false; list.innerHTML = '';
+  var hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = current.text;
+  list.appendChild(hint);
+  current.ids.forEach(function (id) {
+    var row = document.createElement('div');
+    row.className = 'cite-row';
+    row.innerHTML = '<div class="cite-text"><div class="t">…</div><div class="o"></div></div><button class="cite-o" title="Page, prefix, suffix, author">Page…</button>';
+    row.querySelector('.o').textContent = LuntaCite.optionsLabel(current.opts[id]);
+    row.querySelector('.cite-o').onclick = function () { editing = editing === id ? null : id; showCurrent(); };
+    list.appendChild(row);
+    api('/bibliography', { style: 'apa', ids: [id] }).then(function (r) { var e = (r.entries || [])[0]; if (e && !e.missing) row.querySelector('.t').textContent = e.title || 'Untitled'; }).catch(function () {});
+    if (editing === id) {
+      var form = LuntaCite.optionsForm(document, current.opts[id], function (o) { setPaperOptions(id, o); }, function () { editing = null; showCurrent(); });
+      list.appendChild(form);
+      setTimeout(form.focusFirst, 0);
+    }
+  });
+}
+function setPaperOptions(id, o) {
+  var c = current;
+  exclusive(function () {
+    var map = Object.assign({}, c.opts);
+    map[id] = o;
+    map = LuntaCite.cleanOptions(map, c.ids);
+    return server('setCitationOptions', c.index, c.ids.join(','), LuntaCite.optionRangeNames(LuntaCite.encodeOptions(map))).then(function (ok) {
+      if (!ok) throw new Error('That citation changed or moved in the meantime. Click in it and Edit Citation at Cursor again.');
+      current = { index: c.index, ids: c.ids, opts: map || {}, text: c.text };
+      editing = null; showCurrent();
+      return update();
+    });
+  })();
+}
+
+// ---- converting Zotero's citations ----
+var conversion = null;
+var convertZotero = exclusive(function () {
+  status('Looking for Zotero citations…');
+  return Promise.all([server('zoteroScan'), api('/status')]).then(function (x) {
+    var z = x[0];
+    if ((x[1].api || 0) < 4) throw new Error('This version of Lunta can’t convert citations. Update Lunta and try again.');
+    var seen = {}, cites = [], bibs = [], unreadable = 0;
+    z.runs.forEach(function (r) {
+      if (seen[r.key]) return;
+      seen[r.key] = true;
+      var code = LuntaCite.zoteroDocsCode(LuntaCite.zoteroDocsJoin(z.names, r.key));
+      if (!code) unreadable++;
+      else if (code.kind === 'bib') bibs.push(r.key);
+      else cites.push({ key: r.key, works: code.works, text: r.text, source: 'Zotero' });
+    });
+    var notes = [];
+    if (unreadable) notes.push(unreadable + ' Zotero citation' + (unreadable === 1 ? '' : 's') + ' had no details in the document and will stay as they are.');
+    if (z.paperpile) notes.push('Paperpile’s citations (' + z.paperpile + ') can’t be converted: Paperpile keeps their details on its own server.');
+    if (!cites.length) { status(notes.length ? notes.join(' ') : 'This document has no Zotero citations.', !!notes.length); return; }
+    var first = LuntaCite.convertPlan(cites);
+    return api('/match', { items: first.works.map(function (w) { return w.meta; }) }, 60000).then(function (r) {
+      var plan = LuntaCite.convertPlan(cites, r.matches || []);
+      conversion = { plan: plan, bibs: bibs };
+      $('convertBox').hidden = false;
+      if (bibs.length) notes.push('Zotero’s bibliography becomes Lunta’s once all its citations are converted.');
+      LuntaCite.convertReview(document, $('cvlist'), plan, notes, runConversion, closeConvert);
+      status(LuntaCite.convertSummary(plan) + '. Review, then Convert.');
+    });
+  });
+});
+function closeConvert() { conversion = null; $('convertBox').hidden = true; $('cvlist').innerHTML = ''; }
+function runConversion(keys) {
+  var conv = conversion;
+  exclusive(function () {
+    var added = {}, newPapers = 0, chain = Promise.resolve();
+    keys.forEach(function (k) {
+      var w = conv.plan.works[conv.plan.byKey[k]];
+      chain = chain.then(function () {
+        return api('/add', { meta: w.meta }, 60000).then(function (p) { if (p && p.id) { added[k] = p.id; if (p.added) newPapers++; } });
+      });
+    });
+    return chain.then(function () {
+      var res = LuntaCite.convertResolve(conv.plan, added);
+      var cites = res.convert.map(function (c) {
+        return { key: conv.plan.citations[c.index].key, ids: c.ids, names: LuntaCite.optionRangeNames(LuntaCite.encodeOptions(c.options)) };
+      });
+      var left = res.left.map(function (l) { return { text: conv.plan.citations[l.index].text, reason: l.reason }; });
+      return server('getState').then(function (st) {
+        return server('zoteroConvert', cites, left.length ? [] : conv.bibs, !st.hasBibliography);
+      }).then(function (r) {
+        if (left.length && conv.bibs.length) left.push({ text: '', reason: 'Zotero’s bibliography stays until its citations are converted' });
+        closeConvert();
+        return update().then(function () {
+          status(LuntaCite.convertDone(r.converted, left, newPapers) + ' ' + $('status').textContent, left.length > 0);
+        });
+      });
+    });
+  })();
+}
+
 function setStyle(s, title) {
   style = s; styleTitle = title || '';
   LuntaCite.fillStyles($('style'), style, styleTitle);
@@ -190,6 +308,8 @@ function setStyle(s, title) {
   };
   var t; $('q').addEventListener('input', function (e) { clearTimeout(t); t = setTimeout(function () { search(e.target.value); }, 250); });
   $('insert').onclick = insert; $('bib').onclick = insertBib; $('refresh').onclick = updateAll;
+  $('edit').onclick = editCitation; $('cclose').onclick = function () { current = null; showCurrent(); };
+  $('convert').onclick = convertZotero; $('cvclose').onclick = closeConvert;
   LuntaCite.fillStyles(sel, 'apa');
   status('Loading…');
   // the document's style first: until it is known, nothing may be updated (it would be in the wrong style)

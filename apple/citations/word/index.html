@@ -5,9 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lunta Citations</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="../common.js?v=12"></script>
-<script src="../resolve.js?v=12"></script>
-<link rel="stylesheet" href="../panel.css?v=12">
+<script src="../common.js?v=13"></script>
+<script src="../resolve.js?v=13"></script>
+<script src="fields.js?v=13"></script>
+<link rel="stylesheet" href="../panel.css?v=13">
 </head>
 <body>
 <header>
@@ -21,7 +22,7 @@
 <div id="current" class="current" hidden>
   <div class="current-h">This citation</div>
   <div id="citelist"></div>
-  <p class="hint">Search below to add papers to it; ✕ removes one.</p>
+  <p class="hint">Search below to add papers to it; Page… adds a page, prefix, suffix or leaves the author out; ✕ removes one.</p>
 </div>
 <input id="q" type="search" placeholder="Search your library: title, author, words…" autocomplete="off">
 <div id="results"></div>
@@ -37,12 +38,19 @@
 <div class="buttons">
   <button id="resolve" title="Turn placeholders typed while writing, like (Langseth et al. 2025) or [Smith 2019 cortex], into citations: you confirm each one">Resolve Citations…</button>
 </div>
+<div class="buttons">
+  <button id="convert" title="Make citations inserted with Zotero, EndNote or Mendeley Lunta citations: you review the papers first, nothing changes until you click Convert">Convert Citations from Zotero, EndNote or Mendeley…</button>
+</div>
+<div id="convertBox" class="resolve" hidden>
+  <div class="current-h">Convert Citations <button id="cvclose" class="cite-x" title="Close">✕</button></div>
+  <div id="cvlist"></div>
+</div>
 <div id="resolveBox" class="resolve" hidden>
   <div class="current-h">Resolve Citations <button id="rsclose" class="cite-x" title="Close">✕</button></div>
   <p class="hint">Lunta proposes, you decide: each placeholder becomes a citation only when you confirm it. Papers not in your library are added when confirmed.</p>
   <div id="rslist"></div>
 </div>
 <p id="status" class="status"></p>
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

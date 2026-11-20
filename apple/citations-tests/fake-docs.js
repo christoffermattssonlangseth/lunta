@@ -41,12 +41,25 @@ class Text {
   insertText(off, s) {
     if (off < 0 || off > this.chars.length) throw new Error('insert offset ' + off);
     if (!s) throw new Error('Text cannot be empty');
+    // named ranges over this text move with it (text inserted right after one isn't in it)
+    const n = [...s].length;
+    (this.ranges || []).forEach((x) => { if (x.s >= off) { x.s += n; x.e += n; } else if (x.e >= off) x.e += n; });
     const like = this.chars[off - 1] || this.chars[off];
     const a = like ? like.a : {};
     this.chars.splice(off, 0, ...[...s].map((c) => ({ c, a: Object.assign({}, a) })));
     return this;
   }
-  deleteText(s, e) { this.check(s, e); this.chars.splice(s, e - s + 1); return this; }
+  deleteText(s, e) {
+    this.check(s, e);
+    this.chars.splice(s, e - s + 1);
+    const n = e - s + 1;
+    (this.ranges || []).slice().forEach((x) => {
+      if (x.s >= s && x.e <= e) { x.gone(); return; }   // all its text deleted: Docs removes the range
+      const cut = (i) => (i > e ? i - n : i >= s ? s : i);
+      x.s = cut(x.s); x.e = x.e > e ? x.e - n : Math.min(x.e, s - 1);
+    });
+    return this;
+  }
   appendText(s) { return this.insertText(this.chars.length, s); }
 }
 
@@ -109,6 +122,16 @@ function namedRanges(list) {
       if (!name || name.length > 256) throw new Error('Invalid argument: name');
       const nr = { name, range, getName: () => name, getRange: () => range, remove: () => { const i = list.indexOf(nr); if (i >= 0) list.splice(i, 1); } };
       list.push(nr);
+      // its own copy of the range's offsets, kept up to date as the text changes
+      const els = range.els.map((x) => Object.assign({}, x));
+      nr.range = { getRangeElements: () => els.map((x) => ({ getElement: () => x.el, getStartOffset: () => x.s, getEndOffsetInclusive: () => x.e, isPartial: () => x.s != null })) };
+      nr.getRange = () => nr.range;
+      els.forEach((x) => {
+        if (x.el instanceof Text && x.s != null) {
+          x.gone = () => { nr.remove(); x.el.ranges = x.el.ranges.filter((y) => y !== x); };
+          x.el.ranges = (x.el.ranges || []).concat([x]);
+        }
+      });
       return nr;
     },
     newRange: () => {

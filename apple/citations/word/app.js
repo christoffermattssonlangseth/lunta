@@ -1,20 +1,24 @@
 // Lunta citations for Word: citations are content controls tagged "margins:<id>,<id>", the
 // bibliography is a content control tagged "margins-bib". "Update All" renumbers and reformats
 // every citation and rewrites the bibliography; text that is already right is left alone.
+// A citation's options (each paper's locator, prefix, suffix, author left out or in the text) are
+// in its content control's title, "Citation lunta-o:<code>" (common.js), so add-ins from before
+// them still read its papers from the tag; they format it without the options and leave the title.
 // The document keeps its style and a copy of the papers it cites in a custom XML part (shared by
 // every copy of the add-in, unlike add-in settings), so it updates the same on any computer.
 // Served by Lunta itself (https://localhost:47481) or from the hosted copy (GitHub Pages, the
 // Microsoft store listing): either way the library comes from the Lunta app on this computer.
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
-var VERSION = '12';   // bump with the ?v= in index.html, so Word loads the new files
+var VERSION = '13';   // bump with the ?v= in index.html, so Word loads the new files
 var NS = 'https://lunta.app/ns/word-citations/1';
 var picked = [];          // [{id, title, ...}]
 var style = 'apa';
 var state = { papers: {} };   // what the document keeps: {style, styleTitle, bibStyle, papers}
 var styleUnknown = false;     // citations in the document, but no saved style: ask before updating
 var busy = false, ready = false, lastSearch = 0;
-var current = null;           // the citation the cursor is in: {id (content control), ids}
+var current = null;           // the citation the cursor is in: {id (content control), ids, opts}
+var editing = null;           // the paper of the current citation whose options are open
 
 function $(id) { return document.getElementById(id); }
 function status(msg, err) { var s = $('status'); s.textContent = msg || ''; s.className = 'status' + (err ? ' err' : ''); }
@@ -37,6 +41,7 @@ function setButtons() {
   $('insert').textContent = current ? 'Add to This Citation' : 'Insert Citation';
   $('bib').disabled = $('refresh').disabled = busy || !ready;
   $('style').disabled = busy || !ready;
+  if ($('convert')) $('convert').disabled = busy || !ready;
 }
 
 /** One change to the document at a time (a second click while updating does nothing). */
@@ -157,7 +162,7 @@ var insertCitation = exclusive(function () {
       // the cursor is in a citation: add the papers to it, "(A, 2021; B, 2023)"
       var had = parent.isNullObject ? null : LuntaCite.parseTag(parent.tag);
       if (had) {
-        parent.tag = LuntaCite.makeTag(had.concat(ids));
+        parent.tag = LuntaCite.makeTag(had.concat(ids));   // its title (the options) stays
         return ctx.sync();
       }
       // at the end of the selection, so selected text isn't replaced
@@ -176,10 +181,16 @@ var insertCitation = exclusive(function () {
 
 /** A new citation of `ids` in place of the range: text first, then the content control around
  *  it (Word on the web won't wrap an empty range). Update All fills in its text. */
-function wrapCitation(range, ids) {
+function wrapCitation(range, ids, options) {
   var cc = range.insertText('(…)', 'Replace').insertContentControl();
+  dressCitation(cc, ids, options);
+  return cc;
+}
+
+/** A content control made a Lunta citation of `ids` with these options. */
+function dressCitation(cc, ids, options) {
   cc.tag = LuntaCite.makeTag(ids);
-  cc.title = 'Citation';
+  cc.title = LuntaCite.optionsTitle(LuntaCite.cleanOptions(options, ids));
   cc.appearance = 'Hidden';
   return cc;
 }
@@ -211,10 +222,11 @@ function onSelection() {
     if (busy || !ready) return;
     Word.run(function (ctx) {
       var cc = ctx.document.getSelection().parentContentControlOrNullObject;
-      cc.load('isNullObject,id,tag');
+      cc.load('isNullObject,id,tag,title');
       return ctx.sync().then(function () {
         var ids = cc.isNullObject ? null : LuntaCite.parseTag(cc.tag);
-        current = ids && ids.length ? { id: cc.id, ids: ids } : null;
+        current = ids && ids.length ? { id: cc.id, ids: ids, opts: LuntaCite.optionsOfTitle(cc.title) || {} } : null;
+        if (!current) editing = null;
         showCurrent();
       });
     }).catch(function () {});
@@ -226,7 +238,7 @@ function showCurrent() {
   var box = $('current');
   setButtons();
   if (!current) { box.hidden = true; lastShown = ''; return; }
-  var key = current.id + ':' + current.ids.join(',');
+  var key = current.id + ':' + current.ids.join(',') + ':' + LuntaCite.encodeOptions(current.opts) + ':' + (editing || '');
   box.hidden = false;
   if (key === lastShown) return;
   lastShown = key;
@@ -236,13 +248,22 @@ function showCurrent() {
   current.ids.forEach(function (id) {
     var row = document.createElement('div');
     row.className = 'cite-row';
-    row.innerHTML = '<div class="cite-text"><div class="t"></div><div class="m"></div></div><button class="cite-x" title="Remove from this citation">✕</button>';
+    row.innerHTML = '<div class="cite-text"><div class="t"></div><div class="m"></div><div class="o"></div></div>' +
+      '<button class="cite-o" title="Page, prefix, suffix, author (for this paper in this citation)">Page…</button><button class="cite-x" title="Remove from this citation">✕</button>';
     var rec = state.papers[id];
     row.querySelector('.t').textContent = rec ? (rec.t || 'Untitled') : '…';
     row.querySelector('.m').textContent = rec ? [(rec.f || []).slice(0, 3).join(', ') + ((rec.f || []).length > 3 ? ' et al.' : ''), rec.y].filter(Boolean).join(' · ') : '';
+    row.querySelector('.o').textContent = LuntaCite.optionsLabel((current.opts || {})[id]);
     row.querySelector('.cite-x').onclick = function () { removeFromCitation(id); };
+    row.querySelector('.cite-o').onclick = function () { editing = editing === id ? null : id; lastShown = ''; showCurrent(); };
     rows[id] = row;
     list.appendChild(row);
+    if (editing === id) {
+      var form = LuntaCite.optionsForm(document, (current.opts || {})[id], function (o) { setPaperOptions(id, o); },
+        function () { editing = null; lastShown = ''; showCurrent(); });
+      list.appendChild(form);
+      if (form.focusFirst) setTimeout(form.focusFirst, 0);
+    }
   });
   // fresh details from Lunta (also for papers cited before the document kept their copy)
   var st = LuntaCite.isJournal(style) ? 'apa' : style;
@@ -262,14 +283,37 @@ var removeFromCitation = function (id) {
   var target = current;
   return exclusive(function () {
     var left = target.ids.filter(function (x) { return x !== id; });
+    var opts = LuntaCite.cleanOptions(target.opts, left);
     return Word.run(function (ctx) {
       var cc = ctx.document.contentControls.getById(target.id);
-      if (left.length) cc.tag = LuntaCite.makeTag(left);
+      if (left.length) { cc.tag = LuntaCite.makeTag(left); cc.title = LuntaCite.optionsTitle(opts); }
       else cc.delete(false);   // its last paper: the citation goes, text and all
       return ctx.sync();
     }).then(function () {
-      current = left.length ? { id: target.id, ids: left } : null;
+      current = left.length ? { id: target.id, ids: left, opts: opts || {} } : null;
+      editing = null;
       lastShown = '';
+      showCurrent();
+      return update();
+    });
+  })();
+};
+
+/** Sets one paper's options in the current citation (the content control's title), then Update All. */
+var setPaperOptions = function (id, o) {
+  if (!current) return;
+  var target = current;
+  return exclusive(function () {
+    var map = Object.assign({}, target.opts || {});
+    map[id] = o;
+    map = LuntaCite.cleanOptions(map, target.ids);
+    return Word.run(function (ctx) {
+      var cc = ctx.document.contentControls.getById(target.id);
+      cc.title = LuntaCite.optionsTitle(map);
+      return ctx.sync();
+    }).then(function () {
+      current = { id: target.id, ids: target.ids, opts: map || {} };
+      editing = null; lastShown = '';
       showCurrent();
       return update();
     });
@@ -279,10 +323,12 @@ var removeFromCitation = function (id) {
 // ---- updating ----
 
 /** What to write: formatted by Lunta, or from the document's copy when Lunta can't be reached. */
-function compute(lists) {
+function compute(lists, options) {
   var ids = LuntaCite.citedIds(lists), papers = LuntaCite.detailsFor(state.papers, ids);
   if (LuntaCite.isJournal(style)) {
-    return getJSON('/render', { style: style.slice(4), citations: lists, papers: papers }, 90000).then(function (res) {
+    var body = { style: style.slice(4), citations: lists, papers: papers }, opts = LuntaCite.renderOptions(options, lists);
+    if (opts) body.options = opts;
+    return getJSON('/render', body, 90000).then(function (res) {
       if (res.title) state.styleTitle = res.title;
       var f = LuntaCite.formatJournal(res, lists, state.papers);
       f.name = res.title || LuntaCite.styleName(style, state.styleTitle);
@@ -296,8 +342,7 @@ function compute(lists) {
     offline = true;
     return { entries: null };
   }).then(function (res) {
-    var f = LuntaCite.format(style, lists, res.entries, state.papers);
-    f.superscripts = lists.map(function () { return f.superscript; });
+    var f = LuntaCite.format(style, lists, res.entries, state.papers, options);
     f.offline = offline;
     f.name = LuntaCite.styleName(style);
     return f;
@@ -320,7 +365,7 @@ function update() {
   status('Updating…');
   return Word.run(function (ctx) {
     var all = ctx.document.contentControls;
-    all.load('items/id,items/tag,items/text');
+    all.load('items/id,items/tag,items/text,items/title');
     return ctx.sync().then(function () {
       var bibs = all.items.filter(function (c) { return c.tag === LuntaCite.BIB_TAG; });
       // citations inside the bibliography go when it is rewritten: not counted
@@ -330,15 +375,15 @@ function update() {
       return ctx.sync().then(function () {
         var nested = {};
         inner.forEach(function (cs) { cs.items.forEach(function (c) { nested[c.id] = true; }); });
-        var cites = [], lists = [], empty = 0;
+        var cites = [], lists = [], options = [], empty = 0;
         cands.forEach(function (c) {
           var ids = LuntaCite.parseTag(c.tag);
           if (nested[c.id] || !ids.length) return;
           // its text deleted (the empty control is invisible): not a citation any more
           if (!c.text.replace(/[\s​]/g, '')) { empty++; return; }
-          cites.push(c); lists.push(ids);
+          cites.push(c); lists.push(ids); options.push(LuntaCite.optionsOfTitle(c.title));
         });
-        return compute(lists).then(function (f) {
+        return compute(lists, options).then(function (f) {
           if (f.unknown.length) {
             var first = lists.findIndex(function (l) { return l.some(function (id) { return f.unknown.indexOf(id) >= 0; }); });
             if (first >= 0) cites[first].select();
@@ -481,6 +526,195 @@ var resolveCitations = exclusive(function () {
   });
 });
 
+// ---- Convert Citations from Zotero, EndNote or Mendeley ----
+// The other manager's citations are read (word/fields.js: Word's fields in the body's OOXML, and
+// Mendeley Cite's content controls), their works found in the library (/match), the writer
+// reviews what will be added, and only then are the citations replaced, one by one: a field is
+// selected (all of it, codes and shown text) and replaced by a Lunta citation (a content control
+// with the papers and the options the other manager kept); a Mendeley Cite control gets Lunta's tag.
+// The other manager's bibliography becomes Lunta's (or goes, if there is one already) once none of
+// its citations is left. Then Update All.
+
+var conversion = null;   // {plan, found: [{ref, works, text, source}], bibs: [{ref, source}]}
+
+/** The other managers' citations and bibliographies in the document, in order. */
+function readForeign(ctx) {
+  var body = ctx.document.body;
+  var ooxml = body.getOoxml();
+  var fields = body.fields;
+  fields.load('items/code');
+  var ccs = ctx.document.contentControls;
+  ccs.load('items/id,items/tag,items/text');
+  return ctx.sync().then(function () {
+    var scan = LuntaFields.scan(ooxml.value);
+    var out = { cites: [], bibs: [], notes: [], unreadable: 0, fieldsOK: true };
+    // Word's fields in the same order as the OOXML's; a field whose code differs isn't touched
+    var k = 0;
+    scan.fields.forEach(function (f) {
+      var c = LuntaFields.classify(f.instr, f.data);
+      var at = -1;
+      for (var j = k; j < fields.items.length; j++) {
+        if (LuntaFields.sameCode(fields.items[j].code, f.instr)) { at = j; k = j + 1; break; }
+      }
+      if (!c || c.kind === 'data') return;
+      if (at < 0) { out.unreadable++; return; }
+      var ref = { field: at, code: fields.items[at].code };
+      if (c.kind === 'bib') out.bibs.push({ ref: ref, source: c.source });
+      else if (!c.works || !c.works.length) out.unreadable++;
+      else out.cites.push({ ref: ref, works: c.works, text: f.text, source: c.source });
+    });
+    ccs.items.forEach(function (cc) {
+      var c = LuntaFields.classifyTag(cc.tag);
+      if (!c) return;
+      var ref = { cc: cc.id, tag: cc.tag };
+      if (c.kind === 'bib') out.bibs.push({ ref: ref, source: c.source });
+      else if (!c.works || !c.works.length) out.unreadable++;
+      else out.cites.push({ ref: ref, works: c.works, text: cc.text, source: c.source });
+    });
+    if (LuntaFields.zoteroBookmarks(ooxml.value)) {
+      out.notes.push('Some Zotero citations here are stored as bookmarks, which Lunta can’t read. In Zotero’s Document Preferences (Zotero tab in Word), choose “Store citations as: Fields”, then convert again.');
+    }
+    if (out.unreadable) out.notes.push(out.unreadable + ' citation' + (out.unreadable === 1 ? '' : 's') + ' couldn’t be read (no details in it) and will stay as ' + (out.unreadable === 1 ? 'it is' : 'they are') + '.');
+    return out;
+  });
+}
+
+function sourcesOf(list) {
+  var names = [];
+  list.forEach(function (c) { if (names.indexOf(c.source) < 0) names.push(c.source); });
+  return names.join(', ');
+}
+
+var convertCitations = exclusive(function () {
+  status('Looking for citations from Zotero, EndNote and Mendeley…');
+  return getJSON('/status').then(function (s) {
+    if ((s.api || 0) < 4) throw new Error('This version of Lunta can’t convert citations. Update Lunta and try again.');
+    return Word.run(readForeign);
+  }).then(function (found) {
+    var box = $('convertBox');
+    if (!found.cites.length) {
+      status(found.notes.length ? found.notes.join(' ') : 'This document has no citations from Zotero, EndNote or Mendeley.', !!found.notes.length);
+      return;
+    }
+    var first = LuntaCite.convertPlan(found.cites);
+    status('Finding ' + first.works.length + ' papers in your library…');
+    return getJSON('/match', { items: first.works.map(function (w) { return w.meta; }) }, 60000).then(function (r) {
+      var plan = LuntaCite.convertPlan(found.cites, r.matches || []);
+      conversion = { plan: plan, found: found };
+      box.hidden = false;
+      var notes = ['From ' + sourcesOf(found.cites) + '.'].concat(found.notes);
+      if (found.bibs.length) notes.push('The ' + sourcesOf(found.bibs) + ' bibliography becomes Lunta’s once all its citations are converted.');
+      LuntaCite.convertReview(document, $('cvlist'), plan, notes, function (keys) { runConversion(keys); }, closeConvert);
+      status(LuntaCite.convertSummary(plan) + '. Review, then Convert.');
+    });
+  });
+});
+
+function closeConvert() { conversion = null; $('convertBox').hidden = true; $('cvlist').innerHTML = ''; }
+
+/** Adds the papers chosen, then replaces the citations whose papers are all in the library. */
+var runConversion = function (keys) {
+  var conv = conversion;
+  if (!conv) return;
+  return exclusive(function () {
+    var added = {}, newPapers = 0;
+    var chain = Promise.resolve();
+    keys.forEach(function (k) {
+      var w = conv.plan.works[conv.plan.byKey[k]];
+      if (!w) return;
+      chain = chain.then(function () {
+        status('Adding “' + (w.meta.title || 'a paper') + '” to your library…');
+        return getJSON('/add', { meta: w.meta }, 60000).then(function (p) { if (p && p.id) { added[k] = p.id; if (p.added) newPapers++; } });
+      });
+    });
+    return chain.then(function () {
+      var res = LuntaCite.convertResolve(conv.plan, added);
+      status('Converting ' + res.convert.length + ' citations…');
+      var left = res.left.map(function (l) { return { text: conv.found.cites[l.index].text, reason: l.reason, source: conv.found.cites[l.index].source }; });
+      return Word.run(function (ctx) {
+        return replaceForeign(ctx, conv, res, left);
+      }).then(function (done) {
+        closeConvert();
+        return update().then(function () { return done; }, function (e) { status(LuntaCite.describe(e, 'word'), true); return null; });
+      }).then(function (done) {
+        if (done === null) return;
+        var msg = LuntaCite.convertDone(done, left, newPapers);
+        status(msg + ' ' + $('status').textContent, left.length > 0);
+      });
+    });
+  })();
+};
+
+/** Replaces the citations (`res.convert`) and the bibliographies; returns how many citations were replaced. */
+function replaceForeign(ctx, conv, res, left) {
+  var fields = ctx.document.body.fields;
+  fields.load('items/code');
+  var ours = ctx.document.contentControls.getByTag(LuntaCite.BIB_TAG);
+  ours.load('items');
+  var done = 0;
+  return ctx.sync().then(function () {
+    var fieldsOK = typeof Office === 'undefined' || !Office.context.requirements.isSetSupported || Office.context.requirements.isSetSupported('WordApi', '1.5');
+    var hasBib = ours.items.length > 0;
+    // the last first, so Word's field list keeps its order for the ones before
+    var jobs = res.convert.map(function (c) { return { c: c, cite: conv.found.cites[c.index] }; });
+    var at = function (ref) { return ref.field != null ? ref.field : -1; };
+    jobs.sort(function (a, b) { return at(b.cite.ref) - at(a.cite.ref); });
+    var step = Promise.resolve();
+    jobs.forEach(function (j) {
+      step = step.then(function () {
+        var ref = j.cite.ref;
+        if (ref.cc !== undefined) {
+          dressCitation(ctx.document.contentControls.getById(ref.cc), j.c.ids, j.c.options);
+          done++;
+          return ctx.sync();
+        }
+        var f = fields.items[ref.field];
+        if (!fieldsOK || !f || !LuntaFields.sameCode(f.code, ref.code)) {
+          left.push({ text: j.cite.text, source: j.cite.source, reason: fieldsOK ? 'it changed while converting' : 'this version of Word can’t replace fields (Word 2021, Microsoft 365 or Word on the web can)' });
+          return;
+        }
+        // the whole field (codes and shown text) selected, and replaced by a Lunta citation
+        f.select();
+        wrapCitation(ctx.document.getSelection(), j.c.ids, j.c.options);
+        done++;
+        return ctx.sync();
+      });
+    });
+    return step.then(function () {
+      // a bibliography goes once none of its manager's citations is left
+      var leftSources = {};
+      left.forEach(function (l) { leftSources[l.source] = true; });
+      var bibs = conv.found.bibs.filter(function (b) { return !leftSources[b.source]; });
+      var keptBibs = conv.found.bibs.filter(function (b) { return leftSources[b.source]; });
+      if (keptBibs.length) left.push({ text: '', source: '', reason: 'the ' + sourcesOf(keptBibs) + ' bibliography stays until its citations are converted' });
+      bibs.sort(function (a, b) { return at(b.ref) - at(a.ref); });
+      // the first in the document becomes Lunta's (unless it has one)
+      var firstBib = bibs.length ? bibs[bibs.length - 1] : null;
+      var bstep = Promise.resolve();
+      bibs.forEach(function (b) {
+        bstep = bstep.then(function () {
+          var makeOurs = !hasBib && b === firstBib;
+          if (b.ref.cc !== undefined) {
+            var cc = ctx.document.contentControls.getById(b.ref.cc);
+            if (makeOurs) { cc.tag = LuntaCite.BIB_TAG; cc.title = 'Bibliography (Lunta)'; cc.appearance = 'BoundingBox'; }
+            else cc.delete(false);
+            return ctx.sync();
+          }
+          var f = fields.items[b.ref.field];
+          if (!fieldsOK || !f || !LuntaFields.sameCode(f.code, b.ref.code)) return;
+          if (makeOurs) {
+            f.select();
+            var bc = ctx.document.getSelection().insertText('References will appear here.', 'Replace').insertContentControl();
+            bc.tag = LuntaCite.BIB_TAG; bc.title = 'Bibliography (Lunta)';
+          } else f.delete();
+          return ctx.sync();
+        });
+      });
+      return bstep;
+    }).then(function () { return done; });
+  });
+}
+
 function closeResolve() {
   $('resolveBox').hidden = true;
   if (resolver) resolver.load([]);
@@ -541,6 +775,8 @@ Office.onReady(function () {
   $('refresh').onclick = updateAll;
   $('resolve').onclick = resolveCitations;
   $('rsclose').onclick = closeResolve;
+  if ($('convert')) $('convert').onclick = convertCitations;
+  if ($('cvclose')) $('cvclose').onclick = closeConvert;
   // clicking a citation in the text shows its papers here
   try {
     Office.context.document.addHandlerAsync(Office.EventType.DocumentSelectionChanged, onSelection, function () {});

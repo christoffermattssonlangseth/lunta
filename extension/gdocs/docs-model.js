@@ -5,7 +5,11 @@
 //   - a citation is text linked to https://margins.local/cite?ids=<id>,<id> (escaped);
 //   - bibliography paragraphs are linked to https://margins.local/bib;
 //   - the style and the cited papers' details are kept in named ranges over the first tab's text,
-//     "lunta:<generation>:<i>:<n>:<base64url of gzipped JSON>" (Code.gs reads and writes them too).
+//     "lunta:<generation>:<i>:<n>:<base64url of gzipped JSON>" (Code.gs reads and writes them too);
+//   - a citation's options (each paper's page, prefix, suffix, author) in named ranges over its
+//     text, "lunta-o:<key>:<i>:<n>:<part of the code>" (common.js has the code).
+// Zotero's citations (to convert them): text linked to https://www.zotero.org/google-docs/?<key>,
+// the field code in named ranges "Z_F<key><000…><part>" over it.
 // Inserting goes through Docs' own paste (the API doesn't know where the cursor is): a placeholder
 // linked to https://margins.local/insert?t=<token>&ids=… (or &bib=1) is pasted at the cursor, then
 // found here and made a citation (or the bibliography). A placeholder left behind (the browser
@@ -15,6 +19,32 @@ var LuntaDocs = (function () {
   var CITE = 'https://margins.local/cite?ids=', BIB = 'https://margins.local/bib';
   var INSERT = 'https://margins.local/insert?';
   var STORE_PREFIX = 'lunta:', STORE_CHUNK = 220, STORE_MAX = 400;
+  var OPTS = 'lunta-o:', OPTS_CHUNK = 200, ZOTERO = 'https://www.zotero.org/google-docs/?';
+
+  /** The options code put together from the names of a citation's ranges (as common.js optionsCodeOf). */
+  function optionsCode(names) {
+    var groups = {};
+    (names || []).forEach(function (name) {
+      var m = /^lunta-o:([A-Za-z0-9]+):(\d+):(\d+):([A-Za-z0-9_-]*)$/.exec(String(name || ''));
+      if (!m) return;
+      var g = groups[m[1]] = groups[m[1]] || { n: +m[3], parts: {} };
+      if (+m[3] === g.n && +m[2] < g.n) g.parts[+m[2]] = m[4];
+    });
+    var best = '';
+    Object.keys(groups).forEach(function (k) {
+      var g = groups[k], code = '';
+      for (var i = 0; i < g.n; i++) { if (g.parts[i] === undefined) return; code += g.parts[i]; }
+      if (!best) best = code;
+    });
+    return best;
+  }
+  /** Names for an options code (as common.js optionRangeNames). */
+  function optionNames(code) {
+    if (!code) return [];
+    var key = newToken().slice(0, 8), n = Math.ceil(code.length / OPTS_CHUNK), out = [];
+    for (var i = 0; i < n; i++) out.push(OPTS + key + ':' + i + ':' + n + ':' + code.slice(i * OPTS_CHUNK, (i + 1) * OPTS_CHUNK));
+    return out;
+  }
 
   function unique(list) {
     var seen = {}, out = [];
@@ -98,12 +128,16 @@ var LuntaDocs = (function () {
    *   bibPlaceholders: [{tabId, segmentId, start, end, token, paragraph: {start, end} | null (not in the main text), bodyEnd}]
    *   storeNames:     the names of the first tab's store ranges
    *   firstTab:       {tabId, bodyEnd}
+   *   Each item also has optRanges ([{id, name}]: its options' named ranges) and optCode.
+   *   zotero:         Zotero's links [{tabId, segmentId, start, end, key, text, paragraph, bodyEnd}]
+   *   zoteroNames:    Zotero's named ranges [{id, name}] (every tab)
    */
   function read(doc) {
     var tabs = tabsOf(doc);
-    var items = [], bibPlaceholders = [], bibliography = null;
+    var items = [], bibPlaceholders = [], bibliography = null, zotero = [], zoteroNames = [];
     tabs.forEach(function (tab) {
       var dt = tab.documentTab, content = (dt.body && dt.body.content) || [];
+      var firstItem = items.length;
       var bodyEnd = content.length ? content[content.length - 1].endIndex : 1;
       var footnotes = dt.footnotes || {};
 
@@ -154,6 +188,10 @@ var LuntaDocs = (function () {
         for (var i = 0; i < rs.length; i++) {
           var r = rs[i], ids = parseLink(r.url), ph = ids ? null : parsePlaceholder(r.url);
           var base = { tabId: tabId, segmentId: segmentId };
+          if (r.url && r.url.indexOf(ZOTERO) === 0) {
+            zotero.push({ tabId: tabId, segmentId: segmentId, start: r.start, end: r.end, key: r.url.substr(ZOTERO.length, 6), text: r.text, paragraph: segmentId ? null : para, bodyEnd: bEnd });
+            continue;
+          }
           if (ph && ph.bib) {
             bibPlaceholders.push({ tabId: tabId, segmentId: segmentId, start: r.start, end: r.end, token: ph.token, paragraph: segmentId ? null : para, bodyEnd: bEnd });
             continue;
@@ -178,6 +216,21 @@ var LuntaDocs = (function () {
       }
 
       walkContent(content, undefined, true);
+
+      // the options' named ranges of this tab, on the citations they cover; Zotero's codes
+      var nr = dt.namedRanges || {}, opts = [];
+      Object.keys(nr).forEach(function (name) {
+        (nr[name].namedRanges || []).forEach(function (x) {
+          if (name.indexOf(OPTS) === 0) (x.ranges || []).forEach(function (rg) { opts.push({ id: x.namedRangeId, name: name, r: rg }); });
+          else if (name.indexOf('Z_F') === 0) zoteroNames.push({ id: x.namedRangeId, name: name, tabId: tab.tabId });
+        });
+      });
+      items.slice(firstItem).forEach(function (it) {
+        it.optRanges = opts.filter(function (o) {
+          return (o.r.segmentId || undefined) === (it.segmentId || undefined) && o.r.startIndex < it.end && o.r.endIndex > it.start;
+        }).map(function (o) { return { id: o.id, name: o.name }; });
+        it.optCode = optionsCode(it.optRanges.map(function (o) { return o.name; }));
+      });
 
       if (!bibliography) {
         var paras = [];
@@ -205,7 +258,7 @@ var LuntaDocs = (function () {
     var fc = (first && first.documentTab.body && first.documentTab.body.content) || [];
     return {
       revisionId: doc.revisionId, title: doc.title,
-      items: items, bibliography: bibliography, bibPlaceholders: bibPlaceholders, storeNames: storeNames,
+      items: items, bibliography: bibliography, bibPlaceholders: bibPlaceholders, storeNames: storeNames, zotero: zotero, zoteroNames: zoteroNames,
       firstTab: { tabId: first ? first.tabId : undefined, bodyEnd: fc.length ? fc[fc.length - 1].endIndex : 1 }
     };
   }
@@ -375,6 +428,7 @@ var LuntaDocs = (function () {
    */
   function planRequests(parsed, plan) {
     var ops = [];   // {key, start, reqs}
+    var optDeletes = [];
     var key = function (tabId, segmentId) { return (tabId || '') + '|' + (segmentId || ''); };
     var updated = 0, placeholders = 0, bibChanged = false;
 
@@ -387,6 +441,11 @@ var LuntaDocs = (function () {
         reqs.push({ insertText: { location: loc(it.tabId, it.segmentId, it.end), text: text } });
         reqs.push({ deleteContentRange: { range: range(it.tabId, it.segmentId, it.start, it.end) } });
         reqs.push(citeStyle(it.tabId, it.segmentId, it.start, it.start + text.length, it.url, sup, it.kind !== 'cite'));
+        // its options over the new text (the old ranges went with the old text, or go first)
+        (it.optRanges || []).forEach(function (o) { optDeletes.push({ deleteNamedRange: { namedRangeId: o.id } }); });
+        (it.optRanges || []).forEach(function (o) {
+          reqs.push({ createNamedRange: { name: o.name, range: range(it.tabId, it.segmentId, it.start, it.start + text.length) } });
+        });
         updated++;
       } else if (it.kind === 'new') {
         // nothing to write it with yet: at least a citation the Apps Script sees too
@@ -459,8 +518,54 @@ var LuntaDocs = (function () {
       var end = parsed.firstTab.bodyEnd - 1;
       if (end > 1) plan.store.forEach(function (name) { requests.push({ createNamedRange: { name: name, range: range(parsed.firstTab.tabId, undefined, 1, end) } }); });
     }
+    requests = requests.concat(optDeletes);
     ops.forEach(function (o) { requests = requests.concat(o.reqs); });
     return { requests: requests, updated: updated, bibliography: bibChanged, placeholders: placeholders };
+  }
+
+  /** The requests that set a citation's options (`code`, "" to clear) over its text. */
+  function optionRequests(it, code) {
+    var out = (it.optRanges || []).map(function (o) { return { deleteNamedRange: { namedRangeId: o.id } }; });
+    optionNames(code).forEach(function (name) {
+      out.push({ createNamedRange: { name: name, range: range(it.tabId, it.segmentId, it.start, it.end) } });
+    });
+    return out;
+  }
+
+  /**
+   * The requests that make Zotero's citations Lunta's: `cites` {key: {ids, code}} are relinked
+   * (their options in named ranges), the bibliographies `bibKeys` become Lunta's (`bibToLunta`)
+   * or are deleted, and the converted keys' Z_F ranges go. Returns {requests, converted}.
+   */
+  function zoteroRequests(parsed, cites, bibKeys, bibToLunta) {
+    var reqs = [], deletes = [], converted = 0, bib = {};
+    (bibKeys || []).forEach(function (k) { bib[k] = true; });
+    var paras = [];
+    parsed.zotero.forEach(function (z) {
+      var c = cites[z.key];
+      if (c) {
+        reqs.push(citeStyle(z.tabId, z.segmentId, z.start, z.end, makeLink(c.ids), false, false));
+        optionNames(c.code).forEach(function (name) { reqs.push({ createNamedRange: { name: name, range: range(z.tabId, z.segmentId, z.start, z.end) } }); });
+        converted++;
+      } else if (bib[z.key]) {
+        if (bibToLunta) {
+          reqs.push({ updateTextStyle: { range: range(z.tabId, z.segmentId, z.start, z.end), textStyle: { link: { url: BIB }, underline: false }, fields: 'link,underline,foregroundColor' } });
+        } else if (z.paragraph && !paras.some(function (p) { return p.start === z.paragraph.start && p.tabId === z.tabId; })) {
+          paras.push({ tabId: z.tabId, start: z.paragraph.start, end: z.paragraph.end, bodyEnd: z.bodyEnd });
+        }
+      }
+    });
+    parsed.zoteroNames.forEach(function (n) {
+      var k = n.name.substr(3, 6);
+      if (cites[k] || bib[k]) reqs.push({ deleteNamedRange: { namedRangeId: n.id } });
+    });
+    // whole paragraphs, from the end (the body's last paragraph mark stays)
+    paras.sort(function (a, b) { return a.tabId === b.tabId ? b.start - a.start : (a.tabId || '') < (b.tabId || '') ? -1 : 1; });
+    paras.forEach(function (p) {
+      var end = p.end === p.bodyEnd ? p.end - 1 : p.end;
+      if (end > p.start) deletes.push({ deleteContentRange: { range: range(p.tabId, undefined, p.start, end) } });
+    });
+    return { requests: reqs.concat(deletes), converted: converted };
   }
 
   return {
@@ -468,7 +573,8 @@ var LuntaDocs = (function () {
     parseLink: parseLink, makeLink: makeLink, placeholderUrl: placeholderUrl, parsePlaceholder: parsePlaceholder,
     placeholderHTML: placeholderHTML, newToken: newToken,
     read: read, storePart: storePart, storeGenerations: storeGenerations, storeNames: storeNames, newGeneration: newGeneration,
-    sameStore: sameStore, planRequests: planRequests, plainSegments: plainSegments, placeholderRequests: placeholderRequests
+    sameStore: sameStore, planRequests: planRequests, plainSegments: plainSegments, placeholderRequests: placeholderRequests,
+    optionsCode: optionsCode, optionNames: optionNames, optionRequests: optionRequests, zoteroRequests: zoteroRequests, ZOTERO: ZOTERO
   };
 })();
 if (typeof module !== 'undefined') module.exports = LuntaDocs;

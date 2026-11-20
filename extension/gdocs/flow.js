@@ -88,6 +88,7 @@ function makeLuntaGDocs(deps) {
       title: x.parsed.title,
       citations: x.parsed.items.map(function (it) { return it.ids; }),
       texts: x.parsed.items.map(function (it) { return it.text; }),
+      options: x.parsed.items.map(function (it) { return it.optCode || ''; }),
       style: (s && s.style) || '', styleTitle: (s && s.styleTitle) || '',
       hasBibliography: !!x.parsed.bibliography,
       pending: x.parsed.items.filter(function (it) { return it.kind !== 'cite'; }).length + x.parsed.bibPlaceholders.length
@@ -124,9 +125,12 @@ function makeLuntaGDocs(deps) {
       var styleTitle = journal ? (opts.styleTitle || (store && store.style === style ? store.styleTitle : '') || '') : '';
       var lists = parsed.items.map(function (it) { return it.ids; });
       var ids = C.citedIds(lists), kept = (store && store.papers) || {}, papers = C.detailsFor(kept, ids), offline = false;
+      var options = parsed.items.map(function (it) { return C.decodeOptions(it.optCode); });
       var f;
       if (journal) {
-        var res = await deps.lunta.render({ style: style.slice(4), citations: lists, papers: papers });
+        var body = { style: style.slice(4), citations: lists, papers: papers }, ropts = C.renderOptions(options, lists);
+        if (ropts) body.options = ropts;
+        var res = await deps.lunta.render(body);
         styleTitle = res.title || styleTitle;
         f = C.formatJournal(res, lists, kept);
       } else {
@@ -137,8 +141,7 @@ function makeLuntaGDocs(deps) {
             return { entries: null };
           })
           : { entries: [] };
-        f = C.format(style, lists, got.entries, kept);
-        f.superscripts = lists.map(function () { return f.superscript; });
+        f = C.format(style, lists, got.entries, kept, options);
       }
       if (f.unknown.length) {
         await settlePlaceholders(docId, parsed);
@@ -290,7 +293,8 @@ function makeLuntaGDocs(deps) {
   /**
    * Changes the papers of one citation (opts.index: its place among the document's citations;
    * opts.expect: its papers as the panel showed them, so a citation that changed meanwhile isn't
-   * touched; opts.ids: the new papers, none = the citation goes), then Update All.
+   * touched; opts.ids: the new papers, none = the citation goes; opts.options: its options code,
+   * when they change), then Update All.
    */
   async function editCitation(docId, opts) {
     var want = C.unique(opts.ids || []), expect = C.unique(opts.expect || []);
@@ -309,11 +313,19 @@ function makeLuntaGDocs(deps) {
         var before = charAt(doc, it.tabId, it.segmentId, it.start - 1), after = charAt(doc, it.tabId, it.segmentId, it.end);
         if (before === ' ' && (after === null || /[\s.,;:!?)\]]/.test(after))) r.startIndex -= 1;
       }
-      var req = want.length
+      var reqs = [want.length
         ? { updateTextStyle: { range: r, textStyle: { link: { url: D.makeLink(want) } }, fields: 'link' } }
-        : { deleteContentRange: { range: r } };
+        : { deleteContentRange: { range: r } }];
+      if (want.length && opts.options !== undefined) {
+        // only the papers still in it keep options
+        var code = C.encodeOptions(C.cleanOptions(C.decodeOptions(opts.options), want));
+        if (code !== (it.optCode || '')) reqs = reqs.concat(D.optionRequests(it, code));
+      } else if (want.length && it.optCode) {
+        var kept2 = C.encodeOptions(C.cleanOptions(C.decodeOptions(it.optCode), want));
+        if (kept2 !== it.optCode) reqs = reqs.concat(D.optionRequests(it, kept2));
+      }
       try {
-        await deps.docs.batchUpdate(docId, [req], parsed.revisionId);
+        await deps.docs.batchUpdate(docId, reqs, parsed.revisionId);
         break;
       } catch (e) {
         if (e.kind !== 'revision') throw e;
@@ -383,6 +395,65 @@ function makeLuntaGDocs(deps) {
     }
   }
 
+  // ---- converting Zotero's citations ----
+
+  /**
+   * Zotero's citations in the document: {cites: [{key, works, text, source}], bibs: [key],
+   * unreadable, paperpile}. Their codes are in the named ranges "Z_F<key>…" (common.js reads them).
+   */
+  async function scanZotero(docId) {
+    var doc = await deps.docs.get(docId), parsed = D.read(doc);
+    var names = parsed.zoteroNames.map(function (n) { return n.name; });
+    var seen = {}, out = { cites: [], bibs: [], unreadable: 0, paperpile: paperpileCount(doc) };
+    parsed.zotero.forEach(function (z) {
+      if (seen[z.key]) return;
+      seen[z.key] = true;
+      var code = C.zoteroDocsCode(C.zoteroDocsJoin(names, z.key));
+      if (!code) out.unreadable++;
+      else if (code.kind === 'bib') out.bibs.push(z.key);
+      else out.cites.push({ key: z.key, works: code.works, text: z.text, source: 'Zotero' });
+    });
+    return out;
+  }
+
+  function paperpileCount(doc) {
+    var n = 0;
+    (function walk(x) {
+      if (!x || typeof x !== 'object') return;
+      if (x.link && typeof x.link.url === 'string' && x.link.url.indexOf('https://paperpile.com/c/') === 0) n++;
+      Object.keys(x).forEach(function (k) { if (typeof x[k] === 'object') walk(x[k]); });
+    })(doc);
+    return n;
+  }
+
+  /**
+   * Makes Zotero's citations Lunta's: opts.cites [{key, ids, options (code)}], opts.bibs (Zotero
+   * bibliographies to replace: they become Lunta's if the document has none, else they go), in one
+   * batchUpdate for the revision read; then Update All.
+   */
+  async function convertZotero(docId, opts) {
+    var cites = {};
+    (opts.cites || []).forEach(function (c) { if (c && c.key && c.ids && c.ids.length) cites[String(c.key)] = { ids: c.ids.map(String), code: String(c.options || '') }; });
+    var converted = 0;
+    for (var attempt = 0; ; attempt++) {
+      var doc = await deps.docs.get(docId), parsed = D.read(doc);
+      var p = D.zoteroRequests(parsed, cites, opts.bibs || [], !parsed.bibliography);
+      converted = p.converted;
+      if (!p.requests.length) break;
+      try {
+        await deps.docs.batchUpdate(docId, p.requests, parsed.revisionId);
+        break;
+      } catch (e) {
+        if (e.kind !== 'revision') throw e;
+        if (attempt < 3) { await sleep(300 * (attempt + 1)); continue; }
+        throw fail('The document kept changing (someone typing?). Try again.', 'revision');
+      }
+    }
+    var out = await update(docId, opts);
+    out.converted = converted;
+    return out;
+  }
+
   /**
    * The document requests of the panel ({op, docId, …}, see gdocs/panel.js), the same in every
    * browser: the background script answers them in Chrome, Edge and Firefox, Lunta for Mac in Safari.
@@ -412,7 +483,12 @@ function makeLuntaGDocs(deps) {
       case 'details':
         return details(msg.docId, (msg.ids || []).map(String));
       case 'editCitation':
-        return editCitation(msg.docId, Object.assign(style, { index: Number(msg.index), expect: msg.expect || [], ids: (msg.ids || []).map(String) }));
+        return editCitation(msg.docId, Object.assign(style, { index: Number(msg.index), expect: msg.expect || [], ids: (msg.ids || []).map(String),
+          options: msg.options === undefined ? undefined : String(msg.options || '') }));
+      case 'scanZotero':
+        return scanZotero(msg.docId);
+      case 'convertZotero':
+        return convertZotero(msg.docId, Object.assign(style, { cites: msg.cites || [], bibs: (msg.bibs || []).map(String) }));
       case 'scanPlaceholders':
         return scanPlaceholders(msg.docId);
       case 'writePlaceholder': {
@@ -427,7 +503,7 @@ function makeLuntaGDocs(deps) {
     }
   }
 
-  return { state: state, update: update, finishInsert: finishInsert, details: details, editCitation: editCitation,
+  return { state: state, update: update, finishInsert: finishInsert, details: details, editCitation: editCitation, scanZotero: scanZotero, convertZotero: convertZotero,
            scanPlaceholders: scanPlaceholders, writePlaceholder: writePlaceholder,
            decodeStore: decodeStore, encodeStore: encodeStore, bareCount: bareCount, op: op };
 }

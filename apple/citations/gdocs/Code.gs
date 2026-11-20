@@ -4,7 +4,12 @@
 // only reads and writes the document. Paste this file and Sidebar.html again when Lunta says so.
 // The Lunta browser extension edits the same documents through the Google Docs API: same links,
 // and the same style and papers, kept in the document's named ranges (see "the document's store").
-var CODE_VERSION = 3;
+// A citation's options (each paper's page, prefix, suffix, author left out or in the text) are in
+// named ranges over its text, "lunta-o:<key>:<i>:<n>:<part of the code>" (common.js); scripts from
+// before them don't see them, and drop them when they rewrite that citation's text.
+var CODE_VERSION = 4;
+var OPTS = 'lunta-o:';
+var ZOTERO = 'https://www.zotero.org/google-docs/?';
 var CITE = 'https://margins.local/cite?ids=';
 var BIB = 'https://margins.local/bib';
 // What the document keeps of the papers it cites (so a co-author, another library or a deleted
@@ -80,12 +85,12 @@ function before_(a, b) {
 function sections_(doc) {
   var out = [];
   var tabs = typeof doc.getTabs === 'function' ? doc.getTabs() : null;
-  if (!tabs || !tabs.length) return [{ body: doc.getBody(), footnotes: doc.getFootnotes() || [] }];
+  if (!tabs || !tabs.length) return [{ body: doc.getBody(), footnotes: doc.getFootnotes() || [], host: doc }];
   (function walk(list) {
     list.forEach(function (tab) {
       if (tab.getType() === DocumentApp.TabType.DOCUMENT_TAB) {
         var d = tab.asDocumentTab();
-        out.push({ body: d.getBody(), footnotes: d.getFootnotes() || [] });
+        out.push({ body: d.getBody(), footnotes: d.getFootnotes() || [], host: d });
       }
       walk(tab.getChildTabs() || []);
     });
@@ -93,7 +98,8 @@ function sections_(doc) {
   return out;
 }
 
-/** Every citation in document order (tab by tab), footnotes included where their marks are. */
+/** Every citation in document order (tab by tab), footnotes included where their marks are; each
+ *  with its options' named ranges (`opts`: [NamedRange]) and its tab (`host`). */
 function citations_(doc) {
   return [].concat.apply([], sections_(doc).map(function (sec) {
     var runs = scan_(sec.body);
@@ -103,11 +109,66 @@ function citations_(doc) {
       var rs = c ? scan_(c) : [];
       if (rs.length) notes.push({ path: path_(fn), runs: rs });
     });
+    withOptions_(sec, runs.concat([].concat.apply([], notes.map(function (n) { return n.runs; }))));
     if (!notes.length) return runs;
     var items = runs.map(function (r) { return { path: path_(r.el).concat([r.start]), runs: [r] }; }).concat(notes);
     items.sort(function (a, b) { return before_(a.path, b.path) ? -1 : before_(b.path, a.path) ? 1 : 0; });
     return [].concat.apply([], items.map(function (x) { return x.runs; }));
   }));
+}
+
+/** Where a piece of text is, comparable across calls: its root (body or a footnote) and path. */
+function where_(el) {
+  var p = [], root = el;
+  while (root.getParent()) { var parent = root.getParent(); p.unshift(parent.getChildIndex(root)); root = parent; }
+  return root.getType() + ':' + p.join('.');
+}
+
+/** Attaches the options' named ranges of a section to its runs (by where their text is). */
+function withOptions_(sec, runs) {
+  var list = [];
+  try { list = sec.host.getNamedRanges(); } catch (e) { list = []; }
+  var opts = [];
+  (list || []).forEach(function (nr) {
+    if (String(nr.getName()).indexOf(OPTS) !== 0) return;
+    var els = nr.getRange().getRangeElements();
+    if (!els.length || els[0].getElement().getType() !== DocumentApp.ElementType.TEXT) return;
+    var e = els[0];
+    opts.push({ nr: nr, at: where_(e.getElement()), s: e.isPartial() ? e.getStartOffset() : 0, e: e.isPartial() ? e.getEndOffsetInclusive() : e.getElement().asText().getText().length - 1 });
+  });
+  runs.forEach(function (r) {
+    r.host = sec.host;
+    var at = where_(r.el);
+    r.opts = opts.filter(function (o) { return o.at === at && o.s <= r.end && o.e >= r.start; }).map(function (o) { return o.nr; });
+  });
+  return runs;
+}
+
+/** The options code of a citation's named ranges ("" when none or incomplete). */
+function optionsCode_(r) {
+  var groups = {};
+  (r.opts || []).forEach(function (nr) {
+    var m = /^lunta-o:([A-Za-z0-9]+):(\d+):(\d+):([A-Za-z0-9_-]*)$/.exec(nr.getName());
+    if (!m) return;
+    var g = groups[m[1]] = groups[m[1]] || { n: +m[3], parts: {} };
+    if (+m[3] === g.n) g.parts[+m[2]] = m[4];
+  });
+  var best = '';
+  Object.keys(groups).forEach(function (k) {
+    var g = groups[k], code = '';
+    for (var i = 0; i < g.n; i++) { if (g.parts[i] === undefined) return; code += g.parts[i]; }
+    if (!best) best = code;
+  });
+  return best;
+}
+
+/** Puts the options ranges `names` over a citation's text [start, end] (the old ones removed). */
+function setOptionRanges_(r, names, start, end) {
+  (r.opts || []).forEach(function (nr) { try { nr.remove(); } catch (e) {} });
+  r.opts = [];
+  if (!names || !names.length || end < start) return;
+  var range = r.host.newRange().addElement(r.el, start, end).build();
+  names.forEach(function (n) { r.opts.push(r.host.addNamedRange(n, range)); });
 }
 
 /** Citations in order, as lists of ids. */
@@ -127,6 +188,7 @@ function getState() {
   return {
     version: CODE_VERSION,
     citations: citations_(doc).map(function (r) { return r.ids; }),
+    options: citations_(doc).map(optionsCode_),
     style: (ds && ds.style) || props.luntaStyle || '',
     styleTitle: ds && ds.style ? (ds.styleTitle || '') : (props.luntaStyleTitle || ''),
     papers: ds && ds.papers ? ds.papers : readStore_(props),
@@ -347,12 +409,15 @@ function applyPlan(plan) {
       var now = r.el.getText().slice(r.start, r.end + 1);
       if (now === text && r.el.getTextAlignment(r.start) === align && sameAlignment_(r)) continue;
       // the new text after the old, then the old removed: the element never empties
+      var optNames = (r.opts || []).map(function (nr) { return nr.getName(); });
       r.el.insertText(r.end + 1, text);
       r.el.deleteText(r.start, r.end);
       var end = r.start + text.length - 1;
       r.el.setLinkUrl(r.start, end, r.url);
       plain_(r.el, r.start, end);
       r.el.setTextAlignment(r.start, end, align);
+      // the options over the new text
+      if (optNames.length) setOptionRanges_(r, optNames, r.start, end);
       updated++;
     }
     var props = PropertiesService.getDocumentProperties();
@@ -387,6 +452,151 @@ function applyAll(texts, superscript, bibliography) {
     superscripts: runs.map(function () { return !!superscript; }), bibliography: bibliography,
     style: getStyle(), papers: null
   }).count;
+}
+
+/** The citation at the cursor (or the selection's start): {index, ids, options (code), text}, or null. */
+function citationAtCursor() {
+  var doc = DocumentApp.getActiveDocument();
+  var cursor = doc.getCursor(), el = null, off = 0;
+  if (cursor) { el = cursor.getSurroundingText(); off = cursor.getSurroundingTextOffset(); }
+  else if (doc.getSelection()) {
+    var re = doc.getSelection().getRangeElements()[0];
+    if (re && re.getElement().getType() === DocumentApp.ElementType.TEXT) { el = re.getElement().asText(); off = re.isPartial() ? re.getStartOffset() : 0; }
+  }
+  if (!el) return null;
+  var at = where_(el);
+  var runs = citations_(doc);
+  for (var i = 0; i < runs.length; i++) {
+    var r = runs[i];
+    if (where_(r.el) === at && off >= r.start && off <= r.end + 1) {
+      return { index: i, ids: r.ids, options: optionsCode_(r), text: r.el.getText().slice(r.start, r.end + 1) };
+    }
+  }
+  return null;
+}
+
+/**
+ * Sets the options of citation `index` (its papers `key`, joined, as the sidebar saw them):
+ * `names` are the named ranges' names (LuntaCite.optionRangeNames), none to clear. False when the
+ * citation moved or changed meanwhile.
+ */
+function setCitationOptions(index, key, names) {
+  var runs = citations_(DocumentApp.getActiveDocument());
+  var r = runs[index];
+  if (!r || r.ids.join(',') !== key) return false;
+  setOptionRanges_(r, names || [], r.start, r.end);
+  return true;
+}
+
+// ---- converting Zotero's citations ----
+// Zotero's Google Docs plugin links each citation to https://www.zotero.org/google-docs/?<key>
+// (6 characters) and keeps its field code in named ranges "Z_F<key><000…><part>" over it:
+// "ITEM CSL_CITATION {…}", or "BIBL {…} CSL_BIBLIOGRAPHY" for the bibliography, whose paragraphs
+// are linked to its key too. The sidebar reads the codes (common.js), finds the papers, and asks
+// the writer; zoteroConvert then relinks the citations to Lunta's.
+
+/** Zotero's links in the document: [{el, start, end, key, host}] in document order. */
+function zoteroRuns_(doc) {
+  var out = [];
+  sections_(doc).forEach(function (sec) {
+    var containers = [sec.body].concat(sec.footnotes.map(function (fn) { return fn.getFootnoteContents(); }).filter(Boolean));
+    containers.forEach(function (container) {
+      var found = null;
+      while ((found = container.findElement(DocumentApp.ElementType.TEXT, found))) {
+        var t = found.getElement().asText(), idx = t.getTextAttributeIndices(), len = t.getText().length;
+        for (var i = 0; i < idx.length; i++) {
+          var s = idx[i], e = (i + 1 < idx.length ? idx[i + 1] : len) - 1;
+          if (e < s) continue;
+          var url = t.getLinkUrl(s);
+          if (!url || url.indexOf(ZOTERO) !== 0) continue;
+          var last = out[out.length - 1];
+          if (last && last.el === t && last.end + 1 === s && last.url === url) { last.end = e; continue; }
+          out.push({ el: t, start: s, end: e, url: url, key: url.substr(ZOTERO.length, 6), host: sec.host });
+        }
+      }
+    });
+  });
+  return out;
+}
+
+/** Zotero's named ranges' names, in every tab. */
+function zoteroNames_(doc) {
+  var names = [];
+  sections_(doc).forEach(function (sec) {
+    try { sec.host.getNamedRanges().forEach(function (nr) { if (nr.getName().indexOf('Z_F') === 0) names.push(nr.getName()); }); } catch (e) {}
+  });
+  return names;
+}
+
+/** What Zotero left in the document: {runs: [{key, text}] in order, names: [the Z_F names], paperpile}. */
+function zoteroScan() {
+  var doc = DocumentApp.getActiveDocument();
+  var paperpile = 0;
+  sections_(doc).forEach(function (sec) {
+    var found = null;
+    while ((found = sec.body.findElement(DocumentApp.ElementType.TEXT, found))) {
+      var t = found.getElement().asText(), idx = t.getTextAttributeIndices(), len = t.getText().length;
+      for (var i = 0; i < idx.length; i++) {
+        if (idx[i] >= len) continue;
+        var u = t.getLinkUrl(idx[i]);
+        if (u && u.indexOf('https://paperpile.com/c/') === 0) paperpile++;
+      }
+    }
+  });
+  return {
+    runs: zoteroRuns_(doc).map(function (r) { return { key: r.key, text: r.el.getText().slice(r.start, r.end + 1) }; }),
+    names: zoteroNames_(doc), paperpile: paperpile
+  };
+}
+
+/**
+ * Makes Zotero's citations Lunta's: `cites` [{key, ids, names (options ranges)}] are relinked to
+ * their papers; `bibKeys`: Zotero bibliographies, whose paragraphs become Lunta's bibliography
+ * (`bibToLunta`) or are removed; the converted keys' Z_F named ranges go. Then the sidebar runs
+ * Update All. Returns {converted, bibliography}.
+ */
+function zoteroConvert(cites, bibKeys, bibToLunta) {
+  var lock = LockService.getDocumentLock();
+  if (!lock.tryLock(15000)) throw new Error('Another Update All is running in this document. Try again in a moment.');
+  try {
+    var doc = DocumentApp.getActiveDocument();
+    var byKey = {};
+    (cites || []).forEach(function (c) { byKey[c.key] = c; });
+    var bib = {};
+    (bibKeys || []).forEach(function (k) { bib[k] = true; });
+    var runs = zoteroRuns_(doc), converted = 0, bibParas = [];
+    for (var i = runs.length - 1; i >= 0; i--) {
+      var r = runs[i], c = byKey[r.key];
+      if (c) {
+        r.el.setLinkUrl(r.start, r.end, CITE + encodeURIComponent(c.ids.join(',')));
+        plain_(r.el, r.start, r.end);
+        if (c.names && c.names.length) setOptionRanges_({ el: r.el, host: r.host, opts: [] }, c.names, r.start, r.end);
+        converted++;
+      } else if (bib[r.key]) {
+        var p = r.el.getParent();
+        if (bibParas.indexOf(p) < 0) bibParas.push(p);
+        if (bibToLunta) { r.el.setLinkUrl(r.start, r.end, BIB); plain_(r.el, r.start, r.end); }
+      }
+    }
+    if (!bibToLunta) {
+      bibParas.forEach(function (p) {
+        var body = p.getParent();
+        if (body.getChildIndex(p) === body.getNumChildren() - 1) p.clear(); else body.removeChild(p);
+      });
+    }
+    // the converted fields' codes
+    sections_(doc).forEach(function (sec) {
+      try {
+        sec.host.getNamedRanges().forEach(function (nr) {
+          var n = nr.getName();
+          if (n.indexOf('Z_F') === 0 && (byKey[n.substr(3, 6)] || bib[n.substr(3, 6)])) nr.remove();
+        });
+      } catch (e) {}
+    });
+    return { converted: converted, bibliography: bibParas.length > 0 };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /** Selects the first citation of a paper (to show the writer which one). */

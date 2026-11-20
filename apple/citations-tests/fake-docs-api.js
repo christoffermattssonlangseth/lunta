@@ -149,6 +149,7 @@ class FakeDocsAPI {
       const ps = seg.chars[mark].ps;
       const add = q.text.split('').map((c) => (c === '\n' ? { c, st: {}, ps: Object.assign({}, ps) } : { c, st: Object.assign({}, like && !like.fn ? like.st : {}) }));
       seg.chars.splice(p, 0, ...add);
+      this.moveNamed(q.location.tabId, q.location.segmentId, q.location.index, add.length, 0);
     } else if (name === 'deleteContentRange') {
       const seg = this.segment(q.range.tabId, q.range.segmentId);
       const s = this.pos(seg, q.range.startIndex), e = this.pos(seg, q.range.endIndex, true);
@@ -156,6 +157,7 @@ class FakeDocsAPI {
       if (e <= s) throw this.error(400, 'Empty range');
       // a paragraph mark removed: the paragraph takes the next one's mark (style)
       seg.chars.splice(s, e - s);
+      this.moveNamed(q.range.tabId, q.range.segmentId, q.range.startIndex, 0, e - s);
     } else if (name === 'updateTextStyle') {
       const seg = this.segment(q.range.tabId, q.range.segmentId);
       const s = this.pos(seg, q.range.startIndex), e = this.pos(seg, q.range.endIndex, true);
@@ -186,10 +188,28 @@ class FakeDocsAPI {
       if (e <= s) throw this.error(400, 'Empty range');
       t.named.push({ id: 'nr' + Math.random().toString(36).slice(2), name: q.name, range: Object.assign({}, q.range) });
     } else if (name === 'deleteNamedRange') {
-      this.tabs.forEach((t) => { t.named = t.named.filter((n) => n.name !== q.name); });
+      if (q.namedRangeId && !this.tabs.some((t) => t.named.some((n) => n.id === q.namedRangeId))) throw this.error(400, 'No named range with id ' + q.namedRangeId);
+      this.tabs.forEach((t) => { t.named = t.named.filter((n) => (q.namedRangeId ? n.id !== q.namedRangeId : n.name !== q.name)); });
     } else {
       throw this.error(400, 'Unsupported request ' + name);
     }
+  }
+
+  /** Named ranges move with the text, as in Docs (text inserted at a range's end isn't in it); a
+   *  range whose text is all deleted goes. */
+  moveNamed(tabId, segmentId, at, inserted, deleted) {
+    const t = this.tab(tabId);
+    t.named = t.named.filter((n) => {
+      const r = n.range;
+      if ((r.segmentId || undefined) !== (segmentId || undefined)) return true;
+      if (inserted) {
+        if (r.startIndex >= at) { r.startIndex += inserted; r.endIndex += inserted; } else if (r.endIndex > at) r.endIndex += inserted;
+        return true;
+      }
+      const end = at + deleted, cut = (i) => (i >= end ? i - deleted : i > at ? at : i);
+      r.startIndex = cut(r.startIndex); r.endIndex = cut(r.endIndex);
+      return r.endIndex > r.startIndex || n.name.startsWith('lunta:');   // the store's ranges cover the whole text
+    });
   }
 
   // ---- what a person does in the editor ----

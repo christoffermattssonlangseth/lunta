@@ -28,10 +28,10 @@ function makeWord(doc) {
       id: nextId++, tag, text, title: '', appearance: '',
       font: { superscript: false, load() {} },
       contentControls: { items: [], load() {} },
+      delete() { if (doc.nodes) removeNode(c); else doc.ccs.splice(doc.ccs.indexOf(c), 1); },
       insertText(t) { calls.insertText++; c.text = t; return { font: c.font }; },
       insertHtml(html) { calls.insertHtml++; c.html = html; c.text = html.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"'); },
-      select() { calls.selected = c; },
-      delete() { doc.ccs.splice(doc.ccs.indexOf(c), 1); }
+      select() { calls.selected = c; }
     };
     return c;
   }
@@ -57,7 +57,19 @@ function makeWord(doc) {
       }
     };
   }
+  // fields (Zotero, EndNote, Mendeley) among the content controls: doc.nodes [{kind: 'field', code} | cc]
+  const refresh = () => { if (doc.nodes) doc.ccs.splice(0, doc.ccs.length, ...doc.nodes.filter((n) => n.kind !== 'field')); };
+  function removeNode(n) {
+    doc.nodes = doc.nodes.filter((x) => x !== n && x.parent !== n);
+    refresh();
+  }
+  doc.field = (code, parent) => {
+    const f = { kind: 'field', code, parent, select() { doc.selectedField = f; }, delete() { calls.fieldsDeleted = (calls.fieldsDeleted || 0) + 1; removeNode(f); } };
+    return f;
+  };
   const body = {
+    getOoxml() { return { value: doc.ooxml || '' }; },
+    get fields() { return collection((doc.nodes || []).filter((n) => n.kind === 'field')); },
     get paragraphs() { return collection((doc.paras || []).map((p) => ({ text: p.map(segText).join('') }))); },
     search(t) {
       const items = [];
@@ -82,6 +94,15 @@ function makeWord(doc) {
             getById: (id) => doc.ccs.find((c) => c.id === id)
           }),
           getSelection() {
+            if (doc.selectedField) {
+              const f = doc.selectedField;
+              doc.selectedField = null;
+              return {
+                insertText(t) {
+                  return { insertContentControl() { const c = cc('', t); doc.nodes.splice(doc.nodes.indexOf(f), 1, c); removeNode(f); return c; } };
+                }
+              };
+            }
             const inside = doc.cursorIn || null;
             return {
               parentContentControlOrNullObject: inside ? Object.assign(inside, { isNullObject: false, load() {} }) : { isNullObject: true, load() {} },
@@ -131,7 +152,7 @@ function makeOffice(store) {
 
 // ---- Lunta ----
 const LIB = {
-  a: { id: 'a', title: 'Alpha', authors: ['Jane Smith'], families: ['Smith'], year: '2020', meta: { title: 'Alpha', authors: ['Jane Smith'], date: '2020' } },
+  a: { id: 'a', title: 'Alpha', authors: ['Jane Smith'], families: ['Smith'], year: '2020', meta: { title: 'Alpha', authors: ['Jane Smith'], date: '2020', doi: '10.1000/alpha' } },
   b: { id: 'b', title: 'Beta', authors: ['Jane Smith'], families: ['Smith'], year: '2020', meta: { title: 'Beta', authors: ['Jane Smith'], date: '2020' } },
   c: { id: 'c', title: 'Gamma <&>', authors: ['Per Wu'], families: ['Wu'], year: '2019', meta: { title: 'Gamma <&>', authors: ['Per Wu'], date: '2019' } }
 };
@@ -141,7 +162,14 @@ function makeFetch(lunta) {
     if (lunta.down) return Promise.reject(new TypeError('Failed to fetch'));
     lunta.requests.push({ url, body: init.body && JSON.parse(init.body) });
     let body;
-    if (url.endsWith('/api/status')) body = { ok: true, papers: Object.keys(lunta.lib).length, api: 3 };
+    if (url.endsWith('/api/status')) body = { ok: true, papers: Object.keys(lunta.lib).length, api: 4 };
+    else if (url.endsWith('/api/match')) {
+      // by DOI or title, roughly as the core does (core/src/citeimport.rs, tested there)
+      body = { matches: JSON.parse(init.body).items.map((m) => {
+        const p = Object.values(lunta.lib).find((x) => (m.doi && x.meta.doi && x.meta.doi.toLowerCase() === m.doi.toLowerCase()) || (m.title && x.title.toLowerCase() === m.title.toLowerCase()));
+        return p ? { id: p.id, how: 'title' } : null;
+      }) };
+    }
     else if (url.endsWith('/api/placeholders')) body = { placeholders: JSON.parse(init.body).texts.map(findPlaceholders) };
     else if (url.endsWith('/api/suggest')) body = suggest(lunta, JSON.parse(init.body));
     else if (url.endsWith('/api/add')) {
@@ -190,7 +218,17 @@ async function panel(opts) {
   const store = { parts: opts.parts || [], settings: opts.settings || {} };
   const lunta = { lib: Object.assign({}, LIB), down: !!opts.down, requests: [], outside: opts.outside || {} };
   const w = makeWord(doc);
-  (opts.ccs || []).forEach(([tag, text]) => doc.ccs.push(w.cc(tag, text)));
+  (opts.ccs || []).forEach(([tag, text, title]) => { const c = w.cc(tag, text); if (title) c.title = title; doc.ccs.push(c); });
+  if (opts.nodes) {
+    doc.ooxml = opts.ooxml;
+    doc.nodes = [];
+    const fields = {};
+    opts.nodes.forEach((n) => {
+      if (n.field) { const f = doc.field(n.field, n.parent ? fields[n.parent] : undefined); fields[n.name || n.field] = f; doc.nodes.push(f); }
+      else { const c = w.cc(n[0], n[1]); doc.nodes.push(c); }
+    });
+    doc.ccs.push(...doc.nodes.filter((n) => n.kind !== 'field'));
+  }
   if (opts.paras) {
     doc.paras = opts.paras.map((p) => p.map((seg) => (typeof seg === 'string' ? seg : w.cc(seg[0], seg[1]))));
     doc.ccs = [].concat(...doc.paras.map((p) => p.filter((seg) => typeof seg !== 'string')));
@@ -209,7 +247,7 @@ async function panel(opts) {
   };
   ctx.window = ctx;
   vm.createContext(ctx);
-  for (const f of ['common.js', 'resolve.js', 'word/app.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
+  for (const f of ['common.js', 'resolve.js', 'word/fields.js', 'word/app.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
   ctx.Office.ready();
   await settle();
   return { ctx, doc, store, lunta, calls: w.calls, cc: w.cc, status: () => els.status.textContent, els };
@@ -401,4 +439,92 @@ test('Resolve Citations: Skip leaves it; Search finds another; the same text twi
   assert.equal(paraTexts(p)[0], 'A (Smith, 2020a) and B (Smith, 2020b) and C (Wu 2019).');
   assert.deepEqual(p.doc.ccs.map((c) => c.tag), ['margins:a', 'margins:b']);
   assert.match(p.status(), /3 placeholders: 2 cited · 1 left as written/);
+});
+
+// ---- a paper's options in a citation ----
+
+test('options: page, prefix, suffix, author left out or in the text; kept in the title, read by old add-ins as before', async () => {
+  const title = 'Citation ' + 'lunta-o:' + LuntaCiteForTests.encodeOptions({ a: { prefix: 'see', locator: '12' } });
+  const p = await panel({ settings: { luntaStyle: 'apa' }, ccs: [['margins:a', '(…)', title], ['margins:c', '(…)'], ['margins-bib', 'x']] });
+  await p.ctx.updateAll();
+  assert.deepEqual(texts(p).slice(0, 2), ['(see Smith, 2020, p. 12)', '(Wu, 2019)']);
+  // an add-in from before options reads the same papers from the tag
+  assert.deepEqual(LuntaCiteForTests.parseTag(p.doc.ccs[0].tag), ['a']);
+  // the cursor in the second citation: Page… for Wu, without the author
+  p.doc.cursorIn = p.doc.ccs[1];
+  p.ctx.onSelection();
+  await new Promise((r) => setTimeout(r, 260));
+  await p.ctx.setPaperOptions('c', { locator: '3-5', mode: 'suppress' });
+  assert.equal(p.doc.ccs[1].text, '(2019, pp. 3–5)');
+  assert.match(p.doc.ccs[1].title, /^Citation lunta-o:/);
+  assert.deepEqual(plainJSON(LuntaCiteForTests.optionsOfTitle(p.doc.ccs[1].title)), { c: { locator: '3-5', mode: 'suppress' } });
+  // in the text, and in a numbered style
+  await p.ctx.setPaperOptions('c', { mode: 'narrative' });
+  assert.equal(p.doc.ccs[1].text, 'Wu (2019)');
+  await p.ctx.setStyle('vancouver');
+  assert.deepEqual(texts(p).slice(0, 2), ['[see 1, p. 12]', 'Wu [2]']);
+  // emptied: plain again, the title too
+  await p.ctx.setPaperOptions('c', {});
+  assert.equal(p.doc.ccs[1].title, 'Citation');
+  assert.equal(p.doc.ccs[1].text, '[2]');
+});
+
+test('options in a journal style go to Lunta with the citations', async () => {
+  const title = 'Citation lunta-o:' + LuntaCiteForTests.encodeOptions({ a: { locator: '7', label: 'figure' } });
+  const p = await panel({ parts: ['<lunta xmlns="https://lunta.app/ns/word-citations/1">{"style":"csl:nature","papers":{}}</lunta>'], ccs: [['margins:a', '(…)', title], ['margins:c', '(…)']] });
+  await p.ctx.updateAll().catch(() => {});
+  const r = p.lunta.requests.find((x) => x.url.endsWith('/api/render'));
+  assert.ok(r, 'asked Lunta to render');
+  assert.deepEqual(r.body.options, [{ a: { locator: '7', label: 'figure' } }, null]);
+});
+
+// ---- Convert Citations from Zotero, EndNote or Mendeley ----
+
+const X = require('./fixtures-word.js');
+const LuntaCiteForTests = require('../citations/common.js');
+
+test('Convert: reads Zotero, EndNote (inline and fldData) and Mendeley (Desktop and Cite); nothing changes before Convert', async () => {
+  const p = await panel({ settings: { luntaStyle: 'apa' }, ooxml: X.documentXML(), nodes: X.NODES });
+  const before = JSON.stringify(p.doc.nodes.map((n) => n.code || n.tag));
+  await p.ctx.convertCitations();
+  await settle();
+  const plan = p.ctx.conversion.plan;
+  assert.equal(plan.citations.length, 5);
+  assert.deepEqual(plainJSON(plan.citations.map((c) => c.source)), ['Zotero', 'EndNote', 'EndNote', 'Mendeley', 'Mendeley']);
+  // Alpha (DOI, in another case), Gamma, Beta (twice: once) in the library; Delta and Epsilon to add
+  assert.deepEqual(plainJSON(plan.works.map((w) => [w.meta.title, w.id])),
+    [['Alpha', 'a'], ['Gamma <&>', 'c'], ['Beta', 'b'], ['Delta rays & cells', ''], ['Epsilon waves in sleep', '']]);
+  assert.equal(LuntaCiteForTests.convertSummary(plan), '5 citations, 5 papers: 3 in your library, 2 to add');
+  assert.equal(JSON.stringify(p.doc.nodes.map((n) => n.code || n.tag)), before, 'nothing written yet');
+  assert.ok(!p.lunta.requests.some((r) => r.url.endsWith('/api/add')), 'nothing added yet');
+  // EndNote's details: authors as names, the DOI and PubMed id, the prefix and suffix kept
+  const delta = plan.citations[2].works[0];
+  assert.deepEqual(plainJSON(delta.meta.authors), ['Priya Rao', 'Åsa Lindqvist', 'Kim Ng']);
+  assert.equal(delta.meta.doi, '10.5555/delta');
+  assert.equal(delta.meta.pmid, '36543210');
+  assert.deepEqual(plainJSON(delta.options), { prefix: 'e.g.', suffix: ', for the method' });
+
+  // Convert, adding Delta but not Epsilon: Epsilon's (Mendeley Desktop) citation stays, and is listed
+  await p.ctx.runConversion([plan.works[3].key]);
+  const adds = p.lunta.requests.filter((r) => r.url.endsWith('/api/add'));
+  assert.deepEqual(adds.map((r) => r.body.meta.title), ['Delta rays & cells']);
+  const kinds = p.doc.nodes.map((n) => (n.kind === 'field' ? 'field:' + n.code.trim().split(/\s+/).slice(0, 2).join(' ') : n.tag.replace(/^(MENDELEY_CITATION_v3_).*/, '$1')));
+  const newId = Object.keys(p.lunta.lib).find((k) => p.lunta.lib[k].title === 'Delta rays & cells');
+  assert.deepEqual(kinds, ['margins:a,c', 'field:HYPERLINK "https://example.org"', 'margins:b', 'margins:' + newId, 'field:ADDIN CSL_CITATION', 'margins:b', 'margins-bib']);
+  // the options came along
+  assert.deepEqual(plainJSON(LuntaCiteForTests.optionsOfTitle(p.doc.ccs[0].title)), { a: { prefix: 'see', locator: '12' } });
+  assert.deepEqual(plainJSON(LuntaCiteForTests.optionsOfTitle(p.doc.ccs[3].title)), { b: { locator: '7', label: 'figure' } });
+  assert.deepEqual(texts(p).slice(0, 4), ['(see Smith, 2020a, p. 12; Wu, 2019)', '(2020b, p. 4)', '(e.g. Rao et al., 2023, for the method)', '(Smith, 2020b, fig. 7)']);
+  // the Zotero bibliography became Lunta's, EndNote's went; Mendeley's Desktop citation is left
+  assert.match(p.doc.ccs[4].html, /Rao \(2023\)/);
+  assert.match(p.status(), /Converted 4 citations \(1 paper added to your library\)\. 1 left as they were: “\(Okafor, 2018\)”: “Epsilon waves in sleep” isn’t in your library/);
+});
+
+test('Convert: a document with nothing to convert says so; Zotero bookmarks are explained', async () => {
+  const p = await panel({ settings: { luntaStyle: 'apa' }, ooxml: '<w:body><w:p><w:bookmarkStart w:id="0" w:name="ZOTERO_BREF_abc123"/></w:p></w:body>', nodes: [] });
+  await p.ctx.convertCitations();
+  assert.match(p.status(), /stored as bookmarks.*Store citations as: Fields/);
+  const q = await panel({ settings: { luntaStyle: 'apa' }, ooxml: '<w:body></w:body>', nodes: [] });
+  await q.ctx.convertCitations();
+  assert.match(q.status(), /no citations from Zotero, EndNote or Mendeley/);
 });

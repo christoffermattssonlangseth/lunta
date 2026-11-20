@@ -271,6 +271,7 @@ pub(crate) const FILES: &[(&str, &[u8])] = files![
     "resolve.js",
     "word/index.html",
     "word/app.js",
+    "word/fields.js",
     "word/manifest.xml",
     "word/manifest-store.xml",
     "gdocs/Code.gs",

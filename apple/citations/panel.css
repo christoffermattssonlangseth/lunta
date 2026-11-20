@@ -53,3 +53,16 @@ button:disabled { opacity: .5; cursor: default; }
 .rs-src { font-size: 11px; }
 .rs-q { flex: 1; padding: 5px 7px; border: 1px solid #9995; border-radius: 7px; }
 button.link { all: unset; cursor: pointer; color: var(--teal); font-size: 12px; text-decoration: underline; }
+
+/* a paper's options in a citation (common.js optionsForm), and Convert Citations */
+.cite-o { flex: 0 0 auto; width: auto; padding: 1px 6px; font-size: 11px; border-radius: 6px; }
+.cite-text .o { font-size: 11px; color: var(--teal); margin-top: 1px; }
+.cite-text .o:empty { display: none; }
+.opts { border: 1px solid #8884; border-radius: 8px; padding: 6px; margin: 2px 0 8px; }
+.orow { display: flex; gap: 5px; margin: 4px 0; }
+.orow input, .orow select { flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid #9995; border-radius: 6px; }
+.orow select.olabel { flex: 0 0 auto; }
+.cv-sum { font-weight: 600; margin: 4px 0; }
+.cv-h { font-size: 12px; color: var(--teal); margin: 8px 0 2px; }
+.cv-row { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; padding: 3px 0; }
+.cv-note { font-size: 12px; opacity: .7; margin: 6px 0; }

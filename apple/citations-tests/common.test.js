@@ -219,7 +219,7 @@ test('requests: answers, Lunta’s errors, no answer, too slow', async () => {
     (e) => e.kind === 'http' && e.status === 403 && e.message === 'Not paired.');
   await assert.rejects(C.request('u', { fetch: fakeFetch({ status: 500, body: 'oops' }) }), (e) => e.kind === 'http' && /500/.test(e.message));
   await assert.rejects(C.request('u', { fetch: fakeFetch({ status: 200, body: '<html>' }) }), (e) => e.kind === 'http');
-  await assert.rejects(C.request('u', { fetch: fakeFetch('down') }), (e) => e.kind === 'offline' && /Open the Lunta app/.test(C.describe(e, 'word')));
+  await assert.rejects(C.request('u', { fetch: fakeFetch('down') }), (e) => e.kind === 'offline' && /Open Lunta on this computer/.test(C.describe(e, 'word')));
   await assert.rejects(C.request('u', { fetch: fakeFetch('hang'), timeout: 30 }), (e) => e.kind === 'timeout' && /didn’t answer in time/.test(C.describe(e)));
   // the body goes as JSON
   let sent = null;
@@ -235,4 +235,68 @@ test('messages say what to do', () => {
   assert.match(C.unknownMessage(2, true), /Lunta isn’t running.*2 cited papers/);
   assert.equal(C.summary(1, 1, 'APA 7', [], false), '1 citation, 1 reference · APA 7');
   assert.match(C.summary(3, 2, 'APA 7', ['x'], false), /1 from the copy saved in this document/);
+});
+
+// ---- a paper's options in a citation ----
+
+test('options: built-in styles write locators, prefixes, suffixes, without the author and in the text', () => {
+  const e = (id, f, y) => ({ id, families: [f], year: y, title: 'T ' + id, entry: f + ' (' + y + '). T.' });
+  const E = [e('a', 'Smith', '2020'), e('b', 'Lee', '2021'), e('c', 'Wu', '2019')];
+  const cits = [['a'], ['a', 'b'], ['b'], ['c'], ['a', 'b', 'c']];
+  const op = [{ a: { locator: '12' } }, { a: { prefix: 'see', locator: '3-5', label: 'chapter' }, b: { suffix: 'for a review' } },
+    { b: { mode: 'suppress', locator: '4' } }, { c: { mode: 'narrative', locator: '7' } }, { b: { locator: '9' } }];
+  const t = (st) => C.format(st, cits, E, {}, op).texts;
+  assert.deepEqual(t('apa'), ['(Smith, 2020, p. 12)', '(Lee, 2021 for a review; see Smith, 2020, chaps. 3–5)', '(2021, p. 4)', 'Wu (2019, p. 7)', '(Lee, 2021, p. 9; Smith, 2020; Wu, 2019)']);
+  assert.deepEqual(t('chicago').slice(0, 1), ['(Smith 2020, 12)']);
+  assert.deepEqual(t('mla').slice(0, 1), ['(Smith 12)']);
+  assert.deepEqual(t('vancouver'), ['[1, p. 12]', '[see 1, chaps. 3–5; 2 for a review]', '[2, p. 4]', 'Wu [3, p. 7]', '[1; 2, p. 9; 3]']);
+  const nature = C.format('nature', cits, E, {}, op);
+  assert.equal(nature.texts[0], '1(p12)');
+  assert.deepEqual(nature.superscripts, [true, true, true, false, true], 'a narrative citation isn’t raised');
+  // without options: as before
+  assert.equal(C.format('apa', cits, E, {}).texts[1], '(Lee, 2021; Smith, 2020)');
+});
+
+test('options: the code in titles and named ranges, as old documents and add-ins see it', () => {
+  const o = { a: { prefix: 'siehe', suffix: 'für Details – „Zitat“', locator: '3–5', label: 'figure', mode: 'narrative' }, b: {} };
+  const code = C.encodeOptions(o);
+  assert.match(code, /^[A-Za-z0-9_-]+$/);
+  assert.deepEqual(C.decodeOptions(code), { a: o.a });
+  assert.equal(C.encodeOptions({ b: {} }), '');
+  assert.equal(C.optionsTitle(null), 'Citation');
+  assert.deepEqual(C.optionsOfTitle(C.optionsTitle(o)), { a: o.a });
+  assert.equal(C.optionsOfTitle('Citation'), null, 'citations from before options');
+  assert.equal(C.decodeOptions('!!not a code'), null);
+  const long = C.encodeOptions({ a: { suffix: 'x'.repeat(290) }, b: { prefix: 'y'.repeat(290) } });
+  const names = C.optionRangeNames(long, 'k');
+  assert.ok(names.length > 1 && names.every((n) => n.length <= 256));
+  assert.equal(C.optionsCodeOf(names.slice().reverse()), long);
+  assert.equal(C.optionsCodeOf(names.slice(1)), '', 'a part missing');
+  // the extension's docs-model reads them the same way
+  assert.equal(require('../../extension/gdocs/docs-model.js').optionsCode(names), long);
+  assert.equal(C.optionsLabel({ prefix: 'see', locator: '12', mode: 'suppress' }), '“see” before · p. 12 · without author');
+});
+
+test('converting: CSL-JSON (Zotero, Mendeley) to Lunta’s details and options; the plan and what is left', () => {
+  const m = C.cslMeta({ title: 'A <i>Drosophila</i> study <10 Hz', author: [{ family: 'Beethoven', 'non-dropping-particle': 'van', given: 'Ludwig' }, { literal: 'WHO' }],
+    issued: { 'date-parts': [['2020', '3']] }, 'container-title': 'Cell', DOI: 'https://doi.org/10.1/X', note: 'PMID: 123456' });
+  assert.deepEqual(m, { title: 'A Drosophila study <10 Hz', authors: ['Ludwig van Beethoven', 'WHO'], date: '2020-03', journal: 'Cell', doi: '10.1/X', pmid: '123456' });
+  assert.equal(C.cslDate({ raw: 'Spring 2019' }), '2019');
+  assert.deepEqual(C.cslOptions({ locator: '7', label: 'figure', prefix: 'see ', suffix: ' and more', 'suppress-author': true }),
+    { prefix: 'see', suffix: 'and more', locator: '7', label: 'figure', mode: 'suppress' });
+  assert.deepEqual(C.jsonAt('ITEM CSL_CITATION {"a":"}{"} RND1234567890'), { a: '}{' }, 'Zotero’s random tail and braces in strings');
+  const found = [
+    { text: '(A)', works: [{ meta: { title: 'Alpha', doi: '10.1/a' }, options: { locator: '2' } }, { meta: { title: 'Beta paper', date: '2020' } }] },
+    { text: '(B)', works: [{ meta: { title: 'Beta paper', date: '2020' } }] },
+    { text: '(C)', works: [{ meta: { title: 'Gamma' } }] },
+    { text: '(?)', works: [{ meta: {} }] }
+  ];
+  const first = C.convertPlan(found);
+  assert.equal(first.works.length, 3, 'the same work once');
+  const plan = C.convertPlan(found, [{ id: 'a', how: 'doi' }, null, null]);
+  assert.equal(C.convertSummary(plan), '4 citations, 3 papers: 1 in your library, 2 to add');
+  const res = C.convertResolve(plan, { [plan.works[1].key]: 'b' });
+  assert.deepEqual(res.convert, [{ index: 0, ids: ['a', 'b'], options: { a: { locator: '2' } } }, { index: 1, ids: ['b'], options: null }]);
+  assert.deepEqual(res.left.map((l) => [l.index, l.reason]), [[2, '“Gamma” isn’t in your library'], [3, 'a work without a title or DOI']]);
+  assert.match(C.convertDone(2, res.left, 1), /^Converted 2 citations \(1 paper added to your library\)\. 2 left as they were: “\(C\)”: “Gamma” isn’t in your library/);
 });
