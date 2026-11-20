@@ -66,8 +66,10 @@ institution's subscription, for example). On a journal's article page, **Use thi
 the page you're reading into the paper's reading view. On PubMed, **Find PDF** gets a free, legal copy.
 It works in Chrome, Edge, Brave and other Chromium browsers, and in Firefox.
 
-**Chrome Web Store and Firefox Add-ons:** submitted, in review. Once they're approved, installing is one
-click (and updates come by themselves); the links will be here. Until then, install it from the release:
+**Firefox:** install it from [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/lunta/) (one click; updates come by themselves).
+
+**Chrome Web Store:** submitted, in review. Once it's approved, installing is one click and the link will be
+here. Until then, install it in Chrome, Edge or Brave from the release:
 
 1. Download **`Lunta-…-Chrome-Extension.zip`** from the
    [latest release](https://github.com/christoffermattssonlangseth/lunta/releases/latest) and unzip it.
@@ -75,9 +77,6 @@ click (and updates come by themselves); the links will be here. Until then, inst
 2. Open **`chrome://extensions`** (Edge: `edge://extensions`) and turn on **Developer mode** (top right).
 3. Click **Load unpacked** and choose the unzipped folder.
 4. Pin it: click the puzzle piece in the toolbar, then the pin next to **Lunta**.
-
-**Firefox:** the same zip. Until Lunta is in Firefox Add-ons, open `about:debugging` › **This Firefox** ›
-**Load Temporary Add-on…** and choose the zip (Firefox removes it when it restarts).
 
 Lunta must be open on the same computer: the extension talks only to the app, never to a server. To update,
 unzip the new version over the old folder and click ↻ on the extension in `chrome://extensions`.
