@@ -90,6 +90,14 @@ class AppModel(val app: Application) {
     var syncing by mutableStateOf(false)
         private set
     var syncError by mutableStateOf<String?>(null)
+    /** The last sync could not open the Drive folder: offer "Choose your Lunta folder". */
+    var driveFolderNotVisible by mutableStateOf(false)
+        private set
+    /** Something the last sync wants the user to know (files adopted for the narrower Drive access). */
+    var syncNotice by mutableStateOf<String?>(null)
+    /** Signed in by an older version with full Drive access: offer to reconnect with the narrower one. */
+    var driveFullAccess by mutableStateOf(false)
+        private set
     var lastSyncMs by mutableStateOf(settings.lastSyncMs)
         private set
     /** A line shown at the bottom while something long runs ("Looking up 10.1038/…"). */
@@ -141,7 +149,8 @@ class AppModel(val app: Application) {
         if (m == LibraryMode.Drive) {
             auth = makeAuth()
             if (auth.isConnected()) {
-                s = LibrarySync.googleDrive(root.absolutePath, device, state, auth, settings.driveFolder, true, progress)
+                s = LibrarySync.googleDrive(root.absolutePath, device, state, auth, settings.driveFolder, settings.driveFolderId.ifBlank { null }, true, progress)
+                driveFullAccess = auth.hasFullAccess()
             }
         } else if (settings.testRemoteDir.isNotBlank()) {
             s = LibrarySync.localDir(root.absolutePath, device, state, settings.testRemoteDir, true, progress)
@@ -150,8 +159,10 @@ class AppModel(val app: Application) {
         positions = Positions(root, device, "${Build.MODEL} (Android)")
     }
 
+    // drive.file: Lunta sees only the files it made (and what the user picks for it). Tokens from
+    // older versions still have the full scope until the next sign-in; syncs adopt foreign files then.
     private fun makeAuth() = DriveAuth(
-        BuildConfig.GOOGLE_CLIENT_ID, File(app.noBackupFilesDir, "google-tokens.json").absolutePath, true,
+        BuildConfig.GOOGLE_CLIENT_ID, File(app.noBackupFilesDir, "google-tokens.json").absolutePath, false,
     )
 
     /** Called at start-up. */
@@ -203,6 +214,8 @@ class AppModel(val app: Application) {
     fun leaveLibrary(disconnect: Boolean) {
         scope.launch {
             withContext(Dispatchers.IO) { if (disconnect) runCatching { driveAuth?.disconnect() } }
+            if (disconnect) settings.driveFolderId = ""
+            driveFolderNotVisible = false; syncNotice = null; driveFullAccess = false
             SyncWorker.cancel(app)
             ForYouWorker.cancel(app)
             library = null; librarySync = null; driveAuth = null; positions = null
@@ -228,6 +241,7 @@ class AppModel(val app: Application) {
             val auth = driveAuth ?: makeAuth().also { driveAuth = it }
             val redirect = "${BuildConfig.REDIRECT_SCHEME}:/oauth2redirect"
             val req = auth.beginSignIn(redirect)
+            settings.pendingPick = false
             settings.pendingVerifier = req.verifier
             settings.pendingState = req.state
             settings.pendingRedirect = redirect
@@ -237,15 +251,48 @@ class AppModel(val app: Application) {
         }
     }
 
+    /**
+     * "Choose your Lunta folder": Google's picker inside the sign-in (the "OnePick" picker for apps,
+     * which grants drive.file access to what is picked). Needed when the folder was made by another
+     * app (Google Drive for desktop, the web) or Lunta's access to it was removed. Picking a folder
+     * grants the folder, not files other apps put into it; the user can select those too.
+     */
+    fun beginPickFolder(context: Context) {
+        if (clientIdMissing) { beginGoogleSignIn(context); return }
+        try {
+            val auth = driveAuth ?: makeAuth().also { driveAuth = it }
+            val redirect = "${BuildConfig.REDIRECT_SCHEME}:/oauth2redirect"
+            val req = auth.beginPick(redirect, emptyList())
+            settings.pendingPick = true
+            settings.pendingVerifier = req.verifier
+            settings.pendingState = req.state
+            settings.pendingRedirect = redirect
+            CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(context, Uri.parse(req.url))
+        } catch (e: Exception) {
+            error = "Couldn't open Google's folder picker: ${e.message}"
+        }
+    }
+
     fun finishGoogleSignIn(redirectUrl: String) {
         scope.launch {
             try {
                 status = "Signing in to Google…"
-                withContext(Dispatchers.IO) {
+                val picking = settings.pendingPick
+                settings.pendingPick = false
+                val noFolder = withContext(Dispatchers.IO) {
                     val auth = driveAuth ?: makeAuth().also { driveAuth = it }
                     val code = auth.codeFromRedirect(redirectUrl, settings.pendingState)
                     auth.completeSignIn(code, settings.pendingVerifier, settings.pendingRedirect)
+                    if (!picking) return@withContext false
+                    val folder = auth.pickedFolder(auth.pickedIdsFromRedirect(redirectUrl))
+                    if (folder.size == 2) {
+                        settings.driveFolderId = folder[0]
+                        settings.driveFolder = folder[1]
+                    }
+                    folder.size != 2
                 }
+                if (noFolder) info = "No folder was chosen, so Lunta keeps using the folder “${settings.driveFolder}”."
+
                 settings.mode = LibraryMode.Drive
                 mode = LibraryMode.Drive
                 withContext(Dispatchers.IO) { openBlocking(LibraryMode.Drive) }
@@ -523,10 +570,14 @@ class AppModel(val app: Application) {
             settings.lastSyncMs = r.finishedMs
             lastSyncMs = r.finishedMs
             syncError = r.errors.firstOrNull()
+            driveFolderNotVisible = false
+            r.notices.firstOrNull()?.let { syncNotice = it }
+            driveFullAccess = driveAuth?.hasFullAccess() == true
             reload()
             withContext(Dispatchers.IO) { library?.let { while (it.indexFulltext(25u) > 0u) { /* indexed a batch */ } } }
         } catch (e: Exception) {
             syncError = e.message ?: e.toString()
+            driveFolderNotVisible = driveFolderNotVisible(syncError ?: "")
         } finally {
             syncing = false
             status = null

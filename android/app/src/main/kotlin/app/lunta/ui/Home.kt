@@ -134,6 +134,10 @@ fun HomeScreen(model: AppModel) {
                 }
                 model.syncError?.let { e ->
                     item { Text("Sync problem: $e", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                    if (model.driveFolderNotVisible) item {
+                        val ctx = androidx.compose.ui.platform.LocalContext.current
+                        FilledTonalButton({ model.beginPickFolder(ctx) }, Modifier.padding(horizontal = 16.dp)) { Text("Choose your Lunta folder…") }
+                    }
                 }
             }
         }
@@ -222,8 +226,20 @@ private fun SettingsSheet(model: AppModel, onDismiss: () -> Unit) {
                 val last = if (model.lastSyncMs == 0L) "never" else DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(model.lastSyncMs))
                 Text("Last sync: $last", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 model.syncError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                model.syncNotice?.let { Text(it, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 Spacer(Modifier.height(12.dp))
                 FilledTonalButton({ model.refreshNow() }, enabled = !model.syncing) { Text(if (model.syncing) "Syncing…" else "Sync now") }
+                if (model.mode == LibraryMode.Drive) {
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    if (model.driveFullAccess && model.syncError == null && model.lastSyncMs > 0L) {
+                        Text(
+                            "Lunta now asks Google only for access to the files it makes (its Lunta folder), not your whole Drive. Your library has been prepared for it; sign in again to switch.",
+                            Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodySmall,
+                        )
+                        OutlinedButton({ onDismiss(); model.beginGoogleSignIn(ctx) }, enabled = !model.syncing) { Text("Sign in again") }
+                    }
+                    TextButton({ onDismiss(); model.beginPickFolder(ctx) }) { Text("Choose your Lunta folder…") }
+                }
                 Text("Lunta also syncs in the background about every ${model.settings.syncMinutes} minutes.", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(20.dp))

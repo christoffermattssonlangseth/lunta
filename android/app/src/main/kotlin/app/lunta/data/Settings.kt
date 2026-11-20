@@ -82,6 +82,14 @@ class Settings(context: Context) {
     var pendingState: String
         get() = p.getString("pendingState", "")!!
         set(v) = p.edit { putString("pendingState", v) }
+    /** The Drive folder chosen with "Choose your Lunta folder" (Google's picker); "" = find "Lunta" by name. */
+    var driveFolderId: String
+        get() = p.getString("driveFolderId", "")!!
+        set(v) = p.edit { putString("driveFolderId", v) }
+    /** The sign-in in flight shows Google's picker (Choose your Lunta folder). */
+    var pendingPick: Boolean
+        get() = p.getBoolean("pendingPick", false)
+        set(v) = p.edit { putBoolean("pendingPick", v) }
     var pendingRedirect: String
         get() = p.getString("pendingRedirect", "")!!
         set(v) = p.edit { putString("pendingRedirect", v) }
