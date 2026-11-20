@@ -341,11 +341,17 @@ mod platform {
     }
 
     /// The browsers' certificate databases: Chrome/Chromium's, and every Firefox profile's
-    /// (also the Snap and Flatpak ones).
-    pub(crate) fn nss_dbs(home: &Path) -> Vec<PathBuf> {
+    /// (also the Snap and Flatpak ones, and those in `config`/mozilla/firefox, where Firefox puts
+    /// new profiles when there is no ~/.mozilla: the XDG base directories).
+    pub(crate) fn nss_dbs(home: &Path, config: &Path) -> Vec<PathBuf> {
         let mut out = vec![home.join(".pki/nssdb")];
-        for base in [".mozilla/firefox", "snap/firefox/common/.mozilla/firefox", ".var/app/org.mozilla.firefox/.mozilla/firefox"] {
-            for e in std::fs::read_dir(home.join(base)).into_iter().flatten().flatten() {
+        let mut bases: Vec<PathBuf> =
+            [".mozilla/firefox", "snap/firefox/common/.mozilla/firefox", ".var/app/org.mozilla.firefox/.mozilla/firefox"].iter().map(|b| home.join(b)).collect();
+        if !bases.contains(&config.join("mozilla/firefox")) {
+            bases.push(config.join("mozilla/firefox"));
+        }
+        for base in bases {
+            for e in std::fs::read_dir(base).into_iter().flatten().flatten() {
                 if e.path().join("cert9.db").exists() {
                     out.push(e.path());
                 }
@@ -356,6 +362,11 @@ mod platform {
 
     fn home() -> Option<PathBuf> {
         std::env::var_os("HOME").map(PathBuf::from)
+    }
+
+    /// $XDG_CONFIG_HOME (when set to an absolute path), else ~/.config.
+    pub(crate) fn config_dir(home: &Path) -> PathBuf {
+        std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| home.join(".config"))
     }
 
     fn certutil(db: &Path, args: &[&str]) -> std::io::Result<std::process::Output> {
@@ -386,7 +397,7 @@ mod platform {
         }
         let mut done = Vec::new();
         let mut failed = Vec::new();
-        for db in nss_dbs(&home) {
+        for db in nss_dbs(&home, &config_dir(&home)) {
             let _ = certutil(&db, &["-D", "-n", NSS_NICK]); // an earlier authority
             match certutil(&db, &["-A", "-t", "C,,", "-n", NSS_NICK, "-i", &pem.to_string_lossy()]) {
                 Ok(o) if o.status.success() => done.push(db),
@@ -407,7 +418,7 @@ mod platform {
             return Ok(());
         }
         if let Some(home) = home() {
-            for db in nss_dbs(&home) {
+            for db in nss_dbs(&home, &config_dir(&home)) {
                 let _ = certutil(&db, &["-D", "-n", NSS_NICK]);
             }
         }
@@ -432,13 +443,15 @@ mod tests {
     #[test]
     fn finds_the_browsers_certificate_databases() {
         let home = std::env::temp_dir().join(format!("lunta-nss-test-{}", uuid::Uuid::new_v4()));
-        for p in [".mozilla/firefox/abc.default-release", "snap/firefox/common/.mozilla/firefox/x.default", ".mozilla/firefox/empty"] {
+        for p in [".mozilla/firefox/abc.default-release", "snap/firefox/common/.mozilla/firefox/x.default", ".mozilla/firefox/empty", ".config/mozilla/firefox/xdg.default-release"] {
             std::fs::create_dir_all(home.join(p)).unwrap();
         }
         std::fs::write(home.join(".mozilla/firefox/abc.default-release/cert9.db"), b"").unwrap();
         std::fs::write(home.join("snap/firefox/common/.mozilla/firefox/x.default/cert9.db"), b"").unwrap();
-        let dbs = platform::nss_dbs(&home);
-        assert_eq!(dbs.len(), 3, "{dbs:?}");
+        std::fs::write(home.join(".config/mozilla/firefox/xdg.default-release/cert9.db"), b"").unwrap();
+        let dbs = platform::nss_dbs(&home, &home.join(".config"));
+        assert_eq!(dbs.len(), 4, "{dbs:?}");
+        assert!(dbs.contains(&home.join(".config/mozilla/firefox/xdg.default-release")));
         assert_eq!(dbs[0], home.join(".pki/nssdb"));
         assert!(!dbs.iter().any(|d| d.ends_with("empty")));
         let _ = std::fs::remove_dir_all(&home);

@@ -194,7 +194,7 @@ At KI most people write in Word on Windows, so Lunta for Windows serves the same
     authority's bytes are in the user's Root view (which includes the machine's).
   - *Trust, Linux*: browsers keep their own NSS databases. With `certutil` (libnss3-tools / nss-tools) Lunta adds
     the authority (`-t C,,`, nickname "Lunta Local CA") to `~/.pki/nssdb` (Chrome, Chromium; made if missing)
-    and every Firefox profile (also Snap and Flatpak); without it the window explains the import in each browser's
+    and every Firefox profile (also Snap, Flatpak and ~/.config/mozilla/firefox); without it the window explains the import in each browser's
     settings and saves `ca.pem`.
   - *Install in Word* (Windows): the manifest goes to `<app data>/citations/manifest.xml` and is registered as
     `HKCU\Software\Microsoft\Office\16.0\WEF\Developer`, value `6a1f3b2c-…` (the add-in's id) = the
