@@ -193,6 +193,7 @@ pub fn agent() -> &'static ureq::Agent {
     static A: OnceLock<ureq::Agent> = OnceLock::new();
     A.get_or_init(|| {
         ureq::Agent::config_builder()
+            .tls_config(crate::tls::config())
             .http_status_as_error(false)
             .timeout_connect(Some(Duration::from_secs(20)))
             .timeout_recv_response(Some(Duration::from_secs(120)))
@@ -210,6 +211,7 @@ pub fn agent_noredirect() -> &'static ureq::Agent {
     static A: OnceLock<ureq::Agent> = OnceLock::new();
     A.get_or_init(|| {
         ureq::Agent::config_builder()
+            .tls_config(crate::tls::config())
             .http_status_as_error(false)
             .max_redirects(0)
             .max_redirects_will_error(false)

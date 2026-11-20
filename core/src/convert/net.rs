@@ -13,6 +13,7 @@ fn agent() -> &'static ureq::Agent {
     static A: OnceLock<ureq::Agent> = OnceLock::new();
     A.get_or_init(|| {
         ureq::Agent::config_builder()
+            .tls_config(crate::tls::config())
             .http_status_as_error(false)
             .timeout_global(Some(Duration::from_secs(300)))
             .user_agent(USER_AGENT)

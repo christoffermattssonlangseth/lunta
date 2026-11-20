@@ -198,6 +198,7 @@ pub fn disk_size(root: &Path) -> u64 {
 
 fn agent() -> ureq::Agent {
     ureq::Agent::config_builder()
+            .tls_config(crate::tls::config())
         .timeout_connect(Some(Duration::from_secs(20)))
         .timeout_recv_body(Some(Duration::from_secs(60)))
         .build()

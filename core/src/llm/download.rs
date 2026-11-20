@@ -31,6 +31,7 @@ impl Fetch for HttpFetch {
         static AGENT: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
         let agent = AGENT.get_or_init(|| {
             ureq::Agent::config_builder()
+            .tls_config(crate::tls::config())
                 .timeout_connect(Some(Duration::from_secs(30)))
                 .timeout_per_read(Some(Duration::from_secs(60)))
                 .http_status_as_error(false)

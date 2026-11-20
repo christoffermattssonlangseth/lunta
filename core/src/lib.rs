@@ -8,6 +8,8 @@
 
 uniffi::setup_scaffolding!();
 
+mod tls;
+
 #[cfg(feature = "convert")]
 pub mod adder;
 pub mod bibimport;
