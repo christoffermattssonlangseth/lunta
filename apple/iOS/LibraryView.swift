@@ -135,7 +135,7 @@ struct LibraryView: View {
                 ScrollView { SharePanel(ids: [t.id]) }.environmentObject(model).presentationDetents([.medium, .large])
             }
             .alert("Add Paper", isPresented: $adding) {
-                TextField("DOI, link or PMCID", text: $input)
+                TextField("DOI, PMCID or link (web pages too)", text: $input)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                 Button("Add") { let i = input; input = ""; Task { await model.add(i) } }
                 Button("Cancel", role: .cancel) { input = "" }

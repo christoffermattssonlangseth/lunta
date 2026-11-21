@@ -214,11 +214,15 @@ async function handle(msg, sender) {
   if (msg.type !== "fullText" && (await useNative())) return handleNative(msg);
   switch (msg.type) {
     case "status": {
-      const q = new URLSearchParams({ doi: msg.doi || "", title: msg.title || "" });
+      const q = new URLSearchParams({ doi: msg.doi || "", title: msg.title || "", url: msg.url || "" });
       return api("/status?" + q);
     }
     case "save":
       return api("/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(msg.meta) });
+    case "saveWebPage":
+      // a web page or blog post: Lunta reads its details and main text from the page as shown
+      return api("/webpage", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: msg.url, title: msg.title || "", html: msg.html || "" }) });
     case "savePdf": {
       // bytes fetched by the page (same-origin cookies) arrive as base64; otherwise fetch here
       const bytes = msg.base64 ? base64ToBytes(msg.base64) : await fetchPdfAny(msg.pdfUrls || [msg.pdfUrl]);
@@ -243,6 +247,9 @@ async function handleNative(msg) {
       return native({ op: "status", doi: msg.doi || "", title: msg.title || "" });
     case "save":
       return nativeSubmit({ kind: "save", meta: msg.meta || {} });
+    case "saveWebPage":
+      return nativeSubmit({ kind: "webpage", url: msg.url, title: msg.title || "", html: "page.html" },
+        [{ name: "page.html", text: msg.html || "" }]);
     case "savePdf": {
       const base64 = msg.base64 || bytesToBase64(await fetchPdfAny(msg.pdfUrls || [msg.pdfUrl]));
       return nativeSubmit({ kind: "pdf", pdf: "paper.pdf", paperId: msg.id || "", name: msg.name || "paper.pdf", meta: msg.meta || {} },
@@ -296,7 +303,7 @@ chrome.action.onClicked.addListener(async (tab) => {
   } catch (e) {
     return flag(tab.id, "Lunta can't run on this page (Chrome's own pages and the Web Store are off limits).");
   }
-  if (!(await toggle(tab.id))) flag(tab.id, "No paper found on this page: Lunta looks for a DOI or the citation details journals put in the page. Open the article's own page (not a search result) and try again.");
+  if (!(await toggle(tab.id))) flag(tab.id, "Lunta can't save this page. Open the article's own page (not a search result), or a web page or blog post, and try again.");
 });
 
 async function toggle(tabId) {

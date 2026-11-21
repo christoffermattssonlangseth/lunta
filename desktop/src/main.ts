@@ -470,7 +470,7 @@ async function work<T>(label: string, p: () => Promise<T>): Promise<T | undefine
 }
 
 async function addPaper() {
-  const input = await prompt('Add a paper', '', 'DOI, PMCID, PubMed ID, arXiv id or link', 'Add');
+  const input = await prompt('Add a paper', '', 'DOI, PMCID, PubMed ID, arXiv id, or a link (articles, web pages, blog posts)', 'Add');
   if (!input) return;
   const r = await work(`Adding ${input}…`, () => api.addPaper(input));
   if (!r) return;

@@ -225,7 +225,7 @@ pub fn bibtex_type(m: &PaperMeta) -> &'static str {
         Book => "book",
         Report | Standard => "techreport",
         Thesis => "phdthesis",
-        Preprint | Dataset | Other => "misc",
+        Preprint | Dataset | WebPage | BlogPost | Other => "misc",
     }
 }
 
@@ -408,6 +408,13 @@ pub fn bibtex_with(papers: &[Paper], options: BibtexOptions, own: &std::collecti
                 // plain BibTeX styles (plain, unsrt) show howpublished, not the eprint
                 Kind::Preprint if !m.arxiv.is_empty() => field("howpublished", &format!("arXiv preprint arXiv:{}", m.arxiv)),
                 Kind::Preprint if !m.journal.is_empty() => field("howpublished", &format!("{journal} preprint")),
+                // a web page: plain BibTeX styles print howpublished and note (not url or
+                // urldate), biblatex prints url and urldate: both get the address and the day
+                Kind::WebPage | Kind::BlogPost => {
+                    let url = bib_url(&m.url);
+                    let site = if m.journal.is_empty() { String::new() } else { format!("{journal}, ") };
+                    field("howpublished", &if url.is_empty() { journal.clone() } else { format!("{site}\\url{{{url}}}") });
+                }
                 _ => field("howpublished", &journal),
             },
         }
@@ -424,7 +431,17 @@ pub fn bibtex_with(papers: &[Paper], options: BibtexOptions, own: &std::collecti
             field("eprint", &m.arxiv);
             field("archivePrefix", "arXiv");
         }
-        field("url", &m.url);
+        field("url", &bib_url(&m.url));
+        if matches!(kind, Kind::WebPage | Kind::BlogPost) {
+            // biblatex: the full date of the post, and urldate ("visited on …")
+            if m.date.len() > 4 {
+                field("date", &m.date);
+            }
+            field("urldate", &m.accessed);
+            if !m.accessed.is_empty() {
+                field("note", &format!("Accessed {}", m.accessed));
+            }
+        }
         // the researcher's own fields win
         for (k, v) in own.get(&p.id).map(|v| v.as_slice()).unwrap_or(&[]) {
             match fields.iter_mut().find(|(n, _)| n.eq_ignore_ascii_case(k)) {
@@ -441,6 +458,12 @@ pub fn bibtex_with(papers: &[Paper], options: BibtexOptions, own: &std::collecti
     out
 }
 
+/// An address in a BibTeX field: `%` and `#` escaped (they end a line / mark a macro parameter
+/// even inside `\url`), braces kept balanced.
+fn bib_url(u: &str) -> String {
+    u.trim().replace('%', "\\%").replace('#', "\\#").replace(['{', '}'], "")
+}
+
 /// The RIS type for a paper's kind.
 pub fn ris_type(m: &PaperMeta) -> &'static str {
     use crate::worktype::Kind::*;
@@ -453,6 +476,8 @@ pub fn ris_type(m: &PaperMeta) -> &'static str {
         Standard => "STAND",
         Thesis => "THES",
         Dataset => "DATA",
+        WebPage => "ELEC",
+        BlogPost => "BLOG",
         Preprint | Other => if m.journal.is_empty() { "GEN" } else { "JOUR" },
     }
 }
@@ -480,7 +505,7 @@ pub fn ris(papers: &[Paper]) -> String {
                 line("T3", &m.series);
             }
             "BOOK" => line("T3", if m.series.is_empty() { &m.journal } else { &m.series }),
-            "RPRT" | "STAND" | "THES" | "DATA" | "GEN" => line("T2", &m.journal),
+            "RPRT" | "STAND" | "THES" | "DATA" | "GEN" | "ELEC" | "BLOG" => line("T2", &m.journal),
             _ => line("JO", &m.journal),
         }
         line("PY", &m.year());
@@ -493,6 +518,8 @@ pub fn ris(papers: &[Paper]) -> String {
         line("PB", &m.publisher);
         line("DO", &m.doi);
         line("UR", &m.url);
+        // the day a web page was read (Zotero's and EndNote's "Accessed")
+        line("Y2", &m.accessed.replace('-', "/"));
         line("AB", &m.abstract_text);
         for k in &m.keywords {
             line("KW", k);
@@ -514,6 +541,9 @@ pub fn citation(p: &Paper, style: CitationStyle) -> String {
 }
 
 fn styled(p: &Paper, style: CitationStyle) -> String {
+    if matches!(crate::worktype::kind(&p.meta), crate::worktype::Kind::WebPage | crate::worktype::Kind::BlogPost) {
+        return web_citation(p, style);
+    }
     let m = &p.meta;
     let book = in_book(m);
     let names: Vec<(String, String)> = m.authors.iter().map(|a| split_name(a)).collect();
@@ -863,5 +893,309 @@ fn more_citation(p: &Paper, style: CitationStyle, book: bool) -> String {
             s
         }
         CitationStyle::Apa | CitationStyle::Vancouver | CitationStyle::Nature => styled(p, style),
+    }
+}
+
+// ---- web pages and blog posts ----
+
+const MONTH_NAMES: [&str; 12] =
+    ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/// (year, month 1–12 or 0, day or 0) of an ISO date ("2019-04-25", "2019-04", "2019").
+fn date_parts(d: &str) -> (String, usize, u32) {
+    let mut it = d.split('-');
+    let y = it.next().unwrap_or("").trim().to_string();
+    let m = it.next().and_then(|x| x.parse::<usize>().ok()).filter(|m| (1..=12).contains(m)).unwrap_or(0);
+    let day = if m > 0 { it.next().and_then(|x| x.parse::<u32>().ok()).filter(|d| (1..=31).contains(d)).unwrap_or(0) } else { 0 };
+    (y, m, day)
+}
+
+/// A month's name shortened as a style does: `n` letters with a dot ("Apr."), except the months
+/// short enough to stay whole (`keep`: "May", "June", "July"), and MLA's "Sept.".
+fn month_short(m: usize, mla: bool) -> String {
+    let name = MONTH_NAMES[m - 1];
+    match (name, mla) {
+        ("May", _) => "May".into(),
+        ("June" | "July", true) => name.into(),
+        ("September", true) => "Sept.".into(),
+        _ => format!("{}.", &name[..3]),
+    }
+}
+
+/// A date written out: "April 25, 2019" (`us`), "25 April 2019", or "2019" / "April 2019" when
+/// that is all there is.
+fn long_date(d: &str, us: bool) -> String {
+    let (y, m, day) = date_parts(d);
+    match (m, day) {
+        (0, _) => y,
+        (m, 0) => format!("{} {y}", MONTH_NAMES[m - 1]),
+        (m, day) if us => format!("{} {day}, {y}", MONTH_NAMES[m - 1]),
+        (m, day) => format!("{day} {} {y}", MONTH_NAMES[m - 1]),
+    }
+}
+
+/// A web page or blog post in a built-in style: who, when it was posted, the title, the site,
+/// the address and, where the style asks for it (or the page has no date), the day it was read.
+/// APA 7: "Karpathy, A. (2019, April 25). A Recipe for Training Neural Networks. Andrej Karpathy
+/// blog. https://karpathy.github.io/2019/04/25/recipe/" (a web page's title in italics, a blog
+/// post's not; no author: the title first).
+fn web_citation(p: &Paper, style: CitationStyle) -> String {
+    let m = &p.meta;
+    let blog = crate::worktype::kind(m) == crate::worktype::Kind::BlogPost;
+    let names: Vec<(String, String)> = m.authors.iter().map(|a| split_name(a)).collect();
+    let title = m.title.trim().trim_end_matches('.').to_string();
+    let title = if title.is_empty() { m.url.clone() } else { title };
+    // the site, unless it only repeats the author ("World Health Organization")
+    let site = if m.authors.len() == 1 && m.authors[0].eq_ignore_ascii_case(m.journal.trim()) { String::new() } else { m.journal.trim().to_string() };
+    let url = m.url.trim().to_string();
+    let (year, month, day) = date_parts(&m.date);
+    let accessed = m.accessed.trim();
+    let fam_init = |(f, g): &(String, String), spaced: bool| {
+        let i = initials(g, true, spaced);
+        if i.is_empty() { f.clone() } else { format!("{f}, {i}") }
+    };
+    let init_fam = |(f, g): &(String, String)| {
+        let i = initials(g, true, true);
+        if i.is_empty() { f.clone() } else { format!("{i} {f}") }
+    };
+    let full_inverted = |(f, g): &(String, String)| if g.is_empty() { f.clone() } else { format!("{f}, {g}") };
+    let full = |(f, g): &(String, String)| if g.is_empty() { f.clone() } else { format!("{g} {f}") };
+    let year_or_nd = if year.is_empty() { "n.d.".to_string() } else { year.clone() };
+    let join = |parts: Vec<String>, sep: &str| parts.into_iter().filter(|x| !x.trim().is_empty()).collect::<Vec<_>>().join(sep);
+
+    match style {
+        CitationStyle::Apa => {
+            let fmt = |n: &(String, String)| fam_init(n, true);
+            let authors = match names.len() {
+                0 => String::new(),
+                1 => fmt(&names[0]),
+                n if n <= 20 => format!("{}, & {}", names[..n - 1].iter().map(fmt).collect::<Vec<_>>().join(", "), fmt(&names[n - 1])),
+                n => format!("{}, … {}", names[..19].iter().map(fmt).collect::<Vec<_>>().join(", "), fmt(&names[n - 1])),
+            };
+            let when = match (month, day) {
+                _ if year.is_empty() => "n.d.".to_string(),
+                (0, _) => year.clone(),
+                (m, 0) => format!("{year}, {}", MONTH_NAMES[m - 1]),
+                (m, d) => format!("{year}, {} {d}", MONTH_NAMES[m - 1]),
+            };
+            let t = if blog { title.clone() } else { format!("*{title}*") };
+            let mut s = if authors.is_empty() {
+                format!("{t}. ({when}).")
+            } else {
+                let a = if authors.ends_with('.') { authors.clone() } else { format!("{authors}.") };
+                format!("{a} ({when}). {t}.")
+            };
+            if !site.is_empty() {
+                s += &format!(" {site}.");
+            }
+            // a page without a date can change: when it was read (APA's "Retrieved … from")
+            if year.is_empty() && !accessed.is_empty() && !url.is_empty() {
+                s += &format!(" Retrieved {}, from {url}", long_date(accessed, true));
+            } else if !url.is_empty() {
+                s += &format!(" {url}");
+            }
+            s
+        }
+        CitationStyle::Vancouver => {
+            let list: Vec<String> = names.iter().take(6).map(|(f, g)| format!("{f} {}", initials(g, false, false)).trim().to_string()).collect();
+            let authors = if names.len() > 6 { format!("{}, et al", list.join(", ")) } else { list.join(", ") };
+            let mut s = if authors.is_empty() { String::new() } else { format!("{authors}. ") };
+            s += &format!("{title} [Internet].");
+            let when = join(vec![year.clone(), if month > 0 { MONTH_NAMES[month - 1][..3].to_string() } else { String::new() }, if day > 0 { day.to_string() } else { String::new() }], " ");
+            let place = join(vec![site.clone(), when], "; ");
+            if !place.is_empty() {
+                s += &format!(" {place}");
+            }
+            if !accessed.is_empty() {
+                let (ay, am, ad) = date_parts(accessed);
+                s += &format!(" [cited {}]", join(vec![ay, if am > 0 { MONTH_NAMES[am - 1][..3].to_string() } else { String::new() }, if ad > 0 { ad.to_string() } else { String::new() }], " "));
+            }
+            s += ".";
+            if !url.is_empty() {
+                s += &format!(" Available from: {url}");
+            }
+            s
+        }
+        CitationStyle::Nature => {
+            let fmt = |n: &(String, String)| fam_init(n, true);
+            let authors = match names.len() {
+                0 => String::new(),
+                1 => fmt(&names[0]),
+                n if n <= 5 => format!("{} & {}", names[..n - 1].iter().map(fmt).collect::<Vec<_>>().join(", "), fmt(&names[n - 1])),
+                _ => format!("{} et al.", fmt(&names[0])),
+            };
+            let mut s = if authors.is_empty() { format!("{title}.") } else { format!("{authors} {title}.") };
+            if !site.is_empty() {
+                s += &format!(" *{site}*");
+            }
+            if !url.is_empty() {
+                s += &format!(" {url}");
+            }
+            s += &format!(" ({}).", if year.is_empty() { accessed.chars().take(4).collect::<String>() } else { year.clone() });
+            s.replace(" ().", ".")
+        }
+        // Harvard (Cite Them Right): "Available at: … (Accessed: 21 November 2026)."
+        CitationStyle::Harvard => {
+            let authors = if names.len() > 3 {
+                format!("{} et al.", fam_init(&names[0], false))
+            } else {
+                and_list(&names.iter().map(|n| fam_init(n, false)).collect::<Vec<_>>(), "and", false)
+            };
+            let mut s = if authors.is_empty() { format!("*{title}* ({year_or_nd})") } else if blog { format!("{authors} ({year_or_nd}) ‘{title}’") } else { format!("{authors} ({year_or_nd}) *{title}*") };
+            if !site.is_empty() {
+                s += &if blog { format!(", *{site}*") } else { format!(". {site}") };
+            }
+            if month > 0 && day > 0 {
+                s += &format!(", {day} {}", MONTH_NAMES[month - 1]);
+            }
+            s += ".";
+            if !url.is_empty() {
+                s += &format!(" Available at: {url}");
+                if !accessed.is_empty() {
+                    s += &format!(" (Accessed: {})", long_date(accessed, false));
+                }
+                s += ".";
+            }
+            s
+        }
+        // Chicago author-date: "Karpathy, Andrej. 2019. “Title.” *Site* (blog), April 25, 2019. URL."
+        CitationStyle::Chicago => {
+            let list: Vec<String> = names.iter().enumerate().map(|(i, n)| if i == 0 { full_inverted(n) } else { full(n) }).collect();
+            let mut authors = if names.len() > 10 { format!("{}, et al", list[..7].join(", ")) } else { and_list(&list, "and", true) };
+            if !authors.is_empty() && !authors.ends_with('.') {
+                authors.push('.');
+            }
+            let mut s = if authors.is_empty() { format!("“{title}.” {year_or_nd}.") } else { format!("{authors} {year_or_nd}. “{title}.”") };
+            if !site.is_empty() {
+                s += &if blog { format!(" *{site}* (blog)") } else { format!(" {site}") };
+            }
+            if month > 0 {
+                s += &format!("{} {}", if site.is_empty() { "" } else { "," }, long_date(&m.date, true));
+            }
+            if !s.ends_with('.') {
+                s += ".";
+            }
+            if year.is_empty() && !accessed.is_empty() {
+                s += &format!(" Accessed {}.", long_date(accessed, true));
+            }
+            if !url.is_empty() {
+                s += &format!(" {url}.");
+            }
+            s
+        }
+        // MLA 9: "… *Site*, 25 Apr. 2019, karpathy.github.io/2019/04/25/recipe/. Accessed 21 Nov. 2026."
+        CitationStyle::Mla => {
+            let mut authors = match names.len() {
+                0 => String::new(),
+                1 => full_inverted(&names[0]),
+                2 => format!("{}, and {}", full_inverted(&names[0]), full(&names[1])),
+                _ => format!("{}, et al", full_inverted(&names[0])),
+            };
+            if !authors.is_empty() {
+                if !authors.ends_with('.') {
+                    authors.push('.');
+                }
+                authors.push(' ');
+            }
+            let mla_date = |d: &str| {
+                let (y, mo, da) = date_parts(d);
+                join(vec![if da > 0 { da.to_string() } else { String::new() }, if mo > 0 { month_short(mo, true) } else { String::new() }, y], " ")
+            };
+            let bare = url.trim_start_matches("https://").trim_start_matches("http://").to_string();
+            let s = format!("{authors}“{title}.”");
+            let rest = join(vec![if site.is_empty() { String::new() } else { format!("*{site}*") }, mla_date(&m.date), bare], ", ");
+            let mut s = if rest.is_empty() { s } else { format!("{s} {rest}.") };
+            if !accessed.is_empty() {
+                s += &format!(" Accessed {}.", mla_date(accessed));
+            }
+            s
+        }
+        CitationStyle::Cell => {
+            let list: Vec<String> = names.iter().take(10).map(|n| fam_init(n, false)).collect();
+            let authors = if names.len() > 10 { format!("{}, et al.", list.join(", ")) } else { and_list(&list, "and", true) };
+            let mut s = if authors.is_empty() { format!("{title} ({year_or_nd}).") } else { format!("{authors} ({year_or_nd}). {title}.") };
+            if !site.is_empty() {
+                s += &format!(" {site}.");
+            }
+            if !url.is_empty() {
+                s += &format!(" {url}.");
+            }
+            s
+        }
+        // IEEE: "A. Karpathy, “Title,” Site. Accessed: Nov. 21, 2026. [Online]. Available: URL"
+        CitationStyle::Ieee => {
+            let authors = if names.len() > 6 { format!("{} *et al.*", init_fam(&names[0])) } else { and_list(&names.iter().map(init_fam).collect::<Vec<_>>(), "and", true) };
+            let mut s = if authors.is_empty() { format!("“{title},”") } else { format!("{authors}, “{title},”") };
+            let when = match (month, day) {
+                (0, _) => year.clone(),
+                (mo, 0) => format!("{} {year}", month_short(mo, false)),
+                (mo, d) => format!("{} {d}, {year}", month_short(mo, false)),
+            };
+            s += &format!(" {}.", join(vec![site.clone(), when], ", "));
+            let s = s.replace(" .", "").replace(",”.", ".”");
+            let mut s = s;
+            if !accessed.is_empty() {
+                let (ay, am, ad) = date_parts(accessed);
+                let a = match (am, ad) {
+                    (0, _) => ay,
+                    (mo, 0) => format!("{} {ay}", month_short(mo, false)),
+                    (mo, d) => format!("{} {d}, {ay}", month_short(mo, false)),
+                };
+                s += &format!(" Accessed: {a}.");
+            }
+            if !url.is_empty() {
+                s += &format!(" [Online]. Available: {url}");
+            }
+            s
+        }
+        // AMA: "Karpathy A. Title. Site. Published April 25, 2019. Accessed November 21, 2026. URL"
+        CitationStyle::Ama => {
+            let fmt = |(f, g): &(String, String)| format!("{f} {}", initials(g, false, false)).trim().to_string();
+            let authors = if names.len() > 6 { format!("{}, et al", names.iter().take(3).map(fmt).collect::<Vec<_>>().join(", ")) } else { names.iter().map(fmt).collect::<Vec<_>>().join(", ") };
+            let mut s = if authors.is_empty() { format!("{title}.") } else { format!("{authors}. {title}.") };
+            if !site.is_empty() {
+                s += &format!(" {site}.");
+            }
+            if !year.is_empty() {
+                s += &format!(" Published {}.", long_date(&m.date, true));
+            }
+            if !accessed.is_empty() {
+                s += &format!(" Accessed {}.", long_date(accessed, true));
+            }
+            if !url.is_empty() {
+                s += &format!(" {url}");
+            }
+            s
+        }
+        CitationStyle::Science | CitationStyle::Pnas => {
+            let authors = if names.len() > 5 { format!("{} et al.", init_fam(&names[0])) } else { names.iter().map(init_fam).collect::<Vec<_>>().join(", ") };
+            let mut s = if authors.is_empty() { format!("{title}.") } else { format!("{authors}, {title}.") };
+            if !site.is_empty() {
+                s += &format!(" *{site}*");
+            }
+            s += &format!(" ({year_or_nd})");
+            if !url.is_empty() {
+                s += &format!("; {url}");
+            }
+            s += ".";
+            s
+        }
+        // ACS: "Karpathy, A. Title. Site. URL (accessed 2026-11-21)."
+        CitationStyle::Acs => {
+            let list: Vec<String> = names.iter().take(10).map(|n| fam_init(n, true)).collect();
+            let authors = if names.len() > 10 { format!("{}; et al.", list.join("; ")) } else { list.join("; ") };
+            let mut s = if authors.is_empty() { format!("{title}.") } else { format!("{authors} {title}.") };
+            if !site.is_empty() {
+                s += &format!(" {site}.");
+            }
+            if !url.is_empty() {
+                s += &format!(" {url}");
+                if !accessed.is_empty() {
+                    s += &format!(" (accessed {accessed})");
+                }
+                s += ".";
+            }
+            s
+        }
     }
 }

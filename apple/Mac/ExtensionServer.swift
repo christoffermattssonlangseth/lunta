@@ -154,7 +154,21 @@ final class ExtensionServer {
         }
         switch (r.method, r.path) {
         case ("GET", "/status"):
-            return (200, status(of: model.findPaper(doi: r.query["doi"] ?? "", title: r.query["title"] ?? "")))
+            let url = r.query["url"] ?? ""
+            return (200, status(of: model.findPaper(doi: r.query["doi"] ?? "", title: r.query["title"] ?? "")
+                                 ?? (url.isEmpty ? nil : model.lib.findByUrl(url: url))))
+        case ("POST", "/webpage"):
+            // a web page or blog post (no paper on it): saved with the page as the browser has it
+            guard let j = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any],
+                  let url = j["url"] as? String, url.hasPrefix("http") else { return (400, ["error": "Expected the page's address."]) }
+            switch await model.addWebPage(url, html: j["html"] as? String) {
+            case .success(let id):
+                var out = status(of: model.paper(id))
+                out["message"] = model.paper(id)?.hasEpub == true ? "Saved as a web page, with a reading view." : "Saved as a web page (too little text for a reading view)."
+                return (200, out)
+            case .failure(let e):
+                return (422, ["error": e.readable])
+            }
         case ("POST", "/save"):
             guard let j = try? JSONSerialization.jsonObject(with: r.body) as? [String: Any] else { return (400, ["error": "bad JSON"]) }
             let p = await model.saveFromPage(j)

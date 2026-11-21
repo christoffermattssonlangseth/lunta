@@ -81,6 +81,18 @@ extension LibraryModel {
             guard let p = await addPDF(data, name: name) else { return ("Couldn't add the PDF “\(name)”.", true) }
             return ("Added the PDF “\(p.meta.title)”.", false)
 
+        case "webpage":
+            guard let url = req["url"] as? String, url.hasPrefix("http") else { return ("A page sent from Safari had no address.", true) }
+            let html = SafariInbox.file(req["html"], in: dir).flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+            let before = lib.findByUrl(url: url)
+            switch await addWebPage(url, html: html) {
+            case .success(let id):
+                let t = paper(id)?.meta.title ?? url
+                return (before == nil ? "Saved “\(t)” as a web page." : "“\(t)” is already in your library.", false)
+            case .failure(let e):
+                return ("Couldn't save the page \(url): \(e.readable)", true)
+            }
+
         case "fulltext":
             let url = (req["url"] as? String).flatMap(URL.init(string:))
             guard let htmlFile = SafariInbox.file(req["html"], in: dir), let html = try? String(contentsOf: htmlFile, encoding: .utf8) else {

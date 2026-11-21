@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>A Recipe for Training Neural Networks</title>
+    <meta name="viewport" content="width=device-width">
+    <meta name="description" content="Musings of a Computer Scientist.">
+    <link rel="canonical" href="http://karpathy.github.io/2019/04/25/recipe/">
+    <link href="/feed.xml" type="application/atom+xml" rel="alternate" title="Andrej Karpathy blog posts" />
+    <link rel="stylesheet" href="/css/main.css">
+    <script>
+      (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;})(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+    </script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap">
+        <div style="float:left; margin-top:10px; margin-right:10px;">
+          <a href="/feed.xml"><img src="/assets/rssicon.svg" width="40"></a>
+        </div>
+        <a class="site-title" href="/">Andrej Karpathy blog</a>
+        <nav class="site-nav">
+          <a href="#" class="menu-icon"><svg viewBox="0 0 18 15"><path d="M18,1.484"/></svg></a>
+          <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+        </nav>
+      </div>
+    </header>
+
+    <div class="page-content">
+      <div class="wrap">
+      <div class="post">
+  <header class="post-header">
+    <h1>A Recipe for Training Neural Networks</h1>
+    <p class="meta">Apr 25, 2019</p>
+  </header>
+
+  <article class="post-content">
+  <p>Fixture paragraph one: a short introduction that links to a <a href="https://twitter.com/example/status/1">tweet</a> and sets up the
+  rest of the post with enough ordinary words to read like the opening of a real blog post about training models.</p>
+
+  <p>Fixture paragraph two keeps going with more words, so that the reader has a body to find: it talks about process,
+  patience and paying attention to detail, which is what this kind of post is about.</p>
+
+<h4 id="1-neural-net-training-is-a-leaky-abstraction">1) Neural net training is a leaky abstraction</h4>
+
+<p>A paragraph under the first small heading, followed by a code example set the way Jekyll's Rouge highlighter sets it:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="o">&gt;&gt;&gt;</span> <span class="n">data</span> <span class="o">=</span> <span class="n">load</span><span class="p">()</span>
+<span class="o">&gt;&gt;&gt;</span> <span class="n">model</span> <span class="o">=</span> <span class="n">Net</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+<span class="c1"># indentation must survive
+</span>    <span class="n">model</span><span class="p">.</span><span class="n">fit</span><span class="p">()</span>
+</code></pre></div></div>
+
+<p>Then an inline <code class="language-plaintext highlighter-rouge">-log(1/n_classes)</code> value and a picture:</p>
+
+<p><img src="/assets/recipe/loss.png" alt="a loss curve" /></p>
+
+<h2 id="the-recipe">The recipe</h2>
+
+<p>The recipe section opens with a paragraph of its own, long enough to count as text in the article body for the reader.</p>
+
+<blockquote>
+  <p>A quoted line that has to stay a quote.</p>
+</blockquote>
+
+<h4 id="1-become-one-with-the-data">1. Become one with the data</h4>
+
+<ul>
+  <li><strong>fix random seed</strong>. Always use a fixed random seed so that running the code twice gives the same outcome.</li>
+  <li><strong>simplify</strong>. Make sure to disable any unnecessary fanciness at this stage of the work.</li>
+</ul>
+
+<h4 id="conclusion">Conclusion</h4>
+
+<p>A closing paragraph that wraps up the fixture with a few more words of ordinary prose for good measure.</p>
+
+  </article>
+
+  <!-- disqus comments -->
+  <div id="disqus_thread"></div>
+  <script type="text/javascript">var disqus_shortname = 'exampleblog';</script>
+  <noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+  <a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+</div>
+      </div>
+    </div>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <div class="footer-col-1 column"><ul><li>Andrej Karpathy blog</li></ul></div>
+        <div class="footer-col-2 column"><ul><li><a href="https://github.com/example"><span class="username">example</span></a></li></ul></div>
+        <div class="footer-col-3 column"><p class="text">Musings of a Computer Scientist.</p></div>
+      </div>
+    </footer>
+  </body>
+</html>

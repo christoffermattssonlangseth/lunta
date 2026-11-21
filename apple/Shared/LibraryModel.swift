@@ -457,6 +457,15 @@ final class LibraryModel: ObservableObject {
     func add(_ input: String, known: PaperMeta? = nil) async -> String? {
         let input = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !input.isEmpty else { return nil }
+        // a plain web page or blog post (a page that declares a DOI is added as that paper);
+        // a page that couldn't be read goes on as a link to an article
+        var webError: String?
+        if known == nil, isWebLink(input: input) {
+            switch await addWebPage(input) {
+            case .success(let id): return id
+            case .failure(let e): webError = e.readable
+            }
+        }
         status = "Adding \(input)…"
         defer { status = nil }
         let lib = self.lib
@@ -479,7 +488,7 @@ final class LibraryModel: ObservableObject {
                 if m.abstractText.isEmpty { m.abstractText = k.abstractText }
             }
             guard !m.title.isEmpty || !m.doi.isEmpty else {
-                errorMessage = "Couldn't find “\(input)”. Try a DOI or a link to the article."
+                errorMessage = "Couldn't find “\(input)”. Try a DOI or a link to the article." + (webError.map { "\n\($0)" } ?? "")
                 try? FileManager.default.removeItem(at: tmp)
                 return nil
             }
@@ -494,6 +503,53 @@ final class LibraryModel: ObservableObject {
         }
         try? FileManager.default.removeItem(at: tmp)
         return nil
+    }
+
+    /// Adds a web page or blog post by its address: its details read off the page by the core
+    /// (title, authors, date, site; read today), its reading view from the main text the core
+    /// picked out (Paper2EpubKit fetches the images and writes the book). `html`: the page as
+    /// the browser has it (the Safari extension's Save); without it the core fetches the page
+    /// once. A page that declares a DOI is added as that paper; one already in the library (same
+    /// address) is kept. A page with too little text is added with its details only.
+    func addWebPage(_ url: String, html: String? = nil) async -> Result<String, Error> {
+        status = "Reading \(URL(string: url)?.host ?? url)…"
+        defer { status = nil }
+        let page: LuntaCore.WebPage
+        do {
+            if let html, !html.isEmpty {
+                page = await Task.detached { readWebPage(html: html, url: url) }.value
+            } else {
+                page = try await Task.detached { try fetchWebPage(url: url) }.value
+            }
+        } catch { return .failure(error) }
+        if !page.scholarlyId.isEmpty {
+            if let id = await add(page.scholarlyId) { return .success(id) }
+            return .failure(ConversionError.message(errorMessage ?? "Couldn't add \(page.scholarlyId)"))
+        }
+        if let p = lib.findByUrl(url: page.url), p.hasEpub { return .success(p.id) }
+        var m = page.meta
+        if m.title.isEmpty { m.title = page.url }
+        var epub: Data?, text: String?
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("lunta-web-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        if page.article.problem.isEmpty {
+            status = "Making the reading view…"
+            let chapters: [Paper2Epub.WebChapter] = page.article.chapters.map { c in
+                (title: c.title, html: c.html, headings: c.headings.map { (level: Int($0.level), id: $0.id, title: $0.title) })
+            }
+            if let r = try? await Paper2Epub.convert(webPage: chapters, imageURLs: page.article.images, title: m.title, authors: m.authors,
+                                                     date: m.date, site: m.journal, url: page.url, into: tmp) {
+                epub = try? Data(contentsOf: r.file)
+                text = r.fulltext
+            }
+        }
+        let lib = self.lib, meta = m, e = epub, t = text
+        do {
+            let added = try await Task.detached { try lib.addPaper(meta: meta, pdf: nil, epub: e, fulltext: t) }.value
+            reload()
+            if e == nil { status = "Added “\(added.meta.title)” as a web page (\(page.article.problem.isEmpty ? "no reading view could be made" : "too little text for a reading view"))" }
+            return .success(added.id)
+        } catch { return .failure(error) }
     }
 
     /// Adds PDFs (dragged in or picked): matches them to existing papers by DOI, converts them for reading.

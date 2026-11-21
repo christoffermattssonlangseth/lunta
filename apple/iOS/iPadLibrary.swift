@@ -106,7 +106,7 @@ struct iPadLibrary: View {
             }
         }
         .alert("Add Paper", isPresented: $adding) {
-            TextField("DOI, link or PMCID", text: $input)
+            TextField("DOI, PMCID or link (web pages too)", text: $input)
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
             Button("Add") {
                 let i = input; input = ""

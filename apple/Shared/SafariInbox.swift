@@ -74,7 +74,7 @@ enum SafariInbox {
             case "commit":
                 let dir = try stagingDir(m, root)
                 guard let req = m["request"] as? [String: Any], let kind = req["kind"] as? String,
-                      ["save", "pdf", "findpdf", "fulltext"].contains(kind) else { throw Failure("bad request") }
+                      ["save", "pdf", "findpdf", "fulltext", "webpage"].contains(kind) else { throw Failure("bad request") }
                 for f in files(in: req) {
                     guard validName(f), FileManager.default.fileExists(atPath: dir.appendingPathComponent(f).path) else {
                         throw Failure("missing part: \(f)")
@@ -106,6 +106,7 @@ enum SafariInbox {
         switch kind {
         case "pdf": return "PDF sent to Lunta. Open Lunta to finish: it saves the PDF there."
         case "findpdf": return "Sent to Lunta. Open Lunta to finish: it looks for a free PDF there."
+        case "webpage": return "Sent the page to Lunta. Open Lunta to finish: it saves it as a web page there, with a reading view."
         case "fulltext":
             let n = (req["images"] as? [Any])?.count ?? 0
             return "Sent the page to Lunta (\(n == 1 ? "1 figure" : "\(n) figures")). Open Lunta to finish: it makes the reading view there (and keeps the current one if a highlight wouldn't be found in this page)."
@@ -141,7 +142,7 @@ enum SafariInbox {
             let (rd, rt) = identity(req)
             guard (!d.isEmpty && rd.lowercased() == d) || (t.count > 12 && norm(rt) == t) else { continue }
             switch req["kind"] as? String {
-            case "save": save = true
+            case "save", "webpage": save = true
             case "pdf", "findpdf": pdf = true
             case "fulltext": page = true
             default: break

@@ -31,6 +31,11 @@ pub struct PaperMeta {
     /// The book series a chapter or proceedings volume is in ("Lecture Notes in Computer Science").
     #[uniffi(default = "")]
     pub series: String,
+    /// When a web page or blog post was read ("2026-11-21"), for the "Accessed" / "Retrieved"
+    /// date citation styles give pages that can change. Set when one is added from its address;
+    /// empty for papers.
+    #[uniffi(default = "")]
+    pub accessed: String,
 }
 
 impl PaperMeta {

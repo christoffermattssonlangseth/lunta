@@ -80,6 +80,54 @@ so a highlight made on the phone finds the same words on the Mac whatever the sc
 then **Highlight** / **Add Note** (right-click on the Mac, or ⇧⌘H; the edit menu on iPhone). Tap a
 highlight to change its colour or note; *Highlights & Notes* lists them and copies them as Markdown.
 
+### Web pages and blog posts
+
+A link with no DOI, PubMed ID, PMCID or arXiv id in it (`webmeta::is_web_link`) is a web page: the
+Add field on every platform, the browser extension's **Save as web page** (on a page with no paper on
+it), Safari on iPhone/iPad (the inbox's `webpage` request) and the MCP server's `add_paper` all take
+one. The core fetches the page once, as asked, with its HTTP agent and User-Agent
+(`metadata::get_page`); the extension sends the page as the browser shows it instead (also what
+scripts put in it). A page whose meta tags declare a DOI (`citation_doi`, Dublin Core, PRISM) is a
+paper after all and is added by that DOI.
+
+- **Details** (`core/src/webmeta.rs`), each field from the first source that has it: Highwire
+  `citation_*` → Dublin Core → schema.org JSON-LD (BlogPosting / Article / NewsArticle / WebPage:
+  headline, author, datePublished, publisher, isPartOf) → Open Graph and Twitter cards
+  (og:title, article:author, article:published_time, og:site_name) → the page itself (`<title>`
+  without its " | Site" tail, `<meta name="author">`, a byline: `rel="author"`, `itemprop="author"`,
+  `.author`/`.byline`; `<time datetime>`; the site's name in its header or feed link) → a date in
+  the address (`/2019/04/25/`). Authors are never made up: URLs, handles and "admin" are dropped; the
+  one inference is a personal blog's owner, when the site is called "Andrej Karpathy blog" and the
+  family name is in the host (karpathy.github.io). The address (without tracking parameters) and the
+  day it was read (`PaperMeta.accessed`, UTC) are kept. Type: `post-weblog` for a JSON-LD BlogPosting,
+  "blog" in the host, path or site name, a blogging platform (Medium, Substack, WordPress.com, Ghost,
+  …) or a dated github.io address; `webpage` for anything else. The same address again is the same
+  item (`Library::find_by_url`).
+- **Reading view** (`core/src/webarticle.rs`, in every build: the Apple build gets the converter's
+  HTML parser, `convert/html.rs` + `xml.rs`, and quick-xml for it): a readability-style reader, since
+  the journal readers refuse a short page without sections. The main text is the `<article>` /
+  `<main>` / `articleBody` / post container holding most of the page's text, else the element holding
+  80 %; menus, headers, footers, sidebars, comments (Disqus), share/subscribe widgets and related posts
+  are left out. Kept: headings (the top level starts a chapter), paragraphs, lists, code blocks
+  (`<pre><code class="language-…">`, lines and indentation as they are, Rouge/Pygments line numbers
+  out), blockquotes, tables, figures, MathML (KaTeX's MathML, MathJax's TeX), links (absolute) and
+  footnote anchors. Images become `lunta-image:N`; they are fetched with the figures' rules (80 at
+  most, 1600 px, SVG kept) by `convert::webpage::web_book` (Rust: desktop, Android, MCP) or
+  Paper2EpubKit's `Paper2Epub.convert(webPage:…)` (Apple: the core reads the page through UniFFI,
+  `fetchWebPage` / `readWebPage`, Swift fetches the images and writes the book). Fewer than 60 words:
+  no reading view, the details are saved with a note.
+- **Citing:** the built-in styles have their own web forms (`export::web_citation`), e.g. APA
+  "Karpathy, A. (2019, April 25). A Recipe for Training Neural Networks. Andrej Karpathy blog.
+  https://karpathy.github.io/2019/04/25/recipe/" (a web page's title in italics, a blog post's not;
+  no date: "(n.d.) … Retrieved November 21, 2026, from URL"); MLA, Harvard, AMA, IEEE, Vancouver and
+  ACS give the access date. CSL (hayagriva): type `webpage` / `post-weblog`, the site as
+  `container-title`, `URL` and `accessed`. RIS: `ELEC` / `BLOG` with `Y2` (accessed). BibTeX:
+  `@misc` with `howpublished = {Site, \url{…}}` and `note = {Accessed …}` (what plain/unsrt/natbib
+  styles print) plus `url`, `date` and `urldate` (what biblatex prints); biblatex users see the address
+  and date twice unless they drop the first two. Imports read all of these back; a folder's .bib keeps
+  web pages as its extra entries, as before. In Word and Google Docs, Zotero's "Web Page" and "Blog
+  Post" items keep their type and access date when converted (`cslMeta` in apple/citations/common.js).
+
 ## AI agents (MCP)
 
 Lunta ships an [MCP](https://modelcontextprotocol.io) server, `lunta-mcp`, inside the Mac app, so AI agents can work with
@@ -90,7 +138,7 @@ claude mcp add --scope user lunta -- /Applications/Lunta.app/Contents/MacOS/lunt
 ```
 
 Tools: `search_papers`, `list_papers`, `get_paper`, `read_paper` (full text, or the passages matching a query), `cite`
-(APA, Vancouver, Nature, …, BibTeX with the fixed keys, `latex` for `\cite{…}`, RIS), `library_overview`, `find_new_papers` (OpenAlex), `add_paper`, `find_pdf`,
+(APA, Vancouver, Nature, …, BibTeX with the fixed keys, `latex` for `\cite{…}`, RIS), `library_overview`, `find_new_papers` (OpenAlex), `add_paper` (also a web page or blog post by its link), `find_pdf`,
 `tag_papers`, `add_to_collection`, `set_status`, `add_note`, `update_paper`, `resolve_citations` (the placeholders in a text the
 user is writing, "(Smith et al. 2019)" or `\cite{?smith2019}`, each with up to five candidate papers; read-only, see Resolve Citations), `check_references` (a reference list checked against the published record) and `library_status` (papers flagged retracted or corrected, preprints since published; both read-only, see Checks against the published record), `outline_from_highlights` (a Markdown outline of the highlights in some papers, read-only), and for highlights `list_highlights` (across the library; filter by paper, colour, tag, collection or words), `add_highlight` (quote a passage; it shows in the reading view and the PDF) and `update_highlight` (note, colour, delete).
 

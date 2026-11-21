@@ -776,6 +776,12 @@ var LuntaCite = (function () {
       journal: get('container-title'), volume: get('volume'), issue: get('issue'), pages: get('page'), publisher: get('publisher'),
       doi: get('DOI').replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').replace(/^doi:\s*/i, ''), pmid: get('PMID'), pmcid: get('PMCID'), url: get('URL') };
     if (!m.authors.length && d.editor) m.authors = d.editor.map(cslName).filter(Boolean);
+    // a web page or blog post (Zotero's "Web Page" and "Blog Post"): its type, and the day it was read
+    var type = String(d.type || '').toLowerCase();
+    if (type === 'webpage' || type === 'post-weblog' || type === 'post') {
+      m.work_type = type === 'post' ? 'webpage' : type;
+      m.accessed = cslDate(d.accessed);
+    }
     if (!m.pmid) { var pm = /PMID:\s*(\d+)/i.exec(String(d.note || '')); if (pm) m.pmid = pm[1]; }
     Object.keys(m).forEach(function (k) { if (!m[k] || (Array.isArray(m[k]) && !m[k].length)) delete m[k]; });
     return m;

@@ -230,6 +230,8 @@ pub fn csl_type(m: &crate::model::PaperMeta) -> &'static str {
         Standard => "standard",
         Thesis => "thesis",
         Dataset => "dataset",
+        WebPage => "webpage",
+        BlogPost => "post-weblog",
         Other => if m.journal.is_empty() { "document" } else { "article-journal" },
     }
 }
@@ -284,6 +286,13 @@ fn item(p: &Paper) -> Item {
             j["number"] = format!("arXiv:{}", m.arxiv).into();
         }
         j["genre"] = "Preprint".into();
+    }
+    // a web page or blog post: the site as its container, the day it was read
+    if kind == "webpage" || kind == "post-weblog" {
+        let parts: Vec<i64> = m.accessed.split('-').filter_map(|x| x.parse().ok()).collect();
+        if !parts.is_empty() {
+            j["accessed"] = serde_json::json!({ "date-parts": [parts] });
+        }
     }
     if kind == "report" && !m.issue.is_empty() {
         j["number"] = guard(&m.issue).into();
@@ -603,5 +612,41 @@ mod tests {
         ]).unwrap();
         let t: Vec<&str> = r.citations.iter().map(|c| c.text.as_str()).collect();
         assert_eq!(t, ["[1, p. 12]", "[see 2]"]);
+    }
+
+    /// A style that writes web pages as APA does (type, site, address, the day it was read).
+    const WEB: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" default-locale="en-US">
+  <info><title>Test Web</title><id>http://www.zotero.org/styles/test-web</id><category citation-format="author-date"/><updated>2024-01-01T00:00:00+00:00</updated></info>
+  <citation><layout prefix="(" suffix=")"><names variable="author"><name form="short"/></names><date variable="issued" prefix=", "><date-part name="year"/></date></layout></citation>
+  <bibliography><layout>
+    <names variable="author" suffix=". "><name name-as-sort-order="all" initialize-with=". "/></names>
+    <choose><if type="post-weblog"><text value="[blog] "/></if><else-if type="webpage"><text value="[web] "/></else-if></choose>
+    <text variable="title" suffix=". "/><text variable="container-title" suffix=". "/>
+    <date variable="accessed" prefix="Retrieved "><date-part name="month"/><date-part name="day" prefix=" "/><date-part name="year" prefix=", "/></date>
+    <text variable="URL" prefix=" from "/>
+  </layout></bibliography>
+</style>"#;
+
+    #[test]
+    fn web_pages_with_their_site_and_access_date() {
+        let dir = cache();
+        std::fs::write(Path::new(&dir).join("csl/test-web.csl"), WEB).unwrap();
+        let blog = crate::cited_paper("k", PaperMeta {
+            title: "A Recipe for Training Neural Networks".into(),
+            authors: vec!["Andrej Karpathy".into()],
+            date: "2019-04-25".into(),
+            journal: "Andrej Karpathy blog".into(),
+            url: "https://karpathy.github.io/2019/04/25/recipe/".into(),
+            work_type: "post-weblog".into(),
+            accessed: "2026-11-21".into(),
+            ..Default::default()
+        });
+        let r = render(&dir, "test-web", &[blog], &[vec!["k".into()]]).unwrap();
+        assert_eq!(r.citations[0].text, "(Karpathy, 2019)");
+        assert_eq!(
+            r.bibliography[0].text,
+            "Karpathy, A. [blog] A Recipe for Training Neural Networks. Andrej Karpathy blog. Retrieved November 21, 2026 from https://karpathy.github.io/2019/04/25/recipe/"
+        );
     }
 }

@@ -322,3 +322,21 @@ test('converting: a paper found only by a similar title is listed, and unticked 
   const res = C.convertResolve(plan, { [plan.works[0].key]: 'new' });
   assert.deepEqual(res.convert.map((c) => c.ids), [['new'], ['b']]);
 });
+
+test('web pages and blog posts: cited by author and year, Zotero’s web items keep their type and access date', () => {
+  // as Lunta answers for the blog post (the entry is the core's APA)
+  const apaEntry = 'Karpathy, A. (2019, April 25). A Recipe for Training Neural Networks. Andrej Karpathy blog. https://karpathy.github.io/2019/04/25/recipe/';
+  const k = paper('k', ['Karpathy'], 2019, apaEntry);
+  const f = C.format('apa', [['k']], [k], {});
+  assert.deepEqual(f.texts, ['(Karpathy, 2019)']);
+  assert.equal(f.bibliography[0].text, apaEntry);
+  // a page without author or date: its title and n.d.
+  const docs = Object.assign(paper('d', [], '', '*Configuration*. (n.d.). Example Tool Docs. Retrieved November 21, 2026, from https://tool.example.org/docs/config'), { year: '', title: 'Configuration' });
+  assert.deepEqual(C.format('apa', [['d']], [docs], {}).texts, ['(Configuration, n.d.)']);
+  // a Zotero "Blog Post" in a document being converted
+  const m = C.cslMeta({ type: 'post-weblog', title: 'A Recipe for Training Neural Networks', author: [{ family: 'Karpathy', given: 'Andrej' }],
+    issued: { 'date-parts': [[2019, 4, 25]] }, accessed: { 'date-parts': [[2026, 11, 21]] }, 'container-title': 'Andrej Karpathy blog',
+    URL: 'https://karpathy.github.io/2019/04/25/recipe/' });
+  assert.deepEqual(m, { title: 'A Recipe for Training Neural Networks', authors: ['Andrej Karpathy'], date: '2019-04-25', journal: 'Andrej Karpathy blog',
+    url: 'https://karpathy.github.io/2019/04/25/recipe/', work_type: 'post-weblog', accessed: '2026-11-21' });
+});

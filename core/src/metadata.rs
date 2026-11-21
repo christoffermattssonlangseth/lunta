@@ -44,6 +44,26 @@ pub(crate) fn get_text(url: &str) -> Result<String> {
     }
 }
 
+/// A web page, fetched once with the same agent and User-Agent: (address after redirects,
+/// content type, body). For adding a web page by its link (`webmeta`).
+pub(crate) fn get_page(url: &str) -> Result<(String, String, Vec<u8>)> {
+    use ureq::ResponseExt;
+    let host = url.split('/').nth(2).unwrap_or("the site").to_string();
+    let mut r = agent()
+        .get(url)
+        .header("User-Agent", UA)
+        .header("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5")
+        .call()
+        .map_err(|e| match e {
+            ureq::Error::StatusCode(code) => CoreError::Network(format!("{host} answered HTTP {code}")),
+            e => CoreError::Network(format!("Couldn't open {host}: {e}")),
+        })?;
+    let final_url = r.get_uri().to_string();
+    let content_type = r.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_lowercase();
+    let body = r.body_mut().with_config().limit(15 * 1024 * 1024).read_to_vec().map_err(|e| CoreError::Network(e.to_string()))?;
+    Ok((final_url, content_type, body))
+}
+
 pub(crate) fn get_json(url: &str) -> Result<Value> {
     serde_json::from_str(&get_text(url)?).map_err(|e| CoreError::Network(format!("bad JSON: {e}")))
 }
@@ -89,6 +109,16 @@ fn arxiv_in(s: &str) -> Option<String> {
     Some(re.captures(s)?.get(1)?.as_str().to_string())
 }
 
+/// Whether `resolve` finds something to look up in the input: an arXiv id, a PMCID, a DOI or a
+/// PubMed ID (bare or in a link). A link without one is a web page (`webmeta::is_web_link`).
+pub fn has_identifier(input: &str) -> bool {
+    let s = input.trim();
+    arxiv_in(s).is_some()
+        || Regex::new(r"(?i)\b(PMC\d{4,})\b").unwrap().is_match(s)
+        || doi_in(s).is_some()
+        || Regex::new(r"(?:pubmed\.ncbi\.nlm\.nih\.gov/|^)(\d{5,9})/?$").unwrap().is_match(s)
+}
+
 /// Looks up metadata for a DOI, PMID, PMCID, arXiv ID, or a link containing one of these.
 pub fn resolve(input: &str) -> Result<PaperMeta> {
     let s = input.trim();
@@ -115,7 +145,7 @@ pub fn resolve(input: &str) -> Result<PaperMeta> {
 
 fn fill(m: &mut PaperMeta, o: PaperMeta) {
     macro_rules! f { ($($x:ident),*) => { $( if m.$x.is_empty() { m.$x = o.$x.clone(); } )* } }
-    f!(title, authors, date, journal, volume, issue, pages, publisher, doi, pmid, pmcid, arxiv, url, abstract_text, keywords, license, work_type, series);
+    f!(title, authors, date, journal, volume, issue, pages, publisher, doi, pmid, pmcid, arxiv, url, abstract_text, keywords, license, work_type, series, accessed);
 }
 
 fn s(v: &Value) -> String {

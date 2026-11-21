@@ -15,6 +15,10 @@ pub enum Kind {
     Thesis,
     Dataset,
     Standard,
+    /// A web page (CSL `webpage`): a site's article, documentation, a news story online.
+    WebPage,
+    /// A blog post (CSL `post-weblog`).
+    BlogPost,
     Other,
 }
 
@@ -33,8 +37,15 @@ pub fn from_type(t: &str) -> Option<Kind> {
         "dissertation" | "thesis" | "phdthesis" | "mastersthesis" => Thesis,
         "dataset" | "database" | "component" => Dataset,
         "standard" | "standard-series" => Standard,
+        "webpage" | "web-page" | "online" | "electronic" | "www" | "website" | "post" => WebPage,
+        "post-weblog" | "blog-post" | "blogpost" | "blog" => BlogPost,
         _ => Other,
     })
+}
+
+/// A web page or blog post (by its stored type, as Lunta stores them: "webpage", "post-weblog").
+pub fn is_web(work_type: &str) -> bool {
+    matches!(from_type(work_type), Some(Kind::WebPage | Kind::BlogPost))
 }
 
 /// The paper's kind: its stored type, or, when that is unknown (papers added before types were
@@ -374,6 +385,9 @@ mod tests {
             ("dissertation", Kind::Thesis),
             ("dataset", Kind::Dataset),
             ("standard", Kind::Standard),
+            ("webpage", Kind::WebPage),
+            ("post-weblog", Kind::BlogPost),
+            ("online", Kind::WebPage),
             ("peer-review", Kind::Other),
         ] {
             assert_eq!(from_type(t), Some(k), "{t}");

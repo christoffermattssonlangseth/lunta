@@ -19,6 +19,20 @@ pub mod citeimport;
 pub mod csl;
 #[cfg(feature = "convert")]
 pub mod convert;
+/// Without the converter (the Apple build): only its forgiving HTML parser and DOM, which the
+/// web-page reader (`webarticle`) needs in every build.
+#[cfg(not(feature = "convert"))]
+#[allow(dead_code)]
+pub(crate) mod convert {
+    pub mod html;
+    pub mod xml;
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum ConvertError {
+        #[error("{0}")]
+        Message(String),
+    }
+}
 #[cfg(feature = "drive")]
 pub mod drive;
 pub mod epub;
@@ -48,6 +62,10 @@ pub mod store;
 pub mod tidy;
 #[cfg(feature = "tts")]
 pub mod tts;
+/// Web pages and blog posts: the main text of a page, for its reading view.
+pub mod webarticle;
+/// Web pages and blog posts: their details (title, authors, date, site) from the page.
+pub mod webmeta;
 pub mod worktype;
 
 use model::*;
@@ -240,9 +258,30 @@ impl Library {
         Some(paper_of(&g, &id))
     }
 
-    /// Adds a paper (or, if one with the same DOI exists, attaches the new files to it).
+    /// The web page or blog post in the library at this address (http or https, "www.", a
+    /// trailing slash and tracking parameters aside).
+    pub fn find_by_url(&self, url: String) -> Option<Paper> {
+        let want = webmeta::url_key(&url);
+        if want.is_empty() {
+            return None;
+        }
+        let g = self.inner.lock().unwrap();
+        let id = g
+            .state
+            .papers
+            .iter()
+            .find(|(_, p)| p.meta.doi.is_empty() && worktype::is_web(&p.meta.work_type) && webmeta::url_key(&p.meta.url) == want)?
+            .0
+            .clone();
+        Some(paper_of(&g, &id))
+    }
+
+    /// Adds a paper (or, if one with the same DOI exists, attaches the new files to it; a web
+    /// page: one at the same address).
     pub fn add_paper(&self, meta: PaperMeta, pdf: Option<Vec<u8>>, epub: Option<Vec<u8>>, fulltext: Option<String>) -> Result<Paper> {
-        let existing = self.find_by_doi(meta.doi.clone()).map(|p| p.id);
+        let existing = self.find_by_doi(meta.doi.clone()).map(|p| p.id).or_else(|| {
+            if meta.doi.is_empty() && worktype::is_web(&meta.work_type) { self.find_by_url(meta.url.clone()).map(|p| p.id) } else { None }
+        });
         let id = existing.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         {
             let mut g = self.inner.lock().unwrap();
@@ -920,7 +959,7 @@ fn paper_of(g: &Inner, id: &str) -> Paper {
 
 fn merge_meta(m: &mut PaperMeta, o: &PaperMeta) {
     macro_rules! f { ($($x:ident),*) => { $( if m.$x.is_empty() { m.$x = o.$x.clone(); } )* } }
-    f!(title, authors, date, journal, volume, issue, pages, publisher, doi, pmid, pmcid, arxiv, url, abstract_text, keywords, license, work_type, series);
+    f!(title, authors, date, journal, volume, issue, pages, publisher, doi, pmid, pmcid, arxiv, url, abstract_text, keywords, license, work_type, series, accessed);
 }
 
 // ---- free functions exported to Swift ----
@@ -998,6 +1037,35 @@ pub fn normalize_orcid(input: String) -> String {
 #[uniffi::export]
 pub fn resolve_metadata(input: String) -> Result<PaperMeta> {
     metadata::resolve(&input)
+}
+
+/// A link that is a plain web page (no DOI, PubMed ID, PMCID or arXiv id in it): added as a web
+/// page or blog post (`fetch_web_page`), unless the page itself declares a DOI.
+#[uniffi::export]
+pub fn is_web_link(input: String) -> bool {
+    webmeta::is_web_link(&input)
+}
+
+/// Fetches a web page (one request, blocking) and reads it: its details as a web page or blog
+/// post (read today), a DOI it declares (then add it as a paper by that), its main text for
+/// the reading view (images as `lunta-image:N`, see `web_article_with_images`).
+#[uniffi::export]
+pub fn fetch_web_page(url: String) -> Result<webmeta::WebPage> {
+    let (final_url, html) = webmeta::fetch(&url)?;
+    Ok(webmeta::read(&html, &final_url, ""))
+}
+
+/// Reads a web page's HTML as the browser has it (no network): see `fetch_web_page`.
+#[uniffi::export]
+pub fn read_web_page(html: String, url: String) -> webmeta::WebPage {
+    webmeta::read(&html, &url, "")
+}
+
+/// A web page's chapter HTML with its images in: `files[N]` the image file for `lunta-image:N`
+/// (in the book's images folder), None for one that couldn't be fetched (left out).
+#[uniffi::export]
+pub fn web_article_with_images(html: String, files: Vec<Option<String>>) -> String {
+    webarticle::with_images(&html, &files)
 }
 
 /// Open-access PDF locations for a paper, best first (blocking).

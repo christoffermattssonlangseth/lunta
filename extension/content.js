@@ -18,6 +18,90 @@
   const pageFetch = typeof content !== "undefined" && content && typeof content.fetch === "function" ? content.fetch.bind(content) : fetch;
   const DOI_RE = /10\.\d{4,9}\/[^\s"<>?#&]+/i;
 
+  // A web page or blog post (no DOI, no citation details): a small panel, opened from the
+  // toolbar button, that saves the page as a web page. Lunta reads its title, authors, date and
+  // site from the page as shown (also what scripts put in it) and makes the reading view from it.
+  function webPagePanel() {
+    let shown = null;
+    const pageTitle = meta("og:title", "twitter:title") || document.title || location.href;
+    // (the article panel's send() below is never reached on these pages)
+    const send = (msg) => new Promise((resolve) => {
+      const stale = { error: "Lunta was updated or restarted since this page was opened. Reload the page.", stale: true };
+      try {
+        if (!chrome.runtime || !chrome.runtime.id) return resolve(stale);
+        chrome.runtime.sendMessage(msg, (r) => resolve(r || { error: (chrome.runtime.lastError && chrome.runtime.lastError.message) || stale.error }));
+      } catch (_) { resolve(stale); }
+    });
+    chrome.runtime.onMessage.addListener((m) => {
+      if (m.type !== "togglePanel") return;
+      if (shown) { shown.classList.toggle("open"); return; }
+      shown = build();
+    });
+    function build() {
+      const host = document.createElement("div");
+      host.id = "lunta-ext-root";
+      const root = host.attachShadow({ mode: "open" });
+      root.innerHTML = `
+        <style>
+          :host { all: initial; }
+          .card { position: fixed; right: 16px; top: 16px; z-index: 2147483647; width: 260px; background: #fff; color: #1d1d1f;
+                  border-radius: 14px; box-shadow: 0 10px 34px rgba(16,40,50,.25); padding: 14px; display: none;
+                  font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+          .card.open { display: block; }
+          .brand { display: flex; justify-content: space-between; font-weight: 650; color: #173e4c; margin-bottom: 8px; }
+          .x { all: unset; cursor: pointer; color: #8e8e93; }
+          .t { font-weight: 600; margin-bottom: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+          .sub { color: #6e6e73; font-size: 12px; margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          button.btn { all: unset; cursor: pointer; padding: 6px 11px; border-radius: 8px; font-weight: 600; background: #2a6478; color: #fff;
+                       display: block; text-align: center; }
+          button.btn[disabled] { opacity: .5; cursor: default; }
+          .msg { font-size: 12px; margin-top: 8px; color: #3a3a3c; } .msg:empty { display: none; } .msg.err { color: #b3261e; }
+          a.open { color: #2a6478; font-weight: 600; text-decoration: none; }
+          @media (prefers-color-scheme: dark) { .card { background: #2a2a2c; color: #eee; } .brand { color: #9ec9d8; } .msg { color: #c7c7cc; } a.open { color: #9ec9d8; } }
+        </style>
+        <div class="card open">
+          <div class="brand"><span>Lunta · Web page</span><button class="x" title="Close">✕</button></div>
+          <div class="t"></div><div class="sub"></div>
+          <div class="act"><button class="btn">Save as web page</button></div>
+          <div class="msg"></div>
+        </div>`;
+      const $ = (q) => root.querySelector(q);
+      $(".t").textContent = pageTitle;
+      $(".sub").textContent = location.hostname.replace(/^www\./, "");
+      $(".x").onclick = () => $(".card").classList.remove("open");
+      const say = (t, err) => { $(".msg").textContent = t || ""; $(".msg").className = "msg" + (err ? " err" : ""); };
+      const inLibrary = (r) => {
+        const act = $(".act");
+        act.innerHTML = "";
+        if (r.queued) { const a = document.createElement("a"); a.className = "open"; a.href = "lunta://safari"; a.textContent = "✓ Sent · Open Lunta"; act.appendChild(a); return; }
+        const a = document.createElement("a");
+        a.className = "open"; a.href = "lunta://open?id=" + encodeURIComponent(r.id); a.textContent = "✓ In library · Open";
+        a.addEventListener("click", async (ev) => {
+          ev.preventDefault();
+          const o = await send({ type: "open", id: r.id });
+          if (o && o.link) location.href = a.href; else if (o && o.error) say(o.error, true);
+        });
+        act.appendChild(a);
+      };
+      $(".btn").onclick = async () => {
+        const b = $(".btn");
+        b.disabled = true; b.textContent = "Saving…";
+        say("Lunta is reading the page…");
+        const html = "<!DOCTYPE html>\n" + document.documentElement.outerHTML.replace(/<div id="lunta-ext-root"><\/div>/, "");
+        const r = await send({ type: "saveWebPage", url: location.href, title: pageTitle, html });
+        if (r.error) { b.disabled = false; b.textContent = "Save as web page"; say(r.error, true); return; }
+        say(r.message || "");
+        if (r.inLibrary || r.queued) inLibrary(r);
+      };
+      document.documentElement.appendChild(host);
+      send({ type: "status", url: location.href, title: pageTitle }).then((r) => {
+        if (r && r.inLibrary) { inLibrary(r); say("Saved in Lunta."); }
+        else if (r && r.error) say(r.stale ? r.error : "Lunta isn't running. Open it, then try again.", true);
+      });
+      return $(".card");
+    }
+  }
+
   function findDoi() {
     for (const v of [meta("citation_doi"), meta("dc.identifier", "DC.Identifier"), meta("prism.doi"), meta("bepress_citation_doi")]) {
       const m = v && v.match(DOI_RE);
@@ -77,7 +161,8 @@
 
   const doi = findDoi();
   const title = meta("citation_title", "dc.title", "og:title") || "";
-  if (!doi && !meta("citation_title") && !knownArticle) return; // not an article page
+  // not an article page: a web page or blog post, saved as one when the toolbar button is clicked
+  if (!doi && !meta("citation_title") && !knownArticle) { if (/^https?:$/.test(location.protocol) && location.hostname !== "docs.google.com") webPagePanel(); return; }
 
   // PubMed and PMC: the article's ids (PubMed has no PDF of its own; Lunta finds a free one from these)
   // and the journal's page from PubMed's "Full text links" (for papers that aren't free)

@@ -23,7 +23,7 @@ fun AddPaperDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
             Column {
                 OutlinedTextField(
                     text, { text = it }, Modifier.fillMaxWidth(), singleLine = true,
-                    label = { Text("DOI, link or PMCID") },
+                    label = { Text("DOI, PMCID or link (web pages too)") },
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
                 )
                 Text("e.g. 10.1038/s41586-020-2649-2 or an article link", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall)

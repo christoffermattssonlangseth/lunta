@@ -383,9 +383,28 @@ pub fn bib_work_type(kind: &str, f: &[(String, String)]) -> String {
         "dataset" => "dataset",
         "standard" => "standard",
         "misc" | "online" | "unpublished" if preprint => "posted-content",
+        // biblatex's web page types; a @misc that is only a title, authors and a web address
+        "online" | "electronic" | "www" | "webpage" => if blog_venue(&venue, &get("url")) { "post-weblog" } else { "webpage" },
+        "misc" if get("journal").is_empty() && get("doi").is_empty() && get("eprint").is_empty() && !web_address(f).is_empty() => {
+            if blog_venue(&venue, &web_address(f)) { "post-weblog" } else { "webpage" }
+        }
         _ => "",
     }
     .to_string()
+}
+
+/// A web address in an entry: its `url`, or one in `howpublished` (`\url{…}`, as Lunta writes
+/// web pages: "Andrej Karpathy blog, \url{https://…}").
+fn web_address(f: &[(String, String)]) -> String {
+    let get = |k: &str| f.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap_or_default();
+    if !get("url").trim().is_empty() {
+        return get("url").trim().to_string();
+    }
+    regex::Regex::new(r"https?://[^\s{}]+").unwrap().find(&get("howpublished")).map(|m| m.as_str().trim_end_matches(['.', ',']).to_string()).unwrap_or_default()
+}
+
+fn blog_venue(venue: &str, url: &str) -> bool {
+    venue.contains("blog") || crate::webmeta::blog_address(url)
 }
 
 pub(crate) fn entry_from_bib(kind: &str, f: &[(String, String)]) -> ImportEntry {
@@ -420,6 +439,27 @@ pub(crate) fn entry_from_bib(kind: &str, f: &[(String, String)]) -> ImportEntry 
     let eprint = get("eprint");
     let arxiv = if get("archiveprefix").eq_ignore_ascii_case("arxiv") || get("eprinttype").eq_ignore_ascii_case("arxiv") { eprint } else { arxiv_venue };
     let doi = crate::metadata::doi_in(&get("doi")).unwrap_or_else(|| crate::metadata::doi_in(&get("url")).unwrap_or_default());
+    let web = crate::worktype::is_web(&work_type);
+    let mut url = get("url");
+    let mut accessed = crate::webmeta::iso_date(&get("urldate"));
+    if web {
+        url = web_address(f);
+        // the site before the address in howpublished ("Andrej Karpathy blog, \url{…}"), or the
+        // organization; "Accessed 2026-11-21" in the note
+        if journal.is_empty() {
+            let hp = get("howpublished");
+            let site = match hp.find("http") {
+                Some(i) => hp[..i].trim().trim_end_matches([',', ':', '.']).trim().to_string(),
+                None => hp.trim().to_string(),
+            };
+            journal = if site.is_empty() { get("organization") } else { site };
+        }
+        if accessed.is_empty() {
+            if let Some(c) = regex::Regex::new(r"(?i)(?:accessed|retrieved|visited)(?: on)?:?\s*([^.;]+)").unwrap().captures(&get("note")) {
+                accessed = crate::webmeta::iso_date(c[1].trim());
+            }
+        }
+    }
     let meta = PaperMeta {
         title: get("title"),
         authors,
@@ -433,12 +473,13 @@ pub(crate) fn entry_from_bib(kind: &str, f: &[(String, String)]) -> ImportEntry 
         pmid: get("pmid"),
         pmcid: get("pmcid"),
         arxiv,
-        url: get("url"),
+        url,
         abstract_text: get("abstract"),
         keywords: split_list(&get("keywords")),
         license: String::new(),
         work_type,
         series: get("series"),
+        accessed,
     };
     let mut files = vec![];
     for (n, v) in f {
@@ -448,7 +489,12 @@ pub(crate) fn entry_from_bib(kind: &str, f: &[(String, String)]) -> ImportEntry 
     }
     let mut tags = split_list(&get("mendeley-tags"));
     tags.extend(split_list(&get("tags")));
-    ImportEntry { meta, files, tags, note: get("annote") + &get("note") }
+    let mut note = get("note");
+    if web {
+        // the access date is kept as such, not as a note
+        note = regex::Regex::new(r"(?i)\s*(?:accessed|retrieved|visited)(?: on)?:?\s*[^.;]+[.;]?").unwrap().replace(&note, "").trim().to_string();
+    }
+    ImportEntry { meta, files, tags, note: get("annote") + &note }
 }
 
 fn split_bib_authors(s: &str) -> Vec<String> {
@@ -708,6 +754,8 @@ fn entry_from_ris(f: &[(String, String)]) -> ImportEntry {
         "THES" => "dissertation",
         "DATA" => "dataset",
         "STAND" => "standard",
+        "ELEC" | "WEB" => "webpage",
+        "BLOG" => "post-weblog",
         _ => "",
     };
     ImportEntry {
@@ -726,6 +774,8 @@ fn entry_from_ris(f: &[(String, String)]) -> ImportEntry {
             url: all(&["UR"]).into_iter().find(|u| u.starts_with("http")).unwrap_or_default(),
             abstract_text: get(&["AB", "N2"]),
             keywords: all(&["KW"]),
+            // RIS's access date (Y2), as Zotero and EndNote write it for web pages
+            accessed: if crate::worktype::is_web(work_type) { crate::webmeta::iso_date(&get(&["Y2"])) } else { String::new() },
             ..Default::default()
         },
         files,

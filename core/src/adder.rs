@@ -135,6 +135,14 @@ impl Library {
         if input.is_empty() {
             return Err(inv("Type a DOI, PMCID, arXiv id or link first."));
         }
+        // a plain web page or blog post (a page that declares a DOI is added as that paper)
+        let mut web_error = None;
+        if crate::webmeta::is_web_link(&input) {
+            match self.add_web_page(input.clone(), None, say.0.clone()) {
+                Ok(o) => return Ok(o),
+                Err(e) => web_error = Some(e.to_string()),
+            }
+        }
         say.say(&format!("Looking up {input}…"));
         let meta = crate::resolve_metadata(input.clone()).ok();
         say.say("Making the reading view…");
@@ -154,11 +162,57 @@ impl Library {
             }
         }
         if m.title.is_empty() && m.doi.is_empty() {
-            let why = conv.err().unwrap_or_default();
+            let why = web_error.unwrap_or_else(|| conv.err().unwrap_or_default());
             return Err(inv(format!("Couldn't find “{input}”. Try a DOI or a link to the article.{}", if why.is_empty() { String::new() } else { format!("\n{why}") })));
         }
         let (epub, text, note) = match conv {
             Ok((e, t, _)) => (Some(e), Some(t), None),
+            Err(e) => (None, None, Some(e)),
+        };
+        let paper = self.add_paper(m, None, epub, text)?;
+        Ok(AddOutcome { paper, note })
+    }
+
+    /// Adds a web page or blog post by its address: its details from the page (read today), its
+    /// reading view from its main text (images fetched). `html`: the page as the browser has it
+    /// (the browser extension's Save); without it the page is fetched once. A page that declares
+    /// a DOI is added as that paper; one already in the library (same address) is kept, and
+    /// gets the reading view if it had none. A page with too little text for a reading view is
+    /// added with its details and a note saying so.
+    pub fn add_web_page(&self, url: String, html: Option<String>, progress: Option<Arc<dyn ProgressListener>>) -> Result<AddOutcome> {
+        let say = Say(progress.clone());
+        let url = url.trim().to_string();
+        let page = match html.filter(|h| !h.trim().is_empty()) {
+            Some(h) => crate::webmeta::read(&h, &url, ""),
+            None => {
+                say.say(&format!("Reading {}…", url.split('/').nth(2).unwrap_or(&url)));
+                let (final_url, h) = crate::webmeta::fetch(&url)?;
+                crate::webmeta::read(&h, &final_url, "")
+            }
+        };
+        if !page.scholarly_id.is_empty() {
+            say.say(&format!("The page is a paper's: {}", page.scholarly_id));
+            return self.add_from_input(page.scholarly_id.clone(), progress);
+        }
+        if let Some(p) = self.find_by_url(page.url.clone()) {
+            if p.has_epub {
+                return Ok(AddOutcome { paper: p, note: None });
+            }
+        }
+        say.say("Making the reading view…");
+        let tmp = std::env::temp_dir().join(format!("lunta-web-{}", uuid::Uuid::new_v4()));
+        let s = say.clone();
+        let opts = Options { log: Some(Box::new(move |m: &str| s.say(m))), offline: false, doi: None };
+        let conv = convert::convert_web_page_with(&page, &tmp, &opts)
+            .map_err(|e| e.to_string())
+            .and_then(|r| std::fs::read(&r.file).map(|d| (d, r.fulltext.clone())).map_err(|e| e.to_string()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let mut m = page.meta.clone();
+        if m.title.is_empty() {
+            m.title = page.url.clone();
+        }
+        let (epub, text, note) = match conv {
+            Ok((e, t)) => (Some(e), Some(t), None),
             Err(e) => (None, None, Some(e)),
         };
         let paper = self.add_paper(m, None, epub, text)?;

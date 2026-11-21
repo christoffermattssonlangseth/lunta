@@ -65,7 +65,8 @@ pub struct BibImportReport {
 /// An entry that is cited but isn't a scholarly work: software, a web page, a blog post (a
 /// `@misc`/`@online`/`@software` without a DOI, an arXiv id or a journal).
 pub fn is_extra(e: &RawBibEntry, meta: &PaperMeta) -> bool {
-    if !meta.doi.is_empty() || !meta.arxiv.is_empty() || !meta.work_type.is_empty() {
+    // a web page (@online, or a @misc with only an address) stays an extra entry, as written
+    if !meta.doi.is_empty() || !meta.arxiv.is_empty() || !(meta.work_type.is_empty() || crate::worktype::is_web(&meta.work_type)) {
         return false;
     }
     let kind = e.kind.as_str();

@@ -103,6 +103,25 @@ fn uuid_like() -> String {
 
 // ---------------------------------------------------------------- helpers
 
+/// Adds a web page by its link: with its reading view (the converter is in this build), else
+/// its details only (the app makes the reading view). (paper, note)
+fn add_web_page(lib: &Library, url: &str) -> Result<(Paper, Option<String>), String> {
+    #[cfg(feature = "convert")]
+    {
+        let o = lib.add_web_page(url.to_string(), None, None).map_err(|e| e.to_string())?;
+        Ok((o.paper, o.note))
+    }
+    #[cfg(not(feature = "convert"))]
+    {
+        let page = lunta_core::fetch_web_page(url.to_string()).map_err(|e| e.to_string())?;
+        if !page.scholarly_id.is_empty() {
+            let meta = lunta_core::resolve_metadata(page.scholarly_id.clone()).map_err(|e| e.to_string())?;
+            return Ok((lib.add_paper(meta, None, None, None).map_err(|e| e.to_string())?, None));
+        }
+        Ok((lib.add_paper(page.meta, None, None, None).map_err(|e| e.to_string())?, Some("Added with its details; Lunta makes the reading view.".into())))
+    }
+}
+
 fn summary(p: &Paper) -> Value {
     json!({
         "id": p.id,
@@ -338,7 +357,7 @@ fn tools() -> Value {
         t("library_overview", "Size of the library, its tags and collections.", json!({}), &[], true),
         t("find_new_papers", "Search published literature beyond the library (OpenAlex). Marks results already in the library.",
           json!({"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}}), &["query"], true),
-        t("add_paper", "Add a paper to the library by DOI, PubMed ID, PMCID, arXiv id or URL. Fetches its metadata and, when legally available, its open-access PDF. The Lunta app makes the reading view.",
+        t("add_paper", "Add a paper to the library by DOI, PubMed ID, PMCID, arXiv id or URL. Fetches its metadata and, when legally available, its open-access PDF. The Lunta app makes the reading view. A link to a web page or blog post without a DOI (e.g. https://karpathy.github.io/2019/04/25/recipe/) is added as a web page (type webpage or post-weblog) with the page's title, authors, date, site, address and today's date as the access date, and a reading view of its text; cite it like any paper.",
           json!({"identifier": {"type": "string"}, "fetch_pdf": {"type": "boolean", "default": true}}), &["identifier"], false),
         t("find_pdf", "Find and attach a legal open-access PDF for a paper in the library.", json!({"id": {"type": "string"}}), &["id"], false),
         t("tag_papers", "Add (or remove) a tag on papers.",
@@ -488,6 +507,16 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
         }
         "add_paper" => {
             let ident = arg_str(a, "identifier").ok_or("identifier is required")?;
+            // a web page or blog post (a page that declares a DOI comes back as that paper)
+            if lunta_core::is_web_link(ident.clone()) {
+                let o = add_web_page(lib, &ident)?;
+                let p = lib.paper(o.0.id.clone()).unwrap_or(o.0);
+                let mut out = json!({"added": summary(&p), "type": p.meta.work_type, "url": p.meta.url, "accessed": p.meta.accessed});
+                if let Some(n) = o.1 {
+                    out["note"] = json!(n);
+                }
+                return Ok(out);
+            }
             let meta = lunta_core::resolve_metadata(ident).map_err(|e| e.to_string())?;
             if !meta.doi.is_empty() {
                 if let Some(p) = lib.find_by_doi(meta.doi.clone()) {

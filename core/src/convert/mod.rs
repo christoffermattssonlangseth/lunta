@@ -229,6 +229,13 @@ pub fn page_reader(url: &str, html: &str) -> &'static str {
     webpage::pick(url::Url::parse(url).ok().as_ref(), html).name()
 }
 
+/// A web page or blog post (read by `crate::webmeta::read` / `fetch`) as `out_dir/<slug>.epub`:
+/// its main text, images fetched (see [`webpage::web_book`]).
+pub fn convert_web_page_with(page: &crate::webmeta::WebPage, out_dir: &Path, opts: &Options) -> Result<ConversionResult> {
+    let book = webpage::web_book(page, opts)?;
+    write(&book, out_dir, opts)
+}
+
 /// Converts a Safari web archive of an article page (the page and the images it loaded).
 pub fn convert_webarchive_with(data: &[u8], out_dir: &Path, opts: &Options) -> Result<ConversionResult> {
     let p = webarchive::read(data)?;

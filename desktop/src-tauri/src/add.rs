@@ -80,6 +80,14 @@ pub fn add(lib: &Library, input: &str, log: &Logger) -> Result<Added, String> {
     if input.is_empty() {
         return Err("Type a DOI, PMCID, arXiv id or link first.".into());
     }
+    // a plain web page or blog post (one that declares a DOI comes back as that paper)
+    let mut web_error = None;
+    if lunta_core::is_web_link(input.to_string()) {
+        match add_web_page(lib, input, None, log) {
+            Ok(a) => return Ok(a),
+            Err(e) => web_error = Some(e),
+        }
+    }
     log.say(&format!("Looking up {input}…"));
     let meta = lunta_core::resolve_metadata(input.to_string()).ok();
     log.say("Making the reading view…");
@@ -99,7 +107,7 @@ pub fn add(lib: &Library, input: &str, log: &Logger) -> Result<Added, String> {
         }
     }
     if m.title.is_empty() && m.doi.is_empty() {
-        let why = conv.err().unwrap_or_default();
+        let why = web_error.unwrap_or_else(|| conv.err().unwrap_or_default());
         return Err(format!("Couldn't find “{input}”. Try a DOI or a link to the article.{}", if why.is_empty() { String::new() } else { format!("\n{why}") }));
     }
     let (epub, text, note) = match conv {
@@ -108,6 +116,22 @@ pub fn add(lib: &Library, input: &str, log: &Logger) -> Result<Added, String> {
     };
     let paper = lib.add_paper(m, None, epub, text).map_err(|e| e.to_string())?;
     Ok(Added { paper, note })
+}
+
+/// The status bar's lines from the core's progress.
+struct Progress(Logger);
+
+impl lunta_core::ProgressListener for Progress {
+    fn on_progress(&self, message: String) {
+        self.0.say(&message)
+    }
+}
+
+/// Adds a web page or blog post by its address (the core's `add_web_page`): `html` the page as
+/// the browser extension has it, else it is fetched once.
+pub fn add_web_page(lib: &Library, url: &str, html: Option<String>, log: &Logger) -> Result<Added, String> {
+    let o = lib.add_web_page(url.to_string(), html, Some(std::sync::Arc::new(Progress(log.clone())))).map_err(|e| e.to_string())?;
+    Ok(Added { paper: o.paper, note: o.note })
 }
 
 /// Makes the reading view for a paper that has none: arXiv's HTML for arXiv papers, else the

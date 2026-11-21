@@ -41,7 +41,8 @@ ureq = "3"
 thiserror = "2"
 regex = "1"
 zip = { version = "9", default-features = false, features = ["deflate"] }
-quick-xml = { version = "0.38", optional = true }
+# the HTML / XML DOM (core/src/convert/xml.rs, html.rs): the converter, and web pages in every build
+quick-xml = "0.38"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "tiff", "bmp", "webp"], optional = true }
 ab_glyph = { version = "0.2", optional = true }
 url = { version = "2", optional = true }
@@ -83,7 +84,7 @@ ureq = { version = "3", features = ["platform-verifier"] }
 # scripts/build-core.sh builds the Apple static library with --no-default-features, so the
 # apps' LuntaCore stays as it was (they keep using the Swift Paper2EpubKit).
 default = ["convert", "pdf", "drive", "tts"]
-convert = ["dep:quick-xml", "dep:image", "dep:ab_glyph", "dep:ttf-parser", "dep:url"]
+convert = ["dep:image", "dep:ab_glyph", "dep:ttf-parser", "dep:url"]
 # PDF -> EPUB layout analysis (core/src/convert/pdf) on PDFium, loaded at run time (see README).
 # Off in the Apple build, which converts PDFs with PDFKit.
 pdf = ["convert", "dep:pdfium-render", "dep:icu_normalizer"]

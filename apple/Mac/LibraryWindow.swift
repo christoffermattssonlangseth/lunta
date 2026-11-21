@@ -893,7 +893,7 @@ struct AddPaperSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Add Paper").font(.headline)
-            TextField("DOI, link, PMCID, PubMed or arXiv ID", text: $input)
+            TextField("DOI, PMCID, PubMed or arXiv ID, or a link (web pages too)", text: $input)
                 .textFieldStyle(.roundedBorder).frame(width: 440)
                 .onSubmit(add)
             Text("You can also drag PDFs onto the window.").font(.caption).foregroundStyle(.secondary)

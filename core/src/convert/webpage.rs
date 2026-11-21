@@ -1657,3 +1657,77 @@ fn is_service_link(text: &str) -> bool {
     })
     .is_match(text)
 }
+
+// MARK: - Web pages and blog posts
+
+/// The book for a web page or blog post (not a journal's article page): the main text the
+/// readability-style reader in `crate::webarticle` picked out, its images fetched with the same
+/// rules as figures (at most 80, normalised to 1600 px; SVG kept as it is). A page with too
+/// little text is refused with the reader's message.
+pub fn web_book(page: &crate::webmeta::WebPage, opts: &Options) -> Result<Book> {
+    let a = &page.article;
+    if !a.problem.is_empty() {
+        return Err(fail(a.problem.clone()));
+    }
+    let host = page.url.split('/').nth(2).unwrap_or("the web").trim_start_matches("www.").to_string();
+    opts.log(&format!("Reading the page from {host} ({} words)", a.words));
+    let urls: Vec<String> = a.images.iter().take(80).cloned().collect();
+    if !urls.is_empty() {
+        opts.log(&format!("Downloading {} image(s)", urls.len()));
+    }
+    let fetched = super::net::par_map(&urls, 6, |u| {
+        let r = super::net::fetch(u, Some("image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8"), 30.0).ok()?;
+        (200..300).contains(&r.status).then_some(r)
+    });
+    let mut files: Vec<Option<String>> = vec![None; a.images.len()];
+    let mut images = Vec::new();
+    let mut missing = 0;
+    for (i, (u, r)) in urls.iter().zip(fetched).enumerate() {
+        let Some(r) = r else {
+            missing += 1;
+            continue;
+        };
+        let svg = u.split(['?', '#']).next().unwrap_or("").to_lowercase().ends_with(".svg") || r.content_type.contains("svg");
+        let img = if svg {
+            Some(BookImage { file_name: format!("web{}.svg", i + 1), data: r.data, media_type: "image/svg+xml".into() })
+        } else {
+            super::images::normalise(&r.data, 1600)
+                .map(|n| BookImage { file_name: format!("web{}.{}", i + 1, n.ext), data: n.data, media_type: n.media_type.into() })
+        };
+        match img {
+            Some(img) => {
+                files[i] = Some(img.file_name.clone());
+                images.push(img);
+            }
+            None => missing += 1,
+        }
+    }
+    missing += a.images.len().saturating_sub(urls.len());
+    let chapters: Vec<Chapter> = a
+        .chapters
+        .iter()
+        .map(|c| Chapter {
+            title: c.title.clone(),
+            html: crate::webarticle::with_images(&c.html, &files),
+            headings: c.headings.iter().map(|h| Heading { level: h.level, id: h.id.clone(), title: h.title.clone() }).collect(),
+        })
+        .collect();
+    let m = &page.meta;
+    let meta = PaperMeta {
+        title: m.title.clone(),
+        authors: m.authors.clone(),
+        date: m.date.clone(),
+        journal: m.journal.clone(),
+        abstract_text: m.abstract_text.clone(),
+        keywords: m.keywords.clone(),
+        url: page.url.clone(),
+        ..Default::default()
+    };
+    let mut notes = vec![];
+    if missing > 0 {
+        notes.push(format!("{missing} image(s) could not be downloaded."));
+    }
+    let all: String = chapters.iter().map(|c| c.html.as_str()).collect();
+    let images = images.into_iter().filter(|i| all.contains(&format!("../images/{}\"", i.file_name))).collect();
+    Ok(Book { meta, chapters, images, source_label: format!("Web page from {host}"), notes })
+}

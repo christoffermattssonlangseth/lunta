@@ -234,7 +234,33 @@ fn route(cx: &Ctx, r: &Request) -> (u16, Value) {
     }
     let q = |k: &str| r.query.get(k).cloned().unwrap_or_default();
     match (r.method.as_str(), r.path.as_str()) {
-        ("GET", "/status") => (200, status(pagetext::find_paper(&lib, &q("doi"), &q("title")).as_ref())),
+        ("GET", "/status") => {
+            let p = pagetext::find_paper(&lib, &q("doi"), &q("title")).or_else(|| if q("url").is_empty() { None } else { lib.find_by_url(q("url")) });
+            (200, status(p.as_ref()))
+        }
+        // a web page or blog post (no paper on it): saved with the page as the browser has it
+        ("POST", "/webpage") => {
+            let Ok(Value::Object(j)) = serde_json::from_slice::<Value>(&r.body) else {
+                return (400, json!({"error": "bad JSON"}));
+            };
+            let s = |k: &str| j.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+            if !s("url").starts_with("http") {
+                return (400, json!({"error": "Expected the page's address."}));
+            }
+            let html = Some(s("html")).filter(|h| !h.trim().is_empty());
+            match add::add_web_page(&lib, &s("url"), html, &logger(cx)) {
+                Ok(a) => {
+                    changed(cx, "Saved a web page from the browser.");
+                    let mut out = status(lib.paper(a.paper.id.clone()).as_ref());
+                    out["message"] = json!(a.note.unwrap_or_else(|| "Saved as a web page, with a reading view.".into()));
+                    (200, out)
+                }
+                Err(e) => {
+                    (cx.notify)("status", "");
+                    (422, json!({"error": e}))
+                }
+            }
+        }
         ("POST", "/save") => {
             let Ok(Value::Object(j)) = serde_json::from_slice::<Value>(&r.body) else {
                 return (400, json!({"error": "bad JSON"}));

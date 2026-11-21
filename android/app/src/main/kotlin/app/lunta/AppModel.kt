@@ -445,7 +445,7 @@ class AppModel(val app: Application) {
         out.note?.let { info = "Added “${out.paper.meta.title}”, but no reading view could be made: $it" }
     }
 
-    /** DOI, PMCID, arXiv id or a link. */
+    /** DOI, PMCID, arXiv id or a link (a web page or blog post without a DOI is added as one). */
     fun addByInput(text: String) {
         val lib = library ?: return
         busy("Looking up…", { withContext(Dispatchers.IO) { lib.addFromInput(text, progress) } }) { added(it) }

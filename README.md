@@ -47,6 +47,10 @@ which setup fits your devices, and how to move your library from Zotero, Mendele
   [Lunta extension](#browser-extension-and-add-ins) (Chrome, Edge, Firefox, Safari). Lunta finds legal
   open-access PDFs (also from PubMed pages), and never swaps a published paper for its preprint. Folders, tags, Smart Folders,
   stars and a Must Read list, with full-text search.
+- **Web pages and blog posts:** paste any link (a blog post, documentation, a news story) and Lunta saves
+  it as a web page you can cite: its title, authors, date and site read from the page, the address and the
+  day you read it, and a clean reading view of the text (code blocks, quotes, images and tables kept;
+  menus, comments and share buttons left out). A page that turns out to have a DOI is added as that paper.
 - **New for You:** every morning, new papers picked for your research, with a short summary. Add your ORCID
   iD and it also learns from your own papers and shows new papers citing them.
 - **Listen and ask:** papers read aloud in a natural voice (Kokoro, on every platform: the paragraph being read
@@ -64,6 +68,7 @@ which setup fits your devices, and how to move your library from Zotero, Mendele
 Saves the paper you're looking at to Lunta, with its PDF, using the access your browser already has (your
 institution's subscription, for example). On a journal's article page, **Use this page's full text** turns
 the page you're reading into the paper's reading view. On PubMed, **Find PDF** gets a free, legal copy.
+On any other page (a blog post, documentation), click the toolbar button and **Save as web page**.
 It works in Chrome, Edge, Brave and other Chromium browsers, and in Firefox.
 
 **Firefox:** install it from [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/lunta/) (one click; updates come by themselves).
@@ -163,7 +168,10 @@ title or authors, and is the same on all your devices. You see it, and can chang
   the .tex gets their keys (`\cite{Langseth2025spatial}`), the original is kept as `.tex.bak`, and the .bib is
   updated. With Overleaf: download the project (or use its Git or Dropbox sync), resolve the .tex, upload it.
 - **Entry types:** conference papers are `@inproceedings`, preprints `@misc` with the arXiv id, reports
-  `@techreport`, and so on, as LaTeX users expect; titles in capitals come out in title case.
+  `@techreport`, and so on, as LaTeX users expect; titles in capitals come out in title case. Web pages
+  and blog posts are `@misc` with the address and the day you read it both ways: `howpublished`
+  (`Site, \url{…}`) and `note = {Accessed 2026-11-21}` for BibTeX styles, `url` and `urldate` for
+  biblatex (biblatex also prints the first two: drop them in your copy if that's one too many).
 - **Overleaf:** save the .bib file in Dropbox and link the project to Dropbox, or in the project's Git
   repository (Overleaf's Git sync) and push. Without either, upload the .bib file to the project
   (**Upload › From your computer**) and upload it again when it changes.
