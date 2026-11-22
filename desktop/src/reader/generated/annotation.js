@@ -325,10 +325,15 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
     return JSON.stringify(o);
   };
   window.luntaExtendTo = function(x, y){ return ext ? window.luntaExtendToOffset(caretOffset(textNodes(), x, y)) : ''; };
+  // a selection handle dragged (the app says so in pages): a drag that became a pending
+  // Highlight to… at the page's edge ends when the finger lifts, which is no tap on the end word
+  var dragEndAt = 0;
+  window.luntaSetDragging = function(on){ if (window.luntaDragging && !on) dragEndAt = Date.now(); window.luntaDragging = on; };
   // the tap (before links, citations, figures, page turns and the bars take it)
   window.addEventListener('click', function(ev){
     if (!ext) return;
     ev.preventDefault(); ev.stopImmediatePropagation();
+    if (window.luntaDragging || Date.now() - dragEndAt < 400) return;
     var j = window.luntaExtendTo(ev.clientX, ev.clientY); if (!j) return;
     window.luntaExtendCancel();
     try { window.webkit.messageHandlers.ann.postMessage('__extend__:' + j); } catch (x) {}

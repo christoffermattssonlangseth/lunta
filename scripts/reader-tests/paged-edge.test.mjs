@@ -1,6 +1,7 @@
 // Pages on the iPhone and iPad (apple/Shared/PageTurn.swift, pagedJS): a selection handle dragged
-// over the page's edge turns the page and the selection goes on onto the next one; where its moving
-// end has to be for that (luntaEdgeDirection), one turn per rest, the selection kept or made again.
+// over the page's edge turns the page; where its moving end has to be for that (luntaEdgeDirection),
+// one turn per rest, and the passage so far becomes a pending Highlight to… (Highlights.swift), so
+// the word tapped on the new page ends one highlight from the selection's start.
 // Run: node --test scripts/reader-tests/paged-edge.test.mjs
 
 import test from 'node:test';
@@ -15,16 +16,21 @@ const src = readFileSync(join(repo, 'apple/Shared/PageTurn.swift'), 'utf8').repl
 const m = src.match(/static let pagedJS = #"""\n([\s\S]*?)\n([ \t]*)"""#/);
 assert.ok(m, 'pagedJS literal');
 const script = m[1].split('\n').map((l) => l.slice(m[2].length)).join('\n');
+const hsrc = readFileSync(join(repo, 'apple/Shared/Highlights.swift'), 'utf8').replace(/\r\n/g, '\n');
+const hm = hsrc.match(/static let annotationJS = #"""\n([\s\S]*?)\n([ \t]*)"""#/);
+assert.ok(hm, 'annotationJS literal');
+const annotationJS = hm[1].split('\n').map((l) => l.slice(hm[2].length)).join('\n').split('CSS').join('');
 globalThis.Element = Element;   // (the script turns scrollIntoView into a page turn)
 
 // an iPhone: 390 × 844, pages start 90 px down and end 56 px above the bottom, 20 px margins
 const PHONE = { W: 390, H: 844, cols: 1, pad: 20, top0: 90, bottom0: 56, scrollX: 0 };
 const dir = (win, g) => win.luntaEdgeDirection({ ...PHONE, height: 22, ...g });
 
-function book(pages = 3) {
+// (`annotations`: the highlight script in the same page, as in the app)
+function book(pages = 3, annotations = true) {
   const doc = parse('<p id="a">The first page ends with this line</p><p id="b">and the next one goes on here.</p>');
   doc.documentElement.scrollWidth = pages * PHONE.W;
-  const posted = [];
+  const posted = [], ann = [], clicks = [];
   let selection = null;
   const sel = {
     get rangeCount() { return selection ? 1 : 0; },
@@ -35,14 +41,16 @@ function book(pages = 3) {
   };
   const win = run(script, doc, {
     innerWidth: PHONE.W, innerHeight: PHONE.H, scrollX: 0,
-    addEventListener() {},
-    webkit: { messageHandlers: { page: { postMessage: (x) => posted.push(x) } } },
+    addEventListener: (type, fn, capture) => { if (type === 'click' && capture) clicks.push(fn); },
+    webkit: { messageHandlers: { page: { postMessage: (x) => posted.push(x) }, ann: { postMessage: (x) => ann.push(x) } } },
     getSelection: () => sel,
   });
+  if (annotations) new Function('window', 'document', annotationJS)(win, doc);
   win.luntaSetPaged(true, PHONE.top0, PHONE.bottom0, true);
   const t = (id) => doc.getElementById(id).childNodes[0];
   return {
-    doc, win, posted, sel,
+    doc, win, posted, sel, ann, clicks,
+    hasSelection: () => !!selection,
     // a selection whose last line box is `box` (viewport coordinates)
     select(sc, so, ec, eo, box) {
       selection = { startContainer: sc, startOffset: so, endContainer: ec, endOffset: eo, getClientRects: () => [box] };
@@ -83,40 +91,62 @@ test('two columns on a page (iPad): only the right column\'s last line turns', (
   assert.equal(g({ end: -1, left: 44, right: 400, top: 82, bottom: 106 }), -1);   // the left one's
 });
 
-test('a rest at the edge turns one page, animated, keeping the selection; then not again at once', () => {
+test('a rest at the edge turns one page, animated; the passage becomes a pending Highlight to…; not again at once', () => {
   const b = book();
   const a = b.t('a');
   b.select(a, 4, a, 10, { left: 20, right: 200, top: 766, bottom: 788, width: 180, height: 22 });
   // the finger rests at the right edge of the screen (zone 1), though the end is mid-line
   assert.equal(b.win.luntaSelectionEdgeTurn(1), 1);
   assert.deepEqual(b.turns(), [{ page: 1, smooth: true, keep: true }]);
-  // the next rest right after: no second turn (one per rest, and the turn is still settling)
+  // the selection (and its handles) went; its passage is coloured and waits for the end word
+  assert.equal(b.hasSelection(), false);
+  assert.deepEqual(b.doc.querySelectorAll('mark.m-hl').map((x) => [x.getAttribute('data-ann'), x.textContent]), [['__pending', 'first ']]);
+  assert.deepEqual(b.ann.filter((x) => x !== '__ready__'), ['__extendstart__:yellow']);
+  assert.equal(b.win.luntaExtending(), true);
+  // the next rest right after: no second turn
   assert.equal(b.win.luntaSelectionEdgeTurn(1), 0);
   assert.equal(b.turns().length, 1);
 });
 
-test('no turn without a selection, in the middle of the page, or past the last page', () => {
-  const b = book(1);
-  assert.equal(b.win.luntaSelectionEdgeTurn(1), 0);
-  const a = b.t('a');
-  b.select(a, 0, a, 5, { left: 20, right: 366, top: 766, bottom: 788, width: 346, height: 22 });
-  assert.equal(b.win.luntaSelectionEdgeTurn(1), 0);   // a one-page paper
-  const c = book();
-  c.select(c.t('a'), 0, c.t('a'), 5, { left: 20, right: 120, top: 400, bottom: 422, width: 100, height: 22 });
-  assert.equal(c.win.luntaSelectionEdgeTurn(0), 0);
-  assert.equal(c.win.luntaSelectionEdgeTurn(-1), 0);   // back from the first page
-});
-
-test('the end on the last line turns without the finger at the edge; a dropped selection is made again', async () => {
+test('after the turn the word tapped on the new page ends one highlight from the start on the page before', () => {
   const b = book();
   const a = b.t('a'), n = b.t('b');
-  b.select(a, 0, a, 10, { left: 20, right: 366, top: 766, bottom: 788, width: 346, height: 22 });
+  b.win.luntaSetDragging(true);
+  b.select(a, 4, a, a.data.length, { left: 20, right: 366, top: 766, bottom: 788, width: 346, height: 22 });
   assert.equal(b.win.luntaSelectionEdgeTurn(0), 1);
-  // WebKit dropped it over the turn: made again from the start that stayed to the new page's first word
-  b.drop();
-  b.doc.caretRangeFromPoint = () => ({ startContainer: n, startOffset: 1 });
-  await new Promise((r) => setTimeout(r, 600));
-  assert.deepEqual(b.sel.made, [a, 0, n, 3]);
+  // the finger lifts (no tap on a word: a click right after the drag is ignored)
+  b.win.luntaSetDragging(false);
+  b.doc.caretRangeFromPoint = () => ({ startContainer: n, startOffset: n.data.indexOf('goes') + 1 });
+  const click = () => { const ev = { clientX: 100, clientY: 300, preventDefault() {}, stopImmediatePropagation() {} }; b.clicks.forEach((f) => f(ev)); };
+  click();
+  assert.equal(b.ann.filter((x) => x.startsWith('__extend__:')).length, 0);
+  assert.equal(b.win.luntaExtending(), true);
+  // the tap on "goes", a moment later
+  return new Promise((r) => setTimeout(r, 450)).then(() => {
+    click();
+    const msg = b.ann.find((x) => x.startsWith('__extend__:'));
+    assert.ok(msg);
+    const o = JSON.parse(msg.slice(11));
+    assert.equal(o.quote, 'first page ends with this lineand the next one goes');
+    assert.equal(o.start, 4);
+  });
+});
+
+test('in highlight mode the pending passage has the highlight-mode colour', () => {
+  const b = book();
+  b.win.luntaHLMode = true; b.win.luntaHLColor = 'green';
+  b.select(b.t('a'), 0, b.t('a'), 9, { left: 20, right: 366, top: 766, bottom: 788, width: 346, height: 22 });
+  assert.equal(b.win.luntaSelectionEdgeTurn(0), 1);
+  assert.deepEqual(b.ann.filter((x) => x !== '__ready__'), ['__extendstart__:green']);
+  assert.ok(b.doc.querySelector('mark.m-hl').className.includes('m-green'));
+});
+
+test('without the highlight script there is no turn (the selection would only be lost)', () => {
+  const b = book(3, false);
+  b.select(b.t('a'), 0, b.t('a'), 9, { left: 20, right: 366, top: 766, bottom: 788, width: 346, height: 22 });
+  assert.equal(b.win.luntaSelectionEdgeTurn(1), 0);
+  assert.equal(b.turns().length, 0);
+  assert.equal(b.hasSelection(), true);
 });
 
 test('dragging the start handle backwards: the end stays, the page turns back', () => {

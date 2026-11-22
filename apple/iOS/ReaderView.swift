@@ -297,12 +297,17 @@ struct ReaderView: View {
             // (the highlight's sheet closes first)
             if id != nil { try? await Task.sleep(for: .milliseconds(350)) }
             guard await controller.startExtend(id: id, color: color) else { return }
-            let was = chromeHidden
-            withAnimation(.easeInOut(duration: 0.22)) {
-                extending = Extending(id: id, color: color, chromeWasHidden: was)
-                // pages: the hint takes the bars' place, so it covers no text
-                if paged { chromeHidden = true }
-            }
+            extendStarted(id: id, color: color)
+        }
+    }
+
+    /// The page is waiting for the tap that ends the passage: the hint shows.
+    private func extendStarted(id: String?, color: HighlightColor) {
+        let was = extending?.chromeWasHidden ?? chromeHidden
+        withAnimation(.easeInOut(duration: 0.22)) {
+            extending = Extending(id: id, color: color, chromeWasHidden: was)
+            // pages: the hint takes the bars' place, so it covers no text
+            if paged { chromeHidden = true }
         }
     }
 
@@ -349,6 +354,8 @@ struct ReaderView: View {
         }
         controller.onAnnotation = { id in editingAnnotation = model.annotations(paperID).first { $0.id == id } }
         controller.onHighlightTo = { startExtend(nil) }
+        // a selection dragged over the page's edge: the page turned and waits for the end word
+        controller.onExtendBegan = { color in extendStarted(id: nil, color: color) }
         controller.onExtendDone = { sel in
             guard let e = extending else { return }
             endExtend()

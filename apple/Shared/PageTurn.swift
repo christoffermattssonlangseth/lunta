@@ -205,12 +205,11 @@ extension ReaderAssets {
 
       // A selection dragged over the page's edge (iPhone, iPad) goes on onto the next page. The app
       // watches the finger while a selection handle is dragged (SelectionDragWatcher below) and,
-      // when it has rested for half a second, asks luntaSelectionEdgeTurn with the screen edge it
-      // rests at (1 right, -1 left, 0 neither). The page turns when the finger is at an edge, or
-      // when the end being dragged is on the page's last line (its start: the first line); the
-      // other end stays where it is. One turn per rest: the finger has to move again for the next.
-      // WebKit keeps the selection over the turn; if it ever drops it, it is made again from the
-      // end that stayed to the first (last) word of the new page.
+      // when it has rested, asks luntaSelectionEdgeTurn with the screen edge it rests at (1 right,
+      // -1 left, 0 neither). The page turns when the finger is at an edge, or when the end being
+      // dragged is at the end of the page's last line (its start: the beginning of the first). The
+      // selection itself can't follow (see there): it becomes a pending Highlight to…, and the word
+      // tapped next ends the highlight.
       var ends = null, moving = 1, edgeAt = 0;
       function trackEnds(s, has){
         if (!has || !s.rangeCount) { if (Date.now() - edgeAt > 1500) ends = null; return; }
@@ -246,14 +245,6 @@ extension ReaderAssets {
         }
         return null;
       }
-      // a text position at a point of the viewport (the new page's first or last word)
-      function wordAt(x, y, end){
-        var c = document.caretRangeFromPoint && document.caretRangeFromPoint(x, y);
-        if (!c || c.startContainer.nodeType !== 3) return null;
-        var t = c.startContainer.nodeValue, o = c.startOffset;
-        if (end > 0) { while (o < t.length && /\S/.test(t[o])) o++; } else { while (o > 0 && /\S/.test(t[o - 1])) o--; }
-        return [c.startContainer, o];
-      }
       window.luntaSelectionEdgeTurn = function(zone){
         if (!on || !W || Date.now() - edgeAt < 900) return 0;
         var s = window.getSelection(); if (!s || !s.rangeCount || s.isCollapsed) return 0;
@@ -262,17 +253,18 @@ extension ReaderAssets {
                                    scrollX: window.scrollX, W: W, H: Hh, cols: cols(), pad: pad, top0: top, bottom0: bottom, end: moving }) : 0);
         var p = page();
         if (!dir || p + dir < 0 || p + dir > pages() - 1) return 0;
-        var stay = moving > 0 ? [r.startContainer, r.startOffset] : [r.endContainer, r.endOffset];
+        // The selection doesn't go over: iOS WebKit re-anchors a handle drag at what is on the
+        // screen (on the device the start jumped to the new page's top and the part on the page
+        // left behind was lost), and its autoscroll left the view between two pages. So the
+        // passage so far becomes a pending Highlight to… (Highlights.swift): coloured, the
+        // selection and its handles gone, and the app shows "Tap where the highlight should end";
+        // the word tapped on the new page (or any other) ends it, as one highlight.
+        if (!window.luntaExtendStart) return 0;
+        var color = window.luntaHLMode ? (window.luntaHLColor || 'yellow') : 'yellow';
+        if (!window.luntaExtendStart('', color)) return 0;
         edgeAt = Date.now();
+        try { window.webkit.messageHandlers.ann.postMessage('__extendstart__:' + color); } catch (x) {}
         window.luntaGoToPage(p + dir, true, true);
-        setTimeout(function(){
-          var s2 = window.getSelection();
-          if (s2 && s2.rangeCount && !s2.isCollapsed) return;   // kept, as it should be
-          var to = dir > 0 ? wordAt(pad + 3, top + 6, 1) : wordAt(W - pad - 3, Hh - bottom - 8, -1);
-          if (!to) return;
-          edgeAt = Date.now();
-          try { s2.setBaseAndExtent(stay[0], stay[1], to[0], to[1]); } catch (x) {}
-        }, 500);
         return dir;
       };
 
@@ -349,6 +341,7 @@ final class PageMessageHandler: NSObject, WKScriptMessageHandler {
     /// A page turn with a selection being dragged over the edge is under way (its animation isn't undone).
     fileprivate var turningUntil = Date.distantPast
     fileprivate var dragWatcher: SelectionDragWatcher?
+    fileprivate var snap: DispatchWorkItem?
     #endif
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
         #if os(iOS)
@@ -425,7 +418,9 @@ extension PageMessageHandler {
     }
 
     @MainActor private func moved(_ sv: UIScrollView) {
-        guard selecting, state?.on == true, Date() >= turningUntil else { return }
+        guard state?.on == true else { return }
+        snapLater(sv)
+        guard selecting, Date() >= turningUntil else { return }
         let x = sv.contentOffset.x
         if sv.isDragging || sv.isDecelerating {
             // a swipe turns the page as usual, and the selection (with its Copy/Highlight menu) is
@@ -448,6 +443,31 @@ extension PageMessageHandler {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: later)
     }
 
+    /// The page always comes to rest whole: once the scroll view has been still for a moment (no
+    /// finger, no swipe, no animation, nothing selected), an offset between two pages goes to the
+    /// nearer one (WebKit's selection autoscroll, or a turn cut short, could leave it part-way).
+    @MainActor private func snapLater(_ sv: UIScrollView) {
+        snap?.cancel()
+        let item = DispatchWorkItem { [weak self, weak sv] in
+            MainActor.assumeIsolated {
+                guard let self, let sv, let v = self.webView, self.state?.on == true, !self.selecting,
+                      !sv.isDragging, !sv.isDecelerating, !sv.isTracking else { return }
+                let w = sv.bounds.width
+                guard w > 0 else { return }
+                let n = Self.nearestPage(offset: sv.contentOffset.x, width: w)
+                guard abs(sv.contentOffset.x - CGFloat(n) * w) > 1 else { return }
+                Self.show(page: n, in: v, animated: true)
+            }
+        }
+        snap = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: item)
+    }
+
+    /// The page nearest a scroll offset (pages are exactly the view's width).
+    static func nearestPage(offset: CGFloat, width: CGFloat) -> Int {
+        width > 0 ? max(0, Int((offset / width).rounded())) : 0
+    }
+
     // MARK: a selection dragged over the page's edge (pagedJS: luntaSelectionEdgeTurn)
 
     /// A selection handle can be dragged now: text is selected, in pages, and the page isn't being swiped.
@@ -458,7 +478,7 @@ extension PageMessageHandler {
 
     /// The handle is being dragged (true) or was let go: highlight mode waits for that.
     @MainActor fileprivate func dragChanged(_ on: Bool) {
-        webView?.evaluateJavaScript("window.luntaDragging = \(on)")
+        webView?.evaluateJavaScript("window.luntaSetDragging ? luntaSetDragging(\(on)) : (window.luntaDragging = \(on))")
     }
 
     /// The finger has rested at `zone` (1 the right edge, -1 the left, 0 elsewhere): the page
