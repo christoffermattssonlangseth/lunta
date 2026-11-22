@@ -167,7 +167,7 @@ PMC3228661,pub,swift,xml,20,16,0,4,0,0,20,0
 PMC3228661,pub,base,xml,20,12,0,3,1,4,16,0
 PMC3228661,pub,rust,xml,20,16,0,4,0,0,20,0
 PMC3228661,pub,base,swift,20,20,0,0,0,0,20,0
-PMC3490882,pub,swift,xml,20,18,0,1,1,0,20,0
+PMC3490882,pub,swift,xml,20,17,0,1,1,1,19,0
 PMC3490882,pub,base,xml,20,13,0,1,0,6,14,0
 PMC3490882,pub,rust,xml,20,17,0,0,1,2,18,0
 PMC3490882,pub,base,swift,20,18,0,0,0,2,18,0
@@ -303,7 +303,7 @@ PMC3766054,pub,swift,xml,20,14,1,5,0,0,19,1
 PMC3766054,pub,base,xml,20,9,4,1,1,5,15,0
 PMC3766054,pub,rust,xml,20,14,5,1,0,0,20,0
 PMC3766054,pub,base,swift,20,18,0,0,1,1,19,0
-PMC4393050,pub,swift,xml,20,3,2,0,0,15,5,0
+PMC4393050,pub,swift,xml,20,5,2,0,1,12,8,0
 PMC4393050,pub,base,xml,20,4,1,2,2,11,7,2
 PMC4393050,pub,rust,xml,20,3,0,1,0,16,4,0
 PMC4393050,pub,base,swift,20,18,0,2,0,0,20,0

@@ -3,6 +3,14 @@
 Run on 2026-11-17 (macOS, Apple M1 Pro), converters of Lunta 1.0.4 (commit 86e764b); extended on
 2026-11-18 with outside reference points (pdftotext, GROBID) on the same 200 PDFs and with reading
 views made from the journal's article page (see the two sections after the headline numbers).
+**Seventh run on 2026-11-22, Swift converter only (the Rust converter's paper views are unchanged,
+byte for byte on the 40 library PDFs; its outputs and numbers are the sixth run's)**: books as PDFs
+(a paper-or-book classifier and a book mode that papers never take), font names that end in their
+CMap ("-Identity-H") no longer read as bold, and sub- and superscripts found from the glyphs'
+baselines where PDFKit gives every glyph the full line's box; see "What the book mode and the
+font-name and script fixes changed" below. The sixth-run version of this file is kept as
+[RESULTS-2026-11-20.md](RESULTS-2026-11-20.md), its result files, figures, examples, binary and Swift
+outputs in `data/prev-2026-11-22/`.
 **Sixth run on 2026-11-20, both converters, commits 02a1e7f (Swift) and e1e82f0 (Rust)**: glyphs of
 symbol fonts that name them like letters (Elsevier's and Springer's "Pi" fonts: Cell's Highlights
 bullets as "d", "©" as "ª") read as what they show, lines starting with a bullet become list items,
@@ -57,7 +65,7 @@ bootstrap CI (of the mean, unless stated otherwise).
 | Papers with any boilerplate leak | **41.0 %** [34.0, 48.0] | 63.5 % [56.5, 70.0] | 41.5 % [35.0, 48.5] |
 | Figure images, count-based recall (precision) | 96.0 % (72.7 %) | 96.2 % (62.5 %) | 96.0 % (72.5 %) |
 | Figures identified (image + matching label/caption) | 66.0 % [58.6, 73.0] | 65.7 % | 72.2 % [65.6, 79.0] |
-| Highlights re-anchored correctly in the XML view | **89.4 %** [87.6, 91.0] | 82.9 % [80.6, 84.9] | 90.5 % [88.8, 92.0] |
+| Highlights re-anchored correctly in the XML view | **89.5 %** [87.7, 91.0] | 82.9 % [80.6, 84.9] | 90.5 % [88.8, 92.0] |
 | Tables identified (image + matching label/caption) | 65.9 % [58.5, 72.9] | 56.0 % | 66.7 % [59.2, 73.8] |
 | Papers with XML references but no reference items | 2 (40 in the first 2026-11-18 run) | – | 2 (40) |
 | Speed, s/page (one conversion at a time), median | 0.124 (CPU 0.085) | 0.190* (CPU 0.085*) | 0.047 (CPU 0.046) |
@@ -67,6 +75,51 @@ in this run, same binary); in that run the Swift CLI of the day took 0.199 s/pag
 this run are about 30 % shorter than on 2026-11-16 for both converters, but the 2026-11-16 and current
 `p2e` binaries took the same time when run side by side on four slow papers (e.g. 1.70 vs 1.46 s,
 1.33 vs 1.27 s, 1.06 vs 1.05 s, 1.40 vs 1.39 s): the difference is load on the machine, not code.
+
+**What the book mode and the font-name and script fixes changed (2026-11-22, seventh run vs
+sixth run; Swift only; same papers, same scripts).** Prompted by a 541-page textbook (Prince,
+*Understanding Deep Learning*, MIT Press 2023) whose reading view "didn't work": 292 "chapters", one
+per page, from its running heads ("28 3 Shallow neural networks", "3.1 Neural network example 29"),
+its printed contents as the navigation, every word bold, and an EPUB holding `p296-eq192.png` twice
+(two equations starting on the same line of a page), which a reader may refuse. Fixes:
+
+- *Paper or book.* A classifier (`DocumentKind.swift`, Rust `pdf/book.rs`) weighs the page count,
+  the PDF's outline, an ISBN, contents/preface/index/"Chapter N" pages, dot-leader contents pages,
+  running heads with page numbers and the work type the library knows, against an abstract, a DOI
+  line and received/accepted dates. Under 40 pages a PDF is always a paper; all 200 papers here are
+  (the five of 42–69 pages score −2 to 1, a book needs 4). Book mode takes the chapters from the
+  outline, removes running heads that carry the printed page number or repeat within four pages,
+  leaves out the printed contents and makes the index one chapter (`PDFBookLayout.swift`). Papers
+  never take it, so this part changes no paper here.
+- *Font names that end in their CMap.* XeLaTeX and LuaLaTeX name CID fonts "LMRoman10-Regular-Identity-H";
+  the bold rule's "-H" (Heavy) made every glyph bold (`PDFContent.swift`). 5 of the 200 papers have
+  such fonts (MinionPro-…-Identity-H and others).
+- *Sub- and superscripts where PDFKit gives each glyph the full line's box*: only citation-like
+  characters became superscripts there, and nothing a subscript; now a smaller glyph is raised or
+  lowered by the baseline its text run is set on ("FEV<sub>1</sub>", "T<sub>1</sub>", "Ca<sup>2+</sup>",
+  "θ<sub>10</sub>").
+- Image names are made unique (an EPUB writer that also keeps the first of two files of one name).
+
+Text scores are unchanged to the third decimal: token F1 median 0.955, mean 0.9274 → 0.9274; one paper
+changed, PMC4393050 (−0.004; a Hindawi PDF in MinionPro-…-Identity-H whose lines, all bold before,
+are now told apart: one wrapped line is no longer a heading, but a small table and an equation that
+were cropped with a formula are now text); broken words 0.792 → 0.792 per 1,000; display equations
+kept as images 132 → 130 (the same paper). Highlights → XML 89.4 → 89.5 % (two more correct); the
+sixth run's views → this run's: 100.0 %. With the inline tags (sub, sup, em, strong) left out, 224 of the
+230 views are the same as before: the rest differ in the tags around sub- and superscripts and the
+italics they split ("<em>x</em><sub>i</sub>" for "<em>xi</em>"). Of the 6 whose text differs, one is
+PMC4393050, three regroup a bulleted list (a "•" now a superscript or no longer one: PMC3490882,
+PMC6244743, PMC5003913's title page), and two have a title page with or without Crossref's details
+(Crossref answered in one run and not the other; p2e asks it also with `--offline`). The batch line of `results/summary_tables.md` (0.131 s/page) is not comparable (load).
+On the 40 library PDFs, with the inline tags left out: 35 views as before (5 byte-identical, 30
+differing only in sub-/superscript and the em/strong runs they split); one JOSS paper (ff119eae,
+LMSans…-Identity-H) now tells bold from plain text, so a reference's "bioRxiv. https://doi.org/…" is
+no longer a heading and its title page has bold labels; one paper (416b6bec) joins two paragraphs
+after a subscript; one title page has Crossref's details this time (ac50113e); and a 1,161-page
+textbook in the library (a5818d8a) is now converted as a book (35 chapters from its outline instead
+of 75 from headings; contents pages and running heads left out).
+The Rust converter had no CMap-suffix problem (PDFium's font names) and gets the same book mode; its
+40 library views are byte-identical but for the textbook (and the random book identifier).
 
 **What the symbol-font fix changed (2026-11-20, sixth run vs fifth run; same papers, same
 scripts).** Prompted by the author's Cell paper (Kukanja et al. 2024), whose reading view showed the
@@ -439,11 +492,12 @@ the reader's own `locate()` from `apple/Shared/Highlights.swift`):
 
 | Highlight made on → re-anchored in | exact | whitespace fallback | quote/dash/case fallback | start/end fallback | lost | anchored correctly | anchored to wrong text |
 |---|---|---|---|---|---|---|---|
-| current PDF view → XML view | 73.0 | 6.6 | 8.5 | 2.6 | 9.3 | 89.4 [87.6, 91.0] | 1.3 |
+| current PDF view → XML view | 73.0 | 6.6 | 8.5 | 2.7 | 9.2 | 89.5 [87.7, 91.0] | 1.3 |
 | baseline PDF view → XML view | 66.3 | 5.1 | 9.9 | 3.8 | 14.9 | 82.9 [80.6, 84.9] | 2.3 |
 | Rust PDF view → XML view | 76.0 | 5.8 | 7.6 | 2.0 | 8.6 | 90.5 [88.8, 92.0] | 0.9 |
 | baseline PDF view → current PDF view | 90.0 | 0.7 | 3.3 | 0.9 | 5.0 | 94.1 [92.4, 95.6] | 0.8 |
-| fifth run's PDF view → current PDF view (Swift) | 98.7 | 0.0 | 0.2 | 0.4 | 0.7 | 99.2 | 0.1 |
+| sixth run's PDF view → current PDF view (Swift) | 100.0 | 0.0 | 0.0 | 0.0 | 0.0 | 100.0 | 0.0 |
+| fifth run's PDF view → sixth run's PDF view (Swift) | 98.7 | 0.0 | 0.2 | 0.4 | 0.7 | 99.2 | 0.1 |
 | fifth run's PDF view → current PDF view (Rust) | 99.0 | 0.0 | 0.2 | 0.1 | 0.6 | 99.3 | 0.1 |
 | third run's Rust PDF view → current Rust PDF view | 98.0 | 0.0 | 0.1 | 0.3 | 1.5 | 98.4 | 0.1 |
 | author manuscripts: current PDF view → XML view | 89.3 | 4.3 | 2.0 | 1.2 | 3.2 | 96.5 [94.7, 98.2] | 0.3 |
@@ -687,11 +741,11 @@ found (no references heading recognised) and the list stayed in the body text; s
 reference-list fix 3 (two with little usable text, one without references in the XML).
 
 ### 7. Highlight survival
-See the table above. Moving from the current PDF view to the XML view keeps 89.4 % of highlights on
-the right text (73.0 % verbatim; 88.9 % before the symbol-font fix), Rust 90.5 % (90.6 % before it,
+See the table above. Moving from the current PDF view to the XML view keeps 89.5 % of highlights on
+the right text (73.0 % verbatim; 89.4 % before the font-name and script fixes, 88.9 % before the symbol-font fix), Rust 90.5 % (90.6 % before it,
 89.5 % before its hidden-text fix), author manuscripts 96.5 % (87.2 % for Swift before the
 word-spacing and hidden-text fixes; 87.2 %, 89.2 % and 96.0 % before the figure and front-matter
-fixes; 84.2 %, 68.4 % and 87.0 % before the reference-list fix). Of the 9.3 % lost (current Swift;
+fixes; 84.2 %, 68.4 % and 87.0 % before the reference-list fix). Of the 9.2 % lost (current Swift; 9.3 % in the sixth run;
 9.8 % in the fifth run, 11.2 % in the third run, 14.3 % before the reference-list fix), a heuristic split (2026-11-16 run): ~18 % are passages that have no counterpart in the XML reading view (table
 text, reference entries, boilerplate, extra PDF matter), ~37 % contain garbled or broken words, ~2 %
 differ only in citation format ("[12–14]" vs "[12,13,14]"), the rest in run-in captions, merged
