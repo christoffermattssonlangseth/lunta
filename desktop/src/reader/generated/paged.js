@@ -69,7 +69,13 @@
   };
   // the page showing and the number of pages, as the label counts them (two columns: two pages)
   window.luntaPageInfo = function(){ return on ? { page: page(), pages: pages(), cols: cols() } : null; };
-  window.luntaTurn = function(d){ window.luntaGoToPage(page() + d, true); };
+  // past the last page (or before the first) of a book's chapter, read chapter by chapter
+  // (ChapterReader.swift): the app opens the next chapter (or the previous one, at its end)
+  window.luntaTurn = function(d){
+    var n = page() + d;
+    if (on && (n < 0 || n > pages() - 1) && document.querySelector('meta[name="lunta-part"]')) { post(n < 0 ? 'partPrev' : 'partNext'); return; }
+    window.luntaGoToPage(n, true);
+  };
 
   // the page holding a rectangle (from getBoundingClientRect or a range)
   window.luntaShowRect = function(r, smooth){

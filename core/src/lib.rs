@@ -794,6 +794,14 @@ impl Library {
         epub::open(&path, &cache)
     }
 
+    /// Whether the paper's reading view is read chapter by chapter (a book: too big to lay out as
+    /// one page on a phone), and if so its parts, their files written next to the sections; see
+    /// `epub::ReadingPart`. Call after `open_epub` (it unpacks the book).
+    pub fn reading_parts(&self, id: String) -> Result<epub::ReadingParts> {
+        let book = self.open_epub(id)?;
+        epub::reading_parts(&book, false)
+    }
+
     // ---- import ----
 
     /// Adds entries from another reference manager. Duplicates (same DOI, or same title when there

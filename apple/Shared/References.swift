@@ -19,8 +19,15 @@ extension ReaderAssets {
       function isHeading(el){ return /^H[1-6]$/i.test(el.tagName); }
       function level(el){ return parseInt(el.tagName.slice(1), 10); }
 
-      // the reference list's entries, in order
+      // the reference list's entries, in order; a book read chapter by chapter: those of its
+      // reference list's chapter (window.luntaShelf, CitationPopover.swift) when this one has none
       function items(){
+        var own = itemsIn(document.body);
+        if (own.length || !window.luntaShelf || !window.luntaShelf.doc.body) return own;
+        return itemsIn(window.luntaShelf.doc.body);
+      }
+      window.luntaReferenceIndex = function(el){ return items().indexOf(el); };
+      function itemsIn(body){
         var out = [], seen = new Set();
         function add(el){
           if (!el || seen.has(el) || el.closest('.m-cite')) return;
@@ -30,7 +37,7 @@ extension ReaderAssets {
         function listItems(list){
           for (var c = list.firstElementChild; c; c = c.nextElementSibling) if (/^LI$/i.test(c.tagName)) add(c);
         }
-        var body = document.body; if (!body) return out;
+        if (!body) return out;
         // 1. lists the converters mark
         body.querySelectorAll('ol.refs, ul.refs, ol.references, ul.references, .ltx_biblist').forEach(listItems);
         // 2. lists inside a marked reference section (journal pages)
@@ -146,8 +153,10 @@ extension ReaderAssets {
 
       var st = null;
       window.luntaShowReference = function(i){
-        if (!cache || !cache[i] || !cache[i].isConnected) cache = items();
+        if (!cache || !cache[i] || !(cache[i].isConnected || cache[i].ownerDocument !== document)) cache = items();
         var el = cache[i]; if (!el) return false;
+        // in the reference list's own chapter: the app opens it there (ChapterReader.swift)
+        if (el.ownerDocument !== document && window.luntaShelf) { window.location.href = window.luntaShelf.href + '#lunta-ref-' + i; return true; }
         if (!st) {
           st = document.createElement('style');
           st.textContent = '.m-ref-flash { background: rgba(255, 204, 0, .35) !important; border-radius: 4px; transition: background .6s; }';

@@ -32,13 +32,28 @@ extension ReaderAssets {
       var inLib = {}, known = {};
       window.luntaSetLibrary = function(ids){ inLib = {}; (ids || []).forEach(function(k){ inLib[String(k).toLowerCase()] = true; }); };
 
+      // A book read chapter by chapter (ChapterReader.swift): its reference list is in another
+      // part. The app hands that part's page over (`href`: its file), parsed here but never shown,
+      // so citations in this chapter still find their references (also the References list,
+      // References.swift: window.luntaShelf). Not in the page: none of its text is this page's.
+      window.luntaSetShelf = function(xhtml, href){
+        var d = null;
+        try {
+          d = new DOMParser().parseFromString(xhtml, 'application/xhtml+xml');
+          if (!d || !d.body || d.querySelector('parsererror')) d = null;
+        } catch (x) { d = null; }
+        window.luntaShelf = d ? { doc: d, href: href || '' } : null;
+      };
+      function shelf(){ return window.luntaShelf ? window.luntaShelf.doc : null; }
+      function byId(id){ var s = shelf(); return document.getElementById(id) || (s ? s.getElementById(id) : null); }
+
       // the reference a link points to, if it points into the reference list
       function refTarget(a){
         var h = a.getAttribute('href') || '', i = h.indexOf('#');
         if (i < 0) return null;
         var id = h.slice(i + 1); try { id = decodeURIComponent(id); } catch (x) {}
         if (!id) return null;
-        var t = document.getElementById(id); if (!t) return null;
+        var t = byId(id); if (!t) return null;
         if (t.closest('figure, table, .table-wrap, h1, h2, h3, h4')) return null;
         var inRefs = !!t.closest('ol.refs, ol.references, ul.references, .ref-list, .references, .bibliography, #references, .ltx_bibliography, .ltx_biblist');
         if (!inRefs) {
@@ -104,7 +119,8 @@ extension ReaderAssets {
       }
       // reference n of the paper's numbered list: the entry printed "n." / "[n]" / "n ", else the n-th
       function refNumbered(n){
-        var list = document.querySelector('ol.refs, ol.references, ul.references');
+        var LISTS = 'ol.refs, ol.references, ul.references';
+        var list = document.querySelector(LISTS) || (shelf() ? shelf().querySelector(LISTS) : null);
         if (!list) return null;
         var items = Array.prototype.filter.call(list.children || [], function(x){ return x.tagName && x.tagName.toLowerCase() === 'li'; });
         var labelled = false;
@@ -147,6 +163,10 @@ extension ReaderAssets {
       function fold(t){ return (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
       // the reference list's entries: its list items, else the paragraphs under a References heading
       function refEntries(){
+        var out = entriesIn(document);
+        return out.length || !shelf() ? out : entriesIn(shelf());
+      }
+      function entriesIn(document){
         var hs = Array.prototype.filter.call(document.querySelectorAll('h1, h2, h3'), function(h){
           return /^\s*(references|bibliography|literature cited|works cited|references and notes)\b/i.test(h.textContent || ''); });
         var out = [];
@@ -299,7 +319,12 @@ extension ReaderAssets {
         var go = btn('Show in References', '#');
         go.addEventListener('click', function(ev){
           ev.preventDefault(); ev.stopPropagation(); close();
-          if (ref.id) location.hash = ref.id; else ref.scrollIntoView({ block: 'center' });
+          if (ref.ownerDocument !== document && window.luntaShelf) {
+            // in the reference list's own chapter: the app opens it at this reference
+            var at = window.luntaReferenceIndex ? window.luntaReferenceIndex(ref) : -1;
+            window.location.href = window.luntaShelf.href + (at >= 0 ? '#lunta-ref-' + at : (ref.id ? '#' + ref.id : ''));
+          }
+          else if (ref.id) location.hash = ref.id; else ref.scrollIntoView({ block: 'center' });
         });
         pop.appendChild(acts);
         }

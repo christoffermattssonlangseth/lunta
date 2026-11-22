@@ -15,6 +15,14 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
   mark.m-yellow { background: rgba(250,212,77,.30); } mark.m-green { background: rgba(140,209,122,.30); }
   mark.m-blue { background: rgba(122,184,242,.30); } mark.m-pink { background: rgba(245,143,179,.30); }
 }`; document.documentElement.appendChild(st);
+  // A book read chapter by chapter (ChapterReader.swift) shows one part of its reading view per
+  // page; the part says where its text starts in the whole view's text. Offsets the app gets
+  // and gives (a highlight's start) are in the whole view's text, so they are the same in the
+  // whole book on the Mac and in one chapter on the iPhone. 0 for a paper.
+  function base(){
+    var m = document.querySelector('meta[name="lunta-text-base"]');
+    return m ? (parseInt(m.getAttribute('content'), 10) || 0) : 0;
+  }
   function textNodes(){
     var out = [], w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: function(n){
       var p = n.parentNode && n.parentNode.nodeName.toLowerCase();
@@ -51,7 +59,7 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
     if (s < 0 || e < 0) { var q0 = sel.toString(); s = text.indexOf(q0); e = s + q0.length; if (s < 0) return ''; }
     var quote = text.slice(s, e);
     if (!quote.trim()) return '';
-    return JSON.stringify({ quote: quote, prefix: text.slice(Math.max(0, s - 40), s), suffix: text.slice(e, e + 40), start: s });
+    return JSON.stringify({ quote: quote, prefix: text.slice(Math.max(0, s - 40), s), suffix: text.slice(e, e + 40), start: s + base() });
   };
   function unwrapAll(){
     document.querySelectorAll('mark.m-hl').forEach(function(m){
@@ -61,12 +69,12 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
   var lcache = { text: null };
   function locate(text, a){
     if (!a.quote || !a.quote.trim()) return null;   // a note without a passage: nothing to mark (and indexOf('') never ends)
-    var best = -1, bestScore = -1, i = text.indexOf(a.quote);
+    var best = -1, bestScore = -1, i = text.indexOf(a.quote), hint = (a.start || 0) - base();
     while (i >= 0) {
       var score = 0;
       if (a.prefix && text.slice(Math.max(0, i - a.prefix.length), i) === a.prefix) score += 2;
       if (a.suffix && text.slice(i + a.quote.length, i + a.quote.length + a.suffix.length) === a.suffix) score += 2;
-      score -= Math.min(1, Math.abs(i - (a.start || 0)) / 100000);
+      score -= Math.min(1, Math.abs(i - hint) / 100000);
       if (score > bestScore) { bestScore = score; best = i; }
       i = text.indexOf(a.quote, i + 1);
     }
@@ -189,7 +197,8 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
     // coloured here and now; the app saves it and redraws (which replaces this mark with the real one)
     try {
       var o = JSON.parse(j);
-      if (o.start >= 0) wrap(textNodes(), o.start, o.start + o.quote.length, { id: '__pending', color: window.luntaHLColor || 'yellow' });
+      var s0 = o.start - base();
+      if (s0 >= 0) wrap(textNodes(), s0, s0 + o.quote.length, { id: '__pending', color: window.luntaHLColor || 'yellow' });
     } catch (x) {}
     s.removeAllRanges();
     try { window.webkit.messageHandlers.ann.postMessage('__hl__:' + j); } catch (x) {}
@@ -201,7 +210,7 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
     while (s < e && /\s/.test(text[s])) s++;
     while (e > s && /\s/.test(text[e - 1])) e--;
     if (e <= s) return '';
-    return JSON.stringify({ quote: text.slice(s, e), prefix: text.slice(Math.max(0, s - 40), s), suffix: text.slice(e, e + 40), start: s });
+    return JSON.stringify({ quote: text.slice(s, e), prefix: text.slice(Math.max(0, s - 40), s), suffix: text.slice(e, e + 40), start: s + base() });
   }
   function caretOffset(nodes, x, y){
     var r = document.caretRangeFromPoint && document.caretRangeFromPoint(x, y);
@@ -224,7 +233,7 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
   window.luntaPencilHighlight = function(x1, y1, x2, y2, color){
     if (document.body.classList.contains('listening')) return '';
     var j = window.luntaSelectionBetween(x1, y1, x2, y2); if (!j) return '';
-    try { var o = JSON.parse(j); wrap(textNodes(), o.start, o.start + o.quote.length, { id: '__pending', color: color || 'yellow' }); } catch (x) {}
+    try { var o = JSON.parse(j), s0 = o.start - base(); wrap(textNodes(), s0, s0 + o.quote.length, { id: '__pending', color: color || 'yellow' }); } catch (x) {}
     return j;
   };
   // A new highlight from s to e: the highlights already drawn that it overlaps or touches, and
@@ -232,6 +241,7 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
   // or stacking on another). {ids: [...], quote, prefix, suffix, start}
   // (`exclude`: the highlight being extended, which takes the new passage as it is, so it can also shrink)
   window.luntaMergeRange = function(s, e, exclude){
+    s -= base(); e -= base();
     var nodes = textNodes(), text = fullText(nodes), spans = {};
     document.querySelectorAll('mark.m-hl[data-ann]').forEach(function(m){
       var id = m.getAttribute('data-ann'); if (!id || id === '__pending' || id === exclude) return;
@@ -300,7 +310,7 @@ mark.m-hl.m-flash { box-shadow: 0 0 0 4px rgba(242,180,90,.55); }
     if (id) span = annSpan(nodes, id);
     else {
       var j = window.luntaSelection();
-      if (j) { var o = JSON.parse(j); if (o.start >= 0) span = [o.start, o.start + o.quote.length]; }
+      if (j) { var o = JSON.parse(j), s0 = o.start - base(); if (s0 >= 0) span = [s0, s0 + o.quote.length]; }
     }
     if (!span) return false;
     ext = { id: id || '', s: span[0], e: span[1] };

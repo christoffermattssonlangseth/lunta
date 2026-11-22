@@ -115,6 +115,52 @@ The decision and its signals are in the result (`ConversionResult.kind` / `kindR
 paper2epub's output. An app could give a library item converted as a book that has no work type yet the
 type `book` (or `thesis`); the apps don't do that yet.
 
+### Big reading views, chapter by chapter
+
+A book's reading view (the 541-page "Understanding Deep Learning": 29 sections, ~190,000 words, 677
+images, 50 MB of them) shown as one page went black on an iPhone: WebKit had to lay out (in pages, cut
+into columns) the whole book, decoding its images, and iOS ended the page's web process for its memory.
+Now (`apple/Shared/ChapterReader.swift`, `core/src/epub.rs`):
+
+- **Images load lazily** in every reading view: `combine` (and the parts below) give each `<img>`
+  `loading="lazy"`, `decoding="async"` and, where it has none, its pixel `width`/`height` from the file's
+  header (the reader's CSS has `height: auto`, so the page keeps its layout while they load). The
+  continuous view is marked `data-lunta-view="2"`; an older one is made again. Attributes add no text, so
+  highlights and places are unchanged. (`content-visibility` was left out: it changes the geometry that
+  restoring the place, Back, find and the page columns measure.)
+- **Chapter by chapter** when `Library.readingParts` says so (`epub::chaptered`): at least 4 sections and
+  60,000 words, 150 images or 30 MB of images (a long review paper has ~15,000 words and 10-40 figures).
+  Sections become parts (`lunta-part-<n>.xhtml` next to the sections; short ones such as the title page,
+  front matter and preface share one, until 1,000 words or 12 images), and the reader shows one part at a
+  time, on the Mac and the iPhone alike. Papers (and anything below the thresholds) are shown as before.
+- **Offsets stay those of the whole view.** A part's text is exactly a slice of the continuous view's
+  text (the same `<body>` newline, `section-start` anchors and newlines), starting at its
+  `<meta name="lunta-text-base">`. The page scripts add that base to every offset they give the app (a
+  selection's `start`, `luntaPlace`) and take it off what they get (a highlight's `start`,
+  `luntaHoldOffset`, `luntaMergeRange`), so highlights and reading positions are stored exactly as before:
+  a highlight made in chapter 5 on the iPhone is found by the Mac, old highlights and saved places keep
+  working, the MCP server's `add_highlight` (anchored in the continuous view's text) shows in the right
+  chapter, and the place saved on one device opens its chapter on the other. The app gives the page the
+  highlights of its part (`ChapterReader.split`: the part whose text has the quote, preferring the one the
+  offset is in); one in no part is listed as not found.
+- **Across chapters:** the contents and links (`lunta-part-3.xhtml#s30`, `ReaderNavigation`) open the
+  chapter at the anchor; each part ends with "Next: …" and starts with "Previous: …" (empty links drawn by
+  CSS, so no text); in pages, turning past the last page (tap, key, or on iPhone a swipe pulled past the
+  end) opens the next chapter, before the first the previous one at its end. Find searches the whole book
+  (`BookFind`: counted in the parts' texts, found and marked in the page of the part shown; Next past a
+  part's last match opens the next part with one). Listen goes on into the next chapter (`Narrator.onEnd`;
+  a narration rendered on the Mac for the whole book isn't used for these). Citations find their
+  references in the reference list's part: the app hands its page to the others (`luntaSetShelf`, parsed
+  with DOMParser, never part of the page), so the citation card and the References list work, and "Show in
+  References" opens that chapter at the entry (`#lunta-ref-<n>`). The Summary card is left out (one
+  chapter isn't the paper).
+- **A web process that ends** (out of memory) is reloaded once (`webViewWebContentProcessDidTerminate`);
+  if it ends again within 45 s the reader says "This reading view is too large to show at once on this
+  device" with Show PDF and Try Again, instead of a black page.
+
+Windows, Linux and Android get the lazy images (they show the continuous view the core makes); they
+don't read books chapter by chapter yet.
+
 ### Web pages and blog posts
 
 A link with no DOI, PubMed ID, PMCID or arXiv id in it (`webmeta::is_web_link`) is a web page: the

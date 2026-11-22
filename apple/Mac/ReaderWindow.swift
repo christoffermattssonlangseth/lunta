@@ -9,6 +9,9 @@ struct ReaderWindow: View {
     let paperID: String
     @State private var mode: Mode = .reading
     @State private var book: EpubBook?
+    /// A book read chapter by chapter (too big for one page: ChapterReader.swift); nil for a paper.
+    @State private var chapters: ChapterReader?
+    @State private var bookFind: BookFind?
     @State private var current: String?          // anchor of the section being read
     @State private var scrollRequest = ScrollRequest()
     @AppStorage("readerFontScale") private var fontScale = 1.0
@@ -82,7 +85,8 @@ struct ReaderWindow: View {
                     switch sideTab {
                     case .contents:
                         List(selection: Binding(get: { current }, set: { id in
-                            if let id { current = id; scrollRequest = ScrollRequest(anchor: id) }
+                            // (a book read chapter by chapter: in another chapter, that one opens there)
+                            if let id { current = id; if chapters?.show(anchor: id) != true { scrollRequest = ScrollRequest(anchor: id) } }
                         })) {
                             ForEach(Array(book.toc.enumerated()), id: \.offset) { _, t in
                                 Text(t.title).lineLimit(2)
@@ -96,7 +100,8 @@ struct ReaderWindow: View {
                         ReferencesList(refs: references,
                                        onShow: { r in controller.webView?.evaluateJavaScript("window.luntaShowReference && luntaShowReference(\(r.index))") },
                                        onOpen: { id in openWindow(value: id) })
-                            .task(id: book.combined) { await references.load(controller, model: model) }
+                            // (a book read chapter by chapter: again in each chapter, once it has the reference list's chapter)
+                            .task(id: "\(book.combined)#\(controller.partLoads)") { await references.load(controller, model: model) }
                     }
                 }
                 .navigationSplitViewColumnWidth(min: 180, ideal: 250)
@@ -110,8 +115,10 @@ struct ReaderWindow: View {
             Group {
                 switch mode {
                 case .reading:
-                    if let book {
-                        EpubWebView(url: URL(fileURLWithPath: book.combined), readAccess: URL(fileURLWithPath: book.dir),
+                    if controller.pageGone {
+                        PageGoneView(hasPDF: model.paper(paperID)?.hasPdf == true, retry: { controller.retryPage() }, showPDF: { mode = .pdf })
+                    } else if let book {
+                        EpubWebView(url: chapters?.url ?? URL(fileURLWithPath: book.combined), readAccess: URL(fileURLWithPath: book.dir),
                                     fontScale: fontScale, theme: theme, paged: paged, findBar: find.shown, scrollRequest: scrollRequest, controller: controller) { id in current = id }
                             .safeAreaInset(edge: .bottom) {
                                 if listening { NarrationBar(narrator: narrator) { stopListening() } }
@@ -262,7 +269,8 @@ struct ReaderWindow: View {
             controller.onPageReady = {
                 controller.setHighlightMode(highlightMode, color: hlColor)
                 refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
-                summary.pageReady(paperID, model: model, controller: controller)
+                // (a book read chapter by chapter has no summary: one chapter isn't the paper)
+                if let chapters { chapters.pageReady() } else { summary.pageReady(paperID, model: model, controller: controller) }
                 resumeListening()
             }
             controller.onSelectionDone = { pageSel in
@@ -350,11 +358,31 @@ struct ReaderWindow: View {
         case .missing: error = "Use “Make Reading View” in the library."; return
         }
         do {
-            book = try model.lib.openEpub(id: paperID)
+            let b = try model.lib.openEpub(id: paperID)
+            await openChapters(b)
+            book = b
             model.markOpened(p)
         } catch {
             self.error = error.readable
         }
+    }
+
+    /// A big reading view (a book) is read chapter by chapter, from the chapter holding the place
+    /// last read (on any device); a paper is shown as one page (`chapters` nil). The same on the
+    /// iPhone, so a highlight's place is always counted the same way.
+    private func openChapters(_ b: EpubBook) async {
+        let lib = model.lib
+        let id = paperID
+        let info = await Task.detached(operation: { try? lib.readingParts(id: id) }).value
+        guard let info, info.chaptered else { chapters = nil; bookFind = nil; controller.chapters = nil; return }
+        let spot = await ReadingPositions.shared.latest(paperID, root: model.libraryURL)
+        guard let ch = ChapterReader(book: b, parts: info, at: spot?.offset) else { return }
+        ch.controller = controller
+        ch.willOpen = { [weak position] offset, scroll in position?.partChanged(to: offset, scroll: scroll) }
+        controller.chapters = ch
+        controller.part = ch.current
+        chapters = ch
+        bookFind = BookFind(chapters: ch, controller: controller)
     }
 
     /// Make Reading View, or Remake Reading View… (asks first: the alert above).
@@ -385,12 +413,13 @@ struct ReaderWindow: View {
         if listening { stopListening() }
         if book == nil { mode = .reading }   // its first: shown (the PDF was shown for want of one)
         book = nil
+        chapters = nil; bookFind = nil; controller.chapters = nil
         error = nil
         Task { await load() }
     }
 
     /// What the find bar searches: the reading view or the PDF.
-    private var findBackend: FindBackend? { mode == .pdf ? pdfFinder : (book != nil ? controller : nil) }
+    private var findBackend: FindBackend? { mode == .pdf ? pdfFinder : (book != nil ? (bookFind as FindBackend?) ?? controller : nil) }
 
     private var hlColor: HighlightColor { HighlightColor(rawValue: highlightModeColor) ?? .yellow }
 
@@ -431,7 +460,9 @@ struct ReaderWindow: View {
             guard !items.isEmpty else { return }
             // natural (neural) narration when it has been rendered, otherwise the system voice
             let title = model.paper(paperID)?.meta.title ?? ""
-            if await model.loadNeuralNarration(paperID, into: narrator, pageItems: items) {
+            // (a book read chapter by chapter is read one chapter at a time: a narration rendered
+            // for the whole book doesn't follow its pages)
+            if chapters == nil, await model.loadNeuralNarration(paperID, into: narrator, pageItems: items) {
                 // a full natural-voice narration was rendered earlier
             } else if KokoroLive.shared.installed {
                 // natural voice, made paragraph by paragraph as it plays
@@ -443,6 +474,7 @@ struct ReaderWindow: View {
             }
             narrator.paperID = paperID
             narrator.onHighlight = { [weak controller] id in controller?.highlight(id) }
+            narrator.onEnd = chapterEnd
             controller.onTapParagraph = { [weak narrator] id in narrator?.play(fromID: id) }
             controller.setListening(true)
             listening = true
@@ -469,9 +501,32 @@ struct ReaderWindow: View {
     private func resumeListening() {
         guard listening else { return }
         narrator.onHighlight = { [weak controller] id in controller?.highlight(id) }
+        narrator.onEnd = chapterEnd
         controller.onTapParagraph = { [weak narrator] id in narrator?.play(fromID: id) }
         controller.setListening(true)
         if narrator.items.indices.contains(narrator.index) { controller.highlight(narrator.items[narrator.index].id) }
+    }
+
+    /// A book read chapter by chapter: at a chapter's end, Listen goes on into the next one (its
+    /// page opens and its paragraphs are read, with the same voice).
+    private var chapterEnd: (() -> Void)? {
+        guard chapters != nil else { return nil }
+        return { [weak chapters, weak controller, weak narrator] in
+            guard let chapters, let controller, let narrator, chapters.current + 1 < chapters.parts.count else { return }
+            Task {
+                guard await chapters.open(chapters.current + 1, then: .top) else { return }
+                let items = await controller.narrationItems()
+                guard !items.isEmpty, Narrator.active == nil || Narrator.active === narrator else { return }
+                let title = narrator.title
+                if narrator.live {
+                    narrator.loadLive(items, title: title) { item in await KokoroLive.shared.clip(Narrator.spoken(item), kind: item.kind) }
+                } else {
+                    narrator.load(items, title: title)
+                }
+                controller.setListening(true)
+                narrator.play(from: 0)
+            }
+        }
     }
 
     /// Contents entries point at "section.xhtml#id" or at a whole section; in the continuous
@@ -530,7 +585,12 @@ struct EpubWebView: NSViewRepresentable {
         let v = ReaderWebView(frame: .zero, configuration: cfg)
         v.controller = controller
         v.setValue(false, forKey: "drawsBackground")
-        v.navigationDelegate = ExternalLinks.shared   // web links open in the browser, not in the reader
+        // web links open in the browser, not in the reader; a book's other chapters open in it; a
+        // web process that ended (out of memory) is reloaded, or the reader says so
+        let nav = ReaderNavigation(controller: controller)
+        context.coordinator.navigation = nav
+        v.navigationDelegate = nav
+        context.coordinator.paging?.onPartEdge = { [weak controller] d in controller?.chapters?.edge(d) }
         v.appearance = Self.appearance(theme)   // only the page: the window keeps the system's look
         controller.webView = v
         v.loadFileURL(url, allowingReadAccessTo: readAccess)
@@ -578,6 +638,7 @@ struct EpubWebView: NSViewRepresentable {
         var lastScroll = ScrollRequest()
         var onPosition: (String) -> Void
         var paging: PageMessageHandler?
+        var navigation: ReaderNavigation?
         var applied: PagedState?
         init(onPosition: @escaping (String) -> Void) { self.onPosition = onPosition }
         func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {

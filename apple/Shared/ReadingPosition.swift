@@ -108,6 +108,12 @@ final class ReadingPositions {
 extension ReaderAssets {
     static let positionJS = #"""
     (function(){
+      // a book read chapter by chapter: this page's text starts here in the whole reading view's
+      // text, where the places the app saves and asks for are (see Highlights.swift); 0 for a paper
+      function base(){
+        var m = document.querySelector('meta[name="lunta-text-base"]');
+        return m ? (parseInt(m.getAttribute('content'), 10) || 0) : 0;
+      }
       function nodes(){
         var out = [], w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null), n;
         while ((n = w.nextNode())) out.push(n);
@@ -168,10 +174,12 @@ extension ReaderAssets {
       // goes to the offset and keeps it there while figures and tables load and push the text down
       // (and, in pages, while the pages are laid out again for the real screen size), until you
       // touch or scroll (or after 6 s)
+      // (`at`: in the whole reading view's text, as luntaPlace gives it)
       var held = null;
-      window.luntaHoldOffset = function(off){
+      window.luntaHoldOffset = function(at){
         if (window.luntaHold) window.luntaHold();
-        held = off;
+        held = at;
+        var off = Math.max(0, at - base());
         var ok = window.luntaScrollToOffset(off);
         // pages: a new layout goes back to this place, not to the page shown before
         if (window.luntaKeepPlace) window.luntaKeepPlace(off);
@@ -200,10 +208,11 @@ extension ReaderAssets {
       // the place to save: while holding, the place being held (the page may not have settled);
       // in pages, the place the pages are kept at (the page's first word would creep back);
       // otherwise the first text on the screen
+      // (in the whole reading view's text: a chapter's place plus where its text starts)
       window.luntaPlace = function(){
         if (held != null) return held;
         var a = window.luntaPageAnchor && window.luntaPageAnchor();
-        return a != null ? a : window.luntaReadingOffset();
+        return (a != null ? a : window.luntaReadingOffset()) + base();
       };
     })();
     """#
@@ -213,7 +222,13 @@ extension ReaderController {
     func readingOffset() async -> Int? {
         (try? await webView?.evaluateJavaScript("luntaPlace()")) as? Int
     }
+    /// Goes to a place (in the whole reading view's text); in a book read chapter by chapter, in
+    /// the part that holds it (opened first if it isn't the one shown).
     func scroll(toOffset o: Int) {
+        if let ch = chapters, !ch.holds(o) {
+            ch.go(ch.part(forOffset: o), then: .offset(o))
+            return
+        }
         webView?.evaluateJavaScript("luntaHoldOffset(\(o))")
     }
 }
@@ -254,15 +269,30 @@ final class PositionKeeper: ObservableObject {
 
     deinit { if let quitting { NotificationCenter.default.removeObserver(quitting) } }
 
+    /// A book read chapter by chapter opens another part (ChapterReader.swift): when it has
+    /// loaded, the place is `offset` (in the whole reading view's text), moved to if `scroll`
+    /// (otherwise the part opens at its top, or the reader shows an anchor in it).
+    func partChanged(to offset: Int, scroll: Bool) {
+        started = true
+        last = offset
+        skipScroll = !scroll
+    }
+    private var skipScroll = false
+
     func pageReady(_ paper: String, model: LibraryModel, controller: ReaderController) {
         self.paper = paper; self.root = model.libraryURL; self.controller = controller
         let again = started
+        let skip = skipScroll
+        skipScroll = false
         started = true
         ready = false
         saver?.cancel()
         saver = Task { [weak self, weak controller] in
-            // the page loaded again (its web process was closed): back to the place it was at
-            if again, let o = self?.last {
+            // the page loaded again (its web process was closed, or another chapter of a book
+            // opened): back to the place it was at, or to the place given for it
+            if again, skip {
+                // (the part's top, or what the reader shows in it)
+            } else if again, let o = self?.last {
                 try? await Task.sleep(for: .milliseconds(350))
                 guard !Task.isCancelled else { return }
                 controller?.scroll(toOffset: o)

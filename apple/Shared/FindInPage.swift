@@ -143,8 +143,16 @@ extension ReaderAssets {
 
       // where the reader is (a character offset as the reading position counts it), and the text
       // node and offset that is
+      // (luntaPlace counts in the whole reading view's text; a book read chapter by chapter shows a
+      // part of it, starting at its lunta-text-base)
       function place(){
-        try { return window.luntaPlace ? window.luntaPlace() : (window.luntaReadingOffset ? window.luntaReadingOffset() : 0); } catch (x) { return 0; }
+        try {
+          if (window.luntaPlace) {
+            var m = document.querySelector('meta[name="lunta-text-base"]');
+            return window.luntaPlace() - (m ? (parseInt(m.getAttribute('content'), 10) || 0) : 0);
+          }
+          return window.luntaReadingOffset ? window.luntaReadingOffset() : 0;
+        } catch (x) { return 0; }
       }
       function placePoint(off){
         var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null), n, pos = 0;

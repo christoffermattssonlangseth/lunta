@@ -1197,3 +1197,148 @@ fn bibtex_long_author_lists() {
     other.set_bib_fields(added.id.clone(), vec![]).unwrap();
     assert!(other.bib_fields(added.id.clone()).is_empty());
 }
+
+// ---- big reading views, chapter by chapter (epub::reading_parts) ----
+
+/// A book's unpacked sections in a folder, as `epub::open` reads them: `secs` are (file, body).
+fn sample_book(secs: &[(&str, &str)]) -> epub::EpubBook {
+    let dir = tmp();
+    let text = dir.join("EPUB/text");
+    std::fs::create_dir_all(&text).unwrap();
+    std::fs::create_dir_all(dir.join("EPUB/images")).unwrap();
+    // a PNG's header (its size is all that is read): 1082 × 821
+    let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+    png.extend_from_slice(&[0, 0, 4, 0x3a, 0, 0, 3, 0x35]);
+    std::fs::write(dir.join("EPUB/images/p1-eq1.png"), &png).unwrap();
+    let chapters: Vec<epub::EpubChapter> = secs
+        .iter()
+        .map(|(name, body)| {
+            let p = text.join(name);
+            let doc = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><meta charset=\"UTF-8\"/><title>{name}</title><link rel=\"stylesheet\" href=\"../css/style.css\"/></head>\n<body>{body}</body>\n</html>\n");
+            std::fs::write(&p, doc).unwrap();
+            epub::EpubChapter { title: String::new(), path: p.to_string_lossy().into() }
+        })
+        .collect();
+    let combined = epub::combine(&chapters).unwrap();
+    epub::EpubBook { dir: dir.to_string_lossy().into(), combined, chapters, toc: vec![] }
+}
+
+fn utf16(s: &str) -> Vec<u16> { s.encode_utf16().collect() }
+
+#[test]
+fn reading_parts_are_slices_of_the_continuous_view() {
+    let words = |n: usize, w: &str| vec![w; n].join(" ");
+    let long = words(2600, "word");
+    let book = sample_book(&[
+        ("cover.xhtml", "<img src=\"../images/cover.png\"/>"),
+        ("title.xhtml", "<h1 class=\"title\">A Book</h1><p>By someone &amp; another</p>"),
+        ("ch01.xhtml", &format!("<section><h1 id=\"s1\">1 Start</h1><p>{long} see <a href=\"ch03.xhtml#s3\">chapter 3</a> and <a href=\"ch01.xhtml#s1\">here</a>.</p></section>")),
+        ("ch02.xhtml", &format!("<section><h1 id=\"s2\">2 Math 𝑥</h1><p>Non-BMP 𝑥 and é &#8212; {long}</p><img class=\"equation\" src=\"../images/p1-eq1.png\" style=\"width: 3em\"/></section>")),
+        ("ch03.xhtml", &format!("<section><h1 id=\"s3\">3 More</h1><p>{long} (Smith, 2019)</p><!-- a comment --><p>x<em>y</em>z</p></section>")),
+        ("ch04.xhtml", "<section><h1 id=\"s4\">Bibliography</h1><ol><li>Smith, J. (2019). A paper. 12</li></ol></section>"),
+    ]);
+
+    // small: not chaptered (but parts can be made)
+    assert!(!epub::reading_parts(&book, false).unwrap().chaptered);
+    let r = epub::reading_parts(&book, true).unwrap();
+    // the title page shares a part with what follows (it's short); after a long chapter a new part
+    let secs: Vec<Vec<u32>> = r.parts.iter().map(|p| p.sections.clone()).collect();
+    assert_eq!(secs, vec![vec![1, 2], vec![3], vec![4], vec![5]], "{secs:?}");
+    assert_eq!(r.bibliography, Some(3));
+    assert_eq!(r.parts[0].title, "A Book");
+
+    // every part's text is the continuous view's text from `start`, as the page's DOM has it
+    let combined = utf16(&highlight::dom_text(&std::fs::read_to_string(&book.combined).unwrap()));
+    for p in &r.parts {
+        let file = std::fs::read_to_string(&p.path).unwrap();
+        let t = utf16(&highlight::dom_text(&file));
+        assert_eq!(t, utf16(&p.text));
+        assert_eq!(t.len() as u64, p.length);
+        let s = p.start as usize;
+        assert_eq!(&combined[s..s + t.len()], &t[..], "part {}", p.path);
+        assert!(file.contains(&format!("<meta name=\"lunta-text-base\" content=\"{}\"/>", p.start)));
+    }
+    let last = r.parts.last().unwrap();
+    assert_eq!((last.start + last.length) as usize, combined.len());
+    // a passage found in a part is at start + its offset in the whole view
+    let q = utf16("Non-BMP 𝑥 and é");
+    let local = r.parts[1].text.encode_utf16().collect::<Vec<_>>().windows(q.len()).position(|w| w == &q[..]).unwrap();
+    let global = combined.windows(q.len()).position(|w| w == &q[..]).unwrap();
+    assert_eq!(r.parts[1].start as usize + local, global);
+
+    // links: into another part go to its file, within the part stay in the page
+    let p0 = std::fs::read_to_string(&r.parts[0].path).unwrap();
+    assert!(p0.contains("href=\"lunta-part-2.xhtml#s3\"") && p0.contains("href=\"#s1\""), "{p0}");
+    // the way on: an empty link (no text) to the next part, labelled by CSS; none before the first
+    assert!(p0.contains("<a class=\"lunta-part-nav lunta-next\" href=\"lunta-part-1.xhtml\" data-t=\"Next: 2 Math 𝑥\"></a>"));
+    assert!(!p0.contains("lunta-prev"));
+    let p1 = std::fs::read_to_string(&r.parts[1].path).unwrap();
+    assert!(p1.contains("lunta-prev\" href=\"lunta-part-0.xhtml\""));
+    // images: lazy, decoded off the main thread, with their size so the page keeps its layout
+    assert!(p1.contains("src=\"../images/p1-eq1.png\" style=\"width: 3em\" loading=\"lazy\" decoding=\"async\" width=\"1082\" height=\"821\"/>"), "{p1}");
+    let all = std::fs::read_to_string(&book.combined).unwrap();
+    assert!(all.contains("loading=\"lazy\" decoding=\"async\" width=\"1082\" height=\"821\""));
+    assert!(!all.contains("cover.png"), "the cover isn't in the reading view");
+}
+
+#[test]
+fn big_reading_views_are_chaptered() {
+    // a textbook (204,000 words, 677 images, 29 chapters): chapter by chapter
+    assert!(epub::chaptered(29, 204_000, 677, 50_000_000));
+    // many images or many megabytes of them, even with fewer words
+    assert!(epub::chaptered(12, 30_000, 160, 8_000_000));
+    assert!(epub::chaptered(12, 30_000, 40, 35_000_000));
+    // papers, also long reviews with many figures: one page as before
+    assert!(!epub::chaptered(9, 15_000, 40, 12_000_000));
+    assert!(!epub::chaptered(20, 45_000, 120, 25_000_000));
+    // a long text in two or three sections can't be split
+    assert!(!epub::chaptered(3, 200_000, 0, 0));
+}
+
+#[test]
+fn old_continuous_views_are_made_again_with_lazy_images() {
+    let book = sample_book(&[("ch01.xhtml", "<p>One <img src=\"../images/a.png\"/></p>")]);
+    // a view made before lazy images (no mark): made again
+    std::fs::write(&book.combined, "<html><body class=\"continuous\">\n<p>old</p></body></html>").unwrap();
+    let again = epub::combine(&book.chapters).unwrap();
+    let t = std::fs::read_to_string(again).unwrap();
+    assert!(t.contains("data-lunta-view=\"2\"") && t.contains("loading=\"lazy\"") && !t.contains("old"), "{t}");
+}
+
+#[test]
+fn image_sizes_from_headers() {
+    let d = tmp();
+    let gif = d.join("a.gif");
+    std::fs::write(&gif, b"GIF89a\x10\x00\x20\x00rest").unwrap();
+    assert_eq!(epub::image_size(&gif), Some((16, 32)));
+    // JPEG: an APP0 segment, then the frame header
+    let jpg = d.join("a.jpg");
+    let mut j = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x04, 0x00, 0x00];
+    j.extend_from_slice(&[0xFF, 0xC0, 0x00, 0x11, 0x08, 0x01, 0x2C, 0x02, 0x58, 0x03]);
+    j.extend_from_slice(&[0; 20]);
+    std::fs::write(&jpg, &j).unwrap();
+    assert_eq!(epub::image_size(&jpg), Some((600, 300)));
+    let txt = d.join("a.txt");
+    std::fs::write(&txt, b"not an image").unwrap();
+    assert_eq!(epub::image_size(&txt), None);
+}
+
+#[test]
+fn a_real_book_reads_chapter_by_chapter() {
+    // LUNTA_TEST_BOOK_EPUB=/path/to/understanding-deep-learning.epub cargo test a_real_book
+    let Ok(path) = std::env::var("LUNTA_TEST_BOOK_EPUB") else { return };
+    let root = tmp().join("lib");
+    let lib = open(&root, "mac");
+    let p = lib.add_paper(PaperMeta { title: "Book".into(), ..Default::default() }, None, Some(std::fs::read(&path).unwrap()), None).unwrap();
+    let book = lib.open_epub(p.id.clone()).unwrap();
+    let t0 = std::time::Instant::now();
+    let r = lib.reading_parts(p.id.clone()).unwrap();
+    eprintln!("{} parts, {} words, {} images, {} MB of images, {:?} (bibliography {:?})", r.parts.len(), r.words, r.images, r.image_bytes / 1_000_000, t0.elapsed(), r.bibliography);
+    for x in &r.parts { eprintln!("  {:>7} {:>6} words {:>4} images  {}", x.start, x.words, x.images, x.title); }
+    assert!(r.chaptered);
+    let combined = utf16(&highlight::dom_text(&std::fs::read_to_string(&book.combined).unwrap()));
+    for x in &r.parts {
+        let t = utf16(&x.text);
+        assert_eq!(&combined[x.start as usize..x.start as usize + t.len()], &t[..]);
+    }
+}

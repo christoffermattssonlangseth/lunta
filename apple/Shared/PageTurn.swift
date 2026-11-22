@@ -85,7 +85,13 @@ extension ReaderAssets {
       };
       // the page showing and the number of pages, as the label counts them (two columns: two pages)
       window.luntaPageInfo = function(){ return on ? { page: page(), pages: pages(), cols: cols() } : null; };
-      window.luntaTurn = function(d){ window.luntaGoToPage(page() + d, true); };
+      // past the last page (or before the first) of a book's chapter, read chapter by chapter
+      // (ChapterReader.swift): the app opens the next chapter (or the previous one, at its end)
+      window.luntaTurn = function(d){
+        var n = page() + d;
+        if (on && (n < 0 || n > pages() - 1) && document.querySelector('meta[name="lunta-part"]')) { post(n < 0 ? 'partPrev' : 'partNext'); return; }
+        window.luntaGoToPage(n, true);
+      };
 
       // the page holding a rectangle (from getBoundingClientRect or a range)
       window.luntaShowRect = function(r, smooth){
@@ -329,6 +335,9 @@ struct PagedState: Equatable {
 final class PageMessageHandler: NSObject, WKScriptMessageHandler {
     var state: PagedState?
     var onChrome: () -> Void = {}
+    /// A book read chapter by chapter: turned past the last page (1) or before the first (-1) of a
+    /// chapter, by a tap, a key or (iPhone) a swipe (ChapterReader.swift opens the next or previous one).
+    var onPartEdge: (Int) -> Void = { _ in }
     #if os(iOS)
     /// Text is selected in the page (the page is then held still, see `moved`).
     fileprivate var selecting = false
@@ -360,6 +369,7 @@ final class PageMessageHandler: NSObject, WKScriptMessageHandler {
         guard let s = m.body as? String else { return }
         if s == "hello", let state, let v = m.webView { v.evaluateJavaScript(state.call) }
         if s == "chrome" { Task { @MainActor in self.onChrome() } }
+        if s == "partNext" || s == "partPrev" { let d = s == "partNext" ? 1 : -1; Task { @MainActor in self.onPartEdge(d) } }
     }
 }
 
@@ -417,6 +427,20 @@ extension PageMessageHandler {
         offsetWatch = v.scrollView.observe(\.contentOffset, options: [.new]) { [weak self] sv, _ in
             MainActor.assumeIsolated { self?.moved(sv) }
         }
+        v.scrollView.panGestureRecognizer.addTarget(self, action: #selector(swiped(_:)))
+    }
+
+    /// A swipe that pulled the last page of a chapter well past its end (or the first page past its
+    /// start): in a book read chapter by chapter, the next (previous) chapter.
+    @MainActor @objc private func swiped(_ g: UIPanGestureRecognizer) {
+        guard g.state == .ended, state?.on == true, !selecting, let sv = g.view as? UIScrollView,
+              let v = webView, v.url?.lastPathComponent.hasPrefix("lunta-part-") == true else { return }
+        let w = sv.bounds.width
+        guard w > 0 else { return }
+        let maxX = max(0, sv.contentSize.width - w)
+        let pull = min(80, w * 0.18)
+        if sv.contentOffset.x > maxX + pull { onPartEdge(1) }
+        else if sv.contentOffset.x < -pull { onPartEdge(-1) }
     }
 
     @MainActor private func moved(_ sv: UIScrollView) {

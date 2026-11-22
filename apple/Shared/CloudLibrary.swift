@@ -217,6 +217,16 @@ enum ReaderAssets {
                     transition: background .25s; }
     @media (prefers-color-scheme: dark) { .narr-current { background: rgba(242,180,90,.22); box-shadow: 0 0 0 5px rgba(242,180,90,.22); } }
     body.listening p, body.listening li, body.listening h1, body.listening h2, body.listening h3, body.listening figcaption { cursor: pointer; }
+    /* a book read chapter by chapter (ChapterReader.swift): the previous and next chapter, as empty
+       links (their words are drawn here, so they are no part of the text) */
+    a.lunta-part-nav { display: block; margin: 2.5em 0 1em; padding: .9em 1em; border-radius: 10px; text-align: center; text-decoration: none;
+                       font: 600 .82rem -apple-system, "Helvetica Neue", sans-serif; color: #2a6478; background: rgba(42,100,120,.09);
+                       -webkit-tap-highlight-color: transparent; break-inside: avoid; }
+    a.lunta-part-nav::before { content: attr(data-t) "  →"; }
+    a.lunta-prev { margin: 0 0 1.5em; font-weight: 500; opacity: .8; }
+    a.lunta-prev::before { content: "←  " attr(data-t); }
+    @media (prefers-color-scheme: dark) { a.lunta-part-nav { color: #9ec9d8; background: rgba(158,201,216,.12); } }
+    html[data-theme="paper"] a.lunta-part-nav { color: #8a4a1c; background: rgba(138,74,28,.09); }
     """
 
     /// Finds anything wider than the page (tables, equations, code, fixed-width boxes) and contains it,

@@ -33,6 +33,21 @@ final class ReaderController: ObservableObject {
     /// A passage marked with the Apple Pencil, used once by `pageSelection()` instead of the
     /// selection (so a Pencil highlight or note is saved the way the menu's are).
     var pencilSelection: (PageSelection, Date)?
+    /// A book read chapter by chapter (ChapterReader.swift): the part shown, and the way to the others.
+    weak var chapters: ChapterReader?
+    /// The page's web process ended twice in a short time (a page too big for the device's memory):
+    /// the reader says so instead of showing an empty page (ReaderNavigation).
+    @Published var pageGone = false
+    /// The part shown of a book read chapter by chapter (the readers load its page when it changes).
+    @Published var part = 0
+    /// Pages of a book read chapter by chapter loaded so far (the Mac's References list is read again for each).
+    @Published var partLoads = 0
+
+    /// Try Again after `pageGone`: the page loads again.
+    func retryPage() {
+        pageGone = false
+        webView?.reload()
+    }
 
     func narrationItems(includeCaptions: Bool = false) async -> [NarrationItem] {
         guard let v = webView,

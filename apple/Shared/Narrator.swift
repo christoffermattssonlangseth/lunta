@@ -51,6 +51,9 @@ final class Narrator: NSObject, ObservableObject {
 
     /// Called with the element id of the paragraph being read (to highlight and scroll to it).
     var onHighlight: ((String) -> Void)?
+    /// The last paragraph has been read (a book read chapter by chapter: the reader loads the
+    /// next chapter's paragraphs and goes on).
+    var onEnd: (() -> Void)?
     var title = ""
     /// The paper being read (the Now Playing bar opens it).
     var paperID = ""
@@ -258,7 +261,7 @@ final class Narrator: NSObject, ObservableObject {
     // MARK: Live natural voice
 
     private func playClip() {
-        guard index < items.count else { playing = false; updateNowPlaying(); return }
+        guard index < items.count else { reachedEnd(); return }
         clipToken += 1
         let token = clipToken
         player?.stop()
@@ -278,7 +281,7 @@ final class Narrator: NSObject, ObservableObject {
                 Task { _ = await clips(item) }
             }
             guard let url, let p = try? AVAudioPlayer(contentsOf: url) else {
-                if i + 1 < self.items.count { self.index = i + 1; self.playClip() } else { self.playing = false }
+                if i + 1 < self.items.count { self.index = i + 1; self.playClip() } else { self.reachedEnd() }
                 return
             }
             p.enableRate = true
@@ -296,9 +299,14 @@ final class Narrator: NSObject, ObservableObject {
             index += 1
             playClip()
         } else {
-            playing = false
-            updateNowPlaying()
+            reachedEnd()
         }
+    }
+
+    private func reachedEnd() {
+        playing = false
+        updateNowPlaying()
+        onEnd?()
     }
 
     fileprivate func audioFinished() {
@@ -337,8 +345,7 @@ final class Narrator: NSObject, ObservableObject {
             index += 1
             speakCurrent()
         } else {
-            playing = false
-            updateNowPlaying()
+            reachedEnd()
         }
     }
 
