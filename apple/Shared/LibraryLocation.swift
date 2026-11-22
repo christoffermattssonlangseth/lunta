@@ -14,6 +14,7 @@ enum LibraryLocation {
                                  localLibraryExists: CloudLibrary.hasLogs(CloudLibrary.localURL),
                                  iCloudAvailable: cloud != nil,
                                  iCloudLibraryExists: nil)
+        if facts.stored == .folder { facts.chosenFolder = ChosenFolder.state() }
         var decision = StartupDecision.decide(facts)
         if decision == .lookInICloud, let cloud {
             report("Looking for your library in iCloud…")
@@ -51,6 +52,7 @@ enum LibraryLocation {
         case .iCloud: return CloudLibrary.iCloudURL()
         case .googleDrive: return CloudLibrary.driveURL
         case .device: return CloudLibrary.localURL
+        case .folder: return ChosenFolder.url()
         }
     }
 
@@ -181,12 +183,14 @@ enum LibraryLocation {
         case .iCloud: return "in iCloud Drive (\(path)), where your other Apple devices keep using it"
         case .googleDrive: return "in \(path) and in the “Lunta” folder in your Google Drive, which this Mac no longer syncs"
         case .device: return "on this Mac, in \(path)"
+        case .folder: return "in \(path)\(ChosenFolder.serviceWords(root.path).isEmpty ? "" : " (\(ChosenFolder.serviceWords(root.path)))")"
         }
         #else
         switch s {
         case .iCloud: return "in iCloud Drive, where your other Apple devices keep using it"
         case .googleDrive: return "on this device and in the “Lunta” folder in your Google Drive, which this device no longer syncs"
         case .device: return "on this device, inside Lunta"
+        case .folder: return "in the folder you chose"
         }
         #endif
     }

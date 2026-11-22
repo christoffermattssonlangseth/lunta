@@ -98,8 +98,8 @@ final class ModelHolder: ObservableObject {
             case .openFoundInICloud:
                 LibraryStorage.stored = .iCloud
                 foundInICloud = true
-            case .open, .lookInICloud:
-                break
+            case .open, .lookInICloud, .folderUnavailable:
+                break   // (a chosen folder is the Mac's: never stored here)
             }
             await open()
         }

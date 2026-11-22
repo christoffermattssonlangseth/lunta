@@ -70,6 +70,50 @@ struct Main {
         check(offsets(LibraryCopyRule.mergedPositions(destination: Data("junk".utf8), source: src)), ["a": 90, "b": 20, "new": 5],
               "unreadable destination positions: the source's")
 
+        // a folder the user chose (OneDrive, a network drive): opened when it's there, never an empty library in its place
+        var f = facts(stored: .folder, ran: true, local: true)
+        f.chosenFolder = .ready
+        check(StartupDecision.decide(f), .open(.folder), "chosen folder there: opened")
+        f.chosenFolder = .missing
+        check(StartupDecision.decide(f), .folderUnavailable(.missing), "chosen folder gone (share not connected): said, not replaced")
+        f.chosenFolder = .emptied
+        check(StartupDecision.decide(f), .folderUnavailable(.emptied), "chosen folder emptied (empty mount point): said")
+        f.chosenFolder = .notChosen
+        check(StartupDecision.decide(f), .folderUnavailable(.notChosen), "folder setting without a folder: asks for it")
+        var g = facts(stored: .device)
+        g.chosenFolder = .missing
+        check(StartupDecision.decide(g), .open(.device), "a folder's state matters only when the folder is the choice")
+        check(ChosenFolderState.of(chosen: true, exists: true, hasLibrary: true, hadLibrary: true), .ready, "folder with its library: ready")
+        check(ChosenFolderState.of(chosen: true, exists: true, hasLibrary: false, hadLibrary: false), .ready, "new empty folder, never had a library: ready (a new library)")
+        check(ChosenFolderState.of(chosen: true, exists: true, hasLibrary: false, hadLibrary: true), .emptied, "folder lost its library: emptied")
+        check(ChosenFolderState.of(chosen: true, exists: false, hasLibrary: false, hadLibrary: true), .missing, "folder not there: missing")
+        check(ChosenFolderState.of(chosen: false, exists: true, hasLibrary: true, hadLibrary: true), .notChosen, "nothing remembered: not chosen")
+
+        // where in the picked folder the library goes
+        func pick(_ p: String, cur: String? = "/Users/a/Library/Application Support/Margins/Library", has: Bool = false, _ e: [String] = []) -> FolderPick {
+            FolderPick.decide(picked: p, currentLibrary: cur, pickedHasLibrary: has, entries: e)
+        }
+        check(pick("/Users/a/Library/CloudStorage/OneDrive-KI/Lunta", has: true, ["ops", "papers"]), .useIt, "folder with a library: used as it is")
+        check(pick("/Users/a/Library/CloudStorage/OneDrive-KI/New", [".DS_Store", "Icon\r"]), .useIt, "empty folder (hidden files only): used")
+        check(pick("/Users/a/Library/CloudStorage/OneDrive-KI", ["Documents", "Desktop"]), .useSubfolder, "folder with other things: a Lunta folder inside")
+        check(pick("/Users/a/Library/Application Support/Margins/Library"), .insideLibrary, "the library's own folder: refused")
+        check(pick("/Users/a/Library/Application Support/Margins/Library/papers"), .insideLibrary, "inside the library: refused")
+        check(pick("/Users/a/Library/Application Support/Margins/Library 2", cur: "/Users/a/Library/Application Support/Margins/Library"), .useIt, "a sibling with a similar name: fine")
+        check(pick("/Volumes/share/lab", cur: nil, ["x.docx"]), .useSubfolder, "first launch (no library yet): other things, a Lunta folder")
+        check(FolderPick.isInside("/a/b/", "/a/b"), true, "trailing slash ignored")
+        check(FolderPick.isInside("/a/bc", "/a/b"), false, "prefix of a name isn't inside")
+
+        // the service that syncs a folder, for the words in the dialogs
+        check(FolderPick.service(forPath: "/Users/a/Library/CloudStorage/OneDrive-KarolinskaInstitutet/Lunta"), "OneDrive", "OneDrive (File Provider)")
+        check(FolderPick.service(forPath: "/Users/a/Library/CloudStorage/OneDrive-SharedLibraries-KarolinskaInstitutet/Lab/Lunta"), "SharePoint", "SharePoint library through OneDrive")
+        check(FolderPick.service(forPath: "/Users/a/Library/CloudStorage/Dropbox/Lunta"), "Dropbox", "Dropbox (File Provider)")
+        check(FolderPick.service(forPath: "/Users/a/Dropbox (Personal)/Lunta"), "Dropbox", "Dropbox (older folder)")
+        check(FolderPick.service(forPath: "/Users/a/Library/CloudStorage/Box-Box/Lunta"), "Box", "Box")
+        check(FolderPick.service(forPath: "/Users/a/Library/CloudStorage/GoogleDrive-a@b.se/My Drive/Lunta"), "Google Drive", "Google Drive for desktop")
+        check(FolderPick.service(forPath: "/Volumes/labshare/Lunta"), "a network or external drive", "network share")
+        check(FolderPick.service(forPath: "/Users/a/Documents/Lunta"), nil, "a plain folder")
+        check(LibraryStorage.offered.contains(.folder), true, "the Mac offers a folder")
+
         if failures > 0 { print("\(failures) failed"); exit(1) }
         print("all passed")
     }

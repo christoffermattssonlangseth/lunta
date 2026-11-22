@@ -32,6 +32,8 @@ enum CloudLibrary {
         switch LibraryStorage.stored {
         case .device?: return (localURL, false)
         case .googleDrive?: return (driveURL, false)
+        // start-up has checked that the folder is there (StartupDecision.folderUnavailable otherwise)
+        case .folder?: return (ChosenFolder.url() ?? localURL, false)
         case .iCloud?, nil: break
         }
         guard let container = FileManager.default.url(forUbiquityContainerIdentifier: containerID) else {

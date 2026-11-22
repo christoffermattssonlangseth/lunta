@@ -1133,20 +1133,23 @@ cargo run --bin lunta-sync -- fetch <paper-id> --library ~/lunta-test
 ### Where the library lives on Apple devices
 
 The first time Lunta opens on a Mac, iPhone or iPad it asks **Where should your library live?**: iCloud Drive,
-Google Drive or only on this device. The choice is kept in `UserDefaults` (`libraryStorage`:
-`icloud` | `googleDrive` | `device`), and `CloudLibrary.resolve()` opens that place:
+Google Drive or only on this device; the Mac also offers **Another Folder… (OneDrive, a shared drive)**. The
+choice is kept in `UserDefaults` (`libraryStorage`: `icloud` | `googleDrive` | `device` | `folder`), and
+`CloudLibrary.resolve()` opens that place:
 
 | Choice | Library folder | Sync |
 |---|---|---|
 | iCloud Drive | the app's container, `Documents/Library` | iCloud (as always) |
 | Google Drive | `Application Support/Margins/DriveLibrary` | `DriveLibrarySync` ↔ the "Lunta" folder in Drive |
 | Only on this device | `Application Support/Margins/Library` | none |
+| A folder you choose (Mac only) | the folder picked (`libraryFolderPath` + bookmark `libraryFolderBookmark`) | whatever syncs that folder (OneDrive, Dropbox, …), or a network drive |
 | (not set: used Lunta before the choice existed) | iCloud when available, else the local folder | as before |
 
 **What start-up does** (`StartupDecision.decide`, `apple/Shared/StorageDecision.swift`, tested by
 `node --test apple/storage-tests/`, which compiles it with a Swift test driver):
 
-- A stored choice: open it.
+- A stored choice: open it. A chosen folder is looked at first (`ChosenFolderState`): not there, or there without
+  the library it had, gives `folderUnavailable` (below), never an empty library in its place.
 - Lunta ran here before (the device id `deviceID` is in `UserDefaults`) or the local folder has change logs:
   open the automatic way, as before. Existing users never see the question, and are never moved.
 - iCloud available: look in the iCloud folder for change logs (up to ~12 s, "Looking for your library in
@@ -1202,6 +1205,57 @@ changes. Then the choice is stored and the library reopened: the Mac restarts Lu
 library), the iPhone and iPad open it in place. Moving an iCloud library to Google Drive takes only this device
 out of iCloud; the Mac offers **Keep iCloud and Also Sync with Google Drive** (the bridge) instead, and on iPhone
 and iPad the dialog says that's done by a Mac.
+
+**A folder you choose (Mac)** (`apple/Shared/LibraryFolder.swift`, decisions in `StorageDecision.swift`): for
+work Macs where personal iCloud and Google accounts aren't allowed but OneDrive/SharePoint, Dropbox, Box or a
+network share are. Chosen at first launch (**Another Folder… (OneDrive, a shared drive)**, under the three
+options) or in Library Storage (**Move to a Folder You Choose…** / **Move to Another Folder…**, the folder
+first, then the confirmation naming it). `NSOpenPanel` (New Folder works there; starts in `~/Library/CloudStorage`
+when it exists). Where the library goes (`FolderPick.decide`): a folder with a library is opened as it is (another
+computer's library in OneDrive, say; a move into it merges, as any move does); an empty folder (hidden files
+only) is used; a folder with other things in it gets a `Lunta` folder inside it; the library's own folder or
+one inside it is refused. Starting a new library in an empty folder is confirmed first (“Start a new library
+here?”, with the hint that a library still syncing in may not have arrived). Remembered as the path plus a
+bookmark (`.withoutUI, .withoutMounting` when resolving: follows a renamed or moved folder, never into the
+Trash, never mounts a share or asks). The Mac app isn't sandboxed, so the bookmark is a plain one; a sandboxed
+build would use `.withSecurityScope` (the code switches when `APP_SANDBOX_CONTAINER_ID` is set) and needs the
+`com.apple.security.files.user-selected.read-write` and `com.apple.security.files.bookmarks.app-scope`
+entitlements. `libraryFolderHadLibrary` records that the folder held a library.
+
+*The folder isn't there.* At start-up (`ChosenFolderState`: `missing` = no such folder (share not connected,
+disk unplugged, cloud app signed out, folder deleted); `emptied` = there but without the library it had, e.g.
+an empty mount point; `notChosen`) Lunta shows **Lunta can't find your library folder** / **Your library folder
+is empty** with **Try Again**, **Choose Again…**, **Use the Copy on This Mac** (only when
+`Application Support/Margins/Library` has a library: it becomes the library from now on, “Only on This Mac”, and
+the text says when it last changed and that moving back to the folder later combines the two) and **Quit
+Lunta**. While the library is open, `FolderWatch` looks for `ops/` every 15 s and, if it's gone, says **Lunta
+can't reach your library folder** (Try Again / Quit Lunta / Continue Anyway; changes can't be saved meanwhile).
+lunta-mcp follows `library-root` even when that folder isn't there and says so (“The Lunta library folder … isn't
+available right now …”), instead of falling back to the iCloud or local folder, which could hold an old copy.
+
+*Sync safety.* The library's layout is the one Google Drive for desktop already uses with the Windows and Linux app:
+each device appends only to its own change log (`ops/<device>.jsonl`) and its own `positions/<device>.json`, and
+highlights, notes and metadata are lines in those logs; a paper's files are written by the device that adds it
+(or remakes its reading view). So OneDrive, SharePoint (through the OneDrive app's
+synced libraries), Dropbox and Box sync it like any other folder, and several computers can use it at once,
+also on a network share (each Mac sees the others' changes through `watchForOutsideChanges`, which polls `ops/`
+every 3 s; FSEvents isn't needed). The root `*.json` files (smart folders, watches, New for You) are the only
+ones two devices may both write: if they do at the same moment, the sync app keeps one version and puts the
+other in a conflict copy (“smart-folders (MacBook's conflicted copy).json”), which Lunta ignores. OneDrive's and Dropbox's Files On-Demand keep files online-only
+until read: on the Mac a read downloads them (File Provider), so the library opens; a move out of the folder
+downloads each file first (`CloudLibrary.download`, a coordinated read). Lunta on Windows and Linux can open the
+same folder (its library is a folder too). Not handled: a share that disappears in the middle of a write (the
+write fails and is reported where it happened).
+
+*Why not on iPhone and iPad.* `UIDocumentPickerViewController` can hand an app a folder from any Files provider,
+with a security-scoped bookmark, and that works for “On My iPhone” and a few providers. But the core reads and
+writes plain files, and third-party providers (OneDrive, Dropbox, Box, Google Drive) expect every read and write
+to go through `NSFileCoordinator`: without it changes may never be uploaded (the provider learns about a write
+from the coordination) and online-only files aren't downloaded on read. Those providers also keep folders
+online-only and evict files, so the change logs would need to be fetched one by one before every open, and their
+bookmarks go stale when the provider re-creates its domain. So iPhone and iPad keep iCloud and Google Drive (the
+Drive API) for syncing with such a library's other devices: a Mac with the library in OneDrive can't share it
+with an iPhone except through those. (`LibraryStorage.offered` leaves the folder out there.)
 
 Not done yet: background sync (BGAppRefreshTask) on iPhone and iPad; the Share and Safari
 extensions write to the App Group inbox as before, so they work with any choice.

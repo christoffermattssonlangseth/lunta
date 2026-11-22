@@ -21,6 +21,8 @@ enum StorageText {
             #endif
         case .device:
             return "No syncing: the library stays on this device. Good for trying Lunta out; you can move it to iCloud or Google Drive later."
+        case .folder:
+            return "For a work Mac with OneDrive, SharePoint, Dropbox, Box or a network drive instead of iCloud or Google: the library is kept in a folder you choose there, and that app syncs it (Lunta on Windows and Linux can open the same folder)."
         }
     }
 
@@ -45,6 +47,7 @@ enum StorageText {
         switch s {
         case .iCloud: return "icloud"
         case .googleDrive: return "externaldrive.badge.icloud"
+        case .folder: return "folder"
         #if os(macOS)
         case .device: return "desktopcomputer"
         #else
@@ -55,7 +58,11 @@ enum StorageText {
 
     /// "in …"
     static func place(_ s: LibraryStorage) -> String {
-        s == .device ? "a folder on \(thisDevice) only" : s.name
+        switch s {
+        case .device: return "a folder on \(thisDevice) only"
+        case .folder: return "the folder you chose"
+        default: return s.name
+        }
     }
 
     static var thisDevice: String {
@@ -85,7 +92,18 @@ struct StorageChoiceView: View {
                     Text("Where should your library live?").font(.largeTitle.weight(.bold))
                     Text(StorageText.privacy).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
-                ForEach(LibraryStorage.allCases, id: \.self) { s in option(s) }
+                ForEach(LibraryStorage.offered.filter { $0 != .folder }, id: \.self) { s in option(s) }
+                #if os(macOS)
+                // a work Mac without iCloud or Google: a folder in OneDrive, SharePoint, Dropbox or on a network drive
+                VStack(alignment: .leading, spacing: 4) {
+                    Button("Another Folder… (OneDrive, a shared drive)") { Task { await chooseFolder() } }
+                        .buttonStyle(.link)
+                        .disabled(drive.signingIn)
+                    Text("Keep the library in a folder you choose; OneDrive, Dropbox, Box or the network drive syncs it.")
+                        .font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 14)
+                #endif
                 if let e = drive.error, (selection ?? recommended) == .googleDrive {
                     Text(e).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
                 }
@@ -152,6 +170,20 @@ struct StorageChoiceView: View {
         .opacity(off ? 0.6 : 1)
     }
 
+    #if os(macOS)
+    /// Another Folder…: pick it, and (an empty one) confirm starting a new library there.
+    private func chooseFolder() async {
+        guard let pick = await FolderChooser.choose(currentLibrary: nil) else { return }
+        switch pick {
+        case .refused(let t): FolderChooser.refuse(t)
+        case .use(let url, let existing):
+            if !existing, !FolderChooser.confirmNew(url) { return }
+            ChosenFolder.save(url)
+            onChosen(.folder)
+        }
+    }
+    #endif
+
     private func go() {
         let s = chosen
         if s == .googleDrive {
@@ -185,9 +217,10 @@ final class LibraryMover: ObservableObject {
     @Published private(set) var done: String?
     @Published private(set) var error: String?
 
-    func move(_ model: LibraryModel, to target: LibraryStorage) async {
+    /// `folder`: the folder to move to, for `.folder` (picked in Library Storage).
+    func move(_ model: LibraryModel, to target: LibraryStorage, folder: URL? = nil) async {
         let from = LibraryLocation.current(inCloud: model.inCloud)
-        guard target != from, !working else { return }
+        guard target != from || (target == .folder && folder != nil), !working else { return }
         error = nil
         done = nil
         let drive = DriveLibrarySync.shared
@@ -225,11 +258,12 @@ final class LibraryMover: ObservableObject {
         }
         progress = "Copying your library…"
         let src = model.libraryURL
-        guard let dst = await Task.detached(operation: { LibraryLocation.root(for: target) }).value else {
-            error = StorageText.iCloudUnavailable
+        guard let dst = await Task.detached(operation: { folder ?? LibraryLocation.root(for: target) }).value else {
+            error = target == .iCloud ? StorageText.iCloudUnavailable : "Lunta couldn’t find the folder to move the library to."
             if from == .googleDrive { drive.start(model) }
             return
         }
+        let joining = target == .folder && CloudLibrary.hasLogs(dst)   // a library from another computer there already
         let result = await Task.detached {
             await LibraryLocation.copyLibrary(from: src, to: dst) { line in
                 Task { @MainActor in LibraryMover.shared.progress = line }
@@ -240,10 +274,15 @@ final class LibraryMover: ObservableObject {
             if from == .googleDrive { drive.start(model) }
             return
         }
+        if target == .folder { ChosenFolder.save(dst) }
         LibraryStorage.stored = target
-        var text = "Your library is now in \(StorageText.place(target)). The old copy is still \(LibraryLocation.oldCopyDescription(from, root: src)); Lunta doesn’t use it any more, and nothing in it was changed."
+        let place = target == .folder ? ChosenFolder.describe(dst) : StorageText.place(target)
+        var text = "Your library is now in \(place). The old copy is still \(LibraryLocation.oldCopyDescription(from, root: src)); Lunta doesn’t use it any more, and nothing in it was changed."
         if target == .googleDrive {
             text += " If your Google Drive already had a Lunta library (from Android, say), the two are combined at the first sync."
+        }
+        if joining {
+            text += " The folder already had a Lunta library (from another computer, say): the two were combined."
         }
         done = text
         reopen?(text)
@@ -263,6 +302,8 @@ struct LibraryStorageView: View {
     @ObservedObject private var mover = LibraryMover.shared
     @ObservedObject private var drive = DriveLibrarySync.shared
     @State private var confirming: LibraryStorage?
+    /// The folder picked for Move to a Folder (asked before the confirmation), and whether it has a library.
+    @State private var pickedFolder: (url: URL, existing: Bool)?
     @State private var iCloudAvailable = true
     /// The library's size on disk (iCloud: including what isn't downloaded), for the Google Drive line.
     @State private var librarySize: UInt64?
@@ -281,6 +322,12 @@ struct LibraryStorageView: View {
                     DriveSyncStatusView()
                     DriveDownloadsView()
                 }
+                #if os(macOS)
+                if current == .folder {
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.libraryURL]) }
+                        .buttonStyle(.link)
+                }
+                #endif
             } header: { Text("Your library is in") }
 
             Section {
@@ -292,9 +339,9 @@ struct LibraryStorageView: View {
                 } else if let d = mover.done {
                     Text(d).fixedSize(horizontal: false, vertical: true)
                 } else {
-                    ForEach(LibraryStorage.allCases.filter { $0 != current }, id: \.self) { s in
+                    ForEach(LibraryStorage.offered.filter { $0 != current || $0 == .folder }, id: \.self) { s in
                         VStack(alignment: .leading, spacing: 4) {
-                            Button(moveTitle(s)) { confirming = s }
+                            Button(moveTitle(s)) { if s == .folder { pickFolder() } else { confirming = s } }
                                 .disabled(s == .iCloud && !iCloudAvailable)
                             Text(s == .iCloud && !iCloudAvailable ? StorageText.iCloudUnavailable : StorageText.explanation(s))
                                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -317,14 +364,14 @@ struct LibraryStorageView: View {
             let root = model.libraryURL
             librarySize = await Task.detached(priority: .utility) { LibraryLocation.size(of: root) }.value
         }
-        .alert(confirming.map { moveTitle($0).replacingOccurrences(of: "…", with: "?") } ?? "", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }), presenting: confirming) { s in
+        .alert(confirming.map { confirmTitle($0) } ?? "", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }), presenting: confirming) { s in
             Button(s == .googleDrive ? "Sign In and Move" : "Move") { start(s) }
             #if os(macOS)
             if current == .iCloud && s == .googleDrive {
                 Button("Keep iCloud and Also Sync with Google Drive") { openWindow(id: "drive") }
             }
             #endif
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) { pickedFolder = nil }
         } message: { s in
             Text(confirmText(s))
         }
@@ -346,7 +393,36 @@ struct LibraryStorageView: View {
             #else
             return "Only on \(StorageText.thisDevice). Not synced."
             #endif
+        case .folder:
+            let service = FolderPick.service(forPath: model.libraryURL.path)
+            let by = service.map { $0.hasPrefix("a ") ? "It’s \(ChosenFolder.serviceWords(model.libraryURL.path)), so it’s shared with every computer that has it." : "\($0) syncs it with your other computers." }
+                ?? "Lunta doesn’t sync it itself: put it in a folder that OneDrive, Dropbox, Box or Google Drive for desktop syncs, or on a network drive, to use it on other computers."
+            return "In \(ChosenFolder.describe(model.libraryURL)). \(by)"
         }
+    }
+
+    private func confirmTitle(_ s: LibraryStorage) -> String {
+        if s == .folder, let f = pickedFolder { return "Move to “\(f.url.lastPathComponent)”?" }
+        return moveTitle(s).replacingOccurrences(of: "…", with: "?")
+    }
+
+    /// Move to a Folder: the folder first (the confirmation names it).
+    private func pickFolder() {
+        #if os(macOS)
+        Task {
+            guard let pick = await FolderChooser.choose(currentLibrary: model.libraryURL) else { return }
+            switch pick {
+            case .refused(let t): FolderChooser.refuse(t)
+            case .use(let url, let existing):
+                if url.standardizedFileURL == model.libraryURL.standardizedFileURL {
+                    FolderChooser.refuse("Your library is already in that folder.")
+                    return
+                }
+                pickedFolder = (url, existing)
+                confirming = .folder
+            }
+        }
+        #endif
     }
 
     private func moveTitle(_ s: LibraryStorage) -> String {
@@ -354,10 +430,21 @@ struct LibraryStorageView: View {
         case .iCloud: return "Move to iCloud Drive…"
         case .googleDrive: return "Move to Google Drive…"
         case .device: return "Keep Only on \(StorageText.thisDevice.prefix(1).uppercased() + StorageText.thisDevice.dropFirst())…"
+        case .folder: return current == .folder ? "Move to Another Folder…" : "Move to a Folder You Choose…"
         }
     }
 
     private func confirmText(_ s: LibraryStorage) -> String {
+        if s == .folder, let f = pickedFolder {
+            var t = "Lunta copies your library (papers, notes, highlights, reading positions) to \(ChosenFolder.describe(f.url)) and opens it there. The copy where it is now is left as it is, so nothing is lost."
+            if f.existing { t += "\n\nThat folder already has a Lunta library (from another computer, say): the two are combined." }
+            if current == .iCloud { t += "\n\nYour other Apple devices keep using the iCloud library unless you move them too." }
+            t += "\n\n" + ChosenFolder.syncNote
+            if librarySize.map({ $0 > 0 }) == true {
+                t += " This library: about \(ByteCountFormatter.string(fromByteCount: Int64(librarySize!), countStyle: .file))."
+            }
+            return t
+        }
         var t = "Lunta copies your library (papers, notes, highlights, reading positions) to \(StorageText.place(s)) and opens it there. The copy where it is now is left as it is, so nothing is lost."
         if current == .iCloud && s != .iCloud {
             #if os(macOS)
@@ -381,7 +468,9 @@ struct LibraryStorageView: View {
     }
 
     private func start(_ s: LibraryStorage) {
-        Task { await mover.move(model, to: s) }
+        let folder = s == .folder ? pickedFolder?.url : nil
+        pickedFolder = nil
+        Task { await mover.move(model, to: s, folder: folder) }
     }
 }
 

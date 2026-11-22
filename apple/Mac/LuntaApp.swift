@@ -20,6 +20,9 @@ struct LuntaApp: App {
                     LibraryWindow().environmentObject(model)
                         .handlesExternalEvents(preferring: ["lunta", "margins"], allowing: ["*"])
                         .modifier(FoundInICloudAlert(isPresented: $holder.foundInICloud))
+                } else if let state = holder.folderUnavailable {
+                    FolderUnavailableView(state: state, tryAgain: { holder.retryFolder() },
+                                          chosen: { holder.retryFolder() }, useLocal: { holder.useLocalCopy() })
                 } else if let ask = holder.asking {
                     StorageChoiceView(recommended: ask.recommended, iCloudAvailable: ask.iCloudAvailable) { holder.choose($0) }
                 } else {
@@ -99,6 +102,8 @@ final class ModelHolder: ObservableObject {
     @Published var asking: StorageAsk?
     /// A new Mac found the library in iCloud and opened it: say so once.
     @Published var foundInICloud = false
+    /// The library is in a folder the user chose, and it isn't there: Try Again / Choose Again / the copy on this Mac.
+    @Published var folderUnavailable: ChosenFolderState?
     private var server: ExtensionServer?
     private var citations: CitationServer?
     init() {
@@ -116,11 +121,31 @@ final class ModelHolder: ObservableObject {
             case .openFoundInICloud:
                 LibraryStorage.stored = .iCloud
                 foundInICloud = true
+            case .folderUnavailable(let state):
+                folderUnavailable = state
+                return   // retryFolder() / useLocalCopy() open the library
             case .open, .lookInICloud:
                 break
             }
         }
         await open()
+    }
+
+    /// Try Again (or a folder chosen again): look for the chosen folder once more.
+    func retryFolder() {
+        folderUnavailable = nil
+        progress = "Looking for your library folder…"
+        Task {
+            let state = await Task.detached { ChosenFolder.state() }.value
+            if state == .ready { await open() } else { folderUnavailable = state }
+        }
+    }
+
+    /// Use the Copy on This Mac: the library in this Mac's own folder, from now on.
+    func useLocalCopy() {
+        LibraryStorage.stored = .device
+        folderUnavailable = nil
+        Task { await open() }
     }
 
     /// The first-launch answer (for Google Drive, after signing in).
@@ -179,6 +204,10 @@ final class ModelHolder: ObservableObject {
             model.watchForOutsideChanges()
             NarrationRenderer.shared.model = model
             LibraryLocation.publishRoot(url)   // where lunta-mcp (AI agents) finds the library
+            if LibraryStorage.stored == .folder {
+                ChosenFolder.noteOpened(url)
+                FolderWatch.shared.start(url)   // says so at once if the folder goes away
+            }
             if LibraryStorage.stored == .googleDrive {
                 DriveLibrarySync.shared.start(model)   // the library lives in Google Drive: sync it
             } else {

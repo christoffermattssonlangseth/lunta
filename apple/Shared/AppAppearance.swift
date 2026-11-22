@@ -76,7 +76,9 @@ struct LibraryStorageSettingRow: View {
     var body: some View {
         LabeledContent("Library") {
             HStack {
-                Text(LibraryStorage.stored?.name ?? "Automatic (iCloud Drive when available)")
+                Text(LibraryStorage.stored == .folder
+                     ? "Folder “\(ChosenFolder.storedPath.map { ($0 as NSString).lastPathComponent } ?? "")”"
+                     : LibraryStorage.stored?.name ?? "Automatic (iCloud Drive when available)")
                 Spacer()
                 Button("Change…") { openWindow(id: "storage") }
             }

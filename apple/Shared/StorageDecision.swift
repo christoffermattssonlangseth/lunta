@@ -14,6 +14,9 @@ enum LibraryStorage: String, CaseIterable, Sendable {
     case googleDrive = "googleDrive"
     /// A folder on this device, not synced.
     case device = "device"
+    /// A folder the user chose (Mac only): inside OneDrive, Dropbox, Box or Google Drive for
+    /// desktop, or on a network drive. That service syncs it, not Lunta (ChosenFolder, LibraryFolder.swift).
+    case folder = "folder"
 
     static let defaultsKey = "libraryStorage"
 
@@ -27,7 +30,87 @@ enum LibraryStorage: String, CaseIterable, Sendable {
         case .iCloud: return "iCloud Drive"
         case .googleDrive: return "Google Drive"
         case .device: return "Only on This Device"
+        case .folder: return "A Folder You Choose"
         }
+    }
+
+    /// The places this platform offers. A chosen folder is the Mac's: on iPhone and iPad a folder
+    /// from another app's Files provider (OneDrive, Dropbox) isn't reliable for a library (docs/development.md).
+    static var offered: [LibraryStorage] {
+        #if os(macOS)
+        return allCases
+        #else
+        return [.iCloud, .googleDrive, .device]
+        #endif
+    }
+}
+
+/// A chosen folder (LibraryStorage.folder) as start-up finds it.
+enum ChosenFolderState: Equatable, Sendable {
+    case ready
+    /// Not there: a network drive that isn't connected, an external disk that isn't plugged in, a
+    /// cloud folder whose app is signed out, or the folder was deleted (in the Trash counts as gone).
+    case missing
+    /// There, but without the library it had: an empty mount point, a cloud folder emptied or not synced back yet.
+    case emptied
+    /// The setting says "a folder", but no folder is remembered.
+    case notChosen
+
+    static func of(chosen: Bool, exists: Bool, hasLibrary: Bool, hadLibrary: Bool) -> ChosenFolderState {
+        guard chosen else { return .notChosen }
+        guard exists else { return .missing }
+        if !hasLibrary && hadLibrary { return .emptied }
+        return .ready
+    }
+}
+
+/// The folder the user picked for the library: used as it is, or a "Lunta" folder made inside it.
+enum FolderPick: Equatable, Sendable {
+    /// The folder has a library, or is empty: the library goes right there.
+    case useIt
+    /// The folder has other things in it (OneDrive's top folder, Documents): the library goes into
+    /// a "Lunta" folder inside it (which may already hold it).
+    case useSubfolder
+    /// The folder is the library's own folder or inside it.
+    case insideLibrary
+
+    static let subfolder = "Lunta"
+
+    /// `entries`: the picked folder's names. Paths without symlinks.
+    static func decide(picked: String, currentLibrary: String?, pickedHasLibrary: Bool, entries: [String]) -> FolderPick {
+        if let cur = currentLibrary, isInside(picked, cur) { return .insideLibrary }
+        if pickedHasLibrary { return .useIt }
+        let ignored: Set<String> = ["Icon\r", "desktop.ini", "Thumbs.db"]
+        let visible = entries.filter { !$0.hasPrefix(".") && !ignored.contains($0) }
+        return visible.isEmpty ? .useIt : .useSubfolder
+    }
+
+    /// `path` is `root` or inside it.
+    static func isInside(_ path: String, _ root: String) -> Bool {
+        func trim(_ p: String) -> String { p.count > 1 && p.hasSuffix("/") ? String(p.dropLast()) : p }
+        let p = trim(path), r = trim(root)
+        return p == r || p.hasPrefix(r == "/" ? "/" : r + "/")
+    }
+
+    /// The service that syncs a folder, from its path ("OneDrive", "SharePoint", "Dropbox", "Box",
+    /// "Google Drive", "iCloud Drive"), "a network or external drive" under /Volumes, nil for a plain folder.
+    static func service(forPath path: String) -> String? {
+        let parts = path.split(separator: "/").map(String.init)
+        if let i = parts.firstIndex(of: "CloudStorage"), i > 0, parts[i - 1] == "Library", i + 1 < parts.count {
+            let name = parts[i + 1]
+            if name.hasPrefix("OneDrive-SharedLibraries") { return "SharePoint" }
+            if name.hasPrefix("OneDrive") { return "OneDrive" }
+            if name.hasPrefix("Dropbox") { return "Dropbox" }
+            if name.hasPrefix("Box") { return "Box" }
+            if name.hasPrefix("GoogleDrive") { return "Google Drive" }
+            return name.split(separator: "-").first.map(String.init)
+        }
+        if parts.count >= 3, parts[0] == "Users", parts[2] == "Dropbox" || parts[2].hasPrefix("Dropbox (") { return "Dropbox" }
+        if parts.count >= 3, parts[0] == "Users", parts[2].hasPrefix("OneDrive") { return "OneDrive" }
+        if parts.count >= 3, parts[0] == "Users", parts[2] == "Box" { return "Box" }
+        if path.contains("/Library/Mobile Documents/com~apple~CloudDocs") { return "iCloud Drive" }
+        if parts.first == "Volumes" { return "a network or external drive" }
+        return nil
     }
 }
 
@@ -41,6 +124,8 @@ struct StorageFacts: Equatable, Sendable {
     var localLibraryExists: Bool
     var iCloudAvailable: Bool
     var iCloudLibraryExists: Bool?
+    /// The chosen folder's state, when the stored choice is a folder (nil: not looked at).
+    var chosenFolder: ChosenFolderState? = nil
 }
 
 enum StartupDecision: Equatable, Sendable {
@@ -53,9 +138,15 @@ enum StartupDecision: Equatable, Sendable {
     case openFoundInICloud
     /// Nothing here yet: ask where the library should live. `recommended` is preselected.
     case ask(recommended: LibraryStorage)
+    /// The library is in a folder the user chose, and the folder isn't there (or lost the library):
+    /// say so, with Try Again, Choose Again and the copy on this Mac. Never an empty library in its place.
+    case folderUnavailable(ChosenFolderState)
 
     static func decide(_ f: StorageFacts) -> StartupDecision {
-        if let s = f.stored { return .open(s) }
+        if let s = f.stored {
+            if s == .folder, let c = f.chosenFolder, c != .ready { return .folderUnavailable(c) }
+            return .open(s)
+        }
         // people who used Lunta before the choice existed: as before, never the question
         if f.hasRunBefore || f.localLibraryExists { return .open(nil) }
         if f.iCloudAvailable {

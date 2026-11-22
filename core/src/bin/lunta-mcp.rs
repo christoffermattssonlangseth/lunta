@@ -30,10 +30,12 @@ fn library_root() -> PathBuf {
     if let Ok(p) = std::env::var("LUNTA_LIBRARY") {
         return PathBuf::from(p);
     }
-    // where the Mac app has its library (iCloud, Google Drive or only on this Mac, chosen in the app)
+    // where the Mac app has its library (iCloud, Google Drive, only on this Mac or a folder the user
+    // chose, e.g. in OneDrive or on a network drive). Followed even when it isn't there right now (a
+    // share not connected): falling back to iCloud or the local folder would read and write an old copy
     if let Ok(p) = std::fs::read_to_string(home().join("Library/Application Support/Lunta/library-root")) {
         let p = PathBuf::from(p.trim());
-        if !p.as_os_str().is_empty() && p.is_dir() {
+        if !p.as_os_str().is_empty() {
             return p;
         }
     }
@@ -50,6 +52,15 @@ fn open() -> Result<Arc<Library>, String> {
 
 fn open_at(root: &std::path::Path) -> Result<Arc<Library>, String> {
     if !root.exists() {
+        if std::fs::read_to_string(home().join("Library/Application Support/Lunta/library-root"))
+            .is_ok_and(|p| std::path::Path::new(p.trim()) == root)
+        {
+            return Err(format!(
+                "The Lunta library folder {} isn't available right now (a network drive that isn't connected, or a \
+                 OneDrive or Dropbox folder that's offline?). Connect it, or open the Lunta app to choose it again.",
+                root.display()
+            ));
+        }
         return Err(format!("No Lunta library at {} (open the Lunta app once first)", root.display()));
     }
     let cache = home().join("Library/Caches/Lunta/agent");
