@@ -72,6 +72,9 @@
   // past the last page (or before the first) of a book's chapter, read chapter by chapter
   // (ChapterReader.swift): the app opens the next chapter (or the previous one, at its end)
   window.luntaTurn = function(d){
+    // just after a selection dragged over the edge turned the page: no further turn yet
+    // (a tap or key right then would race past the page the highlight is to end on)
+    if (Date.now() - edgeAt < 1200) return;
     var n = page() + d;
     if (on && (n < 0 || n > pages() - 1) && document.querySelector('meta[name="lunta-part"]')) { post(n < 0 ? 'partPrev' : 'partNext'); return; }
     window.luntaGoToPage(n, true);
