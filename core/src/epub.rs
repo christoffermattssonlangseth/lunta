@@ -312,7 +312,7 @@ const PART_WORDS: u64 = 1_000;
 const PART_IMAGES: u64 = 12;
 
 /// Version of the part files (made again when it changes).
-const PART_MARK: &str = "lunta-part-v1";
+const PART_MARK: &str = "lunta-part-v2";
 
 /// The reading view's parts (see `ReadingPart`), writing their files when needed; for a small
 /// reading view only the decision (`chaptered` false). `force`: parts even for a small one (tests).
@@ -438,6 +438,15 @@ pub fn reading_parts(book: &EpubBook, force: bool) -> Result<ReadingParts> {
             xml_escape(&titles[q as usize])
         )
     };
+    // where the book's numbered headings, problems, tables and equations are (`xref_keys`): a
+    // mention of "chapter 8" or "problem 3.5" in one chapter opens the part with its target
+    let mut xrefs = serde_json::Map::new();
+    for (p, b) in bodies.iter().enumerate() {
+        for k in xref_keys(b) {
+            xrefs.entry(k).or_insert(serde_json::Value::from(p as u64));
+        }
+    }
+    let xref_meta = format!("<meta name=\"lunta-xrefs\" content=\"{}\"/>", xml_escape(&serde_json::Value::Object(xrefs).to_string()));
     let mut start = 0u64;
     for (p, g) in groups.iter().enumerate() {
         let body_tag = format!("<body class=\"continuous lunta-part\">{}\n", nav(p, -1));
@@ -445,7 +454,7 @@ pub fn reading_parts(book: &EpubBook, force: bool) -> Result<ReadingParts> {
         let text = crate::highlight::dom_text(&draft);
         let length = text.encode_utf16().count() as u64;
         let metas = format!(
-            "<meta name=\"lunta-text-base\" content=\"{start}\"/><meta name=\"lunta-part\" content=\"{p}\" data-parts=\"{}\" data-version=\"{PART_MARK}\"/>",
+            "<meta name=\"lunta-text-base\" content=\"{start}\"/><meta name=\"lunta-part\" content=\"{p}\" data-parts=\"{}\" data-version=\"{PART_MARK}\"/>{xref_meta}",
             groups.len()
         );
         let mut h = head.clone();
@@ -470,6 +479,93 @@ pub fn reading_parts(book: &EpubBook, force: bool) -> Result<ReadingParts> {
         start += length.saturating_sub(1);
     }
     Ok(out)
+}
+
+/// What a part's page can be pointed at by a cross-reference in the text ("chapter 8", "section
+/// 10.4.1", "appendix C", "problem 3.5", "Table 2", "Eq. (2.3)"), as keys the page script
+/// (CrossReferences.swift) makes the same way from the page: a numbered heading ("8 Measuring
+/// performance" is `8`, "C.5.2 …" `C.5.2`, "Chapter 3 …" also `ch:3`, "Appendix B …" `app:B`
+/// and `B`, "Supplementary Note 2" `note:2`), a problem or exercise label at the start of its
+/// paragraph (`problem:3.5`), a table caption (`table:2`, a supplementary one `table:S2`) and an
+/// equation's number tag (`eq:2.3`). The script finds targets in its own page; these say which
+/// other part has one.
+pub(crate) fn xref_keys(html: &str) -> Vec<String> {
+    use std::sync::OnceLock;
+    static RES: OnceLock<[Regex; 5]> = OnceLock::new();
+    let [heading, head, problem, caption, eq] = RES.get_or_init(|| {
+        let num = r"(?:S?\d+(?:\.\d+)*|[A-Z](?:\.\d+)*)";
+        [
+            Regex::new(r"(?s)<h[1-6]\b[^>]*>(.*?)</h[1-6]>").unwrap(),
+            Regex::new(&format!(
+                r"^(?:([Cc]hapter|CHAPTER|[Ss]ection|SECTION|[Aa]ppendix|APPENDIX|[Ss]upplementary\s+[Nn]ote|SUPPLEMENTARY\s+NOTE)\s+)?({num})[.:]?(?:\s+(\S)|$)"
+            ))
+            .unwrap(),
+            Regex::new(r"(?s)<(?:p|div|li)\b[^>]*>\s*<(?:strong|b)\b[^>]*>\s*(?:Problem|Exercise)\s+(\d+(?:\.\d+)*|[A-Z](?:\.\d+)+)\s*</(?:strong|b)>").unwrap(),
+            Regex::new(r"(?s)<(caption|figcaption)\b[^>]*>(.*?)</(?:caption|figcaption)>").unwrap(),
+            Regex::new(r#"class="[^"]*\bltx_tag_equation\b[^"]*"[^>]*>\s*\((\d+(?:\.\d+)*[a-z]?)\)\s*<"#).unwrap(),
+        ]
+    });
+    static TABLE: OnceLock<Regex> = OnceLock::new();
+    let table = TABLE.get_or_init(|| {
+        Regex::new(r"^(Supplementary\s+|Suppl?\.\s*|Extended\s+Data\s+)?Table\s+(S?\d+(?:\.\d+)*|[A-Z](?:\.\d+)+)(?:[^A-Za-z0-9]|$)").unwrap()
+    });
+    let mut out = vec![];
+    for c in heading.captures_iter(html) {
+        out.extend(heading_keys(&strip(&c[1]), head));
+    }
+    for c in problem.captures_iter(html) {
+        out.push(format!("problem:{}", &c[1]));
+    }
+    for c in caption.captures_iter(html) {
+        if let Some(m) = table.captures(&strip(&c[2])) {
+            out.push(format!("table:{}", table_key(m.get(1).map(|x| x.as_str()).unwrap_or(""), &m[2])));
+        }
+    }
+    for c in eq.captures_iter(html) {
+        out.push(format!("eq:{}", &c[1]));
+    }
+    out
+}
+
+/// A numbered heading's keys (see `xref_keys`); none for an unnumbered one, or for one that only
+/// starts with a capital ("A brief history").
+fn heading_keys(text: &str, head: &Regex) -> Vec<String> {
+    let Some(m) = head.captures(text) else { return vec![] };
+    let n = m[2].to_string();
+    let letter = n.len() == 1 && lettered(&n);
+    let pre = m.get(1).map(|x| x.as_str().split_whitespace().next().unwrap_or("").to_ascii_lowercase()).unwrap_or_default();
+    match pre.as_str() {
+        "" => {
+            let next = m.get(3).and_then(|x| x.as_str().chars().next());
+            if letter && !next.is_some_and(|c| c.is_uppercase() || c.is_ascii_digit()) {
+                return vec![];
+            }
+            vec![n]
+        }
+        "chapter" if !n.contains('.') => vec![format!("ch:{n}"), n],
+        "chapter" | "section" => vec![n],
+        "appendix" if lettered(&n) => vec![format!("app:{n}"), n],
+        "appendix" => vec![format!("app:{n}")],
+        _ => vec![format!("note:{}", n.strip_prefix('S').filter(|r| r.starts_with(|c: char| c.is_ascii_digit())).unwrap_or(&n))],
+    }
+}
+
+/// A number with a letter for its first part: an appendix's "C", "B.2".
+fn lettered(n: &str) -> bool {
+    let b = n.as_bytes();
+    b[0].is_ascii_uppercase() && (b.len() == 1 || b[1] == b'.')
+}
+
+/// "Supplementary Table 1" and "Table S1" are both `S1`, "Extended Data Table 2" `E2`.
+fn table_key(pre: &str, n: &str) -> String {
+    let pre = pre.to_ascii_lowercase();
+    if pre.starts_with("ext") {
+        format!("E{n}")
+    } else if !pre.is_empty() && !n.starts_with('S') {
+        format!("S{n}")
+    } else {
+        n.to_string()
+    }
 }
 
 fn xml_escape(s: &str) -> String {

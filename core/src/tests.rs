@@ -1282,6 +1282,44 @@ fn reading_parts_are_slices_of_the_continuous_view() {
 }
 
 #[test]
+fn cross_reference_targets_in_a_part() {
+    let keys = epub::xref_keys(concat!(
+        "<h1 id=\"s208\">10 Convolutional networks</h1><h2 id=\"s219\">10.4 Downsampling and upsampling</h2>",
+        "<h3 id=\"s220\">10.4.1 Downsampling</h3><h3 id=\"s228\">Notes</h3><h3>1D convolution</h3>",
+        "<h1 id=\"s655\">C Probability</h1><h3>C.5.2 Kullback-Leibler divergence</h3><h2>A brief history</h2>",
+        "<h1>Chapter 3: Methods</h1><h2>Appendix B Proofs</h2><h2>Supplementary Note S2 Data</h2><h2>2. Results</h2>",
+        "<p><strong>Problem 2.1</strong> To walk “downhill”…</p><p>See <strong>Problem 2.2</strong> later.</p>",
+        "<table><caption>Table 3: Results</caption></table><figure><figcaption>Supplementary Table 1. More</figcaption></figure>",
+        "<figure><figcaption><strong>Figure 2.1</strong> Not a table</figcaption></figure>",
+        "<span class=\"ltx_tag ltx_tag_equation ltx_align_right\">(2.3)</span>",
+    ));
+    assert_eq!(
+        keys,
+        ["10", "10.4", "10.4.1", "C", "C.5.2", "ch:3", "3", "app:B", "B", "note:2", "2", "problem:2.1", "table:3", "table:S1", "eq:2.3"],
+        "{keys:?}"
+    );
+}
+
+#[test]
+fn chaptered_parts_know_where_the_books_targets_are() {
+    let words = |n: usize, w: &str| vec![w; n].join(" ");
+    let long = words(1200, "word");
+    let book = sample_book(&[
+        ("ch01.xhtml", &format!("<section><h1 id=\"s1\">1 Start</h1><p>{long} as chapter 2 and problem 2.1 show.</p></section>")),
+        ("ch02.xhtml", &format!("<section><h1 id=\"s2\">2 More</h1><h2 id=\"s3\">2.1 Detail</h2><p>{long}</p><p><strong>Problem 2.1</strong> Show it.</p></section>")),
+    ]);
+    let r = epub::reading_parts(&book, true).unwrap();
+    assert_eq!(r.parts.len(), 2);
+    let want = "<meta name=\"lunta-xrefs\" content=\"{&quot;1&quot;:0,&quot;2&quot;:1,&quot;2.1&quot;:1,&quot;problem:2.1&quot;:1}\"/>";
+    for p in &r.parts {
+        let file = std::fs::read_to_string(&p.path).unwrap();
+        assert!(file.contains(want), "{file}");
+        // in the head: no text added to the part
+        assert_eq!(highlight::dom_text(&file), p.text);
+    }
+}
+
+#[test]
 fn big_reading_views_are_chaptered() {
     // a textbook (204,000 words, 677 images, 29 chapters): chapter by chapter
     assert!(epub::chaptered(29, 204_000, 677, 50_000_000));

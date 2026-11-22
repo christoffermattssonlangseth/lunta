@@ -19,7 +19,8 @@ import LuntaCore
 //
 // What crosses chapters: the contents and links open the chapter (`go`); turning past a
 // chapter's last page (or before its first) opens the next (previous) one, as does the
-// "Next: …" link at its end; Find searches the whole book (`BookFind`: counted in the parts'
+// "Next: …" link at its end, as do cross-references to another chapter ("see chapter 8",
+// CrossReferences.swift: `.xref`); Find searches the whole book (`BookFind`: counted in the parts'
 // texts, found in the page of the part it is in); Listen goes on into the next chapter (the
 // readers); citations find their references in the reference list's chapter (`luntaSetShelf`,
 // CitationPopover.swift).
@@ -54,6 +55,8 @@ final class ChapterReader: ObservableObject {
         case offset(Int)
         case anchor(String)
         case reference(Int)
+        /// A cross-reference's target ("chapter 8", "problem 3.5": CrossReferences.swift), by its key.
+        case xref(String)
         case annotation(String)
     }
 
@@ -160,7 +163,9 @@ final class ChapterReader: ObservableObject {
         }
         let a: After
         if let f = url.fragment, !f.isEmpty {
-            if f.hasPrefix("lunta-ref-"), let i = Int(f.dropFirst(10)) { a = .reference(i) } else { a = .anchor(f) }
+            if f.hasPrefix("lunta-ref-"), let i = Int(f.dropFirst(10)) { a = .reference(i) }
+            else if f.hasPrefix("lunta-xref-") { a = .xref(String(f.dropFirst(11)).removingPercentEncoding ?? String(f.dropFirst(11))) }
+            else { a = .anchor(f) }
         } else { a = .top }
         go(k, then: a)
         return true
@@ -207,6 +212,9 @@ final class ChapterReader: ObservableObject {
         case .offset(let o): c.scroll(toOffset: o)
         case .anchor(let x): v.evaluateJavaScript(ReaderAssets.scrollJS(x))
         case .reference(let i): v.evaluateJavaScript("window.luntaShowReference && luntaShowReference(\(i))")
+        case .xref(let k):
+            let key = k.filter { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == ":") }
+            v.evaluateJavaScript("window.luntaXrefGo && luntaXrefGo('\(key)')")
         case .annotation(let id): c.showAnnotation(id)
         }
     }

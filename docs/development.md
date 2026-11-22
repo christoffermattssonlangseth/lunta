@@ -189,7 +189,11 @@ Now (`apple/Shared/ChapterReader.swift`, `core/src/epub.rs`):
   a narration rendered on the Mac for the whole book isn't used for these). Citations find their
   references in the reference list's part: the app hands its page to the others (`luntaSetShelf`, parsed
   with DOMParser, never part of the page), so the citation card and the References list work, and "Show in
-  References" opens that chapter at the entry (`#lunta-ref-<n>`). The Summary card is left out (one
+  References" opens that chapter at the entry (`#lunta-ref-<n>`). Cross-references ("chapter 8",
+  "section 10.4.1", "appendix C", "problem 3.5": `CrossReferences.swift`) are linked in every reading
+  view when the target exists; each part's `<meta name="lunta-xrefs">` (core `epub::xref_keys`, the
+  same rules as the page script) says which part has each of the book's targets, and a mention of one
+  in another part opens it there (`#lunta-xref-<key>`, `luntaXrefGo`). The Summary card is left out (one
   chapter isn't the paper).
 - **A web process that ends** (out of memory) is reloaded once (`webViewWebContentProcessDidTerminate`);
   if it ends again within 45 s the reader says "This reading view is too large to show at once on this
