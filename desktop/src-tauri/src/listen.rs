@@ -162,10 +162,13 @@ pub async fn listen_clip(
 #[tauri::command]
 pub fn listen_paper_timings(state: State<'_, AppState>, id: String) -> R<Option<String>> {
     let lib = state.lib()?;
-    let (Some(audio), Some(index)) = (lib.file_path(id.clone(), FileKind::Audio), lib.file_path(id, FileKind::AudioIndex)) else {
+    // the audio may be only in Google Drive (a library synced on demand): listen_paper_audio fetches it
+    let audio_here = lib.file_path(id.clone(), FileKind::Audio).is_some_and(|a| std::path::Path::new(&a).is_file())
+        || lib.file_status(id.clone(), FileKind::Audio) == lunta_core::model::FileStatus::InCloud;
+    let Some(index) = lib.file_path(id, FileKind::AudioIndex) else {
         return Ok(None);
     };
-    if !std::path::Path::new(&audio).is_file() {
+    if !audio_here {
         return Ok(None);
     }
     Ok(std::fs::read_to_string(index).ok())
@@ -173,8 +176,14 @@ pub fn listen_paper_timings(state: State<'_, AppState>, id: String) -> R<Option<
 
 /// The Mac-made narration's audio (AAC in an .m4a).
 #[tauri::command]
-pub async fn listen_paper_audio(state: State<'_, AppState>, id: String) -> R<tauri::ipc::Response> {
-    let path = state.lib()?.file_path(id, FileKind::Audio).ok_or("This paper has no narration on this computer.")?;
-    let data = tauri::async_runtime::spawn_blocking(move || std::fs::read(path)).await.map_err(err)?.map_err(err)?;
+pub async fn listen_paper_audio(app: tauri::AppHandle, state: State<'_, AppState>, id: String) -> R<tauri::ipc::Response> {
+    let lib = state.lib()?;
+    let data = tauri::async_runtime::spawn_blocking(move || {
+        crate::drivesync::ensure_local(&app, &id, &[FileKind::Audio])?;
+        let path = lib.file_path(id, FileKind::Audio).ok_or("This paper has no narration on this computer.")?;
+        std::fs::read(path).map_err(err)
+    })
+    .await
+    .map_err(err)??;
     Ok(tauri::ipc::Response::new(data))
 }

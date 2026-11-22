@@ -45,6 +45,8 @@ pub mod import;
 #[cfg(feature = "pdf")]
 pub mod import_source;
 pub mod index;
+/// Copying a library into another folder when it moves (the Apple apps' copy rules).
+pub mod librarycopy;
 #[cfg(feature = "llm")]
 pub mod llm;
 pub mod metadata;

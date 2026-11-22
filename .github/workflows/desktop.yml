@@ -75,15 +75,22 @@ jobs:
       # Updater artifacts (a .sig for the NSIS, MSI and AppImage installers) are signed with the
       # key in the repository secrets; a release needs them, other builds skip them without it.
       # A release gets the tag's version, whatever tauri.conf.json says.
+      # Google Drive sign-in (src-tauri/src/drivesync.rs): the Cloud project's "Desktop app" OAuth
+      # client, compiled in from the repository secrets LUNTA_DESKTOP_GOOGLE_CLIENT_ID and _SECRET
+      # (an installed app's client secret isn't confidential; see docs/development.md). Without
+      # them the app offers Google Drive greyed out.
       - name: Build installers
         working-directory: desktop
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          LUNTA_DESKTOP_GOOGLE_CLIENT_ID: ${{ secrets.LUNTA_DESKTOP_GOOGLE_CLIENT_ID }}
+          LUNTA_DESKTOP_GOOGLE_CLIENT_SECRET: ${{ secrets.LUNTA_DESKTOP_GOOGLE_CLIENT_SECRET }}
         run: |
           args=(--bundles ${{ matrix.bundles }})
           tag="${{ inputs.release_tag }}"
+          if [ -z "$LUNTA_DESKTOP_GOOGLE_CLIENT_ID" ]; then echo "::warning::LUNTA_DESKTOP_GOOGLE_CLIENT_ID secret missing: this build has no Google Drive sign-in"; fi
           if [ -n "$tag" ]; then
             if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then echo "::error::TAURI_SIGNING_PRIVATE_KEY secret missing"; exit 1; fi
             args+=(--config "{\"version\":\"${tag#v}\"}")

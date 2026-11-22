@@ -19,6 +19,7 @@ import { loadUpdates, updatesBadge, updatesBanner, checkMenuItems, paperCheckIte
 import { openTidy, setTidyReload } from './tidy';
 import { outlineDialog, setOutlineOpener } from './outline';
 import { citationsDialog } from './citations';
+import { startDrive, syncLine, cloudMark, paperDriveItems, storageDialog, chooseDriveAtStart, driveAvailable } from './drive';
 
 let source: Source = { kind: 'all' };
 let query = '';
@@ -39,6 +40,13 @@ async function start() {
   const path = $<HTMLInputElement>('#lib-path');
   if (info.library) path.value = info.library;
   if (info.error) showWelcomeError(`Couldn't open the library: ${info.error}`);
+  // Google Drive through the API (drive.ts), greyed out when this build has no Google sign-in
+  const drive = await driveAvailable();
+  $<HTMLButtonElement>('#lib-drive').disabled = !drive;
+  $('#drive-unavailable').hidden = drive;
+  $('#lib-drive').onclick = async () => {
+    if (await chooseDriveAtStart()) { $('#welcome').hidden = true; showLibrary(); }
+  };
   $('#lib-browse').onclick = async () => {
     const dir = await openDialog({ directory: true, title: 'Library folder' });
     if (typeof dir === 'string') path.value = dir;
@@ -61,6 +69,8 @@ async function showLibrary() {
     await reload(); select(id);
   } });
   startForYou();
+  // a library in Google Drive: synced through the API in the background; reload when it brought changes
+  startDrive(() => { reload(); });
   // changes synced from other devices (their op logs) show up within ten seconds
   setInterval(async () => { if (await api.refresh().catch(() => false)) reload(); }, 10000);
   startUpdateChecks();
@@ -186,6 +196,7 @@ function renderSidebar() {
     ...s.smart.map(([id, name]) => place(name, { kind: 'smart', id }, undefined, '⚙', { onmenu: (e) => smartMenu(e, id, name) })),
     s.tags.length ? h('h4', { text: 'Tags' }) : null,
     ...s.tags.map((t) => place(t, { kind: 'tag', id: t }, undefined, '#', { onmenu: (e) => menu(e.clientX, e.clientY, [outlineItem({ kind: 'tag', id: t }, `the papers tagged “${t}”`)]) })),
+    syncLine(),
   );
 }
 
@@ -284,6 +295,7 @@ function renderList() {
         sn ? snippet(sn) : null),
       h('div.files', {},
         updatesBadge(p.id),
+        cloudMark(p.id),
         p.has_epub ? h('span.badge', { text: 'Reading view', title: 'Has a reading view' }) : null,
         p.has_pdf ? h('span.badge', { text: 'PDF', title: 'Has a PDF' }) : null,
         p.annotation_count ? h('span.badge.hl', { text: `✎${p.annotation_count}`, title: 'Highlights and notes' }) : null));
@@ -336,6 +348,7 @@ function pickedMenu(e: MouseEvent) {
     ...citeItems(ps.map((p) => p.id)),
     '-',
     { label: 'Outline from Highlights…', action: () => outlineDialog(ps.map((p) => p.id), `the ${n} selected papers`) },
+    ...paperDriveItems(ps),
     '-',
     { label: `Delete ${n} Papers…`, danger: true, action: () => deletePapers(ps) },
   ]);
@@ -361,6 +374,7 @@ function paperMenu(e: MouseEvent, p: Paper) {
     ...watchItems(p),
     '-',
     ...paperCheckItems(p),
+    ...paperDriveItems([p]),
     '-',
     { label: 'Delete', danger: true, action: () => deletePaper(p) },
   ]);
@@ -607,9 +621,10 @@ $('#settings').onclick = async () => {
   const info = await api.info();
   const autoUpdate = await updatesApi.auto().catch(() => true);
   menuBelow($('#settings'), [
-    { label: `Library: ${info.library}`, action: () => {}, disabled: true },
+    { label: info.storage === 'drive' ? 'Library: Google Drive' : `Library: ${info.library}`, action: () => {}, disabled: true },
     { label: `This device: ${info.device_id}`, action: () => {}, disabled: true },
     '-',
+    { label: 'Library Storage…', action: storageDialog },
     { label: 'Use Another Library Folder…', action: async () => {
       const dir = await openDialog({ directory: true, title: 'Library folder' });
       if (typeof dir !== 'string') return;

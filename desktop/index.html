@@ -12,9 +12,20 @@
       <div class="welcome-card">
         <img src="/logo.png" alt="" width="96" height="96" />
         <h1>Welcome to Lunta</h1>
-        <p>Choose the folder for your library. To use the same library as Lunta on your Mac and iPhone,
-          or on other computers, pick a folder that syncs: in Google Drive for desktop, Dropbox or
-          OneDrive. Each computer writes only its own change log in it, so syncing never conflicts.</p>
+        <p><b>Where should your library live?</b></p>
+        <div class="welcome-choice" id="drive-choice">
+          <div>
+            <b>Google Drive</b>
+            <p>Sync through your Google account, with Lunta on Android, on a Mac, iPhone or iPad whose
+              library is in Google Drive, and on your other computers. Lunta keeps the library in a
+              “Lunta” folder in your Drive and uses nothing else there.</p>
+            <p class="hint" id="drive-unavailable" hidden>Google sign-in isn’t built into this copy of Lunta.</p>
+          </div>
+          <button id="lib-drive" class="primary">Sign In with Google…</button>
+        </div>
+        <p><b>A folder on this computer</b><br>Any folder. To share it with other computers, pick one
+          that syncs: in Google Drive for desktop, Dropbox or OneDrive. Each computer writes only its own
+          change log in it, so syncing never conflicts.</p>
         <div class="row">
           <input id="lib-path" type="text" placeholder="Library folder" spellcheck="false" />
           <button id="lib-browse">Choose…</button>
@@ -37,7 +48,7 @@
           <option value="author">First Author</option>
         </select>
         <input id="search" type="search" placeholder="Search titles, authors, full text, notes" spellcheck="false" />
-        <button id="settings" title="Library folder, this device and updates">Settings ▾</button>
+        <button id="settings" title="Library storage, this device and updates">Settings ▾</button>
       </header>
       <div class="panes">
         <nav id="sidebar"></nav>

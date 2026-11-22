@@ -36,6 +36,18 @@ h4 { margin: 14px 0 6px; font-size: 11px; text-transform: uppercase; letter-spac
 .welcome-card p { color: var(--dim); text-align: left; }
 .welcome-card .row { display: flex; gap: 8px; margin: 18px 0 12px; }
 .welcome-card .row input { flex: 1; }
+.welcome-choice { display: flex; gap: 14px; align-items: center; text-align: left; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin: 10px 0 16px; }
+.welcome-choice p { margin: 4px 0 0; }
+/* Library Storage (drive.ts) */
+.sync-line { margin: 14px 6px 0; font-size: 11px; color: var(--dim); cursor: pointer; }
+.sync-line.error { color: #c0392b; }
+.sync-line:hover { text-decoration: underline; }
+.storage-body { display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow-y: auto; }
+.storage-body p { margin: 0; }
+.storage-choice { display: flex; gap: 8px; align-items: flex-start; margin-top: 6px; }
+.storage-choice .storage-dot { color: var(--dim); }
+.storage-choice.on .storage-dot { color: var(--accent); }
+.badge.cloud { border-color: transparent; }
 .error { color: #c4302b; text-align: left; white-space: pre-wrap; }
 
 /* library window */

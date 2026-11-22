@@ -34,6 +34,7 @@ x509-parser = "0.18"
 
 [dev-dependencies]
 semver = "1"
+tempfile = "3"
 
 # Word citing on Windows (citesetup.rs): the user's Root certificate store, DPAPI for the
 # authority's key, the registry key Word loads add-ins from

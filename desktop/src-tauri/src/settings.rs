@@ -21,11 +21,30 @@ pub struct Settings {
     /// The Google Docs sidebar's pairing key for the citation server (citeserver.rs).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub citation_token: String,
+    /// Where the library lives (Library Storage, drivesync.rs): "drive" (in the app's data folder,
+    /// synced with the "Lunta" folder in Google Drive through the API) or "folder" (`library`).
+    /// Unset: "folder", as before the choice existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage: Option<String>,
+    /// The Drive folder chosen in Google's picker ("Choose your Lunta folder"); unset: the folder
+    /// named "Lunta" in My Drive (or the one the last sync used).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drive_folder_id: Option<String>,
+    /// "Download papers when you open them" (lazy sync); unset means off, as on the Mac.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drive_download_on_open: Option<bool>,
 }
 
 impl Settings {
     pub fn check_updates(&self) -> bool {
         self.auto_update.unwrap_or(true)
+    }
+    /// The library is synced with Google Drive through the API.
+    pub fn in_drive(&self) -> bool {
+        self.storage.as_deref() == Some("drive")
+    }
+    pub fn download_on_open(&self) -> bool {
+        self.drive_download_on_open.unwrap_or(false)
     }
 }
 

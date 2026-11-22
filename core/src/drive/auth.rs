@@ -20,6 +20,7 @@ use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -401,13 +402,26 @@ impl Authenticator {
     /// The whole desktop flow: listens on 127.0.0.1 (random port), calls `open_url` with the
     /// consent URL (open the browser, or print it), waits for the redirect and stores the tokens.
     pub fn connect_loopback(&self, open_url: &dyn Fn(&str), timeout: Duration) -> Result<()> {
+        self.connect_loopback_with(open_url, timeout, None, None).map(|_| ())
+    }
+
+    /// `connect_loopback` for an app (Windows/Linux desktop): stops with `SIGN_IN_CANCELLED` as
+    /// soon as `cancel` is set (the user closed the dialog), and with `pick` shows Google's file
+    /// picker during sign-in ("Choose your Lunta folder", `OAuthClient::picker_url`; `pick` narrows
+    /// what it shows, empty: everything). Returns the picked ids (empty without `pick`).
+    pub fn connect_loopback_with(&self, open_url: &dyn Fn(&str), timeout: Duration, cancel: Option<&AtomicBool>, pick: Option<&[String]>) -> Result<Vec<String>> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let redirect = format!("http://127.0.0.1:{}", listener.local_addr()?.port());
         let pkce = Pkce::generate()?;
         let state = random_state()?;
-        open_url(&self.client.authorization_url(&redirect, &pkce, &state));
-        let code = wait_for_redirect(&listener, &state, timeout)?;
-        self.complete(&code, &pkce.verifier, &redirect)
+        let url = match pick {
+            Some(ids) => self.client.picker_url(&redirect, &pkce, &state, ids),
+            None => self.client.authorization_url(&redirect, &pkce, &state),
+        };
+        open_url(&url);
+        let (code, target) = wait_for_redirect_with(&listener, &state, timeout, cancel)?;
+        self.complete(&code, &pkce.verifier, &redirect)?;
+        Ok(if pick.is_some() { picked_file_ids(&target) } else { Vec::new() })
     }
 
     /// Forgets the tokens on this device. Does **not** revoke the grant at Google: with
@@ -472,10 +486,22 @@ pub fn picked_file_ids(redirect_url: &str) -> Vec<String> {
         .collect()
 }
 
+/// The error a cancelled `connect_loopback_with` returns.
+pub const SIGN_IN_CANCELLED: &str = "Google sign-in was cancelled.";
+
+#[cfg(test)]
 fn wait_for_redirect(listener: &TcpListener, state: &str, timeout: Duration) -> Result<String> {
+    wait_for_redirect_with(listener, state, timeout, None).map(|(code, _)| code)
+}
+
+/// Waits for the browser's redirect: (code, the request target with its query).
+fn wait_for_redirect_with(listener: &TcpListener, state: &str, timeout: Duration, cancel: Option<&AtomicBool>) -> Result<(String, String)> {
     listener.set_nonblocking(true)?;
     let start = Instant::now();
     loop {
+        if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+            return Err(CoreError::Invalid(SIGN_IN_CANCELLED.into()));
+        }
         if start.elapsed() > timeout {
             return Err(CoreError::Invalid("timed out waiting for the Google sign-in".into()));
         }
@@ -501,7 +527,7 @@ fn wait_for_redirect(listener: &TcpListener, state: &str, timeout: Duration) -> 
                     body
                 );
                 match res {
-                    Ok(Some(c)) => return Ok(c),
+                    Ok(Some(c)) => return Ok((c, first.split_whitespace().nth(1).unwrap_or("").to_string())),
                     Ok(None) => {}
                     Err(e) => return Err(e),
                 }
@@ -558,6 +584,36 @@ mod tests {
         });
         assert_eq!(wait_for_redirect(&l, "S", Duration::from_secs(5)).unwrap(), "thecode");
         assert!(t.join().unwrap().contains("connected"));
+    }
+
+    #[test]
+    fn loopback_flow_gives_picked_ids_and_can_be_cancelled() {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        let t = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+            write!(s, "GET /?state=S&code=c2&picked_file_ids=f1%2Cf2 HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+            let mut out = String::new();
+            s.read_to_string(&mut out).unwrap();
+        });
+        let (code, target) = wait_for_redirect_with(&l, "S", Duration::from_secs(5), None).unwrap();
+        t.join().unwrap();
+        assert_eq!(code, "c2");
+        assert_eq!(picked_file_ids(&target), vec!["f1", "f2"]);
+
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let cancel = AtomicBool::new(false);
+        let started = Instant::now();
+        std::thread::scope(|sc| {
+            sc.spawn(|| {
+                std::thread::sleep(Duration::from_millis(150));
+                cancel.store(true, Ordering::SeqCst);
+            });
+            let e = wait_for_redirect_with(&l, "S", Duration::from_secs(30), Some(&cancel)).unwrap_err();
+            assert!(e.to_string().contains(SIGN_IN_CANCELLED), "{e}");
+        });
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]

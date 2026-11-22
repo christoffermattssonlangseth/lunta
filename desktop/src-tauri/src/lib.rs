@@ -17,6 +17,7 @@ mod citeserver;
 mod citesetup;
 #[cfg(all(debug_assertions, target_os = "macos"))]
 mod devsnap;
+mod drivesync;
 mod pdfcite;
 mod extension;
 mod foryou;
@@ -145,6 +146,8 @@ struct Info {
     error: Option<String>,
     device_id: String,
     device_label: String,
+    /// "drive" (synced through the Drive API, drivesync.rs) or "folder"
+    storage: String,
 }
 
 #[derive(Serialize)]
@@ -187,8 +190,10 @@ fn sort_key(s: &str) -> SortKey {
 #[tauri::command]
 fn app_info(state: State<AppState>) -> Info {
     let s = state.settings.lock().unwrap().clone();
+    let open = state.open.lock().unwrap().as_ref().map(|o| o.root.to_string_lossy().to_string());
     Info {
-        library: s.library,
+        storage: if s.in_drive() { "drive".into() } else { "folder".into() },
+        library: if s.in_drive() { open } else { s.library },
         opened: state.open.lock().unwrap().is_some(),
         error: state.open_error.lock().unwrap().clone(),
         device_id: s.device_id,
@@ -198,7 +203,7 @@ fn app_info(state: State<AppState>) -> Info {
 
 /// Uses a folder as the library (made if it doesn't exist) and remembers it.
 #[tauri::command]
-async fn choose_library(state: State<'_, AppState>, path: String) -> R<()> {
+async fn choose_library(app: AppHandle, state: State<'_, AppState>, path: String) -> R<()> {
     let root = PathBuf::from(path.trim());
     if root.as_os_str().is_empty() {
         return Err("Choose a folder first.".into());
@@ -208,9 +213,15 @@ async fn choose_library(state: State<'_, AppState>, path: String) -> R<()> {
     }
     state.open_library(&root)?;
     *state.open_error.lock().unwrap() = None;
-    let mut s = state.settings.lock().unwrap();
-    s.library = Some(root.to_string_lossy().to_string());
-    settings::save(&state.config_dir, &s).map_err(err)
+    {
+        let mut s = state.settings.lock().unwrap();
+        s.library = Some(root.to_string_lossy().to_string());
+        // a folder chosen here is the library from now on, also after a library in Google Drive
+        s.storage = Some("folder".into());
+        settings::save(&state.config_dir, &s).map_err(err)?;
+    }
+    app.state::<drivesync::DriveSync>().attach(&app);
+    Ok(())
 }
 
 /// Picks up changes synced from other devices. True if anything changed.
@@ -540,7 +551,13 @@ async fn make_reading_view(app: AppHandle, state: State<'_, AppState>, id: Strin
     let lib = state.lib()?;
     let log = logger(&app);
     state.books.lock().unwrap().remove(&id);
-    tauri::async_runtime::spawn_blocking(move || add::make_reading_view(&lib, &id, &log)).await.map_err(err)?
+    tauri::async_runtime::spawn_blocking(move || {
+        // made from the PDF when nothing better is found: a PDF only in Google Drive comes down first
+        drivesync::ensure_local(&app, &id, &[FileKind::Pdf])?;
+        add::make_reading_view(&lib, &id, &log)
+    })
+    .await
+    .map_err(err)?
 }
 
 /// Looks for an open-access PDF and attaches it. Returns where it came from, if found.
@@ -552,9 +569,15 @@ async fn find_pdf(state: State<'_, AppState>, id: String) -> R<Option<String>> {
 
 /// The PDF's bytes, for PDF.js.
 #[tauri::command]
-async fn pdf_bytes(state: State<'_, AppState>, id: String) -> R<tauri::ipc::Response> {
-    let path = state.lib()?.file_path(id, FileKind::Pdf).ok_or("This paper has no PDF on this computer.")?;
-    let data = tauri::async_runtime::spawn_blocking(move || std::fs::read(path)).await.map_err(err)?.map_err(err)?;
+async fn pdf_bytes(app: AppHandle, state: State<'_, AppState>, id: String) -> R<tauri::ipc::Response> {
+    let lib = state.lib()?;
+    let data = tauri::async_runtime::spawn_blocking(move || {
+        drivesync::ensure_local(&app, &id, &[FileKind::Pdf])?;
+        let path = lib.file_path(id, FileKind::Pdf).ok_or("This paper has no PDF on this computer.")?;
+        std::fs::read(path).map_err(err)
+    })
+    .await
+    .map_err(err)??;
     Ok(tauri::ipc::Response::new(data))
 }
 
@@ -576,10 +599,15 @@ struct Book {
 
 /// Unpacks the paper's EPUB and returns where its continuous document is served, plus contents.
 #[tauri::command]
-async fn open_book(state: State<'_, AppState>, id: String) -> R<Book> {
+async fn open_book(app: AppHandle, state: State<'_, AppState>, id: String) -> R<Book> {
     let lib = state.lib()?;
     let pid = id.clone();
-    let book = tauri::async_runtime::spawn_blocking(move || lib.open_epub(pid).map_err(err)).await.map_err(err)??;
+    let book = tauri::async_runtime::spawn_blocking(move || {
+        drivesync::ensure_local(&app, &pid, &[FileKind::Epub])?;
+        lib.open_epub(pid).map_err(err)
+    })
+    .await
+    .map_err(err)??;
     let dir = PathBuf::from(&book.dir);
     let combined = PathBuf::from(&book.combined);
     let rel = combined.strip_prefix(&dir).map_err(err)?;
@@ -818,6 +846,7 @@ pub fn run() {
             let config_dir = app.path().app_config_dir()?;
             let cache_root = app.path().app_cache_dir()?;
             let s = settings::load(&config_dir);
+            let drive = drivesync::DriveSync::new(app.path().app_local_data_dir()?);
             let state = AppState {
                 config_dir,
                 cache_root,
@@ -826,12 +855,23 @@ pub fn run() {
                 books: Mutex::new(HashMap::new()),
                 open_error: Mutex::new(None),
             };
-            if let Some(lib) = &s.library {
+            if s.in_drive() {
+                // the library kept in Google Drive (Library Storage, drivesync.rs)
+                let root = drive.root();
+                let opened = std::fs::create_dir_all(&root).map_err(err).and_then(|_| state.open_library(&root));
+                if let Err(e) = opened {
+                    *state.open_error.lock().unwrap() = Some(e);
+                }
+            } else if let Some(lib) = &s.library {
                 if let Err(e) = state.open_library(Path::new(lib)) {
                     *state.open_error.lock().unwrap() = Some(e);
                 }
             }
             app.manage(state);
+            app.manage(drive);
+            // Google Drive sync through the API: at start, every 5 minutes, after changes here
+            app.state::<drivesync::DriveSync>().attach(app.handle());
+            drivesync::start(app.handle().clone());
             // the browser extension's endpoint (127.0.0.1:47480), as Lunta for Mac has it
             extension::start(app.handle().clone());
             // Word's citation add-in (https://localhost:47481), as Lunta for Mac has it
@@ -857,6 +897,18 @@ pub fn run() {
             update_bib_files,
             app_info,
             choose_library,
+            drivesync::drive_status,
+            drivesync::drive_sign_in,
+            drivesync::drive_cancel_sign_in,
+            drivesync::drive_sign_out,
+            drivesync::drive_sync_now,
+            drivesync::drive_sync_soon,
+            drivesync::drive_set_download_on_open,
+            drivesync::drive_remote_only,
+            drivesync::drive_download,
+            drivesync::drive_remove_download,
+            drivesync::storage_move,
+            drivesync::storage_use_drive,
             refresh,
             sidebar,
             list,
