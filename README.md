@@ -42,7 +42,12 @@ which setup fits your devices, and how to move your library from Zotero, Mendele
   equations, themes, and scroll or page turning. The PDF is one tap away. Click a citation, in the reading
   view or the PDF, to see the reference and add it to your library.
 - **Highlight and note:** four colours, a highlight mode for marking quickly, Apple Pencil on iPad. Highlights
-  sync everywhere and are searchable.
+  sync everywhere and are searchable. With pages turned on an iPhone or iPad, a highlight can run on past the
+  page's end: drag the selection to the edge (or choose **Highlight to…**), turn, and tap where it should end.
+- **Books and theses:** a whole book PDF becomes a reading view too. Lunta tells a book from a paper (its
+  length, the PDF's own table of contents, an ISBN, contents and index pages) and then takes the chapters from
+  the book's table of contents and leaves out running heads and the printed contents. Big reading views open
+  one chapter at a time, with the contents, search, highlights and Listen working across the whole book.
 - **Library:** add papers by DOI, PubMed ID, arXiv link or PDF, or straight from your browser with the
   [Lunta extension](#browser-extension-and-add-ins) (Chrome, Edge, Firefox, Safari). Lunta finds legal
   open-access PDFs (also from PubMed pages), and never swaps a published paper for its preprint. Folders, tags, Smart Folders,
@@ -58,6 +63,11 @@ which setup fits your devices, and how to move your library from Zotero, Mendele
   paper or your library, both running on your device.
 - **Cite:** 12 citation styles and ~10,000 journal styles, BibTeX and RIS, citing in Word and Google Docs, and for LaTeX fixed
   citation keys and a .bib file that keeps itself up to date.
+- **Keep it tidy:** **Clean Up Library** proposes what to fix (duplicates and preprints with their published
+  version, missing DOIs, PDFs and reading views, tags for untagged papers, new tags or folders by topic) and
+  changes nothing until you tick it; **Check for Retractions and Published Versions** and **Check This Paper's
+  References** compare your papers with the published record. **Outline from Highlights…** turns a folder's
+  highlights into a Markdown outline, every point your own quote with its citation.
 - **Agents:** an [MCP server](docs/development.md#ai-agents-mcp) so Claude and other AI agents can search,
   read, cite and highlight in your library.
 
@@ -185,8 +195,11 @@ see [docs/development.md](docs/development.md#ai-agents-mcp).
 
 Lunta's converters keep improving (for example, from 1.0.6 reference lists and tables in PDFs are found far
 more reliably). A reading view is made once, when the paper is added, so older papers keep the view they got
-then. To give a paper the latest one, on the Mac select it (or several, or ⌘A in a folder or tag) and
-right-click › **Make Reading View**. The new view syncs to your other devices. Your highlights and notes are
+then. To give a paper the latest one, choose **Remake Reading View…**: on the Mac in the paper's right-click
+menu (select several, or ⌘A in a folder or tag, to remake them together) or the reader's ⋯ button, on iPhone and
+iPad in the reader's ⋯ menu or Paper Info, on Windows and Linux in the right-click menu, on Android in Paper
+info's ⋯ menu. Lunta asks first, and keeps the current view if a new one can't be made. The new view syncs to
+your other devices. Your highlights and notes are
 kept and found again in the new text; any that can't be placed are marked in the paper's Highlights list.
 
 ## Sync
