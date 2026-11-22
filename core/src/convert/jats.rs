@@ -36,7 +36,8 @@ pub fn graphic_hrefs(root: Node) -> Vec<String> {
 pub fn figure_key(text: &str) -> Option<String> {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = RE.get_or_init(|| {
-        regex::Regex::new(r"(?i)^(Extended\s+Data\s+|Supplementary\s+|Supporting\s+|Appendix\s+)?(?:Figure|Fig\.?)\s*(S?)(\d+)").unwrap()
+        // (a book's "Figure 1.2", "Figure 3-4", "Figure A.1": the whole number)
+        regex::Regex::new(r"(?i)^(Extended\s+Data\s+|Supplementary\s+|Supporting\s+|Appendix\s+)?(?:Figure|Fig\.?)\s*(S?)(\d+(?:[.\-–]\d+)*|[A-Z](?:[.\-–]\d+)+)").unwrap()
     });
     let c = re.captures(text.trim())?;
     let g = |i: usize| c.get(i).map(|m| m.as_str()).unwrap_or("");
@@ -44,7 +45,9 @@ pub fn figure_key(text: &str) -> Option<String> {
     if kind == "supporting" || kind == "appendix" || (!g(2).is_empty() && kind.is_empty()) {
         kind = "supplementary".into();
     }
-    Some(format!("{}fig {}", if kind.is_empty() { String::new() } else { format!("{kind} ") }, g(3)))
+    // ("Figure 3-4" and "Figure 3.4" are one figure)
+    let num = g(3).to_uppercase().replace(['-', '–'], ".");
+    Some(format!("{}fig {}", if kind.is_empty() { String::new() } else { format!("{kind} ") }, num))
 }
 
 fn id_attr(el: Node) -> String {

@@ -315,6 +315,13 @@ fn figure_keys_match_xml_labels_and_pdf_captions() {
     assert_eq!(figure_key("Supplementary Figure S1").as_deref(), Some("supplementary fig 1"));
     assert_eq!(figure_key("Figure S4").as_deref(), Some("supplementary fig 4"));
     assert_eq!(figure_key("Table 1"), None);
+    // a book's chapter-numbered figures: the whole number ("Figure 1.2", not figure 1)
+    assert_eq!(figure_key("Figure 1.2 Regression and classification").as_deref(), Some("fig 1.2"));
+    assert_eq!(figure_key("Figure 10.14.").as_deref(), Some("fig 10.14"));
+    assert_eq!(figure_key("Fig. 3-4 | Title").as_deref(), Some("fig 3.4"));
+    assert_eq!(figure_key("Figure A.1 Appendix").as_deref(), Some("fig A.1"));
+    assert_eq!(figure_key("Figure S1.2").as_deref(), Some("supplementary fig 1.2"));
+    assert_eq!(figure_key("Figure 1. Overview").as_deref(), Some("fig 1"));
 }
 
 #[test]

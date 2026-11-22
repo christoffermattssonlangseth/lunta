@@ -145,10 +145,17 @@ final class PDFAnalyzer {
         return out + ns.substring(from: last)
     }
 
+    /// A figure's, table's or box's number: "2", "S1", a book's chapter-numbered "1.2", "10.14", "S1.2",
+    /// "3-4" and an appendix's "A.1". A dot or dash continues the number only into a digit ("Figure 1.
+    /// Overview" is figure 1), and the whole number is taken (atomic: "Figure 1.2 depicts" is not
+    /// "Figure 1" + ". 2 depicts").
+    static let labelNumber = #"(?>S?\d+(?:[.\-–]\d+)*|[A-Z](?:[.\-–]\d+)+)"#
+
     static let captionRE = re(
-        // the label must be followed by punctuation, a capitalised word or nothing: running text that
-        // wraps onto a line starting "Figure S2G). Top genes…" or "Fig. 1a and …" is not a caption
-        #"^(?:Supplementary\s+|Extended\s+Data\s+|Supporting\s+)?(Figure|Fig\.?|Scheme|Table|Algorithm|Box)\s*S?\d+[A-Za-z]?(?![\w)\];,])\s*(?:[.:|\-–—]|(?-i:[A-Z(\[])|$)"#,
+        // the label must be followed by punctuation, a capitalised word ("3D" too) or nothing: running text
+        // that wraps onto a line starting "Figure S2G). Top genes…" or "Fig. 1a and …" is not a caption
+        #"^(?:Supplementary\s+|Extended\s+Data\s+|Supporting\s+)?(Figure|Fig\.?|Scheme|Table|Algorithm|Box)\s*"# + labelNumber
+            + #"[A-Za-z]?(?![\w)\];,])\s*(?:[.:|\-–—]|(?-i:[A-Z(\[]|\d[A-Z])|$)"#,
         .caseInsensitive)
 
     let doc: PDFDocument
@@ -917,7 +924,7 @@ final class PDFAnalyzer {
         }
 
         // tables: caption + horizontal rules, or a borderless grid of short cells
-        let caps = lines.filter { $0.text.trimmingCharacters(in: .whitespaces).matches(#"^(Supplementary\s+)?Table\s*S?\d+"#, .caseInsensitive) }
+        let caps = lines.filter { $0.text.trimmingCharacters(in: .whitespaces).matches(#"^(Supplementary\s+)?Table\s*"# + Self.labelNumber, .caseInsensitive) }
         // a rule drawn in pieces (one per column of the table) is one rule
         var hrules: [R] = []
         for r in thin.filter({ $0.w > 2.5 && $0.h < 2.5 }).sorted(by: { ($0.y0, $0.x0) < ($1.y0, $1.x0) }) {
@@ -1774,6 +1781,12 @@ enum PDFBook {
             merged.append(p)
         }
         // figure legends continue after the caption title in smaller type: fold them into the caption
+        // (in a book only what follows right below it: its exercises and notes are set in that type too)
+        func adjacent(_ p: Para, _ c: Para) -> Bool {
+            guard p.page == c.page, let last = c.lines.last, let first = p.lines.first else { return false }
+            return first.bbox.y0 >= last.bbox.y0 && first.bbox.y0 - last.bbox.y1 < 1.2 * max(p.size, 1)
+                && first.bbox.x0 < last.bbox.x1 && first.bbox.x1 > last.bbox.x0
+        }
         var folded: [Para] = []
         for p in merged {
             let t = p.text.trimmingCharacters(in: .whitespaces)
@@ -1782,7 +1795,7 @@ enum PDFBook {
                // a legend's "(D) …" panels continue after the page's body text when it runs onto the next page
                let j = folded.lastIndex(where: { $0.kind == .caption }), folded.count - j <= 8 || legendLike,
                abs(folded[j].page - p.page) <= 1, abs(p.size - folded[j].size) < 0.8,
-               legendLike || j == folded.count - 1 {
+               legendLike || j == folded.count - 1, !isBook || adjacent(p, folded[j]) {
                 folded[j] = Para(folded[j].lines + p.lines, page: folded[j].page, kind: .caption)
                 continue
             }
@@ -1801,7 +1814,10 @@ enum PDFBook {
                 guard c.kind == .caption, c.page == p.page, !capOf.values.contains(j) else { continue }
                 let isTab = c.text.matches(#"^(supplementary\s+)?table"#, .caseInsensitive)
                 if (p.kind == .table) != isTab { continue }
-                let d = min(abs(c.bbox.y0 - p.bbox.y1), abs(p.bbox.y0 - c.bbox.y1))
+                let d = captionGap(c.bbox, p.bbox)
+                // (beside it only if no other figure on the page is nearer: not the next column's caption)
+                if d < min(abs(c.bbox.y0 - p.bbox.y1), abs(p.bbox.y0 - c.bbox.y1)),
+                   merged.contains(where: { $0 !== p && $0.kind == p.kind && $0.page == p.page && captionGap(c.bbox, $0.bbox) < d }) { continue }
                 if d < bd && d < 120 { best = j; bd = d }
             }
             if let best { capOf[i] = best }
@@ -2000,7 +2016,7 @@ enum PDFBook {
         var areas: [Int: [R]] = [:]
         for p in paras where p.kind == .figure { areas[p.page, default: []].append(p.bbox) }
         // caption starts: the label, then a separator (not "Fig. 5a)" in the text)
-        let head = try! NSRegularExpression(pattern: #"^(?:Extended\s+Data\s+|Supplementary\s+|Supporting\s+)?(?:Figure|Fig\.?)\s*S?\d+\s*(?:[|.:—–]|\s-\s)"#,
+        let head = try! NSRegularExpression(pattern: #"^(?:Extended\s+Data\s+|Supplementary\s+|Supporting\s+)?(?:Figure|Fig\.?)\s*"# + PDFAnalyzer.labelNumber + #"\s*(?:[|.:—–]|\s-\s)"#,
                                             options: [.caseInsensitive])
         var heads: [Int: [(key: String, y: CGFloat)]] = [:]
         var pageOf: [String: Int] = [:]
@@ -2029,17 +2045,29 @@ enum PDFBook {
         return out
     }
 
+    /// How far a caption is from a figure: the vertical gap for one above or below it; for one beside it (a
+    /// book's margin caption, level with its figure) the horizontal gap, so that a paragraph below the
+    /// figure isn't taken for its caption.
+    static func captionGap(_ c: R, _ f: R) -> CGFloat {
+        let vertical = min(abs(c.y0 - f.y1), abs(f.y0 - c.y1))
+        let overlap = min(c.y1, f.y1) - max(c.y0, f.y0)
+        guard overlap > 0.5 * c.h, c.x0 >= f.x1 - 2 || c.x1 <= f.x0 + 2 else { return vertical }
+        return min(vertical, max(0, c.x0 - f.x1, f.x0 - c.x1))
+    }
+
     /// "Fig. 3 | Title", "Figure 3.", "Extended Data Fig. 3", "Supplementary Figure S1" → a key that
     /// is the same for the XML's label and the PDF's caption. Nil for anything that isn't a figure.
     static func figureKey(_ text: String) -> String? {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let re = try! NSRegularExpression(pattern: #"^(Extended\s+Data\s+|Supplementary\s+|Supporting\s+|Appendix\s+)?(?:Figure|Fig\.?)\s*(S?)(\d+)(?!\d)"#,
+        let re = try! NSRegularExpression(pattern: #"^(Extended\s+Data\s+|Supplementary\s+|Supporting\s+|Appendix\s+)?(?:Figure|Fig\.?)\s*(S?)(?>(\d+(?:[.\-–]\d+)*|[A-Z](?:[.\-–]\d+)+))"#,
                                           options: [.caseInsensitive])
         guard let m = re.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) else { return nil }
         func g(_ i: Int) -> String { Range(m.range(at: i), in: t).map { String(t[$0]) } ?? "" }
         var kind = g(1).lowercased().replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
         if kind == "supporting" || kind == "appendix" || (!g(2).isEmpty && kind.isEmpty) { kind = "supplementary" }
-        return (kind.isEmpty ? "" : kind + " ") + "fig " + g(3)
+        // ("Figure 3-4" and "Figure 3.4" are one figure)
+        let num = g(3).uppercased().replacingOccurrences(of: "[-–]", with: ".", options: .regularExpression)
+        return (kind.isEmpty ? "" : kind + " ") + "fig " + num
     }
 
     static func knownSections(_ t: String) -> String? {

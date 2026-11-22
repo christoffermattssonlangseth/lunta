@@ -280,6 +280,18 @@ fn outline(doc: &PdfDocument, heights: &[f64]) -> Vec<book::OutlineEntry> {
     ix.into_iter().map(|i| out[i].clone()).collect()
 }
 
+/// How far a caption is from a figure: the vertical gap for one above or below it; for one beside it (a
+/// book's margin caption, level with its figure) the horizontal gap, so that a paragraph below the
+/// figure isn't taken for its caption.
+fn caption_gap(c: &layout::R, f: &layout::R) -> f64 {
+    let vertical = (c.y0 - f.y1).abs().min((f.y0 - c.y1).abs());
+    let overlap = c.y1.min(f.y1) - c.y0.max(f.y0);
+    if overlap > 0.5 * (c.y1 - c.y0) && (c.x0 >= f.x1 - 2.0 || c.x1 <= f.x0 + 2.0) {
+        return vertical.min((c.x0 - f.x1).max(f.x0 - c.x1).max(0.0));
+    }
+    vertical
+}
+
 /// The figures in the PDF by their label ([`super::jats::figure_key`]: "fig 3", "extended data
 /// fig 2", "supplementary fig 1"): to fill in figures another source (an XML version without its
 /// images) doesn't have. Empty when the PDF can't be read.
@@ -305,7 +317,12 @@ pub fn figures_by_label(data: &[u8], log: &dyn Fn(&str)) -> std::collections::Ha
         areas.entry(p.page).or_default().push(p.bbox());
     }
     // caption starts: the label, then a separator (not "Fig. 5a)" in the text)
-    let head = re!(r"(?i)^(?:Extended\s+Data\s+|Supplementary\s+|Supporting\s+)?(?:Figure|Fig\.?)\s*S?\d+\s*(?:[|.:—–]|\s-\s)");
+    // (a dot or en dash into a digit is the number's: "Fig. 1.2 |", not "Fig. 1" + ".2")
+    let head = re!(concat!(
+        r"(?i)^(?:Extended\s+Data\s+|Supplementary\s+|Supporting\s+)?(?:Figure|Fig\.?)\s*",
+        layout::label_number!(),
+        r"\s*(?:[|:—]|[.–](?:$|\D)|\s-\s)"
+    ));
     let mut heads: Vec<(usize, Vec<(String, f64)>)> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for (pno, page) in an.pages.iter().enumerate() {
@@ -425,6 +442,15 @@ pub fn assemble_book(
         merged.push(p);
     }
     // figure legends continue after the caption title in smaller type: fold them into the caption
+    // (in a book only what follows right below it: its exercises and notes are set in that type too)
+    let adjacent = |p: &Para, c: &Para| -> bool {
+        let (Some(last), Some(first)) = (c.lines.last(), p.lines.first()) else { return false };
+        p.page == c.page
+            && first.bbox.y0 >= last.bbox.y0
+            && first.bbox.y0 - last.bbox.y1 < 1.2 * p.size().max(1.0)
+            && first.bbox.x0 < last.bbox.x1
+            && first.bbox.x1 > last.bbox.x0
+    };
     let mut folded: Vec<Para> = Vec::new();
     for p in merged {
         let text = p.text();
@@ -437,6 +463,7 @@ pub fn assemble_book(
                     && folded[j].page.abs_diff(p.page) <= 1
                     && (p.size() - folded[j].size()).abs() < 0.8
                     && (legend_like || j == folded.len() - 1)
+                    && (!is_book || adjacent(&p, &folded[j]))
                 {
                     let q = &mut folded[j];
                     let mut lines = std::mem::take(&mut q.lines);
@@ -469,7 +496,13 @@ pub fn assemble_book(
                 continue;
             }
             let (cb, pb) = (c.bbox(), p.bbox());
-            let d = (cb.y0 - pb.y1).abs().min((pb.y0 - cb.y1).abs());
+            let d = caption_gap(&cb, &pb);
+            // (beside it only if no other figure on the page is nearer: not the next column's caption)
+            if d < (cb.y0 - pb.y1).abs().min((pb.y0 - cb.y1).abs())
+                && merged.iter().enumerate().any(|(k, q)| k != i && q.kind == p.kind && q.page == p.page && caption_gap(&cb, &q.bbox()) < d)
+            {
+                continue;
+            }
             if d < bd && d < 120.0 {
                 best = Some(j);
                 bd = d;

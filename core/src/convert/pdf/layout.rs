@@ -291,13 +291,26 @@ pub fn bullet_lists(html: &str) -> String {
     run.replace_all(html, |c: &regex::Captures| format!("<ul>{}</ul>", item.replace_all(&c[0], "<li>$1</li>"))).into_owned()
 }
 
+/// A figure's, table's or box's number: "2", "S1", a book's chapter-numbered "1.2", "10.14", "S1.2",
+/// "3-4" and an appendix's "A.1". A dot or dash continues the number only into a digit ("Figure 1.
+/// Overview" is figure 1). (No atomic groups here: a pattern that goes on after it must not accept
+/// a dot or dash into a digit, or "Figure 1.2 depicts" would match as "Figure 1" + ".2 depicts".)
+macro_rules! label_number {
+    () => {
+        r"(?:S?\d+(?:[.\-–]\d+)*|[A-Z](?:[.\-–]\d+)+)"
+    };
+}
+pub(crate) use label_number;
+
 pub fn caption_re() -> &'static Regex {
-    // the label must be followed by punctuation, a capitalised word or nothing: running text that
-    // wraps onto a line starting "Figure S2G). Top genes…" or "Fig. 1a and …" is not a caption
+    // the label must be followed by punctuation, a capitalised word ("3D" too) or nothing: running text
+    // that wraps onto a line starting "Figure S2G). Top genes…" or "Fig. 1a and …" is not a caption
     re!(concat!(
-        r"(?i)^(?:Supplementary\s+|Extended\s+Data\s+|Supporting\s+)?(Figure|Fig\.?|Scheme|Table|Algorithm|Box)\s*S?\d+[A-Za-z]?",
-        // (a dash straight into a letter or digit is a range: "Fig. 4a–c)")
-        r"(?:$|[.:|—]|[\-–](?:$|(?-i:[^a-z0-9]))|\s+(?:[.:|\-–—]|(?-i:[A-Z(\[])|$))"
+        r"(?i)^(?:Supplementary\s+|Extended\s+Data\s+|Supporting\s+)?(Figure|Fig\.?|Scheme|Table|Algorithm|Box)\s*",
+        label_number!(),
+        r"[A-Za-z]?",
+        // (a dash straight into a letter or digit is a range: "Fig. 4a–c)"; a dot into a digit is the number's)
+        r"(?:$|[:|—]|\.(?:$|\D)|[\-–](?:$|(?-i:[^a-z0-9]))|\s+(?:[.:|\-–—]|(?-i:[A-Z(\[]|\d[A-Z])|$))"
     ))
 }
 
@@ -618,7 +631,7 @@ impl<'a> Analyzer<'a> {
 
         // tables: caption + horizontal rules, or a borderless grid of short cells
         let caps: Vec<usize> = (0..lines.len())
-            .filter(|&i| re!(r"(?i)^(Supplementary\s+)?Table\s*S?\d+").is_match(trim(&lines[i].text)))
+            .filter(|&i| re!(concat!(r"(?i)^(Supplementary\s+)?Table\s*", label_number!())).is_match(trim(&lines[i].text)))
             .collect();
         let mut segs: Vec<R> = thin.iter().filter(|r| r.w() > 2.5 && r.h() < 2.5).copied().collect();
         segs.sort_by(|a, b| (a.y0, a.x0).partial_cmp(&(b.y0, b.x0)).unwrap_or(std::cmp::Ordering::Equal));

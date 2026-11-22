@@ -219,6 +219,21 @@ fn line_end_markers_urls_and_captions() {
     for c in ["Figure S2G). Top genes", "Fig. 1a and b show", "Figure 2, which", "Figure 4) mapped", "Extended Data Fig. 4a–c). These", "Figs. 3-5 show"] {
         assert!(!caption_re().is_match(c), "{c}");
     }
+    // a book's chapter-numbered labels ("Figure 1.2", "Fig. 3.4", "Figure A.1", "Figure S1.2", "Figure 3-4")
+    for c in ["Figure 1.2 Regression and classification problems.", "Figure 10.14. Foo", "Fig. 3.4 | Bar", "Figure A.1 Appendix",
+              "Figure S1.2: x", "Table 2.1 Results", "Figure 3-4 Title", "Figure 1.4a The model", "Figure 1. Overview", "Box 1.1 Notation", "Figure 10.2 1D convolution with kernel size three."] {
+        assert!(caption_re().is_match(c), "{c}");
+    }
+    // running text that mentions one: not a caption (nor read as "Figure 1" + ". 2 depicts")
+    for c in ["Figure 1.2 depicts several regression problems", "Figure 1.4a depicts a model", "Fig. 3.4 shows", "Figure A.1 is",
+              "Figures 3.4–3.6 show", "Fig. 4–6) and", "Figure 2.1, which", "Figure 2 3 times"] {
+        assert!(!caption_re().is_match(c), "{c}");
+    }
+    // the label on its own line
+    for c in ["FIGURE 1", "Figure 1.2", "Table A.1", "Fig. 3-4", "Table S2"] {
+        assert!(super::extract::layout_re::label().is_match(c), "{c}");
+    }
+    assert!(!super::extract::layout_re::label().is_match("Figure 1.2 depicts"));
 }
 
 #[test]
@@ -1741,4 +1756,17 @@ fn image_names_do_not_repeat() {
     let mut an = Analyzer::new(sample_pages(), &mut r, &log);
     assert_eq!(an.unique_name("p296-eq192-143"), "p296-eq192-143");
     assert_eq!(an.unique_name("p296-eq192-143"), "p296-eq192-143-2");
+}
+
+#[test]
+fn a_margin_caption_beside_its_figure_is_nearer_than_the_paragraph_below() {
+    // the textbook's page 16: figure 1.1 on the right, its caption level with it in the left margin,
+    // the body text below the figure
+    let fig = R::new(328.0, 138.0, 518.0, 265.0);
+    let side = R::new(145.0, 142.0, 307.0, 211.0);
+    let below = R::new(134.0, 313.0, 515.0, 383.0);
+    assert!(caption_gap(&side, &fig) < caption_gap(&below, &fig));
+    assert_eq!(caption_gap(&side, &fig), 21.0);
+    // above or below: the vertical gap as before
+    assert_eq!(caption_gap(&R::new(330.0, 270.0, 518.0, 300.0), &fig), 5.0);
 }

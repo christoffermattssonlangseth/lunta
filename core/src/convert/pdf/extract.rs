@@ -66,7 +66,7 @@ fn style_for(name: &str, force_bold: bool, italic_flag: bool) -> Style {
     Style { bold, italic, math }
 }
 
-mod layout_re {
+pub(crate) mod layout_re {
     use super::super::layout::re;
     use regex::Regex;
     pub fn bold() -> &'static Regex {
@@ -85,7 +85,7 @@ mod layout_re {
     }
     /// A figure/table label on its own: "FIGURE 1", "Table S2"
     pub fn label() -> &'static Regex {
-        re!(r"(?i)^(Figure|Fig\.|Scheme|Table|Box)\s*S?\d+[A-Za-z]?$")
+        re!(concat!(r"(?i)^(Figure|Fig\.|Scheme|Table|Box)\s*", super::super::layout::label_number!(), r"[A-Za-z]?$"))
     }
     /// A section number on its own: "1", "2.4"
     pub fn number() -> &'static Regex {

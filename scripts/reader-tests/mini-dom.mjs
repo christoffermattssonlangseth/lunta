@@ -1,8 +1,8 @@
 // A very small DOM for testing the reader scripts in node: parses well-formed HTML samples and
 // supports what those scripts use (compound selectors in lists, closest, siblings, textContent,
-// cloneNode, classList), text nodes as the highlight scripts walk them (createTreeWalker, splitText,
-// normalize, compareDocumentPosition) and event listeners (dispatched by hand). No combinators,
-// no layout.
+// cloneNode, classList, style as a plain object), text nodes as the highlight scripts walk them
+// (createTreeWalker, splitText, normalize, compareDocumentPosition), fragments (replaceChild) and
+// event listeners (dispatched by hand). No combinators, no layout.
 
 // the reader scripts use NodeFilter as a global
 globalThis.NodeFilter ??= { SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2, FILTER_SKIP: 3 };
@@ -26,6 +26,13 @@ class Node {
   get firstChild() { return this.childNodes[0] ?? null; }
   get lastChild() { return this.childNodes[this.childNodes.length - 1] ?? null; }
   removeChild(n) { n.remove(); return n; }
+  /** Puts `n` (a fragment: its children) where `old` is. */
+  replaceChild(n, old) {
+    const kids = n instanceof Fragment ? [...n.childNodes] : [n];
+    for (const k of kids) this.insertBefore(k, old);
+    old.remove();
+    return old;
+  }
   contains(n) { for (let e = n; e; e = e.parentNode) if (e === this) return true; return false; }
   /** Merges adjacent text nodes and drops empty ones, as the DOM does. */
   normalize() {
@@ -77,6 +84,12 @@ class Text extends Node {
   cloneNode() { return new Text(this.ownerDocument, this.data); }
 }
 
+class Fragment extends Node {
+  constructor(doc) { super(doc); this.nodeType = 11; }
+  get nodeName() { return '#document-fragment'; }
+  get textContent() { return this.childNodes.map((n) => n.textContent).join(''); }
+}
+
 class Element extends Node {
   constructor(doc, name) { super(doc); this.nodeType = 1; this.localName = name.toLowerCase(); this.attrs = new Map(); }
   get tagName() { return this.localName.toUpperCase(); }
@@ -97,6 +110,7 @@ class Element extends Node {
   setAttribute(k, v) { this.attrs.set(k, String(v)); }
   hasAttribute(k) { return this.attrs.has(k); }
   removeAttribute(k) { this.attrs.delete(k); }
+  get style() { return (this.styles ??= {}); }
   get id() { return this.getAttribute('id') ?? ''; }
   set id(v) { this.setAttribute('id', v); }
   get className() { return this.getAttribute('class') ?? ''; }
@@ -165,6 +179,7 @@ class Document extends Node {
   get body() { return this.documentElement?.querySelector('body') ?? null; }
   createElement(n) { return new Element(this, n); }
   createTextNode(t) { return new Text(this, t); }
+  createDocumentFragment() { return new Fragment(this); }
   get nodeName() { return '#document'; }
   /** SHOW_TEXT walkers only (what the reader scripts use), in document order. */
   createTreeWalker(root, what, filter) {

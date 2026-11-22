@@ -139,15 +139,23 @@ extension ReaderAssets {
       document.documentElement.appendChild(st);
 
       var PRE = '(Extended\\s+Data\\s+|Supplementa(?:ry|l)\\s+|Suppl?\\.\\s*)?';
-      var LABEL = new RegExp('^\\s*' + PRE + '(?:Figure|Fig)s?\\.?\\s*(S?\\d+)', 'i');
-      var ANY_LABEL = new RegExp('^\\s*' + PRE + '(?:Figure|Fig|Table)s?\\.?\\s*S?\\d+[A-Za-z]?(?![A-Za-z0-9])', 'i');
-      var MENTION = new RegExp('(?<![A-Za-z])' + PRE + '(Figures|Figs\\.?|Figure|Fig\\.?)\\s*(S?\\d+)(?:([A-Za-z])(?![A-Za-z]))?(?![0-9])', 'gi');
-      var MORE = /^(\s*(?:,|;|and|&|or|to|–|—|-)\s*)(S?\d+)(?:([A-Za-z])(?![A-Za-z]))?(?![0-9])/i;
+      // a figure's number: "2", "S1", a book's chapter-numbered "1.2", "10.14", "S1.2", "3-4" and an appendix's
+      // "A.1" (a dot only when a digit follows it: "Figure 1. Overview" is figure 1)
+      var NUM = '(?:S?\\d+(?:[.\\-–]\\d+)*|[A-Z](?:[.\\-–]\\d+)+)(?![.\\-–]\\d)';
+      // in the text a dash between numbers is a range ("Figs. 3–6") unless the book has a figure of that
+      // number ("Figure 3-4", see joined()): mentions read dotted numbers only
+      var REF = '(?:S?\\d+(?:\\.\\d+)*|[A-Z](?:[.\\-–]\\d+)+)(?!\\.\\d)';
+      var LABEL = new RegExp('^\\s*' + PRE + '(?:Figure|Fig)s?\\.?\\s*(' + NUM + ')', 'i');
+      var ANY_LABEL = new RegExp('^\\s*' + PRE + '(?:Figure|Fig|Table)s?\\.?\\s*' + NUM + '[A-Za-z]?(?![A-Za-z0-9])', 'i');
+      var MENTION = new RegExp('(?<![A-Za-z])' + PRE + '(Figures|Figs\\.?|Figure|Fig\\.?)\\s*(' + REF + ')(?:([A-Za-z])(?![A-Za-z]))?(?![0-9])', 'gi');
+      var MORE = new RegExp('^(\\s*(?:,|;|and|&|or|to|–|—|-)\\s*)(' + REF + ')(?:([A-Za-z])(?![A-Za-z]))?(?![0-9])', 'i');
+      var HYPH = /^[-–](\d+)/;
       var CUT = /^[\s|.:—–-]+/;
       function norm(s){ return (s || '').replace(/\s+/g, ' ').trim(); }
-      // "Extended Data Fig. 4" -> E4, "Figure S1" and "Supplementary Figure 1" -> S1, "Fig. 2" -> 2
+      // "Extended Data Fig. 4" -> E4, "Figure S1" and "Supplementary Figure 1" -> S1, "Fig. 2" -> 2,
+      // "Figure 1.2" and "Figure 1-2" -> 1.2
       function key(pre, num){
-        num = num.toUpperCase(); pre = (pre || '').toLowerCase();
+        num = num.toUpperCase().replace(/[-–]/g, '.'); pre = (pre || '').toLowerCase();
         if (pre.indexOf('ext') === 0) return 'E' + num;
         if (pre && num.charAt(0) !== 'S') return 'S' + num;
         return num;
@@ -222,6 +230,14 @@ extension ReaderAssets {
         return /graphical[\s_-]*abstract|\bga\d*\b/i.test(near) ? 'Graphical abstract' : 'Figure';
       }
 
+      // a book's hyphenated number ("Figure 3-4"), when the book has that figure; otherwise the dash is a
+      // range ("Figs. 3–6") and the number ends before it
+      function joined(pre, s, r){
+        var h;
+        while (!r.panel && (h = HYPH.exec(s.slice(r.end))) && (key(pre, r.num + '.' + h[1]) in byKey)) { r.num += '.' + h[1]; r.end += h[0].length; }
+        return r;
+      }
+
       // mentions in the text
       var SKIP = 'a, script, style, .m-figref, .references, ol.refs, .refs, nav, math, h1, h2, h3, h4, title, button';
       if (figs.length) {
@@ -233,10 +249,14 @@ extension ReaderAssets {
           var s = n.nodeValue, out = [], m;
           MENTION.lastIndex = 0;
           while ((m = MENTION.exec(s))) {
-            var refs = [{ at: m.index, end: m.index + m[0].length, num: m[3], panel: m[4] }];
+            var refs = [joined(m[1], s, { at: m.index, end: m.index + m[0].length, num: m[3], panel: m[4] })];
+            MENTION.lastIndex = refs[0].end;
             if (/^fig(ure)?s/i.test(m[2])) {
               var pos = refs[0].end, mm;
-              while ((mm = MORE.exec(s.slice(pos)))) { refs.push({ at: pos + mm[1].length, end: pos + mm[0].length, num: mm[2], panel: mm[3] }); pos += mm[0].length; }
+              while ((mm = MORE.exec(s.slice(pos)))) {
+                var rr = joined(m[1], s, { at: pos + mm[1].length, end: pos + mm[0].length, num: mm[2], panel: mm[3] });
+                refs.push(rr); pos = rr.end;
+              }
               MENTION.lastIndex = pos;
             }
             for (var r = 0; r < refs.length; r++) {
