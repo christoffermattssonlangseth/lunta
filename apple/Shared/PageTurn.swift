@@ -341,6 +341,9 @@ final class PageMessageHandler: NSObject, WKScriptMessageHandler {
     /// A book read chapter by chapter: turned past the last page (1) or before the first (-1) of a
     /// chapter, by a tap, a key or (iPhone) a swipe (ChapterReader.swift opens the next or previous one).
     var onPartEdge: (Int) -> Void = { _ in }
+    /// A book read chapter by chapter: Back tapped after a jump from another chapter (true), or
+    /// dismissed (false) (JumpBack.swift; ChapterReader.back / forgetBack).
+    var onPartBack: (Bool) -> Void = { _ in }
     #if os(iOS)
     /// Text is selected in the page (the page is then held still, see `moved`).
     fileprivate var selecting = false
@@ -373,6 +376,7 @@ final class PageMessageHandler: NSObject, WKScriptMessageHandler {
         if s == "hello", let state, let v = m.webView { v.evaluateJavaScript(state.call) }
         if s == "chrome" { Task { @MainActor in self.onChrome() } }
         if s == "partNext" || s == "partPrev" { let d = s == "partNext" ? 1 : -1; Task { @MainActor in self.onPartEdge(d) } }
+        if s == "partBack" || s == "partBackClear" { let go = s == "partBack"; Task { @MainActor in self.onPartBack(go) } }
     }
 }
 

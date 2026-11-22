@@ -24,6 +24,13 @@ import LuntaCore
 // texts, found in the page of the part it is in); Listen goes on into the next chapter (the
 // readers); citations find their references in the reference list's chapter (`luntaSetShelf`,
 // CitationPopover.swift).
+//
+// Back (JumpBack.swift) across chapters: a jump to another chapter (a link or cross-reference in
+// the text, "Show in References", the contents, a highlight in the list, Find going on into
+// another chapter) keeps the place it left (`backStack`, in the whole view's text, as places are
+// saved); in the chapter opened the page shows Back, which opens the last place kept again, at
+// that exact place, and shows Back again while there are more. Turning past a chapter's end (or
+// the "Next: …" link) is reading on, not a jump: it forgets them, as does the Back button's ×.
 
 @MainActor
 final class ChapterReader: ObservableObject {
@@ -49,6 +56,14 @@ final class ChapterReader: ObservableObject {
     private var dense: [String?]
     private var folded: [String]?
     private var shelfText: String?
+    /// Places left by jumps to another part (the last on top), for Back.
+    private(set) var backStack: [Int] = []
+    /// The top place was kept by Find, which keeps one for a run of finds through the book.
+    private var findKept = false
+
+    /// How a part is opened, for Back: a jump keeps the place it leaves (Find's, once for a run of
+    /// finds); reading on forgets the places kept; others (Back itself, Listen, restoring a place) neither.
+    enum Hop { case jump, find, read, other }
 
     enum After: Equatable {
         case none, top, end
@@ -114,9 +129,23 @@ final class ChapterReader: ObservableObject {
 
     /// Opens part `k`, then does `a` there; returns once its page is ready (false: it didn't load in time).
     @discardableResult
-    func open(_ k: Int, then a: After) async -> Bool {
+    func open(_ k: Int, then a: After, hop: Hop = .other) async -> Bool {
         guard parts.indices.contains(k) else { return false }
         if k == current { perform(a); return true }
+        switch hop {
+        case .jump, .find:
+            if hop == .find, findKept, !backStack.isEmpty { break }
+            let from = current
+            let o = (try? await controller?.webView?.evaluateJavaScript("window.luntaBackPlace ? luntaBackPlace() : luntaPlace()")) as? Int
+            guard current == from else { break }   // another part opened meanwhile
+            if let o {
+                if backStack.last != o { backStack.append(o) }
+                if backStack.count > 50 { backStack.removeFirst() }
+                findKept = hop == .find
+            }
+        case .read: forgetBack()
+        case .other: break
+        }
         after = a
         let p = parts[k]
         let start = Int(p.start), end = max(start, Int(p.start + p.length) - 2)
@@ -137,12 +166,32 @@ final class ChapterReader: ObservableObject {
         }
     }
 
-    func go(_ k: Int, then a: After) { Task { await open(k, then: a) } }
+    func go(_ k: Int, then a: After, hop: Hop = .other) { Task { await open(k, then: a, hop: hop) } }
+
+    /// Back after a jump from another part: that part opens again at the place left (the page's Back
+    /// button, ⌘[). Shows Back again there while more places are kept.
+    func back() {
+        guard let o = backStack.popLast() else { return }
+        findKept = false
+        let k = part(forOffset: o)
+        if k == current { perform(.offset(o)); showBack() } else { go(k, then: .offset(o)) }
+    }
+
+    /// Forgets the places kept for Back (the Back button's ×, reading on into the next part).
+    func forgetBack() {
+        backStack = []
+        findKept = false
+    }
+
+    /// The page's Back button, for the places kept (none: hidden, if it was for them).
+    private func showBack() {
+        controller?.webView?.evaluateJavaScript("window.luntaBackAcross && luntaBackAcross(\(backStack.count))")
+    }
 
     /// The contents (or the Mac's sidebar) chose an anchor: true if its part is another one, which opens.
     func show(anchor a: String) -> Bool {
         guard let k = part(forAnchor: a), k != current else { return false }
-        go(k, then: .anchor(a))
+        go(k, then: .anchor(a), hop: .jump)
         return true
     }
 
@@ -150,8 +199,8 @@ final class ChapterReader: ObservableObject {
     func edge(_ d: Int) {
         guard Date().timeIntervalSince(lastEdge) > 1.2 else { return }
         lastEdge = Date()
-        if d > 0, current + 1 < parts.count { go(current + 1, then: .top) }
-        else if d < 0, current > 0 { go(current - 1, then: .end) }
+        if d > 0, current + 1 < parts.count { go(current + 1, then: .top, hop: .read) }
+        else if d < 0, current > 0 { go(current - 1, then: .end, hop: .read) }
     }
 
     /// A link in the page to another part's file (`lunta-part-3.xhtml#s30`): true when it is one
@@ -161,13 +210,15 @@ final class ChapterReader: ObservableObject {
         if k == current, (url.path as NSString).lastPathComponent == (parts[k].path as NSString).lastPathComponent {
             return false   // this page: an anchor in it, or the load the reader asked for
         }
+        // a place in it (a section, a reference, a cross-reference's target): a jump, with Back;
+        // the part itself (its "Next: …" / "Previous: …" link at the end): reading on
         let a: After
         if let f = url.fragment, !f.isEmpty {
             if f.hasPrefix("lunta-ref-"), let i = Int(f.dropFirst(10)) { a = .reference(i) }
             else if f.hasPrefix("lunta-xref-") { a = .xref(String(f.dropFirst(11)).removingPercentEncoding ?? String(f.dropFirst(11))) }
             else { a = .anchor(f) }
         } else { a = .top }
-        go(k, then: a)
+        go(k, then: a, hop: a == .top ? .read : .jump)
         return true
     }
 
@@ -183,6 +234,8 @@ final class ChapterReader: ObservableObject {
             }
         }
         controller?.partLoads += 1
+        // Back to the part left by a jump (before the jump's own move, which keeps it: JumpBack.swift)
+        if !backStack.isEmpty { showBack() }
         let a = after
         after = .none
         if a != .none {
@@ -391,7 +444,7 @@ final class BookFind: FindBackend {
     /// Opens part `n` and finds the query there, at its first match (or its last).
     private func findIn(_ n: Int, last toLast: Bool = false) async -> FindResult {
         guard let ch = chapters, let c = controller else { return FindResult() }
-        await ch.open(n, then: .none)
+        await ch.open(n, then: .none, hop: .find)
         try? await Task.sleep(for: .milliseconds(300))   // (its pages laid out)
         var r = await c.find(query, fromTop: true)
         if toLast, r.count > 1 { r = await c.findStep(false) }

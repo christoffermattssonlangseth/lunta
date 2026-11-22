@@ -530,7 +530,7 @@ struct ReaderWindow: View {
         return { [weak chapters, weak controller, weak narrator] in
             guard let chapters, let controller, let narrator, chapters.current + 1 < chapters.parts.count else { return }
             Task {
-                guard await chapters.open(chapters.current + 1, then: .top) else { return }
+                guard await chapters.open(chapters.current + 1, then: .top, hop: .read) else { return }
                 let items = await controller.narrationItems()
                 guard !items.isEmpty, Narrator.active == nil || Narrator.active === narrator else { return }
                 let title = narrator.title
@@ -607,6 +607,7 @@ struct EpubWebView: NSViewRepresentable {
         context.coordinator.navigation = nav
         v.navigationDelegate = nav
         context.coordinator.paging?.onPartEdge = { [weak controller] d in controller?.chapters?.edge(d) }
+        context.coordinator.paging?.onPartBack = { [weak controller] go in if go { controller?.chapters?.back() } else { controller?.chapters?.forgetBack() } }
         v.appearance = Self.appearance(theme)   // only the page: the window keeps the system's look
         controller.webView = v
         v.loadFileURL(url, allowingReadAccessTo: readAccess)

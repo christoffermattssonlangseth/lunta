@@ -860,11 +860,19 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     return ui;
   }
   function show(){ build().classList.add('on'); shown = true; }
-  function hide(){ if (ui) ui.classList.remove('on'); shown = false; from = null; armed = 0; }
+  function post(m){ try { window.webkit.messageHandlers.page.postMessage(m); } catch (x) {} }
+  function off(){ if (ui) ui.classList.remove('on'); shown = false; from = null; armed = 0; }
+  function hide(){
+    var across = from && from.across;
+    off();
+    if (across) post('partBackClear');   // dismissed: the app forgets the places in other chapters
+  }
 
   function back(){
-    var f = from; hide();
+    var f = from;
+    off();
     if (!f) return;
+    if (f.across) { post('partBack'); return; }   // in another chapter: the app opens it there
     var ok = f.off != null && window.luntaScrollToOffset && window.luntaScrollToOffset(f.off);
     if (!ok) window.scrollTo({ left: f.p.x, top: f.p.y, behavior: 'instant' });
   }
@@ -877,10 +885,28 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
   };
   window.luntaJumpBack = function(){ if (!shown) return false; back(); return true; };
 
+  // a book read chapter by chapter: where its text starts in the whole book's (ReadingPosition.swift)
+  function base(){
+    var m = document.querySelector('meta[name="lunta-text-base"]');
+    return m ? (parseInt(m.getAttribute('content'), 10) || 0) : 0;
+  }
+  // before the app opens another chapter: the place to come back to, in the whole book's text
+  // (while Back shows for a jump within this chapter, its place: the first place still wins)
+  window.luntaBackPlace = function(){
+    if (shown && from && !from.across && from.off != null) return from.off + base();
+    return window.luntaPlace ? window.luntaPlace() : null;
+  };
+  // arrived in a chapter by a jump from another: Back goes there (n places to go back to; 0: none)
+  window.luntaBackAcross = function(n){
+    if (!(n > 0)) { if (from && from.across) off(); return; }
+    from = { across: n }; armed = 0;
+    show();
+  };
+
   function check(){
     clearTimeout(settle);
     settle = setTimeout(function(){
-      if (!from) return;
+      if (!from || from.across) return;   // another chapter's place: only Back or × end it
       var p = pos();
       if (shown) { if (near(p, from.p)) hide(); return; }
       if (far(p, from.p)) { if (Date.now() < armed) show(); else from = null; }
