@@ -198,6 +198,13 @@ label.check { display: flex; gap: 6px; align-items: center; }
 #figure .fv-caption.alone { flex: 1; max-height: none; border-top: 0; }
 #figure .fv-text { max-width: 760px; margin: 0 auto; font-size: 14px; line-height: 1.55; user-select: text; -webkit-user-select: text; }
 #figure mark { color: inherit; border-radius: 2px; }
+#figure mark[data-ann] { cursor: pointer; }
+#figure mark.note { border-bottom: 2px dotted rgba(200,120,40,.9); }
+#figure .fv-selbar { position: fixed; z-index: 2; display: flex; gap: 6px; align-items: center; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+  border-radius: 18px; padding: 5px 8px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+#figure .fv-selbar .swatch { width: 20px; height: 20px; }
+#figure .fv-selbar button:not(.swatch) { border: none; padding: 2px 8px; }
+.modal-back.over-figure { z-index: 95; }
 #figure mark.c-yellow { background: rgba(250,212,77,.45); } #figure mark.c-green { background: rgba(140,209,122,.45); }
 #figure mark.c-blue { background: rgba(122,184,242,.45); } #figure mark.c-pink { background: rgba(245,143,179,.45); }
 #figure.dark { background: #000; color: #d8d5ce; }

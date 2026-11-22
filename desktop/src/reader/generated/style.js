@@ -81,39 +81,112 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     if (m) { var k = key(m[1], m[2]); if (!(k in byKey)) byKey[k] = i; }
   });
 
-  // label, title and caption text of a figure (or table)
+  // A caption's text as the viewer shows it, character by character with the text node (and the
+  // offset in it) each one comes from: its text nodes in order, reference numbers left out (a linked
+  // "variability<sup>14</sup>" would run into the words), whitespace runs as one space, trimmed.
+  // A passage selected in the viewer is so a passage of the page's own text: the highlight is the one
+  // the reading view makes when that caption text is selected there (same quote, context and offset).
+  function capText(cap){
+    var out = '', nodes = [], offs = [];
+    var w = document.createTreeWalker(cap, NodeFilter.SHOW_TEXT, null), n;
+    function dropped(p){
+      var sup = p.closest ? p.closest('sup') : null;
+      if (sup && cap.contains(sup) && (sup.querySelector('a') || (sup.closest('a') && cap.contains(sup.closest('a'))))) return true;
+      var a = p.closest ? p.closest('a[href^="#"]') : null;
+      return !!(a && cap.contains(a) && a.closest('sup'));
+    }
+    while ((n = w.nextNode())) {
+      var p = n.parentNode; if (!p || /^(script|style)$/i.test(p.nodeName) || dropped(p)) continue;
+      var v = n.nodeValue;
+      for (var i = 0; i < v.length; i++) {
+        var c = v[i];
+        if (/\s/.test(c)) { if (!out.length || out[out.length - 1] === ' ') continue; c = ' '; }
+        out += c; nodes.push(n); offs.push(i);
+      }
+    }
+    if (out[out.length - 1] === ' ') { out = out.slice(0, -1); nodes.pop(); offs.pop(); }
+    return { text: out, nodes: nodes, offs: offs };
+  }
+  // label, title and caption text of a figure (or table); `shown` (title, a space, caption: the text
+  // the viewer shows) with each character's place in the caption's text (`ct`, -1 for the space)
   function parts(box){
     var cap = captionOf(box), img = box.querySelector('img');
-    var marks = [];
-    if (cap) cap.querySelectorAll('mark.m-hl').forEach(function(x){
-      var c = /m-(yellow|green|blue|pink)/.exec(x.className);
-      var t = norm(x.textContent); if (t) marks.push({ t: t, c: c ? c[1] : 'yellow' });
-    });
-    if (cap) {   // reference numbers ("variability<sup>14</sup>") would run into the words
-      cap = cap.cloneNode(true);
-      cap.querySelectorAll('sup').forEach(function(x){ if (x.querySelector('a') || x.closest('a')) x.remove(); });
-      cap.querySelectorAll('a[href^="#"]').forEach(function(x){ if (x.closest('sup')) x.remove(); });
-    }
-    if (!cap) return { label: fallback(box, ''), title: '', caption: img ? norm(img.getAttribute('alt')) : '', marks: [] };
+    if (!cap) return { label: fallback(box, ''), title: '', caption: img ? norm(img.getAttribute('alt')) : '', marks: [], ct: null, at: [] };
+    var ct = capText(cap), clone = cap.cloneNode(true);
+    clone.querySelectorAll('sup').forEach(function(x){ if (x.querySelector('a') || x.closest('a')) x.remove(); });
+    clone.querySelectorAll('a[href^="#"]').forEach(function(x){ if (x.closest('sup')) x.remove(); });
     var strongs = [];
-    for (var n = cap.firstChild; n && strongs.length < 2; n = n.nextSibling) {
+    for (var n = clone.firstChild; n && strongs.length < 2; n = n.nextSibling) {
       if (n.nodeType === 3 && !n.nodeValue.trim()) continue;
       if (n.nodeType === 1 && (/^(strong|b)$/i.test(n.nodeName) || n.classList.contains('ltx_tag'))) { strongs.push(norm(n.textContent)); continue; }
       break;
     }
-    var full = norm(cap.textContent), m = ANY_LABEL.exec(full);
-    var label = m ? m[0].trim() : '', rest = (m ? full.slice(m[0].length) : full).replace(CUT, '');
+    var full = ct.text, m = ANY_LABEL.exec(full);
+    var restAt = m ? m[0].length : 0, cut = CUT.exec(full.slice(restAt));
+    if (cut) restAt += cut[0].length;
+    var rest = full.slice(restAt), capAt = restAt;
     var title = '';
     if (strongs.length) {
       var s0 = strongs[0];
-      if (label && s0.indexOf(label) === 0) s0 = s0.slice(label.length).replace(CUT, '');
-      else if (label) s0 = '';
+      if (m && s0.indexOf(m[0].trim()) === 0) s0 = s0.slice(m[0].trim().length).replace(CUT, '');
+      else if (m) s0 = '';
       title = s0 || (strongs.length > 1 ? strongs[1] : '');
       if (title.length < 4 || rest.indexOf(title) !== 0) title = '';
-      if (title) rest = rest.slice(title.length).trim();
+      if (title) {
+        var after = rest.slice(title.length);
+        capAt = restAt + title.length + (after.length - after.replace(/^\s+/, '').length);
+        rest = after.trim();
+      }
     }
+    var label = m ? m[0].trim() : '';
     if (!label && img) { var a = ANY_LABEL.exec(norm(img.getAttribute('alt'))); if (a) label = a[0].trim(); }
-    return { label: label.replace(/[\s|.:—–-]+$/, '') || fallback(box, full), title: title, caption: rest, marks: marks };
+    var at = [], k;
+    for (k = 0; k < title.length; k++) at.push(restAt + k);
+    if (title && rest) at.push(-1);
+    for (k = 0; k < rest.length; k++) at.push(capAt + k);
+    var p = { label: label.replace(/[\s|.:—–-]+$/, '') || fallback(box, full), title: title, caption: rest, ct: ct, at: at };
+    p.marks = capMarks(p);
+    return p;
+  }
+  // the reader's highlights in a caption, as runs of the shown text: {s, e, id, c, n (it has a note), t}
+  function capMarks(p){
+    var out = [], cur = null, shown = shownText(p);
+    for (var i = 0; i < p.at.length; i++) {
+      var j = p.at[i], mk = null;
+      if (j >= 0) { var el = p.ct.nodes[j].parentNode; mk = el && el.closest ? el.closest('mark.m-hl') : null; }
+      var id = mk ? mk.getAttribute('data-ann') : null;
+      if (j < 0 && cur) continue;   // the space between title and caption: in a run only if it goes on after it
+      if (id && id !== '__pending' && cur && cur.id === id && cur.e >= i - 1) { cur.e = i + 1; continue; }
+      cur = null;
+      if (!id || id === '__pending') continue;
+      var c = /m-(yellow|green|blue|pink)/.exec(mk.className);
+      cur = { s: i, e: i + 1, id: id, c: c ? c[1] : 'yellow', n: /\bm-note\b/.test(mk.className) };
+      out.push(cur);
+    }
+    out.forEach(function(r){ r.t = shown.slice(r.s, r.e); });
+    return out;
+  }
+  function shownText(p){ return p.title ? (p.caption ? p.title + ' ' + p.caption : p.title) : p.caption; }
+  // a passage of the shown caption (from, to: its characters, as the viewer counts them) as a passage
+  // of the page's text, as luntaSelection gives it for that selection in the reading view
+  function capSelection(i, from, to){
+    var f = figs[i]; if (!f || !window.luntaPassage) return '';
+    var p = parts(f); if (!p.ct) return '';
+    from = Math.max(0, from); to = Math.min(p.at.length, to);
+    while (from < to && p.at[from] < 0) from++;
+    while (to > from && p.at[to - 1] < 0) to--;
+    if (to <= from) return '';
+    var a = p.at[from], b = p.at[to - 1];
+    var na = p.ct.nodes[a], nb = p.ct.nodes[b], s = -1, e = -1, pos = 0;
+    var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: function(n){
+      var q = n.parentNode && n.parentNode.nodeName.toLowerCase();
+      return (q === 'script' || q === 'style') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT; } }), n;
+    while ((n = w.nextNode())) {
+      if (n === na) s = pos + p.ct.offs[a];
+      if (n === nb) { e = pos + p.ct.offs[b] + 1; break; }
+      pos += n.nodeValue.length;
+    }
+    return s < 0 || e <= s ? '' : window.luntaPassage(s, e);
   }
   // a figure without a label: a graphical abstract, or just "Figure"
   function fallback(box, text){
@@ -196,7 +269,10 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
   window.luntaFigures = {
     count: figs.length,
     open: function(i, panel){ return figs[i] ? openFig(i, panel, null) : false; },
-    data: function(i){ return JSON.stringify({ all: all(), index: i }); }
+    data: function(i){ return JSON.stringify({ all: all(), index: i }); },
+    // the viewer's caption: a selection in it as the page's passage, and the highlights in it now
+    select: function(i, from, to){ return capSelection(i, from, to); },
+    marks: function(i){ return figs[i] ? JSON.stringify(parts(figs[i]).marks) : '[]'; }
   };
 
   // the cards

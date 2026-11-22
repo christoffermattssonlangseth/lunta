@@ -60,6 +60,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
@@ -76,11 +78,42 @@ import kotlin.math.min
 // caption below; swipe for the paper's other figures) and the grid of all figures. Both are drawn
 // over the reader, which is left as it is, so closing returns to exactly the same place.
 
-/** A highlight in a figure's caption: its text and colour. */
-data class FigMark(val text: String, val color: String)
+/** A highlight in a figure's caption: its text and colour, and (from the page) where it is in the shown
+ *  caption ([start] until [end], title + " " + caption), the reading view's highlight [id], whether it has a note. */
+data class FigMark(val text: String, val color: String, val start: Int = -1, val end: Int = -1, val id: String = "", val note: Boolean = false)
 
+/** [inPage]: one of the page's figures ([index] its number there), so its caption can be highlighted. */
 data class ReaderFigure(
     val index: Int, val images: List<String>, val label: String, val title: String, val caption: String, val marks: List<FigMark>,
+    val inPage: Boolean = false,
+)
+
+/** The caption as the viewer shows it (and the page counts it, figureJS shownText). */
+fun shownCaption(f: ReaderFigure): String =
+    if (f.title.isEmpty()) f.caption else if (f.caption.isEmpty()) f.title else "${f.title} ${f.caption}"
+
+/** The page's marks ({t, c, s, e, id, n}). */
+fun figMarks(a: JSONArray?): List<FigMark> = a?.let {
+    (0 until a.length()).mapNotNull { a.optJSONObject(it) }.mapNotNull { m ->
+        m.optString("t").takeIf { it.isNotEmpty() || m.has("s") }?.let {
+            FigMark(it, m.optString("c").takeIf { c -> c in HighlightColors } ?: "yellow", m.optInt("s", -1), m.optInt("e", -1), m.optString("id"), m.optBoolean("n"))
+        }
+    }
+} ?: emptyList()
+
+/** The viewer's caption highlights (the reader's): they are the reading view's own (figureJS's
+ *  luntaFigures.select turns a passage of the caption into the page's passage of those words).
+ *  [drawn] counts the page's redraws of its highlights (the caption shows them again after each). */
+class CaptionHighlights(
+    /** highlight mode's colour, or null when it is off */
+    val mode: () -> String?,
+    /** highlight (or note on) the passage from…to of figure `fig`'s shown caption */
+    val highlight: (fig: Int, from: Int, to: Int, color: String, note: Boolean) -> Unit,
+    /** a highlight in the caption tapped: its editor */
+    val edit: (String) -> Unit,
+    /** the highlights the page has in figure `fig`'s caption now */
+    val marks: suspend (fig: Int) -> List<FigMark>?,
+    val drawn: Int,
 )
 
 /** What the viewer opens: figure [index] of [set], at image [start], pointing to [panel] ("B" in "Fig. 2B"). */
@@ -89,13 +122,8 @@ data class FigureOpen(val set: List<ReaderFigure>, val index: Int, val start: In
 private fun figure(o: JSONObject, i: Int): ReaderFigure {
     val srcs = o.optJSONArray("srcs")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotEmpty() } }
         ?: listOfNotNull(o.optString("src").takeIf { it.isNotEmpty() })
-    val marks = o.optJSONArray("marks")?.let { a ->
-        (0 until a.length()).mapNotNull { a.optJSONObject(it) }.mapNotNull { m ->
-            m.optString("t").takeIf { it.isNotEmpty() }?.let { FigMark(it, m.optString("c").takeIf { c -> c in HighlightColors } ?: "yellow") }
-        }
-    } ?: emptyList()
     fun s(k: String) = o.optString(k).trim()
-    return ReaderFigure(o.optInt("index", i), srcs, s("label"), s("title"), s("caption"), marks)
+    return ReaderFigure(o.optInt("index", i), srcs, s("label"), s("title"), s("caption"), figMarks(o.optJSONArray("marks")), o.has("index"))
 }
 
 /** The paper's figures, from the page's {list: […]} message (sent as it loads). */
@@ -179,7 +207,7 @@ private val DarkText = Color(0xFFD8D5CE)
 
 /** The figure on its own: swipe for the others, pinch or double-tap to zoom. Black in dark mode. */
 @Composable
-fun FigureViewer(open: FigureOpen, bookDir: File, dark: Boolean = isSystemInDarkTheme(), onDismiss: () -> Unit) {
+fun FigureViewer(open: FigureOpen, bookDir: File, dark: Boolean = isSystemInDarkTheme(), hl: CaptionHighlights? = null, onDismiss: () -> Unit) {
     val figs = open.set
     Dialog(onDismiss, DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val pager = rememberPagerState(initialPage = open.index.coerceIn(0, figs.size - 1)) { figs.size }
@@ -204,7 +232,7 @@ fun FigureViewer(open: FigureOpen, bookDir: File, dark: Boolean = isSystemInDark
                     IconButton(onDismiss) { Icon(Icons.Filled.Close, "Back to the text") }
                 }
                 HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), userScrollEnabled = !zoomed, beyondViewportPageCount = 1) { i ->
-                    FigurePage(figs[i], if (i == open.index) open.start else 0, showCaption, dark, bookDir) { z -> if (i == pager.currentPage) zoomed = z }
+                    FigurePage(figs[i], if (i == open.index) open.start else 0, showCaption, dark, bookDir, hl) { z -> if (i == pager.currentPage) zoomed = z }
                 }
             }
         }
@@ -212,7 +240,7 @@ fun FigureViewer(open: FigureOpen, bookDir: File, dark: Boolean = isSystemInDark
 }
 
 @Composable
-private fun FigurePage(f: ReaderFigure, start: Int, showCaption: Boolean, dark: Boolean, bookDir: File, onZoom: (Boolean) -> Unit) {
+private fun FigurePage(f: ReaderFigure, start: Int, showCaption: Boolean, dark: Boolean, bookDir: File, hl: CaptionHighlights?, onZoom: (Boolean) -> Unit) {
     var image by remember { mutableIntStateOf(start.coerceIn(0, max(0, f.images.size - 1))) }
     val hasCaption = f.caption.isNotEmpty() || f.title.isNotEmpty()
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -236,7 +264,8 @@ private fun FigurePage(f: ReaderFigure, start: Int, showCaption: Boolean, dark: 
                 HorizontalDivider(color = LocalContentColor.current.copy(alpha = .15f))
                 val size = if (f.images.isEmpty()) Modifier.weight(1f) else Modifier.heightIn(max = maxH * 0.4f)
                 Box(Modifier.fillMaxWidth().then(size).verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
-                    SelectionContainer {
+                    if (hl != null && f.inPage) CaptionText(f, dark, hl, Modifier.widthIn(max = 760.dp).padding(horizontal = 18.dp, vertical = 14.dp))
+                    else SelectionContainer {
                         Text(
                             captionText(f, dark), Modifier.widthIn(max = 760.dp).padding(horizontal = 18.dp, vertical = 14.dp),
                             style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
@@ -245,6 +274,108 @@ private fun FigurePage(f: ReaderFigure, start: Int, showCaption: Boolean, dark: 
                 }
             }
         }
+    }
+}
+
+/** The caption as selectable text with Highlight, Note and the colours in its selection menu (highlight
+ *  mode: a selection is highlighted when it stops changing); tapping a highlight opens its editor. */
+@Composable
+private fun CaptionText(f: ReaderFigure, dark: Boolean, hl: CaptionHighlights, modifier: Modifier) {
+    var marks by remember(f) { mutableStateOf(f.marks) }
+    LaunchedEffect(f.index, hl.drawn) { hl.marks(f.index)?.let { marks = it } }
+    val ink = (if (dark) DarkText else Color(0xFF1D1D1F)).toArgb()
+    AndroidView({ CaptionView(it) }, modifier, update = { v ->
+        v.bind(f, marks, dark, ink, hl) { pending -> marks = marks + pending }
+    })
+}
+
+private class CaptionView(ctx: android.content.Context) : android.widget.TextView(ctx) {
+    private var f: ReaderFigure? = null
+    private var marks: List<FigMark> = emptyList()
+    private var hl: CaptionHighlights? = null
+    private var onPending: (FigMark) -> Unit = {}
+    private var key = ""
+    private val waiting = Runnable { finished() }
+
+    init {
+        setTextIsSelectable(true)
+        textSize = 14f
+        setLineSpacing(0f, 1.5f)
+        customSelectionActionModeCallback = object : android.view.ActionMode.Callback {
+            override fun onCreateActionMode(mode: android.view.ActionMode, menu: android.view.Menu): Boolean {
+                if (hl == null) return true
+                menu.add(0, 1, 0, "Highlight")
+                menu.add(0, 2, 1, "Note")
+                listOf("Green", "Blue", "Pink").forEachIndexed { i, c -> menu.add(0, 3 + i, 2 + i, c) }
+                return true
+            }
+            override fun onPrepareActionMode(mode: android.view.ActionMode, menu: android.view.Menu) = false
+            override fun onActionItemClicked(mode: android.view.ActionMode, item: android.view.MenuItem): Boolean {
+                val color = when (item.itemId) { 1, 2 -> "yellow"; 3 -> "green"; 4 -> "blue"; 5 -> "pink"; else -> return false }
+                act(color, item.itemId == 2)
+                mode.finish()
+                return true
+            }
+            override fun onDestroyActionMode(mode: android.view.ActionMode) {}
+        }
+        setOnTouchListener { _, e ->
+            if (e.action == android.view.MotionEvent.ACTION_UP && !hasSelection()) markAt(e.x, e.y)?.let { id -> post { hl?.edit(id) } }
+            false
+        }
+    }
+
+    fun bind(f: ReaderFigure, marks: List<FigMark>, dark: Boolean, ink: Int, hl: CaptionHighlights, onPending: (FigMark) -> Unit) {
+        this.f = f; this.marks = marks; this.hl = hl; this.onPending = onPending
+        setTextColor(ink)
+        val k = "${f.index}|${f.title}|${f.caption}|$dark|$marks"
+        if (k == key) return
+        key = k
+        val text = shownCaption(f)
+        val sp = android.text.SpannableString(text)
+        if (f.title.isNotEmpty()) sp.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, f.title.length, 0)
+        for (m in marks) {
+            val a = m.start.coerceIn(0, text.length)
+            val b = m.end.coerceIn(a, text.length)
+            if (b <= a) continue
+            val c = (HighlightColors[m.color] ?: HighlightColors.getValue("yellow")).copy(alpha = if (dark) .35f else .45f)
+            sp.setSpan(android.text.style.BackgroundColorSpan(c.toArgb()), a, b, 0)
+            if (m.note) sp.setSpan(android.text.style.UnderlineSpan(), a, b, 0)
+        }
+        val s0 = selectionStart; val e0 = selectionEnd
+        setText(sp, BufferType.SPANNABLE)
+        if (s0 in 0..text.length && e0 in 0..text.length && e0 > s0) android.text.Selection.setSelection(this.text as android.text.Spannable, s0, e0)
+    }
+
+    private fun act(color: String, note: Boolean) {
+        val f = f ?: return
+        val s = minOf(selectionStart, selectionEnd); val e = maxOf(selectionStart, selectionEnd)
+        if (s < 0 || e <= s) return
+        android.text.Selection.removeSelection(text as android.text.Spannable)
+        if (!note) onPending(FigMark("", color, s, e, "__pending"))   // coloured at once; the page's redraw replaces it
+        hl?.highlight(f.index, s, e, color, note)
+    }
+
+    // highlight mode: when the selection has stopped changing for a moment (its handles can be dragged)
+    override fun onSelectionChanged(selStart: Int, selEnd: Int) {
+        super.onSelectionChanged(selStart, selEnd)
+        removeCallbacks(waiting)
+        if (hl?.mode() != null && selEnd - selStart >= 2) postDelayed(waiting, 500)
+    }
+    private fun finished() {
+        val c = hl?.mode() ?: return
+        val s = minOf(selectionStart, selectionEnd); val e = maxOf(selectionStart, selectionEnd)
+        if (s < 0 || e - s < 2 || text.substring(s, e).isBlank()) return
+        act(c, false)
+    }
+
+    /** The id of the highlight drawn under (x, y), if any. */
+    private fun markAt(x: Float, y: Float): String? {
+        val l = layout ?: return null
+        val line = l.getLineForVertical((y - totalPaddingTop + scrollY).toInt())
+        val px = x - totalPaddingLeft + scrollX
+        if (px < l.getLineLeft(line) || px > l.getLineRight(line)) return null
+        val off = l.getOffsetForHorizontal(line, px)
+        return marks.firstOrNull { it.id.isNotEmpty() && it.id != "__pending" && off >= it.start && off < it.end }?.id
     }
 }
 
@@ -260,6 +391,11 @@ private fun captionText(f: ReaderFigure, dark: Boolean): AnnotatedString {
     if (f.marks.isEmpty()) return text
     val b = AnnotatedString.Builder(text)
     for (m in f.marks) {
+        if (m.start >= 0 && m.end > m.start) {
+            val c = (HighlightColors[m.color] ?: HighlightColors.getValue("yellow")).copy(alpha = if (dark) .35f else .45f)
+            b.addStyle(SpanStyle(background = c), m.start.coerceAtMost(text.length), m.end.coerceAtMost(text.length))
+            continue
+        }
         if (m.text.length < 2) continue
         val c = (HighlightColors[m.color] ?: HighlightColors.getValue("yellow")).copy(alpha = if (dark) .35f else .45f)
         var at = text.text.indexOf(m.text)

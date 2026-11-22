@@ -1,6 +1,8 @@
 import SwiftUI
 import WebKit
 import ImageIO
+import Combine
+import LuntaCore
 
 // Figures in the reading view. Mentions of a figure in the text ("Figure 2", "Fig. 2B",
 // "Figures 3A and 3C", "Extended Data Fig. 4", "Figure S1") and the papers' own links to
@@ -23,10 +25,12 @@ struct ReaderFigure: Identifiable, Equatable {
     var caption = ""
     /// The panel the text pointed to ("B" in "Fig. 2B"), if any.
     var panel = ""
-    /// Highlights in the caption (their text and color).
+    /// Highlights in the caption (where they are in `shown`, their id and colour).
     var marks: [FigureMark] = []
     /// Its place among the paper's figures (`set`), to go from one to the next in the viewer.
     var index = 0
+    /// One of the page's figures (`index` is its number there): its caption can be highlighted.
+    var inPage = false
     var set: [ReaderFigure] = []
 
     /// One figure as the page describes it.
@@ -37,10 +41,12 @@ struct ReaderFigure: Identifiable, Equatable {
         label = s("label"); title = s("title"); caption = s("caption"); panel = s("panel")
         start = min(max(0, d["start"] as? Int ?? 0), max(0, images.count - 1))
         index = d["index"] as? Int ?? 0
-        marks = (d["marks"] as? [[String: Any]] ?? []).compactMap { m in
-            (m["t"] as? String).map { FigureMark(text: $0, color: m["c"] as? String ?? "yellow") }
-        }
+        inPage = d["index"] is Int
+        marks = FigureMark.list(d["marks"])
     }
+
+    /// The caption as the viewer shows it: the title, a space, the caption (as the page counts it, figureJS shownText).
+    var shown: String { title.isEmpty ? caption : (caption.isEmpty ? title : title + " " + caption) }
 
     /// A message from the page: one figure, or figure `index` of `all` (then `set` holds them all).
     static func from(_ d: [String: Any]) -> ReaderFigure? {
@@ -59,9 +65,23 @@ struct ReaderFigure: Identifiable, Equatable {
     static func == (a: ReaderFigure, b: ReaderFigure) -> Bool { a.id == b.id }
 }
 
+/// A highlight in a figure's caption: the reading view's highlight `id`, drawn over `start..<end` of
+/// the caption the viewer shows (UTF-16 offsets, as the page counts them).
 struct FigureMark: Equatable {
     let text: String
     let color: String
+    var start = 0
+    var end = 0
+    var id = ""
+    var note = false
+
+    static func list(_ any: Any?) -> [FigureMark] {
+        (any as? [[String: Any]] ?? []).compactMap { m in
+            guard let t = m["t"] as? String else { return nil }
+            return FigureMark(text: t, color: m["c"] as? String ?? "yellow", start: m["s"] as? Int ?? 0, end: m["e"] as? Int ?? 0,
+                              id: m["id"] as? String ?? "", note: m["n"] as? Bool ?? false)
+        }
+    }
 }
 
 /// Receives "fig" messages from the page: a tapped figure mention, card or image, or (as the page
@@ -87,6 +107,22 @@ extension ReaderController {
               let data = json.data(using: .utf8),
               let d = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
         return ReaderFigure.from(d)
+    }
+
+    /// The passage selected in figure `i`'s caption in the viewer (`range` in `ReaderFigure.shown`), as
+    /// the reading view's selection of those words: a highlight made from it is the reading view's.
+    func captionSelection(figure i: Int, range: NSRange) async -> PageSelection? {
+        guard let json = (try? await webView?.evaluateJavaScript(
+            "window.luntaFigures && luntaFigures.select ? luntaFigures.select(\(i), \(range.location), \(range.location + range.length)) : ''")) as? String,
+              let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(PageSelection.self, from: data)
+    }
+
+    /// The highlights in figure `i`'s caption as the page has them drawn now.
+    func captionMarks(figure i: Int) async -> [FigureMark]? {
+        guard let json = (try? await webView?.evaluateJavaScript("window.luntaFigures && luntaFigures.marks ? luntaFigures.marks(\(i)) : ''")) as? String,
+              let data = json.data(using: .utf8), let list = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        return FigureMark.list(list)
     }
 
     func setFigureCards(_ on: Bool) {
@@ -189,39 +225,112 @@ extension ReaderAssets {
         if (m) { var k = key(m[1], m[2]); if (!(k in byKey)) byKey[k] = i; }
       });
 
-      // label, title and caption text of a figure (or table)
+      // A caption's text as the viewer shows it, character by character with the text node (and the
+      // offset in it) each one comes from: its text nodes in order, reference numbers left out (a linked
+      // "variability<sup>14</sup>" would run into the words), whitespace runs as one space, trimmed.
+      // A passage selected in the viewer is so a passage of the page's own text: the highlight is the one
+      // the reading view makes when that caption text is selected there (same quote, context and offset).
+      function capText(cap){
+        var out = '', nodes = [], offs = [];
+        var w = document.createTreeWalker(cap, NodeFilter.SHOW_TEXT, null), n;
+        function dropped(p){
+          var sup = p.closest ? p.closest('sup') : null;
+          if (sup && cap.contains(sup) && (sup.querySelector('a') || (sup.closest('a') && cap.contains(sup.closest('a'))))) return true;
+          var a = p.closest ? p.closest('a[href^="#"]') : null;
+          return !!(a && cap.contains(a) && a.closest('sup'));
+        }
+        while ((n = w.nextNode())) {
+          var p = n.parentNode; if (!p || /^(script|style)$/i.test(p.nodeName) || dropped(p)) continue;
+          var v = n.nodeValue;
+          for (var i = 0; i < v.length; i++) {
+            var c = v[i];
+            if (/\s/.test(c)) { if (!out.length || out[out.length - 1] === ' ') continue; c = ' '; }
+            out += c; nodes.push(n); offs.push(i);
+          }
+        }
+        if (out[out.length - 1] === ' ') { out = out.slice(0, -1); nodes.pop(); offs.pop(); }
+        return { text: out, nodes: nodes, offs: offs };
+      }
+      // label, title and caption text of a figure (or table); `shown` (title, a space, caption: the text
+      // the viewer shows) with each character's place in the caption's text (`ct`, -1 for the space)
       function parts(box){
         var cap = captionOf(box), img = box.querySelector('img');
-        var marks = [];
-        if (cap) cap.querySelectorAll('mark.m-hl').forEach(function(x){
-          var c = /m-(yellow|green|blue|pink)/.exec(x.className);
-          var t = norm(x.textContent); if (t) marks.push({ t: t, c: c ? c[1] : 'yellow' });
-        });
-        if (cap) {   // reference numbers ("variability<sup>14</sup>") would run into the words
-          cap = cap.cloneNode(true);
-          cap.querySelectorAll('sup').forEach(function(x){ if (x.querySelector('a') || x.closest('a')) x.remove(); });
-          cap.querySelectorAll('a[href^="#"]').forEach(function(x){ if (x.closest('sup')) x.remove(); });
-        }
-        if (!cap) return { label: fallback(box, ''), title: '', caption: img ? norm(img.getAttribute('alt')) : '', marks: [] };
+        if (!cap) return { label: fallback(box, ''), title: '', caption: img ? norm(img.getAttribute('alt')) : '', marks: [], ct: null, at: [] };
+        var ct = capText(cap), clone = cap.cloneNode(true);
+        clone.querySelectorAll('sup').forEach(function(x){ if (x.querySelector('a') || x.closest('a')) x.remove(); });
+        clone.querySelectorAll('a[href^="#"]').forEach(function(x){ if (x.closest('sup')) x.remove(); });
         var strongs = [];
-        for (var n = cap.firstChild; n && strongs.length < 2; n = n.nextSibling) {
+        for (var n = clone.firstChild; n && strongs.length < 2; n = n.nextSibling) {
           if (n.nodeType === 3 && !n.nodeValue.trim()) continue;
           if (n.nodeType === 1 && (/^(strong|b)$/i.test(n.nodeName) || n.classList.contains('ltx_tag'))) { strongs.push(norm(n.textContent)); continue; }
           break;
         }
-        var full = norm(cap.textContent), m = ANY_LABEL.exec(full);
-        var label = m ? m[0].trim() : '', rest = (m ? full.slice(m[0].length) : full).replace(CUT, '');
+        var full = ct.text, m = ANY_LABEL.exec(full);
+        var restAt = m ? m[0].length : 0, cut = CUT.exec(full.slice(restAt));
+        if (cut) restAt += cut[0].length;
+        var rest = full.slice(restAt), capAt = restAt;
         var title = '';
         if (strongs.length) {
           var s0 = strongs[0];
-          if (label && s0.indexOf(label) === 0) s0 = s0.slice(label.length).replace(CUT, '');
-          else if (label) s0 = '';
+          if (m && s0.indexOf(m[0].trim()) === 0) s0 = s0.slice(m[0].trim().length).replace(CUT, '');
+          else if (m) s0 = '';
           title = s0 || (strongs.length > 1 ? strongs[1] : '');
           if (title.length < 4 || rest.indexOf(title) !== 0) title = '';
-          if (title) rest = rest.slice(title.length).trim();
+          if (title) {
+            var after = rest.slice(title.length);
+            capAt = restAt + title.length + (after.length - after.replace(/^\s+/, '').length);
+            rest = after.trim();
+          }
         }
+        var label = m ? m[0].trim() : '';
         if (!label && img) { var a = ANY_LABEL.exec(norm(img.getAttribute('alt'))); if (a) label = a[0].trim(); }
-        return { label: label.replace(/[\s|.:—–-]+$/, '') || fallback(box, full), title: title, caption: rest, marks: marks };
+        var at = [], k;
+        for (k = 0; k < title.length; k++) at.push(restAt + k);
+        if (title && rest) at.push(-1);
+        for (k = 0; k < rest.length; k++) at.push(capAt + k);
+        var p = { label: label.replace(/[\s|.:—–-]+$/, '') || fallback(box, full), title: title, caption: rest, ct: ct, at: at };
+        p.marks = capMarks(p);
+        return p;
+      }
+      // the reader's highlights in a caption, as runs of the shown text: {s, e, id, c, n (it has a note), t}
+      function capMarks(p){
+        var out = [], cur = null, shown = shownText(p);
+        for (var i = 0; i < p.at.length; i++) {
+          var j = p.at[i], mk = null;
+          if (j >= 0) { var el = p.ct.nodes[j].parentNode; mk = el && el.closest ? el.closest('mark.m-hl') : null; }
+          var id = mk ? mk.getAttribute('data-ann') : null;
+          if (j < 0 && cur) continue;   // the space between title and caption: in a run only if it goes on after it
+          if (id && id !== '__pending' && cur && cur.id === id && cur.e >= i - 1) { cur.e = i + 1; continue; }
+          cur = null;
+          if (!id || id === '__pending') continue;
+          var c = /m-(yellow|green|blue|pink)/.exec(mk.className);
+          cur = { s: i, e: i + 1, id: id, c: c ? c[1] : 'yellow', n: /\bm-note\b/.test(mk.className) };
+          out.push(cur);
+        }
+        out.forEach(function(r){ r.t = shown.slice(r.s, r.e); });
+        return out;
+      }
+      function shownText(p){ return p.title ? (p.caption ? p.title + ' ' + p.caption : p.title) : p.caption; }
+      // a passage of the shown caption (from, to: its characters, as the viewer counts them) as a passage
+      // of the page's text, as luntaSelection gives it for that selection in the reading view
+      function capSelection(i, from, to){
+        var f = figs[i]; if (!f || !window.luntaPassage) return '';
+        var p = parts(f); if (!p.ct) return '';
+        from = Math.max(0, from); to = Math.min(p.at.length, to);
+        while (from < to && p.at[from] < 0) from++;
+        while (to > from && p.at[to - 1] < 0) to--;
+        if (to <= from) return '';
+        var a = p.at[from], b = p.at[to - 1];
+        var na = p.ct.nodes[a], nb = p.ct.nodes[b], s = -1, e = -1, pos = 0;
+        var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: function(n){
+          var q = n.parentNode && n.parentNode.nodeName.toLowerCase();
+          return (q === 'script' || q === 'style') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT; } }), n;
+        while ((n = w.nextNode())) {
+          if (n === na) s = pos + p.ct.offs[a];
+          if (n === nb) { e = pos + p.ct.offs[b] + 1; break; }
+          pos += n.nodeValue.length;
+        }
+        return s < 0 || e <= s ? '' : window.luntaPassage(s, e);
       }
       // a figure without a label: a graphical abstract, or just "Figure"
       function fallback(box, text){
@@ -304,7 +413,10 @@ extension ReaderAssets {
       window.luntaFigures = {
         count: figs.length,
         open: function(i, panel){ return figs[i] ? openFig(i, panel, null) : false; },
-        data: function(i){ return JSON.stringify({ all: all(), index: i }); }
+        data: function(i){ return JSON.stringify({ all: all(), index: i }); },
+        // the viewer's caption: a selection in it as the page's passage, and the highlights in it now
+        select: function(i, from, to){ return capSelection(i, from, to); },
+        marks: function(i){ return figs[i] ? JSON.stringify(parts(figs[i]).marks) : '[]'; }
       };
 
       // the cards
@@ -383,6 +495,8 @@ extension ReaderAssets {
 /// Black in dark mode.
 struct FigureViewer: View {
     let figure: ReaderFigure
+    /// The reader whose page the figure is in: its caption can then be highlighted like the text.
+    var controller: ReaderController? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
     @State private var current: Int
@@ -390,8 +504,9 @@ struct FigureViewer: View {
     /// Shown as a card over the text (`figureOverlay`): closing goes through this instead of dismiss.
     var onClose: (() -> Void)? = nil
 
-    init(figure: ReaderFigure, onClose: (() -> Void)? = nil) {
+    init(figure: ReaderFigure, controller: ReaderController? = nil, onClose: (() -> Void)? = nil) {
         self.figure = figure
+        self.controller = controller
         self.onClose = onClose
         _current = State(initialValue: figure.set.isEmpty ? 0 : figure.index)
     }
@@ -426,13 +541,15 @@ struct FigureViewer: View {
         #if os(iOS)
         TabView(selection: $current) {
             ForEach(figures.indices, id: \.self) { i in
-                FigurePage(figure: figures[i], start: figures[i].id == figure.id ? figure.start : 0, showCaption: showCaption, dark: scheme == .dark)
+                FigurePage(figure: figures[i], start: figures[i].id == figure.id ? figure.start : 0, showCaption: showCaption, dark: scheme == .dark,
+                           controller: controller)
                     .tag(i)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         #else
-        FigurePage(figure: shown, start: shown.id == figure.id ? figure.start : 0, showCaption: showCaption, dark: scheme == .dark)
+        FigurePage(figure: shown, start: shown.id == figure.id ? figure.start : 0, showCaption: showCaption, dark: scheme == .dark,
+                   controller: controller)
             .id(current)
         #endif
     }
@@ -475,17 +592,35 @@ struct FigureViewer: View {
 }
 
 /// One figure in the viewer: its image(s) and caption.
+///
+/// The caption's highlights are the reading view's: a passage selected here is turned into the page's
+/// passage of those words (`captionSelection`, figureJS's luntaFigures.select) and saved as the reader
+/// saves a selection (Highlight, Add Note, Color in the selection menu; at once in highlight mode),
+/// so it shows in the text, the Highlights & Notes list, outlines and summaries, and syncs. The marks
+/// drawn here are those the page has in the caption (`captionMarks`), again after each redraw; tapping
+/// one opens its editor.
 private struct FigurePage: View {
     let figure: ReaderFigure
     let showCaption: Bool
     let dark: Bool
+    let controller: ReaderController?
     @State private var image: Int
     @State private var captionHeight: CGFloat = 0
+    @State private var marks: [FigureMark]
+    @State private var editing: Annotation?
+    /// Bumped to take the selection out of the caption (once its passage is highlighted).
+    @State private var deselect = 0
+    @AppStorage("highlightMode") private var highlightMode = false
+    @AppStorage("highlightModeColor") private var highlightModeColor = HighlightColor.yellow.rawValue
 
-    init(figure: ReaderFigure, start: Int, showCaption: Bool, dark: Bool) {
-        self.figure = figure; self.showCaption = showCaption; self.dark = dark
+    init(figure: ReaderFigure, start: Int, showCaption: Bool, dark: Bool, controller: ReaderController? = nil) {
+        self.figure = figure; self.showCaption = showCaption; self.dark = dark; self.controller = controller
         _image = State(initialValue: start)
+        _marks = State(initialValue: figure.marks)
     }
+
+    /// A figure of the reader's page (not a table's image alone), with the library at hand.
+    private var canHighlight: Bool { figure.inPage && controller?.model != nil }
 
     private var hasCaption: Bool { !figure.caption.isEmpty || !figure.title.isEmpty }
 
@@ -516,7 +651,7 @@ private struct FigurePage: View {
                 if showCaption, hasCaption {
                     Divider()
                     ScrollView {
-                        captionText
+                        caption
                             .frame(maxWidth: 760, alignment: .leading)
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.horizontal, 18).padding(.vertical, 14)
@@ -529,33 +664,312 @@ private struct FigurePage: View {
                 }
             }
         }
-    }
-
-    private var captionText: some View {
-        var t = AttributedString()
-        if !figure.title.isEmpty {
-            var a = AttributedString(figure.title)
-            a.font = .body.weight(.semibold)
-            t += a
-            if !figure.caption.isEmpty { t += AttributedString(" ") }
-        }
-        t += AttributedString(figure.caption)
-        // the reader's highlights in the caption
-        for m in figure.marks where m.text.count > 1 {
-            let color = (HighlightColor(rawValue: m.color) ?? .yellow).color.opacity(dark ? 0.35 : 0.45)
-            var from = t.startIndex
-            while from < t.endIndex, let r = t[from...].range(of: m.text) {
-                t[r].backgroundColor = color
-                from = r.upperBound
+        .onReceive(controller?.$annotationsShown.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()) { _ in reloadMarks() }
+        .sheet(item: $editing) { a in
+            if let model = controller?.model {
+                AnnotationEditor(annotation: a) { [weak controller] in controller?.showAnnotations(model.annotations(a.paperId)) }
+                    .environmentObject(model)
+                    .environment(\.highlightUndo, controller?.undo)
             }
         }
-        return Text(t)
-            .font(.callout)
-            .lineSpacing(3)
-            .foregroundStyle(dark ? Color(red: 0.847, green: 0.835, blue: 0.808) : Color.primary)   // the reader's text
-            .textSelection(.enabled)
+    }
+
+    private var caption: some View {
+        CaptionText(text: figure.shown, titleLength: figure.title.utf16.count, marks: marks, dark: dark,
+                    actions: canHighlight ? CaptionActions(menu: highlight, mark: edit, selected: { highlight(.highlight(modeColor), $0) }) : nil,
+                    modeColor: canHighlight && highlightMode ? modeColor : nil, deselect: deselect)
+    }
+
+    private var modeColor: HighlightColor { HighlightColor(rawValue: highlightModeColor) ?? .yellow }
+
+    /// The highlights the page has in this caption now.
+    private func reloadMarks() {
+        guard let controller, figure.inPage else { return }
+        Task { if let m = await controller.captionMarks(figure: figure.index) { marks = m } }
+    }
+
+    /// Highlight (or Add Note on) the passage `range` of the caption, as the reader does for a selection in the text.
+    private func highlight(_ action: ReaderMenuAction, _ range: NSRange) {
+        guard let controller, let model = controller.model, range.length > 0 else { return }
+        var color = HighlightColor.yellow
+        if case .highlight(let c) = action {
+            color = c
+            // coloured at once; the page's redraw replaces it with the highlight itself
+            marks.append(FigureMark(text: "", color: c.rawValue, start: range.location, end: NSMaxRange(range), id: "__pending"))
+        }
+        let paper = controller.paperID
+        Task {
+            guard let sel = await controller.captionSelection(figure: figure.index, range: range) else { reloadMarks(); return }
+            let a = await model.addHighlightMerging(paper, sel, color: color, controller: controller, undo: controller.undo)
+            deselect += 1
+            controller.showAnnotations(model.annotations(paper))
+            if case .note = action { editing = a }
+        }
+    }
+
+    /// A highlight in the caption tapped: its editor (colour, note, Copy Quote, Delete).
+    private func edit(_ id: String) {
+        guard let controller, let model = controller.model else { return }
+        editing = model.annotations(controller.paperID).first { $0.id == id }
     }
 }
+
+/// What a selection or a tap in the caption does (nil: the caption is only read and copied).
+struct CaptionActions {
+    /// Highlight, Highlight in a colour or Add Note, from the selection menu.
+    var menu: (ReaderMenuAction, NSRange) -> Void
+    /// A highlight tapped (its id).
+    var mark: (String) -> Void
+    /// Highlight mode: a selection finished.
+    var selected: (NSRange) -> Void
+}
+
+/// The caption's text: the title in bold, then the caption, with the reader's highlights coloured
+/// (a note's dotted underline as in the text), in the reader's colours.
+private func captionAttributed(_ text: String, titleLength: Int, marks: [FigureMark], dark: Bool) -> NSAttributedString {
+    #if os(iOS)
+    let base = UIFont.preferredFont(forTextStyle: .callout)
+    let bold = UIFont.systemFont(ofSize: base.pointSize, weight: .semibold)
+    let ink = dark ? UIColor(red: 0.847, green: 0.835, blue: 0.808, alpha: 1) : UIColor.label   // the reader's text
+    func platform(_ c: Color) -> UIColor { UIColor(c) }
+    #else
+    let base = NSFont.preferredFont(forTextStyle: .callout)
+    let bold = NSFont.systemFont(ofSize: base.pointSize, weight: .semibold)
+    let ink = dark ? NSColor(red: 0.847, green: 0.835, blue: 0.808, alpha: 1) : NSColor.labelColor
+    func platform(_ c: Color) -> NSColor { NSColor(c) }
+    #endif
+    let para = NSMutableParagraphStyle()
+    para.lineSpacing = 3
+    let s = NSMutableAttributedString(string: text, attributes: [.font: base, .foregroundColor: ink, .paragraphStyle: para])
+    let n = (text as NSString).length
+    if titleLength > 0 { s.addAttribute(.font, value: bold, range: NSRange(location: 0, length: min(titleLength, n))) }
+    for m in marks {
+        let a = max(0, min(m.start, n)), b = max(a, min(m.end, n))
+        guard b > a else { continue }
+        let r = NSRange(location: a, length: b - a)
+        let color = (HighlightColor(rawValue: m.color) ?? .yellow).color.opacity(dark ? 0.35 : 0.45)
+        s.addAttribute(.backgroundColor, value: platform(color), range: r)
+        if m.note {
+            s.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue | NSUnderlineStyle.patternDot.rawValue, range: r)
+            s.addAttribute(.underlineColor, value: platform(Color(red: 0.78, green: 0.47, blue: 0.16)), range: r)
+        }
+    }
+    return s
+}
+
+/// The id of the highlight drawn at `point` (in the text container's coordinates), if any.
+private func markID(at point: CGPoint, layout lm: NSLayoutManager, container tc: NSTextContainer, marks: [FigureMark]) -> String? {
+    guard lm.numberOfGlyphs > 0 else { return nil }
+    let g = lm.glyphIndex(for: point, in: tc)
+    guard lm.boundingRect(forGlyphRange: NSRange(location: g, length: 1), in: tc).contains(point) else { return nil }
+    let i = lm.characterIndexForGlyph(at: g)
+    return marks.first { !$0.id.isEmpty && $0.id != "__pending" && i >= $0.start && i < $0.end }?.id
+}
+
+private func longEnough(_ text: String, _ r: NSRange) -> Bool {
+    guard r.length > 0, NSMaxRange(r) <= (text as NSString).length else { return false }
+    return (text as NSString).substring(with: r).trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
+}
+
+#if os(iOS)
+/// The caption as selectable text with the reader's selection menu (Highlight, Add Note, Color).
+private struct CaptionText: UIViewRepresentable {
+    let text: String
+    let titleLength: Int
+    let marks: [FigureMark]
+    let dark: Bool
+    var actions: CaptionActions?
+    /// Highlight mode's colour (nil: off): a selection is highlighted when it stops changing.
+    var modeColor: HighlightColor?
+    var deselect = 0
+
+    func makeUIView(context: Context) -> UITextView {
+        let v = UITextView(usingTextLayoutManager: false)
+        v.isEditable = false
+        v.isSelectable = true
+        v.isScrollEnabled = false
+        v.backgroundColor = .clear
+        v.textContainerInset = .zero
+        v.textContainer.lineFragmentPadding = 0
+        v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        v.delegate = context.coordinator
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped(_:)))
+        tap.delegate = context.coordinator
+        v.addGestureRecognizer(tap)
+        context.coordinator.view = v
+        return v
+    }
+
+    func updateUIView(_ v: UITextView, context: Context) {
+        let c = context.coordinator
+        c.parent = self
+        let s = captionAttributed(text, titleLength: titleLength, marks: marks, dark: dark)
+        if v.attributedText != s {
+            let keep = v.selectedRange
+            v.attributedText = s
+            if NSMaxRange(keep) <= (text as NSString).length { v.selectedRange = keep }
+        }
+        v.tintColor = modeColor.map { UIColor($0.color) }
+        if c.deselected != deselect { c.deselected = deselect; v.selectedRange = NSRange(location: 0, length: 0) }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView v: UITextView, context: Context) -> CGSize? {
+        let w = proposal.width.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 320
+        return CGSize(width: w, height: ceil(v.sizeThatFits(CGSize(width: w, height: .greatestFiniteMagnitude)).height))
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    @MainActor final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
+        var parent: CaptionText
+        weak var view: UITextView?
+        var deselected = 0
+        private var waiting: Task<Void, Never>?
+        init(_ p: CaptionText) { parent = p; deselected = p.deselect }
+
+        func textView(_ tv: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+            guard let a = parent.actions, range.length > 0 else { return nil }
+            let hl = UIAction(title: "Highlight", image: UIImage(systemName: "highlighter")) { _ in a.menu(.highlight(.yellow), range) }
+            let note = UIAction(title: "Add Note", image: UIImage(systemName: "note.text.badge.plus")) { _ in a.menu(.note, range) }
+            let colors = UIMenu(title: "Color", image: UIImage(systemName: "paintpalette"), children: HighlightColor.allCases.map { c in
+                UIAction(title: c.name) { _ in a.menu(.highlight(c), range) }
+            })
+            return UIMenu(children: [UIMenu(title: "", options: .displayInline, children: [hl, note, colors])] + suggestedActions)
+        }
+
+        /// Highlight mode: when the selection has stopped changing for a moment (its handles can be
+        /// dragged, so there is no "done"), as in the text.
+        func textViewDidChangeSelection(_ tv: UITextView) {
+            waiting?.cancel()
+            guard parent.modeColor != nil, parent.actions != nil, longEnough(parent.text, tv.selectedRange) else { return }
+            let r = tv.selectedRange
+            waiting = Task { [weak self, weak tv] in
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled, let self, let tv, tv.selectedRange == r, self.parent.modeColor != nil else { return }
+                self.parent.actions?.selected(r)
+            }
+        }
+
+        @objc func tapped(_ g: UITapGestureRecognizer) {
+            guard let tv = view, let a = parent.actions, tv.selectedRange.length == 0 else { return }
+            let p = g.location(in: tv)
+            let at = CGPoint(x: p.x - tv.textContainerInset.left, y: p.y - tv.textContainerInset.top)
+            if let id = markID(at: at, layout: tv.layoutManager, container: tv.textContainer, marks: parent.marks) { a.mark(id) }
+        }
+
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
+}
+#else
+/// The caption as selectable text with the reader's menu (Highlight, Highlight in Color, Add Note…).
+private struct CaptionText: NSViewRepresentable {
+    let text: String
+    let titleLength: Int
+    let marks: [FigureMark]
+    let dark: Bool
+    var actions: CaptionActions?
+    /// Highlight mode's colour (nil: off): a selection is highlighted when the mouse is released.
+    var modeColor: HighlightColor?
+    var deselect = 0
+
+    final class TextView: NSTextView {
+        var marks: [FigureMark] = []
+        var actions: CaptionActions?
+        var modeOn = false
+        var deselected = 0
+        private var finishedAt: TimeInterval = -1
+
+        override func menu(for event: NSEvent) -> NSMenu? {
+            let menu = super.menu(for: event) ?? NSMenu()
+            guard actions != nil, selectedRange().length > 0 else { return menu }
+            let hl = NSMenuItem(title: "Highlight", action: #selector(highlightYellow), keyEquivalent: "")
+            hl.target = self
+            let sub = NSMenu()
+            for c in HighlightColor.allCases {
+                let i = NSMenuItem(title: c.name, action: #selector(highlightColor(_:)), keyEquivalent: "")
+                i.target = self; i.representedObject = c.rawValue
+                sub.addItem(i)
+            }
+            let colors = NSMenuItem(title: "Highlight in Color", action: nil, keyEquivalent: "")
+            colors.submenu = sub
+            let note = NSMenuItem(title: "Add Note…", action: #selector(addNote), keyEquivalent: "")
+            note.target = self
+            menu.insertItem(.separator(), at: 0)
+            menu.insertItem(note, at: 0)
+            menu.insertItem(colors, at: 0)
+            menu.insertItem(hl, at: 0)
+            return menu
+        }
+        @objc private func highlightYellow() { actions?.menu(.highlight(.yellow), selectedRange()) }
+        @objc private func highlightColor(_ sender: NSMenuItem) {
+            actions?.menu(.highlight(HighlightColor(rawValue: sender.representedObject as? String ?? "") ?? .yellow), selectedRange())
+        }
+        @objc private func addNote() { actions?.menu(.note, selectedRange()) }
+
+        // NSTextView follows the drag itself until the button is released: then the click or the
+        // selection is done (mouseUp as well, in case it doesn't)
+        override func mouseDown(with e: NSEvent) {
+            super.mouseDown(with: e)
+            if NSEvent.pressedMouseButtons & 1 == 0 { finished(e) }
+        }
+        override func mouseUp(with e: NSEvent) {
+            super.mouseUp(with: e)
+            finished(e)
+        }
+        private func finished(_ e: NSEvent) {
+            guard let actions, e.timestamp != finishedAt else { return }
+            finishedAt = e.timestamp
+            let r = selectedRange()
+            if r.length == 0 {
+                guard e.clickCount == 1, let lm = layoutManager, let tc = textContainer else { return }
+                let p = convert(e.locationInWindow, from: nil)
+                let at = CGPoint(x: p.x - textContainerOrigin.x, y: p.y - textContainerOrigin.y)
+                if let id = markID(at: at, layout: lm, container: tc, marks: marks) { actions.mark(id) }
+            } else if modeOn, longEnough(string, r) {
+                actions.selected(r)
+            }
+        }
+    }
+
+    func makeNSView(context: Context) -> TextView {
+        let v = TextView(usingTextLayoutManager: false)
+        v.isEditable = false
+        v.isSelectable = true
+        v.isRichText = true
+        v.drawsBackground = false
+        v.textContainerInset = .zero
+        v.textContainer?.lineFragmentPadding = 0
+        v.textContainer?.widthTracksTextView = true
+        v.isVerticallyResizable = false
+        v.isHorizontallyResizable = false
+        v.deselected = deselect
+        v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return v
+    }
+
+    func updateNSView(_ v: TextView, context: Context) {
+        v.marks = marks
+        v.actions = actions
+        v.modeOn = modeColor != nil
+        let s = captionAttributed(text, titleLength: titleLength, marks: marks, dark: dark)
+        if v.textStorage.map({ !$0.isEqual(to: s) }) ?? true {
+            let keep = v.selectedRange()
+            v.textStorage?.setAttributedString(s)
+            if NSMaxRange(keep) <= (text as NSString).length { v.setSelectedRange(keep) }
+        }
+        v.selectedTextAttributes = [.backgroundColor: modeColor.map { NSColor($0.color).withAlphaComponent(0.55) } ?? NSColor.selectedTextBackgroundColor]
+        if v.deselected != deselect { v.deselected = deselect; v.setSelectedRange(NSRange(location: 0, length: 0)) }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView v: TextView, context: Context) -> CGSize? {
+        let w = proposal.width.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 320
+        guard let lm = v.layoutManager, let tc = v.textContainer else { return nil }
+        tc.containerSize = NSSize(width: w, height: .greatestFiniteMagnitude)
+        lm.ensureLayout(for: tc)
+        return CGSize(width: w, height: ceil(lm.usedRect(for: tc).height))
+    }
+}
+#endif
 
 /// All the paper's figures, as a grid of thumbnails; tap one to open it.
 struct FigureGrid: View {
@@ -586,9 +1000,9 @@ struct FigureGrid: View {
             }
         }
         #if os(iOS)
-        .fullScreenCover(item: $viewing) { FigureViewer(figure: $0) }
+        .fullScreenCover(item: $viewing) { FigureViewer(figure: $0, controller: controller) }
         #else
-        .sheet(item: $viewing) { FigureViewer(figure: $0) }
+        .sheet(item: $viewing) { FigureViewer(figure: $0, controller: controller) }
         .frame(minWidth: 620, idealWidth: 760, minHeight: 480, idealHeight: 640)
         #endif
         #if DEBUG
@@ -917,6 +1331,7 @@ struct ZoomableImage: NSViewRepresentable {
 /// and tapping or clicking it closes the figure, as does the close button or Esc.
 private struct FigureOverlay: ViewModifier {
     @Binding var figure: ReaderFigure?
+    let controller: ReaderController?
 
     func body(content: Content) -> some View {
         content
@@ -929,7 +1344,7 @@ private struct FigureOverlay: ViewModifier {
                             .onTapGesture { figure = nil }
                             .accessibilityLabel("Back to the text")
                             .accessibilityAddTraits(.isButton)
-                        FigureViewer(figure: f, onClose: { figure = nil })
+                        FigureViewer(figure: f, controller: controller, onClose: { figure = nil })
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .shadow(color: .black.opacity(0.35), radius: 24, y: 8)
                             #if os(iOS)
@@ -948,6 +1363,9 @@ private struct FigureOverlay: ViewModifier {
 }
 
 extension View {
-    /// Shows `figure` as a card over this view (see `FigureOverlay`).
-    func figureOverlay(_ figure: Binding<ReaderFigure?>) -> some View { modifier(FigureOverlay(figure: figure)) }
+    /// Shows `figure` as a card over this view (see `FigureOverlay`); with the reader's `controller`
+    /// its caption can be highlighted.
+    func figureOverlay(_ figure: Binding<ReaderFigure?>, controller: ReaderController? = nil) -> some View {
+        modifier(FigureOverlay(figure: figure, controller: controller))
+    }
 }

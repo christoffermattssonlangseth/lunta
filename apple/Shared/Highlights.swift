@@ -248,6 +248,9 @@ extension ReaderAssets {
         if (e <= s) return '';
         return JSON.stringify({ quote: text.slice(s, e), prefix: text.slice(Math.max(0, s - 40), s), suffix: text.slice(e, e + 40), start: s + base() });
       }
+      // the page text from s to e (offsets in this page's text) as a selection of it: the figure viewer's
+      // caption (FigureViewer.swift) gives the passage selected there so
+      window.luntaPassage = function(s, e){ return selectionJSON(fullText(textNodes()), s, e); };
       function caretOffset(nodes, x, y){
         var r = document.caretRangeFromPoint && document.caretRangeFromPoint(x, y);
         if (!r) return -1;
@@ -472,6 +475,7 @@ extension ReaderController {
                 missing.formUnion(ids)
             }
             if missing != self.missingAnnotations { self.missingAnnotations = missing }
+            self.annotationsShown += 1
         }
     }
 

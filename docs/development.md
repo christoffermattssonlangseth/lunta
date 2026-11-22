@@ -88,6 +88,19 @@ Highlight to…: the passage stays coloured and the word tapped next ends it. Al
 highlight's sheet, then turn the page and tap the word where the highlight should end (before its
 start: the start moves; inside it: it gets shorter); highlights it reaches are joined to it.
 
+A figure's caption can be highlighted in the figure viewer too (Mac, iPhone, iPad, Windows, Linux,
+Android): select words there for Highlight, Add Note or a colour (highlight mode: at once), tap a
+highlight for its editor. It is the reading view's own highlight: the viewer's caption (title, a space,
+caption; reference numbers and extra spaces left out) knows the page's text node and offset of each
+of its characters (figureJS `capText`), so a passage selected there becomes the page's passage of
+those words (`luntaFigures.select` → `luntaPassage`: quote, prefix, suffix and offset, with the chapter's
+base in a book read chapter by chapter), exactly what selecting them in the reading view gives. It is
+saved like any selection (merged with highlights it touches), so it shows in the text, *Highlights &
+Notes*, outlines and summaries, and syncs. The viewer draws the marks the page has in the caption
+(`luntaFigures.marks`: runs of the shown text with their ids), again after every redraw of the page's
+highlights (`ReaderController.annotationsShown`). Captions of tables shown from a lone image (no figure
+of the page) are only read and copied.
+
 ### Books and theses as PDFs
 
 Before laying out a PDF, both converters decide whether it is a **paper** or a **book** (a thesis is

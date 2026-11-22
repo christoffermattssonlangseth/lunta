@@ -114,6 +114,8 @@ private fun EpubReader(model: AppModel, paper: Paper) {
     var scale by remember { mutableFloatStateOf(model.settings.readerScale) }
     var paged by remember { mutableStateOf(model.settings.readerPaged) }
     var annotations by remember { mutableStateOf<List<Annotation>>(emptyList()) }
+    // times the page's highlights were drawn: the figure viewer's caption shows them again after each
+    var marksDrawn by remember { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf<Annotation?>(null) }
     var figure by remember { mutableStateOf<FigureOpen?>(null) }
     var figures by remember { mutableStateOf<List<ReaderFigure>>(emptyList()) }
@@ -173,6 +175,7 @@ private fun EpubReader(model: AppModel, paper: Paper) {
                 .put("color", a.color).put("note", a.note).put("start", a.position.toIntOrNull() ?: 0))
         }
         js("luntaApplyAnnotations(${JSONObject.quote(items.toString())})")
+        marksDrawn++
     }
 
     suspend fun savePosition() {
@@ -684,6 +687,30 @@ private fun EpubReader(model: AppModel, paper: Paper) {
         }
     }
 
+    val bookDir = book?.let { File(it.dir) }
+    if (showFigures && bookDir != null) FigureGrid(figures, bookDir, onOpen = { openFigure(it) }) { showFigures = false }
+    // the figure's caption: highlights made there are the reading view's own (Figures.kt CaptionText)
+    val captionHl = CaptionHighlights(
+        mode = { if (hlMode) hlColor else null },
+        highlight = { fig, from, to, color, note ->
+            scope.launch {
+                val sel = jsString("window.luntaFigures && luntaFigures.select ? luntaFigures.select($fig, $from, $to) : ''")()?.takeIf { it.isNotEmpty() }
+                if (sel == null) { model.info = "Those words weren't found in the reading view."; refreshHighlights(); return@launch }
+                val saved = runCatching { saveSelection(JSONObject(sel), color) }.getOrElse { model.info = it.message ?: "Couldn't highlight"; refreshHighlights(); return@launch }
+                model.reload()
+                refreshHighlights()
+                if (note) editing = saved
+            }
+        },
+        edit = { aid -> scope.launch { withContext(Dispatchers.IO) { lib.annotations(id) }.firstOrNull { it.id == aid }?.let { editing = it } } },
+        marks = { fig ->
+            jsString("window.luntaFigures && luntaFigures.marks ? luntaFigures.marks($fig) : '[]'")()?.let { runCatching { figMarks(org.json.JSONArray(it)) }.getOrNull() }
+        },
+        drawn = marksDrawn,
+    )
+    figure?.let { f -> if (bookDir != null) FigureViewer(f, bookDir, readerDark, captionHl) { figure = null } }
+
+    // (after the figure viewer: a highlight's editor opened from its caption shows over it)
     editing?.let { a ->
         AnnotationDialog(a, ctx, { editing = null }, onDelete = {
             scope.launch { withContext(Dispatchers.IO) { lib.deleteAnnotation(a.paperId, a.id) }; editing = null; model.reload(); refreshHighlights() }
@@ -697,9 +724,6 @@ private fun EpubReader(model: AppModel, paper: Paper) {
         })
     }
 
-    val bookDir = book?.let { File(it.dir) }
-    if (showFigures && bookDir != null) FigureGrid(figures, bookDir, onOpen = { openFigure(it) }) { showFigures = false }
-    figure?.let { f -> if (bookDir != null) FigureViewer(f, bookDir, readerDark) { figure = null } }
 }
 
 /** The find bar: the search field, "3 of 17" or "No matches", previous / next, Done. */

@@ -241,7 +241,7 @@ struct ReaderWindow: View {
                     .inspectorColumnWidth(min: 300, ideal: 380, max: 560)
             }
         }
-        .figureOverlay($figure)
+        .figureOverlay($figure, controller: controller)
         .readerFigures(controller, browsing: $showFigures)
         .sheet(item: $editingAnnotation) { a in AnnotationEditor(annotation: a) { refreshHighlights() } }
         .onChange(of: paper?.annotationCount) { refreshHighlights() }
@@ -267,6 +267,8 @@ struct ReaderWindow: View {
         .navigationTitle(paper?.meta.title ?? "Reader")
         .task {
             controller.onFigure = { figure = $0 }
+            // the figure viewer's caption: highlights made there are this reader's (FigureViewer.swift)
+            controller.model = model; controller.paperID = paperID; controller.undo = undo
             controller.onPageReady = {
                 controller.setHighlightMode(highlightMode, color: hlColor)
                 refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)

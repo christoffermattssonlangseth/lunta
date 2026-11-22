@@ -11,7 +11,7 @@ import { ask } from '@tauri-apps/plugin-dialog';
 import { api, type Annotation, type Paper, type PageSelection, type TocItem } from './api';
 import { fill, h, $, status, copy, menu, type MenuItem } from './ui';
 import { showPdf, closePdf, pdfZoom, pdfFind, pdfFindStep, pdfFindClear } from './pdf';
-import { closeFigureOverlay, figureList, figureOpen, showFigureGrid, showFigureViewer, type Fig } from './figures';
+import { closeFigureOverlay, figMarks, figureList, figureOpen, refreshFigureMarks, showFigureGrid, showFigureViewer, type CaptionHighlights, type Fig } from './figures';
 import { openFind, closeFind, findOpen, findStep, findUpdate, type FindResult, type FindTarget } from './find';
 import { summaryPageReady, summaryAction, summaryClosed, openAsk, askPaperClosed } from './ai';
 import { startNarration, attachReader, detachReader, narrationPaper, playFromId, playerBar, type NarrationItem, type ReaderLink } from './listen';
@@ -88,7 +88,7 @@ window.addEventListener('message', (e) => {
       const list = figureList(body);
       if (list) { figures = list; figuresButton(); break; }
       const o = figureOpen(body);
-      if (o) { selectionBar(null); showFigureViewer(o, refocus, readerDark()); }
+      if (o) { selectionBar(null); showFigureViewer(o, refocus, readerDark(), captionHighlights()); }
       break;
     }
     case 'summary':  // the Summary card's menu: regenerate, hide (ai.ts)
@@ -539,6 +539,7 @@ async function refreshHighlights() {
       id: a.id, quote: a.quote, prefix: a.prefix, suffix: a.suffix, color: a.color, note: a.note, start: parseInt(a.position, 10) || 0,
     }));
     await run(`luntaApplyAnnotations(${JSON.stringify(JSON.stringify(items))})`);
+    refreshFigureMarks();   // an open figure's caption shows them too
   }
   renderList(list);
 }
@@ -573,6 +574,7 @@ function openEditor(a: Annotation) {
         h('div.spacer'),
         h('button', { text: 'Cancel', onclick: close }),
         h('button.primary', { text: 'Save', onclick: async () => { close(); await api.saveAnnotation({ ...a, color, note: note.value.trim() }); refreshHighlights(); } }))));
+  if (document.querySelector('#figure')) back.classList.add('over-figure');   // a highlight in a figure's caption
   document.body.append(back);
   note.focus();
 }
@@ -840,6 +842,32 @@ function selectionDone(json: string) {
 
 // ---- figures ----
 
+/** Highlights in the figure viewer's caption: the reading view's own, made from the page's passage of
+ *  the words selected there (figureJS's luntaFigures.select), saved and drawn as a selection's are. */
+function captionHighlights(): CaptionHighlights | undefined {
+  if (!paper || mode !== 'reading') return undefined;
+  return {
+    mode: () => (hlMode ? hlColor : null),
+    highlight: async (fig, from, to, color, note) => {
+      if (!paper) return;
+      const json = await run<string>(`window.luntaFigures && luntaFigures.select ? luntaFigures.select(${fig}, ${from}, ${to}) : ''`);
+      let sel: PageSelection | null = null;
+      try { sel = json ? JSON.parse(json) as PageSelection : null; } catch { sel = null; }
+      if (!sel) { status('Those words weren’t found in the reading view.'); return; }
+      try {
+        const a = await api.addHighlight(paper.id, sel, color, '');
+        await refreshHighlights();
+        if (note) openEditor(a);
+      } catch (e) { status(String(e), 'error'); }
+    },
+    edit: (id) => { editAnnotation(id); },
+    marks: async (fig) => {
+      const json = await run<string>(`window.luntaFigures && luntaFigures.marks ? luntaFigures.marks(${fig}) : ''`);
+      try { return json ? figMarks(JSON.parse(json)) : null; } catch { return null; }
+    },
+  };
+}
+
 function figuresButton() {
   const b = document.querySelector<HTMLElement>('#figures-btn');
   if (!b) return;
@@ -864,7 +892,7 @@ function openFigureGrid() {
       const json = await run<string>(`window.luntaFigures ? luntaFigures.data(${i}) : ''`);
       let o = null;
       try { o = json ? figureOpen(JSON.parse(json)) : null; } catch { o = null; }
-      showFigureViewer(o || { set: figures, index: i, start: 0, panel: '' }, refocus, readerDark());
+      showFigureViewer(o || { set: figures, index: i, start: 0, panel: '' }, refocus, readerDark(), captionHighlights());
     },
     done: refocus,
   });

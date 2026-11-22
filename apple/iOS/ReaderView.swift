@@ -276,7 +276,7 @@ struct ReaderView: View {
             .presentationDetents([.medium, .large])
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         }
-        .figureOverlay($figure)
+        .figureOverlay($figure, controller: controller)
         .readerFigures(controller, browsing: $showFigures)
         .sheet(isPresented: $sharing) {
             ScrollView { SharePanel(ids: [paperID]) }.environmentObject(model).presentationDetents([.medium, .large])
@@ -372,6 +372,8 @@ struct ReaderView: View {
     /// The reader's hooks into the page, the assistant and the voice (run once the view appears).
     private func setUp() async {
         controller.onFigure = { figure = $0 }
+        // the figure viewer's caption: highlights made there are this reader's (FigureViewer.swift)
+        controller.model = model; controller.paperID = paperID; controller.undo = undoManager
         controller.onPageReady = {
             if extending != nil { endExtend() }   // the page was loaded again: its passage is gone
             controller.setHighlightMode(highlightMode, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow)

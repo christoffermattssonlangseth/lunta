@@ -6,20 +6,50 @@
 // exactly the same place.
 import { h } from './ui';
 
-export type FigMark = { t: string; c: string };
-export type Fig = { index: number; srcs: string[]; label: string; title: string; caption: string; marks: FigMark[] };
+/** A highlight in a caption: its text and colour, and (from the page) where it is in the shown caption
+ *  (`s`…`e`, title + ' ' + caption), the reading view's highlight id and whether it has a note. */
+export type FigMark = { t: string; c: string; s?: number; e?: number; id?: string; n?: boolean };
+/** `inPage`: one of the page's figures (`index` its number there), so its caption can be highlighted. */
+export type Fig = { index: number; srcs: string[]; label: string; title: string; caption: string; marks: FigMark[]; inPage: boolean };
+
+/** The viewer's caption highlights (the reader's): they are the reading view's own (figureJS's
+ *  luntaFigures.select turns a passage of the caption into the page's passage of those words). */
+export type CaptionHighlights = {
+  /** highlight mode's colour, or null when it is off */
+  mode: () => string | null;
+  /** highlight (or note on, `note`) the passage from…to of figure `fig`'s shown caption */
+  highlight: (fig: number, from: number, to: number, color: string, note: boolean) => Promise<void>;
+  /** a highlight in the caption clicked: its editor */
+  edit: (id: string) => void;
+  /** the highlights the page has in figure `fig`'s caption now */
+  marks: (fig: number) => Promise<FigMark[] | null>;
+};
 /** What the viewer opens: figure `index` of `set`, at image `start`, pointing to `panel`. */
 export type FigOpen = { set: Fig[]; index: number; start: number; panel: string };
 
 const COLORS = ['yellow', 'green', 'blue', 'pink'];
 
+/** The page's marks ({t, c, s, e, id, n}). */
+export function figMarks(list: any): FigMark[] {
+  return Array.isArray(list)
+    ? list.filter((m: any) => typeof m?.t === 'string').map((m: any) => ({
+      t: m.t, c: COLORS.includes(m.c) ? m.c : 'yellow',
+      ...(typeof m.s === 'number' && typeof m.e === 'number' ? { s: m.s, e: m.e } : {}),
+      ...(typeof m.id === 'string' ? { id: m.id } : {}), n: !!m.n,
+    }))
+    : [];
+}
+
 function fig(d: any, i = 0): Fig {
   const s = (k: string) => String(d?.[k] ?? '').trim();
   const srcs: string[] = Array.isArray(d?.srcs) ? d.srcs.map(String) : d?.src ? [String(d.src)] : [];
-  const marks: FigMark[] = Array.isArray(d?.marks)
-    ? d.marks.filter((m: any) => typeof m?.t === 'string').map((m: any) => ({ t: m.t, c: COLORS.includes(m.c) ? m.c : 'yellow' }))
-    : [];
-  return { index: typeof d?.index === 'number' ? d.index : i, srcs, label: s('label'), title: s('title'), caption: s('caption'), marks };
+  return { index: typeof d?.index === 'number' ? d.index : i, srcs, label: s('label'), title: s('title'), caption: s('caption'),
+    marks: figMarks(d?.marks), inPage: typeof d?.index === 'number' };
+}
+
+/** The caption as the viewer shows it (and the page counts it, figureJS shownText). */
+export function shownCaption(f: Fig): string {
+  return f.title ? (f.caption ? `${f.title} ${f.caption}` : f.title) : f.caption;
 }
 
 /** The paper's figures, from the page's {list: […]} message. */
@@ -40,25 +70,50 @@ export function figureOpen(d: any): FigOpen | null {
   return { set: [f], index: 0, start: 0, panel: '' };
 }
 
-/** Text with the reader's highlights marked (a caption's marks are found by their text). */
-function marked(text: string, marks: FigMark[]): DocumentFragment {
-  const spans: { at: number; end: number; c: string }[] = [];
+/** The shown caption (title in bold, a space, the caption) with the reader's highlights marked: where the
+ *  page says they are, or (marks without a place) found by their text. */
+function captionBody(f: Fig, marks: FigMark[]): HTMLElement {
+  const text = shownCaption(f), tl = f.title.length;
+  const spans: { at: number; end: number; c: string; id: string; n: boolean }[] = [];
   for (const m of marks) {
+    if (m.s != null && m.e != null) { if (m.e > m.s) spans.push({ at: m.s, end: Math.min(m.e, text.length), c: m.c, id: m.id || '', n: !!m.n }); continue; }
     if (m.t.length < 2) continue;
-    for (let at = text.indexOf(m.t); at >= 0; at = text.indexOf(m.t, at + m.t.length)) spans.push({ at, end: at + m.t.length, c: m.c });
+    for (let at = text.indexOf(m.t); at >= 0; at = text.indexOf(m.t, at + m.t.length)) spans.push({ at, end: at + m.t.length, c: m.c, id: '', n: false });
   }
   spans.sort((a, b) => a.at - b.at);
-  const frag = document.createDocumentFragment();
-  let cur = 0;
-  for (const s of spans) {
-    if (s.at < cur) continue;
-    if (s.at > cur) frag.append(text.slice(cur, s.at));
-    frag.append(h(`mark.c-${s.c}`, { text: text.slice(s.at, s.end) }));
-    cur = s.end;
+  // pieces between the marks' ends and the title's end, each bold (in the title) and/or marked
+  const cuts = new Set([0, text.length, ...(tl ? [tl] : [])]);
+  const used = spans.filter((s, i) => !spans.slice(0, i).some((p) => p.end > s.at));
+  for (const s of used) { cuts.add(s.at); cuts.add(s.end); }
+  const at = [...cuts].filter((x) => x >= 0 && x <= text.length).sort((a, b) => a - b);
+  const body = h('div.fv-text');
+  for (let i = 0; i + 1 < at.length; i++) {
+    const a = at[i], b = at[i + 1];
+    if (b <= a) continue;
+    let node: Node = document.createTextNode(text.slice(a, b));
+    const m = used.find((s) => s.at <= a && b <= s.end);
+    if (m) {
+      const mk = h(`mark.c-${m.c}` + (m.n ? '.note' : ''));
+      if (m.id && m.id !== '__pending') mk.setAttribute('data-ann', m.id);
+      mk.append(node); node = mk;
+    }
+    if (a < tl) { const st = h('strong'); st.append(node); node = st; }
+    body.append(node);
   }
-  if (cur < text.length) frag.append(text.slice(cur));
-  return frag;
+  return body;
 }
+
+/** The offset in `root`'s text of a point of a selection in it. */
+function textOffset(root: Node, node: Node, off: number): number {
+  const r = document.createRange();
+  r.setStart(root, 0);
+  r.setEnd(node, off);
+  return r.toString().length;
+}
+
+let refreshOpen: (() => void) | null = null;
+/** The page's highlights were drawn again: the open viewer's caption shows them again. */
+export function refreshFigureMarks() { refreshOpen?.(); }
 
 /** Closes what `closeFigureOverlay` finds on top (the viewer, then the grid); false if none is open. */
 export function closeFigureOverlay(): boolean {
@@ -71,10 +126,11 @@ export function closeFigureOverlay(): boolean {
 
 let showCaption = true;
 
-/** The figure viewer. `done` runs when it closes (to give the keyboard back). */
-export function showFigureViewer(o: FigOpen, done: () => void, dark = matchMedia('(prefers-color-scheme: dark)').matches) {
+/** The figure viewer. `done` runs when it closes (to give the keyboard back); with `hl` its caption
+ *  can be highlighted like the text (select: Highlight colours and Note; highlight mode: at once). */
+export function showFigureViewer(o: FigOpen, done: () => void, dark = matchMedia('(prefers-color-scheme: dark)').matches, hl?: CaptionHighlights) {
   document.querySelector('#figure')?.remove();
-  const figs = o.set;
+  const figs = o.set.map((f) => ({ ...f, marks: [...f.marks] }));
   let current = Math.min(Math.max(0, o.index), figs.length - 1);
   let image = o.start;
 
@@ -164,12 +220,73 @@ export function showFigureViewer(o: FigOpen, done: () => void, dark = matchMedia
     const hasCaption = !!(f.caption || f.title);
     caption.hidden = !(showCaption && hasCaption);
     caption.classList.toggle('alone', !f.srcs.length);
-    const body = h('div.fv-text');
-    if (f.title) { body.append(h('strong', {}, marked(f.title, f.marks))); if (f.caption) body.append(' '); }
-    body.append(marked(f.caption, f.marks));
-    caption.replaceChildren(body);
+    drawCaption();
     caption.scrollTop = 0;
+    if (canHighlight()) loadMarks();
   }
+
+  // ---- highlights in the caption ----
+  const canHighlight = () => !!hl && figs[current].inPage;
+  function drawCaption() {
+    const keep = caption.scrollTop;
+    selBar.remove();
+    caption.replaceChildren(captionBody(figs[current], figs[current].marks));
+    caption.scrollTop = keep;
+  }
+  async function loadMarks() {
+    const i = current, m = await hl?.marks(figs[i].index);
+    if (!m || i !== current || !view.isConnected) return;
+    figs[i].marks = m;
+    drawCaption();
+  }
+  refreshOpen = () => { if (canHighlight()) loadMarks(); };
+  /** The caption's selection as offsets in the shown caption, if it is in it. */
+  function captionSelection(): [number, number] | null {
+    const body = caption.querySelector('.fv-text'), sel = getSelection();
+    if (!body || !sel || sel.isCollapsed || !sel.rangeCount) return null;
+    const r = sel.getRangeAt(0);
+    if (!body.contains(r.startContainer) || !body.contains(r.endContainer)) return null;
+    const a = textOffset(body, r.startContainer, r.startOffset), b = textOffset(body, r.endContainer, r.endOffset);
+    return shownCaption(figs[current]).slice(a, b).trim().length >= 2 ? [a, b] : null;
+  }
+  async function mark(from: number, to: number, color: string, note: boolean) {
+    if (!hl) return;
+    const f = figs[current];
+    if (!note) { f.marks.push({ t: '', c: color, s: from, e: to, id: '__pending' }); }   // coloured at once; the page's redraw replaces it
+    getSelection()?.removeAllRanges();
+    drawCaption();
+    await hl.highlight(f.index, from, to, color, note);
+    loadMarks();
+  }
+  // the selection's bar: the colours and Note (as the reading view's)
+  const selBar = h('div.fv-selbar');
+  function showBar(range: [number, number]) {
+    const r = getSelection()?.getRangeAt(0).getBoundingClientRect();
+    if (!r) return;
+    selBar.replaceChildren(
+      ...COLORS.map((c) => h(`button.swatch.c-${c}`, { title: `Highlight ${c}`, onmousedown: (e: Event) => e.preventDefault(), onclick: () => mark(range[0], range[1], c, false) })),
+      h('button', { text: 'Note', title: 'Add a note', onmousedown: (e: Event) => e.preventDefault(), onclick: () => mark(range[0], range[1], 'yellow', true) }));
+    view.append(selBar);
+    const bw = selBar.offsetWidth, bh = selBar.offsetHeight;
+    let top = r.top - bh - 8;
+    if (top < 4) top = r.bottom + 8;
+    selBar.style.top = `${top}px`;
+    selBar.style.left = `${Math.max(4, Math.min(r.left + r.width / 2 - bw / 2, innerWidth - bw - 4))}px`;
+  }
+  caption.addEventListener('mouseup', () => setTimeout(() => {
+    if (!canHighlight()) return;
+    const range = captionSelection();
+    if (!range) { selBar.remove(); return; }
+    const color = hl!.mode();
+    if (color) mark(range[0], range[1], color, false);
+    else showBar(range);
+  }, 0));
+  caption.addEventListener('mousedown', (e) => { if (!selBar.contains(e.target as Node)) selBar.remove(); });
+  caption.addEventListener('click', (e) => {
+    if (!canHighlight() || !getSelection()?.isCollapsed) return;
+    const id = (e.target as HTMLElement).closest?.('mark[data-ann]')?.getAttribute('data-ann');
+    if (id) hl!.edit(id);
+  });
 
   view.addEventListener('keydown', (e) => {
     const k = e.key;
@@ -187,6 +304,7 @@ export function showFigureViewer(o: FigOpen, done: () => void, dark = matchMedia
     window.removeEventListener('mousemove', move);
     window.removeEventListener('mouseup', up);
     window.removeEventListener('resize', resize);
+    refreshOpen = null;
     view.remove();
     done();
   }

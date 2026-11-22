@@ -28,6 +28,13 @@ final class ReaderController: ObservableObject {
     var onExtendBegan: ((HighlightColor) -> Void)?
     /// "Highlight to…" in the text selection menu (iPhone, iPad).
     var onHighlightTo: (() -> Void)?
+    /// Times the page's highlights were drawn (`showAnnotations`): the figure viewer's caption shows them again after each.
+    @Published var annotationsShown = 0
+    /// The reader's paper, library and undo, for highlights made and edited in the figure viewer's caption
+    /// (FigureViewer.swift): they are the reading view's, saved and drawn as the reader saves and draws its own.
+    weak var model: LibraryModel?
+    var paperID = ""
+    weak var undo: UndoManager?
     /// Called from the text selection menu (and by the Pencil, with `pencilSelection` set).
     var onMenu: ((ReaderMenuAction) -> Void)?
     /// A passage marked with the Apple Pencil, used once by `pageSelection()` instead of the
