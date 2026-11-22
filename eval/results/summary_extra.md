@@ -12,12 +12,12 @@
 | Broken words / 1000, mean | 0.87 | 2.45 | 0.43 | 0.79 | 0.46 | 0.14 |
 | Papers with interleaving, % | 60.5 | 85.5 | 14.5 | 20.5 | 12.5 | 1.0 |
 | Papers with any boilerplate leak, % | 100.0 | 100.0 | 47.0 | 41.0 | 41.5 | 0.5 |
-| Figures identified (image + label), % | 0.0 | 0.0 | 0.0 | 66.0 | 72.2 | 0.0 |
+| Figures identified (image + label), % | 0.0 | 0.0 | 0.0 | 66.4 | 72.2 | 0.0 |
 | Reference items / XML refs, median | 0.00 | 0.00 | 1.00 | 1.00 | 1.00 | 1.00 |
 | Papers with no reference items | 199 | 199 | 0 | 2 | 2 | 2 |
 | s per page, median | 0.005 |  | 0.173 |  |  |  |
 
-swift − GROBID token F1: mean +0.002 [-0.011, +0.014], Wilcoxon p = 1.4e-01; swift better in 107, worse in 93
+swift − GROBID token F1: mean +0.002 [-0.011, +0.014], Wilcoxon p = 1.3e-01; swift better in 107, worse in 93
 
 rust − GROBID token F1: mean +0.006 [-0.005, +0.017], Wilcoxon p = 6.1e-02; rust better in 110, worse in 90
 
@@ -63,4 +63,4 @@ page − PDF view (Swift) token F1: mean +0.048 [+0.012, +0.082], p = 4.0e-03; b
 | rust->page-rust | 600 (30 papers) | 73.5 | 8.0 | 5.7 | 2.3 | 10.5 | 88.5 [84.3, 92.3] | 1.0 | 0.90 / 0.74 / 0.62 / 0.45 / 0.30 |
 | swift->xml | 600 (30 papers) | 64.0 | 9.8 | 8.3 | 4.8 | 13.0 | 86.2 [81.7, 90.2] | 0.8 | 0.87 / 0.68 / 0.56 / 0.38 / 0.20 |
 | xml->page-swift | 600 (30 papers) | 86.2 | 8.2 | 4.2 | 0.5 | 1.0 | 98.8 [97.7, 99.7] | 0.2 | 0.99 / 0.97 / 0.95 / 0.91 / 0.83 |
-| swift->xml (all 199) | 4000 (200 papers) | 73.0 | 6.6 | 8.5 | 2.7 | 9.2 | 89.5 [87.8, 91.0] | 1.3 | 0.91 / 0.77 / 0.66 / 0.48 / 0.28 |
+| swift->xml (all 199) | 4000 (200 papers) | 73.0 | 6.5 | 8.5 | 2.7 | 9.2 | 89.5 [87.8, 91.0] | 1.3 | 0.91 / 0.77 / 0.66 / 0.48 / 0.28 |

@@ -43,7 +43,8 @@ const a0 = swiftSrc.indexOf('var lcache = { text: null };');
 const a1 = swiftSrc.indexOf('function wrap(', a0);
 if (a0 < 0 || a1 < 0) throw new Error('locate() not found in Highlights.swift');
 const locateSrc = swiftSrc.slice(a0, a1);
-const locate = new Function(locateSrc + '\nreturn locate;')();
+// (base(): where a chapter's text starts in the whole view's text; 0 for a paper, as here)
+const locate = new Function('function base(){ return 0; }\n' + locateSrc + '\nreturn locate;')();
 
 // ------------------------------------------------------------------ reading-view text
 const ENT = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'", nbsp: ' ' };

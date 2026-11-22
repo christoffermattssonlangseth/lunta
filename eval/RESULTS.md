@@ -3,6 +3,14 @@
 Run on 2026-11-17 (macOS, Apple M1 Pro), converters of Lunta 1.0.4 (commit 86e764b); extended on
 2026-11-18 with outside reference points (pdftotext, GROBID) on the same 200 PDFs and with reading
 views made from the journal's article page (see the two sections after the headline numbers).
+**Eighth run on 2026-11-22, Swift converter only (the Rust converter's 40 library paper views are
+byte-identical; its outputs and numbers are the sixth run's)**: figure, table and box labels with
+chapter numbers ("Figure 1.2", "Fig. A.1", "Figure 3-4"), a caption beside its figure measured by its
+horizontal distance, and the reader's figure labels and mentions; see "What the chapter-numbered figure
+labels changed" below. The seventh-run version of the result files, figures, examples, binary and Swift
+and pdffig outputs are in `data/prev-2026-11-22b/` (this file's seventh-run text is unchanged below,
+but for the numbers this run changed: figures identified 66.0 → 66.4 %, the "whitespace" tier of
+highlights → XML 6.6 → 6.5 %, and figures cut from publisher PDFs 49.1 → 48.8 %).
 **Seventh run on 2026-11-22, Swift converter only (the Rust converter's paper views are unchanged,
 byte for byte on the 40 library PDFs; its outputs and numbers are the sixth run's)**: books as PDFs
 (a paper-or-book classifier and a book mode that papers never take), font names that end in their
@@ -64,7 +72,7 @@ bootstrap CI (of the mean, unless stated otherwise).
 | Papers with ≥ 1 interleaving event | **20.5 %** [15.0, 26.0] | 34.0 % [27.5, 40.5] | 12.5 % [8.0, 17.5] |
 | Papers with any boilerplate leak | **41.0 %** [34.0, 48.0] | 63.5 % [56.5, 70.0] | 41.5 % [35.0, 48.5] |
 | Figure images, count-based recall (precision) | 96.0 % (72.7 %) | 96.2 % (62.5 %) | 96.0 % (72.5 %) |
-| Figures identified (image + matching label/caption) | 66.0 % [58.6, 73.0] | 65.7 % | 72.2 % [65.6, 79.0] |
+| Figures identified (image + matching label/caption) | 66.4 % [59.0, 73.4] | 65.7 % | 72.2 % [65.6, 79.0] |
 | Highlights re-anchored correctly in the XML view | **89.5 %** [87.7, 91.0] | 82.9 % [80.6, 84.9] | 90.5 % [88.8, 92.0] |
 | Tables identified (image + matching label/caption) | 65.9 % [58.5, 72.9] | 56.0 % | 66.7 % [59.2, 73.8] |
 | Papers with XML references but no reference items | 2 (40 in the first 2026-11-18 run) | – | 2 (40) |
@@ -75,6 +83,55 @@ in this run, same binary); in that run the Swift CLI of the day took 0.199 s/pag
 this run are about 30 % shorter than on 2026-11-16 for both converters, but the 2026-11-16 and current
 `p2e` binaries took the same time when run side by side on four slow papers (e.g. 1.70 vs 1.46 s,
 1.33 vs 1.27 s, 1.06 vs 1.05 s, 1.40 vs 1.39 s): the difference is load on the machine, not code.
+
+**What the chapter-numbered figure labels changed (2026-11-22, eighth run vs seventh run; Swift
+only; same papers, same scripts).** Prompted by the same textbook: in the reader's Figures sheet every
+figure was "Figure 1" with a caption starting "2 Regression and…", "3 Machine learning model…", and the
+first entry's caption was a sentence of the text ("Figure 1.2 depicts several regression and
+classification problems…"). The patterns for a label's number (converters and reader) took only
+`S?\d+[A-Za-z]?`, so "Figure 1.2" read as "Figure 1" followed by ". 2"; and with "." accepted as the
+caption's punctuation, the sentence "Figure 1.2 depicts…" passed as a caption. Fixes:
+
+- *Numbers* may be dotted or hyphenated chapter numbers and appendix letters ("1.2", "10.14", "S1.2",
+  "3-4", "A.1"); a dot or dash continues the number only into a digit ("Figure 1. Overview" stays
+  figure 1), and the whole number is taken (an atomic group in Swift; in Rust, whose regex has no
+  backtracking control, the pattern after the number refuses a dot or dash into a digit). Caption
+  lines, table captions, labels on their own line, the PDF-figure keys for XML views and the reader's
+  labels, cards and mentions all use it; in the text a dash between numbers stays a range ("Figs.
+  3–6") unless the book has a figure of the hyphenated number.
+- *A caption beside its figure* (a book's margin caption, level with it) is as far from it as the
+  horizontal gap, not the vertical distance between their far edges; a paragraph below the figure is
+  no longer nearer. (Only when no other figure on the page is nearer to that caption: a figure in
+  the next column keeps its own.)
+- A caption may start with "3D", "1D" after the label ("Figure 10.2 1D convolution…").
+- In book mode only, small type after a caption is folded into it only when it follows right below
+  it: the textbook's exercises ("Problem 3.5 …", set in caption size) had become one caption the
+  height of a page, which then belonged to no figure.
+
+On the textbook: all 279 figures; first 15 labels "Figure 1.1" … "Figure 2.4", each with its own
+caption; figures without a label 35 → 11 (the rest have no caption in the PDF or a label PDFKit spaces
+as "Figu re 10.18"); mentions linked to the right figure (none to "Figure 1" for "Figure 1.2").
+On the 200 papers, 4 views changed, each by a caption going to its own figure: PMC4213389 (Fig. 2
+beside its figure, was on the figure above), PMC5834888 (Fig. 4 on page 8, was on page 7's figure),
+PMC8861578 (Fig. 2 beside its figure, was a separate caption paragraph) and PMC5498621 (Figs. 1, 4, 7
+beside their figures; "Figure 1.2 shows the method…" and "Supplementary Figure 2. Following…", running
+text, no longer captions). Figures identified 66.0 → 66.4 % (560 → 564 of the XML's figures: PMC5498621
+4 → 7, PMC8861578 3 → 4); token F1 mean 0.9274 → 0.9275, median 0.955 (PMC5498621 0.918 → 0.930, its
+sentence back in the text). Highlights → XML: the same 89.5 % (one highlight of PMC5498621 now found
+by the fold tier instead of the whitespace one); the seventh run's views → this run's: 100.0 % (4,600
+of 4,600, all exact). The XML-with-PDF-figures views (pdffig, last converted on 2026-11-18) were
+converted again: the same before and after this change (checked on the four that differ), but 4 papers
+differ from 2026-11-18 by earlier commits' figure areas (PMC7663294 5 → 4, PMC6963628 8 → 6,
+PMC6572515 8 → 7, PMC9105103 3 → 4 figures recovered): 49.1 → 48.8 %.
+On the 40 library PDFs (Swift and Rust): 38 views byte-identical (but for the random book identifier);
+one Nature Methods paper (9d0ea526) has its Fig. 1 caption, set beside the figure, on the figure instead
+of after it; and the 1,161-page textbook (a5818d8a) no longer takes running text for captions (405 → 388
+figure captions in Swift, 411 → 394 in Rust: "Fig. 3.9, some substitutions…", "Figure 8.21 shows…",
+read as "Fig. 3" + ". 9, some…", are text again), and in the reader its figures are "Figure 13.6"
+and so on, where the Figures sheet had labels such as "Figure 1" or "Figure 13" for every figure of
+chapter 1 or 13.
+The evaluation script `s04_highlights.mjs` gives `locate()` the `base()` it now calls (0: a paper
+is one part), as the reader's chapter-by-chapter reading (3935a13) added it.
 
 **What the book mode and the font-name and script fixes changed (2026-11-22, seventh run vs
 sixth run; Swift only; same papers, same scripts).** Prompted by a 541-page textbook (Prince,
@@ -484,7 +541,8 @@ page (PDFium vs PDFKit).
 **Figures cut from the PDF for an XML version without images:** for the 30 NIHMS author manuscripts,
 96.9 % [90.8, 100] of the XML's figures were recovered from the PDF (all figures in 28/30 papers,
 none in 1); spot-checked images were the right figures. Applied to the 200 publisher PDFs the same
-label-based cutting recovers only 49.1 % [40.5, 57.5] — publisher layouts (figures on separate pages
+label-based cutting recovers only 48.8 % [40.2, 57.4] (49.1 % before the eighth run, whose
+re-run of these views picked up earlier commits' changes to the figure areas, not this run's) — publisher layouts (figures on separate pages
 or at the end, captions apart from images) are harder than the uniform manuscript layout.
 
 **Highlight survival across reading-view versions** (20 simulated highlights per paper, located by
@@ -492,7 +550,7 @@ the reader's own `locate()` from `apple/Shared/Highlights.swift`):
 
 | Highlight made on → re-anchored in | exact | whitespace fallback | quote/dash/case fallback | start/end fallback | lost | anchored correctly | anchored to wrong text |
 |---|---|---|---|---|---|---|---|
-| current PDF view → XML view | 73.0 | 6.6 | 8.5 | 2.7 | 9.2 | 89.5 [87.7, 91.0] | 1.3 |
+| current PDF view → XML view | 73.0 | 6.5 | 8.5 | 2.7 | 9.2 | 89.5 [87.7, 91.0] | 1.3 |
 | baseline PDF view → XML view | 66.3 | 5.1 | 9.9 | 3.8 | 14.9 | 82.9 [80.6, 84.9] | 2.3 |
 | Rust PDF view → XML view | 76.0 | 5.8 | 7.6 | 2.0 | 8.6 | 90.5 [88.8, 92.0] | 0.9 |
 | baseline PDF view → current PDF view | 90.0 | 0.7 | 3.3 | 0.9 | 5.0 | 94.1 [92.4, 95.6] | 0.8 |
@@ -537,7 +595,7 @@ GROBID's deep-learning models (the `-full` image) are amd64-only and were not ru
 | Broken words / 1000, mean | 0.87 | 0.43 | 0.79 | 0.46 |
 | Papers with interleaving, % | 60.5 | 14.5 | 20.5 | 12.5 |
 | Papers with any boilerplate leak, % | 100.0 | 47.0 | 41.0 | 41.5 |
-| Figures identified (image + label), % | – | – | 66.0 | 72.2 |
+| Figures identified (image + label), % | – | – | 66.4 | 72.2 |
 | Papers with XML references but no reference items found | (no split) | 0 | 2 | 2 |
 | s per page, median | 0.005 | 0.173* | 0.124 | 0.047 |
 
