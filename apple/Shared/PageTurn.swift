@@ -338,6 +338,8 @@ final class PageMessageHandler: NSObject, WKScriptMessageHandler {
     fileprivate weak var webView: WKWebView?
     fileprivate var sync: DispatchWorkItem?
     fileprivate var offsetWatch: NSKeyValueObservation?
+    /// Swiping is off from an edge turn until the dragging finger is lifted.
+    fileprivate var swipeLocked = false
     /// A page turn with a selection being dragged over the edge is under way (its animation isn't undone).
     fileprivate var turningUntil = Date.distantPast
     fileprivate var dragWatcher: SelectionDragWatcher?
@@ -496,9 +498,6 @@ extension PageMessageHandler {
             }
         }
     }
-
-    /// Swiping is off from an edge turn until the dragging finger is lifted.
-    @MainActor private var swipeLocked = false
 
     /// The finger that dragged the selection is lifted.
     @MainActor fileprivate func fingerLifted() {
