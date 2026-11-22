@@ -436,6 +436,7 @@ struct PaperRowActions: ViewModifier {
                 Button(p.read ? "Mark as Unread" : "Mark as Read", systemImage: p.read ? "circle" : "checkmark.circle") { model.setRead(p, !p.read) }
                 Divider()
                 Button("Folders & Tags…", systemImage: "folder") { organizing = ShareTargetIOS(id: p.id) }
+                Button("Outline from Highlights…", systemImage: "list.bullet.indent") { OutlineUI.shared.open([p.id], scope: "this paper") }
                 FolderMenu(ids: [p.id]) {
                     prompt = NameRequest(title: "New Folder", action: "Create") { model.newFolder($0, with: [p.id]) }
                 }

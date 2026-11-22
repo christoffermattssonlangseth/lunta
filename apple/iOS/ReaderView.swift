@@ -23,6 +23,8 @@ struct ReaderView: View {
     @StateObject private var references = ReferencesModel()
     @State private var showAppearance = false
     @State private var showInfo = false
+    /// Outline from Highlights of this paper (shown over the reader: the library's sheet is behind it).
+    @State private var outline: OutlineRequest?
     @AppStorage("readerFontScale") private var fontScale = 1.0
     @AppStorage("readerPaged") private var paged = false
     @AppStorage("readerTheme") private var themeRaw = ReaderTheme.automatic.rawValue
@@ -220,6 +222,7 @@ struct ReaderView: View {
                         Button { askRemake() } label: { Label(RemakeReadingView.title([paperID], model: model), systemImage: "wand.and.stars") }
                             .disabled(remaking != nil)
                     }
+                    Button { outline = OutlineRequest(ids: [paperID], scope: "this paper") } label: { Label("Outline from Highlights…", systemImage: "list.bullet.indent") }
                     Button { showInfo = true } label: { Label("Paper Info", systemImage: "info.circle") }
                 } label: { Label("More", systemImage: "ellipsis.circle").labelStyle(.iconOnly) }
             }
@@ -284,6 +287,7 @@ struct ReaderView: View {
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         }
         .sheet(isPresented: $showInfo) { NavigationStack { PaperInfoView(paperID: paperID, embedded: false) } }
+        .sheet(item: $outline) { r in OutlineView(request: r).environmentObject(model) }
         .onChange(of: highlightMode) { _, on in controller.setHighlightMode(on, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow) }
         .onChange(of: highlightModeColor) { controller.setHighlightMode(highlightMode, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow) }
         .onChange(of: mode) { _, m in
