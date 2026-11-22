@@ -90,6 +90,7 @@ extension ReaderAssets {
 
       // links inside the paper (sections, tables, references, "Show in References")
       window.addEventListener('click', function(ev){
+        if (window.luntaExtending && window.luntaExtending()) return;   // a tap ending a highlight (Highlights.swift), not a jump
         var a = ev.target.closest && ev.target.closest('a[href^="#"]');
         if (a && !(ui && ui.contains(a))) window.luntaMarkJump();
       }, true);

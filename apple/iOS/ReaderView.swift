@@ -34,6 +34,15 @@ struct ReaderView: View {
     @State private var editing = false
     @State private var chromeHidden = false
     @State private var editingAnnotation: Annotation?
+    /// Extend… / Highlight to… : waiting for the tap that ends the passage.
+    @State private var extending: Extending?
+    struct Extending: Equatable {
+        /// The highlight being extended; nil: a new one from the selection (Highlight to…).
+        var id: String?
+        var color: HighlightColor
+        /// The bars as they were (in pages they make way for the hint).
+        var chromeWasHidden: Bool
+    }
     @StateObject private var pdfHighlights = PDFHighlighter()
     @StateObject private var find = PaperFind()
     @State private var goToPage = 0
@@ -86,7 +95,13 @@ struct ReaderView: View {
                         if listening { NarrationBar(narrator: narrator) { stopListening() } }
                         else { NowPlayingBar() }   // another paper being read aloud
                     }
-                    .overlay(alignment: .top) { ResumeNote(text: position.note).animation(.easeOut, value: position.note) }
+                    .overlay(alignment: .top) {
+                        VStack(spacing: 0) {
+                            if extending != nil { ExtendHint { cancelExtend() } }
+                            ResumeNote(text: position.note).animation(.easeOut, value: position.note)
+                        }
+                        .animation(.easeOut(duration: 0.2), value: extending)
+                    }
             } else if mode == .pdf, let pdfURL {
                 PDFReader(url: pdfURL, paperID: paperID, highlighter: pdfHighlights) { a in editingAnnotation = a }
                     .ignoresSafeArea(edges: .bottom)
@@ -198,7 +213,10 @@ struct ReaderView: View {
         .preferredColorScheme(mode == .reading && UIDevice.current.userInterfaceIdiom == .phone ? theme.scheme : nil)
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidUndoChange)) { _ in refreshHighlights() }
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerDidRedoChange)) { _ in refreshHighlights() }
-        .sheet(item: $editingAnnotation) { a in AnnotationEditor(annotation: a) { refreshHighlights() }.environmentObject(model) }
+        .sheet(item: $editingAnnotation) { a in
+            AnnotationEditor(annotation: a, onExtend: mode == .reading && a.location == "epub" ? { startExtend(a.id) } : nil) { refreshHighlights() }
+                .environmentObject(model)
+        }
         .sheet(isPresented: $showHighlights) {
             NavigationStack {
                 AnnotationsList(paperID: paperID, missing: mode == .reading ? controller.missingAnnotations : [], onShow: { a in
@@ -245,6 +263,7 @@ struct ReaderView: View {
         .onChange(of: highlightMode) { _, on in controller.setHighlightMode(on, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow) }
         .onChange(of: highlightModeColor) { controller.setHighlightMode(highlightMode, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow) }
         .onChange(of: mode) { _, m in
+            if extending != nil { cancelExtend() }
             if m == .pdf, pdfURL == nil { Task { await loadPDF(); find.use(findBackend) } }
             find.use(findBackend)
         }
@@ -270,6 +289,37 @@ struct ReaderView: View {
         .onChange(of: phase) { _, p in if p != .active { position.saveNow(paperID, model: model, controller: controller) } }
     }
 
+    /// Extend… (a highlight, `id`) or Highlight to… (the selection): the hint shows until the tap
+    /// that ends the passage (Highlights.swift, luntaExtendStart).
+    private func startExtend(_ id: String?) {
+        let color = id.flatMap { i in model.annotations(paperID).first { $0.id == i } }.flatMap { HighlightColor(rawValue: $0.color) } ?? .yellow
+        Task {
+            // (the highlight's sheet closes first)
+            if id != nil { try? await Task.sleep(for: .milliseconds(350)) }
+            guard await controller.startExtend(id: id, color: color) else { return }
+            let was = chromeHidden
+            withAnimation(.easeInOut(duration: 0.22)) {
+                extending = Extending(id: id, color: color, chromeWasHidden: was)
+                // pages: the hint takes the bars' place, so it covers no text
+                if paged { chromeHidden = true }
+            }
+        }
+    }
+
+    private func endExtend() {
+        guard let e = extending else { return }
+        controller.endExtend()
+        withAnimation(.easeInOut(duration: 0.22)) {
+            extending = nil
+            if paged { chromeHidden = e.chromeWasHidden }
+        }
+    }
+
+    private func cancelExtend() {
+        endExtend()
+        refreshHighlights()   // Highlight to…: the passage coloured meanwhile goes
+    }
+
     private func refreshHighlights() {
         controller.showAnnotations(model.annotations(paperID))
         controller.setLibraryIDs(model.libraryIDs())   // the citation card: "In library" for those
@@ -279,6 +329,7 @@ struct ReaderView: View {
     private func setUp() async {
         controller.onFigure = { figure = $0 }
         controller.onPageReady = {
+            if extending != nil { endExtend() }   // the page was loaded again: its passage is gone
             controller.setHighlightMode(highlightMode, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow)
             refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
             summary.pageReady(paperID, model: model, controller: controller)
@@ -297,6 +348,16 @@ struct ReaderView: View {
             }
         }
         controller.onAnnotation = { id in editingAnnotation = model.annotations(paperID).first { $0.id == id } }
+        controller.onHighlightTo = { startExtend(nil) }
+        controller.onExtendDone = { sel in
+            guard let e = extending else { return }
+            endExtend()
+            Task {
+                if let id = e.id { _ = await model.extendHighlight(paperID, id: id, to: sel, controller: controller, undo: undoManager) }
+                else { _ = await model.addHighlightMerging(paperID, sel, color: e.color, controller: controller, undo: undoManager) }
+                refreshHighlights()
+            }
+        }
         controller.onMenu = { action in
             Task {
                 guard let sel = await controller.pageSelection() else { return }
@@ -830,4 +891,23 @@ private struct ViewSwitchButton: View {
 extension Notification.Name {
     /// Open this paper (object: its id) in the reader, from inside a reader (References › In library).
     static let luntaReadPaper = Notification.Name("luntaReadPaper")
+}
+
+/// Extend… / Highlight to… : what the next tap in the page does, and Cancel.
+private struct ExtendHint: View {
+    var onCancel: () -> Void
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "hand.tap").foregroundStyle(.secondary)
+            Text("Tap where the highlight should end").font(.footnote.weight(.medium))
+            Spacer(minLength: 4)
+            Button("Cancel", action: onCancel).font(.footnote.weight(.semibold))
+        }
+        .padding(.leading, 14).padding(.trailing, 6).padding(.vertical, 4)
+        .frame(minHeight: 40)
+        .background(.regularMaterial, in: Capsule())
+        .padding(.horizontal, 12).padding(.top, 8)
+        .frame(maxWidth: 520)
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
 }

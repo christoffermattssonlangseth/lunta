@@ -64,11 +64,25 @@ extension ReaderAssets {
         for (var i = 0; i < nodes.length; i++) { if (nodes[i] === node) return pos + off; pos += nodes[i].nodeValue.length; }
         return -1;
       }
+      // a point in the page (a range's start or end) as an offset in the page text: in a text node,
+      // or between elements (a selection that ends at a paragraph's or a figure's edge): the first
+      // text after that point
+      function pointOffset(nodes, node, off){
+        if (node.nodeType === 3) return offsetOf(nodes, node, off);
+        var ref = node.childNodes[off], pos = 0;
+        for (var i = 0; i < nodes.length; i++) {
+          var n = nodes[i];
+          if (ref ? (n === ref || (ref.compareDocumentPosition(n) & 4))
+                  : ((node.compareDocumentPosition(n) & 20) === 4)) return pos;   // after the node, not in it
+          pos += n.nodeValue.length;
+        }
+        return pos;
+      }
       window.luntaSelection = function(){
         var sel = window.getSelection(); if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return '';
         var r = sel.getRangeAt(0), nodes = textNodes();
-        var s = r.startContainer.nodeType === 3 ? offsetOf(nodes, r.startContainer, r.startOffset) : -1;
-        var e = r.endContainer.nodeType === 3 ? offsetOf(nodes, r.endContainer, r.endOffset) : -1;
+        var s = pointOffset(nodes, r.startContainer, r.startOffset);
+        var e = pointOffset(nodes, r.endContainer, r.endOffset);
         var text = fullText(nodes);
         if (s < 0 || e < 0) { var q0 = sel.toString(); s = text.indexOf(q0); e = s + q0.length; if (s < 0) return ''; }
         var quote = text.slice(s, e);
@@ -191,7 +205,7 @@ extension ReaderAssets {
         return true;
       };
       document.addEventListener('click', function(ev){
-        if (document.body.classList.contains('listening')) return;
+        if (ext || document.body.classList.contains('listening')) return;   // extending: the tap ends the passage (below)
         var sel = window.getSelection(); if (sel && !sel.isCollapsed) return;
         var m = ev.target.closest && ev.target.closest('mark.m-hl'); if (!m) return;
         try { window.webkit.messageHandlers.ann.postMessage(m.getAttribute('data-ann')); } catch (x) {}
@@ -204,6 +218,8 @@ extension ReaderAssets {
       var hlTimer = null;
       function hlFire(){
         if (!window.luntaHLMode || document.body.classList.contains('listening')) return;
+        // a selection handle still being dragged (the app says so in pages, PageTurn.swift): not finished yet
+        if (window.luntaDragging) { clearTimeout(hlTimer); hlTimer = setTimeout(hlFire, 300); return; }
         var s = window.getSelection(); if (!s || s.isCollapsed || s.toString().trim().length < 2) return;
         var j = window.luntaSelection(); if (!j) return;
         // coloured here and now; the app saves it and redraws (which replaces this mark with the real one)
@@ -226,15 +242,8 @@ extension ReaderAssets {
       function caretOffset(nodes, x, y){
         var r = document.caretRangeFromPoint && document.caretRangeFromPoint(x, y);
         if (!r) return -1;
-        var n = r.startContainer, o = r.startOffset;
-        if (n.nodeType === 3) return offsetOf(nodes, n, o);
         // between blocks or beside an image: the first text after that point
-        var el = n.childNodes[o] || n, pos = 0;
-        for (var i = 0; i < nodes.length; i++) {
-          if (el === nodes[i] || (el.compareDocumentPosition(nodes[i]) & 4)) return pos;
-          pos += nodes[i].nodeValue.length;
-        }
-        return -1;
+        return pointOffset(nodes, r.startContainer, r.startOffset);
       }
       var wordChar = /[\p{L}\p{N}\p{M}_'’\-]/u;
       window.luntaSelectionBetween = function(x1, y1, x2, y2){
@@ -257,10 +266,11 @@ extension ReaderAssets {
       // A new highlight from s to e: the highlights already drawn that it overlaps or touches, and
       // the passage covering all of them (so they become one highlight instead of one replacing
       // or stacking on another). {ids: [...], quote, prefix, suffix, start}
-      window.luntaMergeRange = function(s, e){
+      // (`exclude`: the highlight being extended, which takes the new passage as it is, so it can also shrink)
+      window.luntaMergeRange = function(s, e, exclude){
         var nodes = textNodes(), text = fullText(nodes), spans = {};
         document.querySelectorAll('mark.m-hl[data-ann]').forEach(function(m){
-          var id = m.getAttribute('data-ann'); if (!id || id === '__pending') return;
+          var id = m.getAttribute('data-ann'); if (!id || id === '__pending' || id === exclude) return;
           var t = m.firstChild; if (!t || t.nodeType !== 3) return;
           var a = offsetOf(nodes, t, 0); if (a < 0) return;
           var b = a + t.nodeValue.length, sp = spans[id];
@@ -301,6 +311,64 @@ extension ReaderAssets {
         else { q = para.slice(0, 120); if (para.length > 120) { var cut = q.lastIndexOf(' '); if (cut > 60) q = q.slice(0, cut); } }
         return selectionJSON(text, s, s + q.length);
       };
+
+      // Extend… (a highlight's editor) and Highlight to… (the selection menu): the passage — a
+      // highlight, or the selection — runs on to the word tapped next, on this page or another
+      // one (turned meanwhile: a swipe in pages, scrolling otherwise), so a passage that runs over
+      // the page's end becomes one highlight. Tapping before its start moves the start instead;
+      // inside it, the end comes back to that word. The app shows the hint, and saves what the
+      // page sends ('__extend__:' + the passage, as luntaSelection gives it, with the highlight's id).
+      var ext = null;
+      // where a highlight is in the page text (all its marks: it may run over paragraphs)
+      function annSpan(nodes, id){
+        var pos = 0, s = -1, e = -1;
+        for (var i = 0; i < nodes.length; i++) {
+          var len = nodes[i].nodeValue.length;
+          for (var p = nodes[i].parentNode; p && p.nodeType === 1; p = p.parentNode) {
+            if (p.getAttribute('data-ann') === id) { if (s < 0) s = pos; e = pos + len; break; }
+          }
+          pos += len;
+        }
+        return s < 0 ? null : [s, e];
+      }
+      window.luntaExtendStart = function(id, color){
+        var nodes = textNodes(), span = null;
+        if (id) span = annSpan(nodes, id);
+        else {
+          var j = window.luntaSelection();
+          if (j) { var o = JSON.parse(j); if (o.start >= 0) span = [o.start, o.start + o.quote.length]; }
+        }
+        if (!span) return false;
+        ext = { id: id || '', s: span[0], e: span[1] };
+        if (!id) {
+          // the selection goes (its menu would cover the page); its passage stays coloured meanwhile
+          var sl = window.getSelection(); if (sl) sl.removeAllRanges();
+          wrap(nodes, span[0], span[1], { id: '__pending', color: color || 'yellow' });
+        }
+        document.documentElement.classList.add('m-extending');
+        return true;
+      };
+      window.luntaExtending = function(){ return !!ext; };
+      window.luntaExtendCancel = function(){ ext = null; document.documentElement.classList.remove('m-extending'); };
+      // the passage when the text at offset `a` is tapped (whole words)
+      window.luntaExtendToOffset = function(a){
+        if (!ext || a < 0) return '';
+        var text = fullText(textNodes()), s = ext.s, e = ext.e;
+        if (a >= ext.s) { e = a; while (e < text.length && wordChar.test(text[e])) e++; }
+        else { s = a; while (s > 0 && wordChar.test(text[s - 1])) s--; }
+        var j = selectionJSON(text, s, e); if (!j) return '';
+        var o = JSON.parse(j); o.id = ext.id;
+        return JSON.stringify(o);
+      };
+      window.luntaExtendTo = function(x, y){ return ext ? window.luntaExtendToOffset(caretOffset(textNodes(), x, y)) : ''; };
+      // the tap (before links, citations, figures, page turns and the bars take it)
+      window.addEventListener('click', function(ev){
+        if (!ext) return;
+        ev.preventDefault(); ev.stopImmediatePropagation();
+        var j = window.luntaExtendTo(ev.clientX, ev.clientY); if (!j) return;
+        window.luntaExtendCancel();
+        try { window.webkit.messageHandlers.ann.postMessage('__extend__:' + j); } catch (x) {}
+      }, true);
       if ('ontouchstart' in window) {
         document.addEventListener('selectionchange', function(){
           if (!window.luntaHLMode) return;
@@ -325,6 +393,11 @@ final class AnnotationMessageHandler: NSObject, WKScriptMessageHandler {
                 // highlight mode: the page already coloured the passage; this is what to save
                 self.controller?.onSelectionDone?(try? JSONDecoder().decode(PageSelection.self, from: d))
             }
+            else if id.hasPrefix("__extend__:"), let d = id.dropFirst(11).data(using: .utf8),
+                    let sel = try? JSONDecoder().decode(PageSelection.self, from: d) {
+                // Extend… / Highlight to…: the word that was tapped ends the passage
+                self.controller?.onExtendDone?(sel)
+            }
             else { self.controller?.onAnnotation?(id) }
         }
     }
@@ -333,10 +406,12 @@ final class AnnotationMessageHandler: NSObject, WKScriptMessageHandler {
 extension ReaderController {
     /// The highlights already in the page that a new one over `sel` overlaps or touches, and the
     /// passage covering them all (nil: none, or the page couldn't tell).
-    func mergeRange(_ sel: PageSelection) async -> (ids: [String], passage: PageSelection)? {
+    /// `excluding`: a highlight being extended (it isn't merged in, so it can also get shorter).
+    func mergeRange(_ sel: PageSelection, excluding: String? = nil) async -> (ids: [String], passage: PageSelection)? {
         let end = sel.start + sel.quote.utf16.count
+        let skip = (excluding ?? "").filter { $0.isLetter || $0.isNumber || $0 == "-" }
         guard sel.start >= 0,
-              let json = try? await webView?.evaluateJavaScript("window.luntaMergeRange ? luntaMergeRange(\(sel.start), \(end)) : ''") as? String,
+              let json = try? await webView?.evaluateJavaScript("window.luntaMergeRange ? luntaMergeRange(\(sel.start), \(end), '\(skip)') : ''") as? String,
               let data = json.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let ids = obj["ids"] as? [String], !ids.isEmpty,
@@ -401,6 +476,18 @@ extension ReaderController {
     func clearSelection() {
         webView?.evaluateJavaScript("window.getSelection().removeAllRanges()")
     }
+
+    /// Extend… (a highlight, `id`) or Highlight to… (the selection, `id` nil): the next tap in the
+    /// page ends the passage, and `onExtendDone` gets it. False: there was nothing to extend.
+    func startExtend(id: String?, color: HighlightColor = .yellow) async -> Bool {
+        let safe = (id ?? "").filter { $0.isLetter || $0.isNumber || $0 == "-" }
+        let ok = try? await webView?.evaluateJavaScript("window.luntaExtendStart ? luntaExtendStart('\(safe)', '\(color.rawValue)') : false") as? Bool
+        return ok == true
+    }
+
+    func endExtend() {
+        webView?.evaluateJavaScript("window.luntaExtendCancel && luntaExtendCancel()")
+    }
 }
 
 extension LibraryModel {
@@ -438,6 +525,34 @@ extension LibraryModel {
         merged.position = String(passage.start)
         merged.color = color.rawValue
         merged.note = notes.joined(separator: "\n\n")
+        merged.kind = merged.note.isEmpty ? .highlight : .note
+        do {
+            let saved = try lib.saveAnnotation(a: merged)
+            for o in olds.dropFirst() { try? lib.deleteAnnotation(paper: o.paperId, id: o.id) }
+            reload()
+            registerMergeUndo(merged: saved, originals: olds, undo: undo)
+            return saved
+        } catch { errorMessage = error.readable; return nil }
+    }
+
+    /// Extend… : the highlight `id` now covers `sel` (from its start to the word tapped, over pages
+    /// and paragraphs), still one highlight with its id, colour and note. Highlights the new
+    /// passage overlaps or touches are folded into it, as when highlighting over them.
+    func extendHighlight(_ paper: String, id: String, to sel: PageSelection,
+                         controller: ReaderController, undo: UndoManager? = nil) async -> Annotation? {
+        guard let original = annotations(paper).first(where: { $0.id == id }) else { return nil }
+        var olds = [original], passage = sel
+        if let (ids, p) = await controller.mergeRange(sel, excluding: id) {
+            passage = p
+            olds += annotations(paper).filter { ids.contains($0.id) && $0.location == "epub" && $0.id != id }
+        }
+        var merged = original
+        merged.quote = passage.quote
+        merged.prefix = passage.prefix
+        merged.suffix = passage.suffix
+        merged.position = String(passage.start)
+        merged.location = "epub"
+        merged.note = olds.map { $0.note.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: "\n\n")
         merged.kind = merged.note.isEmpty ? .highlight : .note
         do {
             let saved = try lib.saveAnnotation(a: merged)
@@ -504,6 +619,8 @@ struct AnnotationEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.highlightUndo) private var undo
     @State var annotation: Annotation
+    /// Extend… : the reading view takes over (the next tap there ends the highlight); nil: not offered.
+    var onExtend: (() -> Void)? = nil
     var onDone: () -> Void = {}
     @FocusState private var noteFocused: Bool
     /// Set just before a note made with the Pencil opens here: the note field gets the focus,
@@ -542,6 +659,14 @@ struct AnnotationEditor: View {
                         #endif
                 }
                 Section {
+                    if let onExtend {
+                        Button("Extend…") {
+                            // a colour or note changed here first is kept
+                            if let cur = model.annotations(annotation.paperId).first(where: { $0.id == annotation.id }),
+                               cur.color != annotation.color || cur.note != annotation.note { model.saveAnnotation(annotation) }
+                            dismiss(); onExtend()
+                        }
+                    }
                     Button("Copy Quote") { copyText(annotation.quote) }
                     Button("Delete Highlight", role: .destructive) {
                         model.deleteAnnotation(annotation, undo: undo); onDone(); dismiss()
@@ -702,7 +827,14 @@ final class ReaderWebView: WKWebView {
         let colors = UIMenu(title: "Color", image: UIImage(systemName: "paintpalette"), children: HighlightColor.allCases.map { c in
             UIAction(title: c.name) { [weak self] _ in self?.controller?.onMenu?(.highlight(c)) }
         })
-        builder.insertChild(UIMenu(title: "", options: .displayInline, children: [hl, note, colors]), atStartOfMenu: .root)
+        var items: [UIMenuElement] = [hl, note, colors]
+        // a passage running over the page's end: highlight from here to the word tapped next
+        if controller?.onHighlightTo != nil {
+            items.append(UIAction(title: "Highlight to…", image: UIImage(systemName: "arrow.right.to.line")) { [weak self] _ in
+                self?.controller?.onHighlightTo?()
+            })
+        }
+        builder.insertChild(UIMenu(title: "", options: .displayInline, children: items), atStartOfMenu: .root)
     }
 }
 #endif

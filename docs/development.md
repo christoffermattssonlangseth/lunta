@@ -79,6 +79,13 @@ notes store the quoted text with a little context (`quote`, `prefix`, `suffix`) 
 so a highlight made on the phone finds the same words on the Mac whatever the screen width. Select text,
 then **Highlight** / **Add Note** (right-click on the Mac, or ⇧⌘H; the edit menu on iPhone). Tap a
 highlight to change its colour or note; *Highlights & Notes* lists them and copies them as Markdown.
+A passage is found in the whole page's text, so one may run over paragraphs, a figure or (in pages on
+iPhone and iPad) a page's end; it stays one highlight. In pages, a selection handle held for half a
+second at the screen's side, or with the selection's end at the end of the page's last line (its start
+at the beginning of the first), turns the page and the selection goes on there (`luntaSelectionEdgeTurn`,
+one page per rest). Without dragging: **Highlight to…** in the selection menu, or **Extend…** in a
+highlight's sheet, then turn the page and tap the word where the highlight should end (before its
+start: the start moves; inside it: it gets shorter); highlights it reaches are joined to it.
 
 ### Web pages and blog posts
 

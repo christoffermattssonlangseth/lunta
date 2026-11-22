@@ -57,12 +57,13 @@
                                    : (p + 1) + ' of ' + t;
   }
 
-  window.luntaGoToPage = function(n, smooth){
+  // (`keep`: a turn while a selection is dragged over the page's edge, which keeps the selection)
+  window.luntaGoToPage = function(n, smooth, keep){
     if (!on) return;
     n = Math.max(0, Math.min(pages() - 1, n));
     target = n;
     // iPhone: the scroll view moves itself (WebKit can override a script's scroll after a text-size change)
-    if (native) post({ page: n, smooth: !!smooth });
+    if (native) post({ page: n, smooth: !!smooth, keep: !!keep });
     else window.scrollTo({ left: n * W, top: 0, behavior: smooth ? 'smooth' : 'instant' });
     setTimeout(show, smooth ? 380 : 30);
   };
@@ -152,9 +153,10 @@
     settle = setTimeout(function(){
       if (Math.abs(vw() - W) < 0.01 && page() !== heldPage) { heldPage = -1; remember(); }
       // a different page: a selection left on the previous one (and its Copy/Highlight menu) goes
+      // (not the page a selection was just dragged onto, below)
       if (page() !== lastShownPage) {
         lastShownPage = page();
-        var sl = window.getSelection(); if (sl && !sl.isCollapsed) sl.removeAllRanges();
+        var sl = window.getSelection(); if (sl && !sl.isCollapsed && Date.now() - edgeAt > 1500) sl.removeAllRanges();
       }
       // Mac: never left between two pages (a selection dragged past the edge scrolls the page)
       if (!native && W && Math.abs(window.scrollX - page() * W) > 2) window.luntaGoToPage(page(), false);
@@ -170,18 +172,93 @@
   if (window.visualViewport) window.visualViewport.addEventListener('resize', function(){ if (on) watchSize(); });
   window.addEventListener('load', function(){ if (on) { show(); } });
 
-  // Selecting text never turns the page. iPhone: dragging a selection handle near the screen's
-  // edge makes WebKit scroll the page sideways (its selection autoscroll); the app holds the
-  // page still while text is selected (PageMessageHandler.held) and lines it up again after.
+  // WebKit never turns the page while text is selected. iPhone: dragging a selection handle near
+  // the screen's edge makes WebKit scroll the page sideways (its selection autoscroll); the app
+  // holds the page still while text is selected (PageMessageHandler.held) and lines it up again
+  // after. (A handle resting at the edge turns a whole page instead: luntaSelectionEdgeTurn.)
   // Mac: a selection dragged past the edge can shift the page; it is put back once settled.
   var selOn = false, selAt = 0;
   document.addEventListener('selectionchange', function(){
     var s = window.getSelection(), has = !!(s && !s.isCollapsed);
     if (has || selOn) selAt = Date.now();
+    trackEnds(s, has);
     if (has === selOn) return;
     selOn = has;
     if (native) post({ selecting: has });
   });
+
+  // A selection dragged over the page's edge (iPhone, iPad) goes on onto the next page. The app
+  // watches the finger while a selection handle is dragged (SelectionDragWatcher below) and,
+  // when it has rested for half a second, asks luntaSelectionEdgeTurn with the screen edge it
+  // rests at (1 right, -1 left, 0 neither). The page turns when the finger is at an edge, or
+  // when the end being dragged is on the page's last line (its start: the first line); the
+  // other end stays where it is. One turn per rest: the finger has to move again for the next.
+  // WebKit keeps the selection over the turn; if it ever drops it, it is made again from the
+  // end that stayed to the first (last) word of the new page.
+  var ends = null, moving = 1, edgeAt = 0;
+  function trackEnds(s, has){
+    if (!has || !s.rangeCount) { if (Date.now() - edgeAt > 1500) ends = null; return; }
+    var r = s.getRangeAt(0);
+    var e = { sc: r.startContainer, so: r.startOffset, ec: r.endContainer, eo: r.endOffset };
+    if (ends) {
+      var sameStart = e.sc === ends.sc && e.so === ends.so, sameEnd = e.ec === ends.ec && e.eo === ends.eo;
+      if (sameEnd && !sameStart) moving = -1; else if (sameStart && !sameEnd) moving = 1;
+    } else moving = 1;
+    ends = e;
+  }
+  // which way to turn for the moving end's line box `g` (viewport coordinates; see the call):
+  // the end at the end of the page's last line (or already past the page), the start at the
+  // beginning of its first line. Anywhere else on those lines it stays (a word being picked there).
+  window.luntaEdgeDirection = function(g){
+    var colW = g.W / g.cols, p = Math.round(g.scrollX / g.W);
+    var col = Math.floor((g.left + g.scrollX + 1) / colW), first = p * g.cols, last = first + g.cols - 1;
+    var lh = Math.max(12, g.height || 0), x0 = (col - first) * colW;   // the column, on the screen
+    if (g.end > 0) {
+      if (col > last) return 1;                                         // already past this page
+      if (col === last && g.bottom >= g.H - g.bottom0 - 1.6 * lh && g.right >= x0 + colW - g.pad - 1.5 * lh) return 1;
+    } else {
+      if (col < first) return -1;
+      if (col === first && g.top <= g.top0 + lh && g.left <= x0 + g.pad + 1.5 * lh) return -1;
+    }
+    return 0;
+  };
+  function lineBox(r, end){
+    var rs = r.getClientRects();
+    for (var i = 0; i < rs.length; i++) {
+      var x = rs[end > 0 ? rs.length - 1 - i : i];
+      if (x.width > 0 || x.height > 0) return x;
+    }
+    return null;
+  }
+  // a text position at a point of the viewport (the new page's first or last word)
+  function wordAt(x, y, end){
+    var c = document.caretRangeFromPoint && document.caretRangeFromPoint(x, y);
+    if (!c || c.startContainer.nodeType !== 3) return null;
+    var t = c.startContainer.nodeValue, o = c.startOffset;
+    if (end > 0) { while (o < t.length && /\S/.test(t[o])) o++; } else { while (o > 0 && /\S/.test(t[o - 1])) o--; }
+    return [c.startContainer, o];
+  }
+  window.luntaSelectionEdgeTurn = function(zone){
+    if (!on || !W || Date.now() - edgeAt < 900) return 0;
+    var s = window.getSelection(); if (!s || !s.rangeCount || s.isCollapsed) return 0;
+    var r = s.getRangeAt(0), box = lineBox(r, moving);
+    var dir = zone || (box ? window.luntaEdgeDirection({ left: box.left, right: box.right, top: box.top, bottom: box.bottom, height: box.height,
+                               scrollX: window.scrollX, W: W, H: Hh, cols: cols(), pad: pad, top0: top, bottom0: bottom, end: moving }) : 0);
+    var p = page();
+    if (!dir || p + dir < 0 || p + dir > pages() - 1) return 0;
+    var stay = moving > 0 ? [r.startContainer, r.startOffset] : [r.endContainer, r.endOffset];
+    edgeAt = Date.now();
+    window.luntaGoToPage(p + dir, true, true);
+    setTimeout(function(){
+      var s2 = window.getSelection();
+      if (s2 && s2.rangeCount && !s2.isCollapsed) return;   // kept, as it should be
+      var to = dir > 0 ? wordAt(pad + 3, top + 6, 1) : wordAt(W - pad - 3, Hh - bottom - 8, -1);
+      if (!to) return;
+      edgeAt = Date.now();
+      try { s2.setBaseAndExtent(stay[0], stay[1], to[0], to[1]); } catch (x) {}
+    }, 500);
+    return dir;
+  };
 
   // taps: edges turn the page, the middle shows or hides the bars (iPhone)
   document.addEventListener('click', function(e){

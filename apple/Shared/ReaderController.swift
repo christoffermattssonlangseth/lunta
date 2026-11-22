@@ -22,6 +22,10 @@ final class ReaderController: ObservableObject {
     var onSummary: ((String) -> Void)?
     /// Highlight mode: the user finished a selection.
     var onSelectionDone: ((PageSelection?) -> Void)?
+    /// Extend… / Highlight to… : the passage up to the word that was tapped (`startExtend`).
+    var onExtendDone: ((PageSelection) -> Void)?
+    /// "Highlight to…" in the text selection menu (iPhone, iPad).
+    var onHighlightTo: (() -> Void)?
     /// Called from the text selection menu (and by the Pencil, with `pencilSelection` set).
     var onMenu: ((ReaderMenuAction) -> Void)?
     /// A passage marked with the Apple Pencil, used once by `pageSelection()` instead of the

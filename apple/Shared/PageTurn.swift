@@ -1,5 +1,8 @@
 import Foundation
 import WebKit
+#if os(iOS)
+import UIKit.UIGestureRecognizerSubclass
+#endif
 
 // Page turning: the reading view laid out as pages instead of one long scroll. The page is cut
 // into screen-sized CSS columns and moved sideways one screen at a time (two columns side by side
@@ -70,12 +73,13 @@ extension ReaderAssets {
                                        : (p + 1) + ' of ' + t;
       }
 
-      window.luntaGoToPage = function(n, smooth){
+      // (`keep`: a turn while a selection is dragged over the page's edge, which keeps the selection)
+      window.luntaGoToPage = function(n, smooth, keep){
         if (!on) return;
         n = Math.max(0, Math.min(pages() - 1, n));
         target = n;
         // iPhone: the scroll view moves itself (WebKit can override a script's scroll after a text-size change)
-        if (native) post({ page: n, smooth: !!smooth });
+        if (native) post({ page: n, smooth: !!smooth, keep: !!keep });
         else window.scrollTo({ left: n * W, top: 0, behavior: smooth ? 'smooth' : 'instant' });
         setTimeout(show, smooth ? 380 : 30);
       };
@@ -165,9 +169,10 @@ extension ReaderAssets {
         settle = setTimeout(function(){
           if (Math.abs(vw() - W) < 0.01 && page() !== heldPage) { heldPage = -1; remember(); }
           // a different page: a selection left on the previous one (and its Copy/Highlight menu) goes
+          // (not the page a selection was just dragged onto, below)
           if (page() !== lastShownPage) {
             lastShownPage = page();
-            var sl = window.getSelection(); if (sl && !sl.isCollapsed) sl.removeAllRanges();
+            var sl = window.getSelection(); if (sl && !sl.isCollapsed && Date.now() - edgeAt > 1500) sl.removeAllRanges();
           }
           // Mac: never left between two pages (a selection dragged past the edge scrolls the page)
           if (!native && W && Math.abs(window.scrollX - page() * W) > 2) window.luntaGoToPage(page(), false);
@@ -183,18 +188,93 @@ extension ReaderAssets {
       if (window.visualViewport) window.visualViewport.addEventListener('resize', function(){ if (on) watchSize(); });
       window.addEventListener('load', function(){ if (on) { show(); } });
 
-      // Selecting text never turns the page. iPhone: dragging a selection handle near the screen's
-      // edge makes WebKit scroll the page sideways (its selection autoscroll); the app holds the
-      // page still while text is selected (PageMessageHandler.held) and lines it up again after.
+      // WebKit never turns the page while text is selected. iPhone: dragging a selection handle near
+      // the screen's edge makes WebKit scroll the page sideways (its selection autoscroll); the app
+      // holds the page still while text is selected (PageMessageHandler.held) and lines it up again
+      // after. (A handle resting at the edge turns a whole page instead: luntaSelectionEdgeTurn.)
       // Mac: a selection dragged past the edge can shift the page; it is put back once settled.
       var selOn = false, selAt = 0;
       document.addEventListener('selectionchange', function(){
         var s = window.getSelection(), has = !!(s && !s.isCollapsed);
         if (has || selOn) selAt = Date.now();
+        trackEnds(s, has);
         if (has === selOn) return;
         selOn = has;
         if (native) post({ selecting: has });
       });
+
+      // A selection dragged over the page's edge (iPhone, iPad) goes on onto the next page. The app
+      // watches the finger while a selection handle is dragged (SelectionDragWatcher below) and,
+      // when it has rested for half a second, asks luntaSelectionEdgeTurn with the screen edge it
+      // rests at (1 right, -1 left, 0 neither). The page turns when the finger is at an edge, or
+      // when the end being dragged is on the page's last line (its start: the first line); the
+      // other end stays where it is. One turn per rest: the finger has to move again for the next.
+      // WebKit keeps the selection over the turn; if it ever drops it, it is made again from the
+      // end that stayed to the first (last) word of the new page.
+      var ends = null, moving = 1, edgeAt = 0;
+      function trackEnds(s, has){
+        if (!has || !s.rangeCount) { if (Date.now() - edgeAt > 1500) ends = null; return; }
+        var r = s.getRangeAt(0);
+        var e = { sc: r.startContainer, so: r.startOffset, ec: r.endContainer, eo: r.endOffset };
+        if (ends) {
+          var sameStart = e.sc === ends.sc && e.so === ends.so, sameEnd = e.ec === ends.ec && e.eo === ends.eo;
+          if (sameEnd && !sameStart) moving = -1; else if (sameStart && !sameEnd) moving = 1;
+        } else moving = 1;
+        ends = e;
+      }
+      // which way to turn for the moving end's line box `g` (viewport coordinates; see the call):
+      // the end at the end of the page's last line (or already past the page), the start at the
+      // beginning of its first line. Anywhere else on those lines it stays (a word being picked there).
+      window.luntaEdgeDirection = function(g){
+        var colW = g.W / g.cols, p = Math.round(g.scrollX / g.W);
+        var col = Math.floor((g.left + g.scrollX + 1) / colW), first = p * g.cols, last = first + g.cols - 1;
+        var lh = Math.max(12, g.height || 0), x0 = (col - first) * colW;   // the column, on the screen
+        if (g.end > 0) {
+          if (col > last) return 1;                                         // already past this page
+          if (col === last && g.bottom >= g.H - g.bottom0 - 1.6 * lh && g.right >= x0 + colW - g.pad - 1.5 * lh) return 1;
+        } else {
+          if (col < first) return -1;
+          if (col === first && g.top <= g.top0 + lh && g.left <= x0 + g.pad + 1.5 * lh) return -1;
+        }
+        return 0;
+      };
+      function lineBox(r, end){
+        var rs = r.getClientRects();
+        for (var i = 0; i < rs.length; i++) {
+          var x = rs[end > 0 ? rs.length - 1 - i : i];
+          if (x.width > 0 || x.height > 0) return x;
+        }
+        return null;
+      }
+      // a text position at a point of the viewport (the new page's first or last word)
+      function wordAt(x, y, end){
+        var c = document.caretRangeFromPoint && document.caretRangeFromPoint(x, y);
+        if (!c || c.startContainer.nodeType !== 3) return null;
+        var t = c.startContainer.nodeValue, o = c.startOffset;
+        if (end > 0) { while (o < t.length && /\S/.test(t[o])) o++; } else { while (o > 0 && /\S/.test(t[o - 1])) o--; }
+        return [c.startContainer, o];
+      }
+      window.luntaSelectionEdgeTurn = function(zone){
+        if (!on || !W || Date.now() - edgeAt < 900) return 0;
+        var s = window.getSelection(); if (!s || !s.rangeCount || s.isCollapsed) return 0;
+        var r = s.getRangeAt(0), box = lineBox(r, moving);
+        var dir = zone || (box ? window.luntaEdgeDirection({ left: box.left, right: box.right, top: box.top, bottom: box.bottom, height: box.height,
+                                   scrollX: window.scrollX, W: W, H: Hh, cols: cols(), pad: pad, top0: top, bottom0: bottom, end: moving }) : 0);
+        var p = page();
+        if (!dir || p + dir < 0 || p + dir > pages() - 1) return 0;
+        var stay = moving > 0 ? [r.startContainer, r.startOffset] : [r.endContainer, r.endOffset];
+        edgeAt = Date.now();
+        window.luntaGoToPage(p + dir, true, true);
+        setTimeout(function(){
+          var s2 = window.getSelection();
+          if (s2 && s2.rangeCount && !s2.isCollapsed) return;   // kept, as it should be
+          var to = dir > 0 ? wordAt(pad + 3, top + 6, 1) : wordAt(W - pad - 3, Hh - bottom - 8, -1);
+          if (!to) return;
+          edgeAt = Date.now();
+          try { s2.setBaseAndExtent(stay[0], stay[1], to[0], to[1]); } catch (x) {}
+        }, 500);
+        return dir;
+      };
 
       // taps: edges turn the page, the middle shows or hides the bars (iPhone)
       document.addEventListener('click', function(e){
@@ -266,11 +346,14 @@ final class PageMessageHandler: NSObject, WKScriptMessageHandler {
     fileprivate weak var webView: WKWebView?
     fileprivate var sync: DispatchWorkItem?
     fileprivate var offsetWatch: NSKeyValueObservation?
+    /// A page turn with a selection being dragged over the edge is under way (its animation isn't undone).
+    fileprivate var turningUntil = Date.distantPast
+    fileprivate var dragWatcher: SelectionDragWatcher?
     #endif
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
         #if os(iOS)
         if let d = m.body as? [String: Any], let n = d["page"] as? Int, let v = m.webView {
-            Self.show(page: n, in: v, animated: d["smooth"] as? Bool ?? false)
+            Self.show(page: n, in: v, animated: d["smooth"] as? Bool ?? false, keep: d["keep"] as? Bool ?? false)
             return
         }
         if let d = m.body as? [String: Any], let on = d["selecting"] as? Bool, let v = m.webView {
@@ -291,7 +374,9 @@ extension PageMessageHandler {
     /// Right after the pages are laid out again (the page opening, a new text size) the scroll
     /// view's content size can lag behind for a moment: a page past its end waits for it
     /// (up to `wait` more tries) rather than landing on the last page of the old layout.
-    @MainActor static func show(page n: Int, in v: WKWebView, animated: Bool, wait: Int = 20) {
+    /// `keep`: the turn of a selection dragged over the page's edge, animated like any turn (the
+    /// selection is held on the new page).
+    @MainActor static func show(page n: Int, in v: WKWebView, animated: Bool, keep: Bool = false, wait: Int = 20) {
         let sv = v.scrollView
         let w = sv.bounds.width
         guard w > 0 else { return }
@@ -302,7 +387,7 @@ extension PageMessageHandler {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 // (unless another page was asked for meanwhile)
                 guard latest[ObjectIdentifier(v)] == n else { return }
-                show(page: n, in: v, animated: animated, wait: wait - 1)
+                show(page: n, in: v, animated: animated, keep: keep, wait: wait - 1)
             }
             return
         }
@@ -311,7 +396,9 @@ extension PageMessageHandler {
         // a turn while text is selected (narration, contents): that page is the one to hold
         let h = handlers.object(forKey: v)
         h?.held = x
-        sv.setContentOffset(CGPoint(x: x, y: 0), animated: animated && h?.selecting != true)
+        let animate = animated && (h?.selecting != true || keep)
+        if keep, animate { h?.turningUntil = Date().addingTimeInterval(0.5) }
+        sv.setContentOffset(CGPoint(x: x, y: 0), animated: animate)
     }
     @MainActor private static var latest: [ObjectIdentifier: Int] = [:]
     @MainActor private static let handlers = NSMapTable<WKWebView, PageMessageHandler>.weakToWeakObjects()
@@ -325,6 +412,11 @@ extension PageMessageHandler {
     @MainActor private func watch(_ v: WKWebView) {
         Self.handlers.setObject(self, forKey: v)
         webView = v
+        if dragWatcher?.view !== v {
+            let w = SelectionDragWatcher(handler: self)
+            v.addGestureRecognizer(w)
+            dragWatcher = w
+        }
         guard watched !== v.scrollView else { return }
         watched = v.scrollView
         offsetWatch = v.scrollView.observe(\.contentOffset, options: [.new]) { [weak self] sv, _ in
@@ -333,7 +425,7 @@ extension PageMessageHandler {
     }
 
     @MainActor private func moved(_ sv: UIScrollView) {
-        guard selecting, state?.on == true else { return }
+        guard selecting, state?.on == true, Date() >= turningUntil else { return }
         let x = sv.contentOffset.x
         if sv.isDragging || sv.isDecelerating {
             // a swipe turns the page as usual, and the selection (with its Copy/Highlight menu) is
@@ -354,6 +446,26 @@ extension PageMessageHandler {
         sync = later
         DispatchQueue.main.async(execute: now)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: later)
+    }
+
+    // MARK: a selection dragged over the page's edge (pagedJS: luntaSelectionEdgeTurn)
+
+    /// A selection handle can be dragged now: text is selected, in pages, and the page isn't being swiped.
+    @MainActor fileprivate var canEdgeTurn: Bool {
+        guard selecting, state?.on == true, let sv = webView?.scrollView else { return false }
+        return !sv.isDragging && !sv.isDecelerating
+    }
+
+    /// The handle is being dragged (true) or was let go: highlight mode waits for that.
+    @MainActor fileprivate func dragChanged(_ on: Bool) {
+        webView?.evaluateJavaScript("window.luntaDragging = \(on)")
+    }
+
+    /// The finger has rested at `zone` (1 the right edge, -1 the left, 0 elsewhere): the page
+    /// decides whether to turn.
+    @MainActor fileprivate func edgeRest(zone: Int) {
+        guard canEdgeTurn else { return }
+        webView?.evaluateJavaScript("window.luntaSelectionEdgeTurn ? luntaSelectionEdgeTurn(\(zone)) : 0")
     }
 
     @MainActor private func syncPage() {
@@ -378,6 +490,72 @@ extension PageMessageHandler {
             let page = (x / w).rounded()
             if abs(x - page * w) > 1 { Self.show(page: Int(page), in: v, animated: true) }
         }
+    }
+}
+
+/// Watches a finger dragging a selection handle in pages, without taking part in any gesture
+/// (WebKit's handles, swipes and taps work as before): where it is, and when it has rested for
+/// half a second (it has to move again before the next rest counts, so a held finger turns one page).
+final class SelectionDragWatcher: UIGestureRecognizer, UIGestureRecognizerDelegate {
+    private weak var handler: PageMessageHandler?
+    private var start: CGPoint?
+    private var restPoint: CGPoint?
+    private var dragging = false
+    private var rest: DispatchWorkItem?
+    /// How close to the screen's side the finger counts as at its edge (points).
+    static let edge: CGFloat = 24
+
+    init(handler: PageMessageHandler) {
+        self.handler = handler
+        super.init(target: nil, action: nil)
+        cancelsTouchesInView = false
+        delaysTouchesBegan = false
+        delaysTouchesEnded = false
+        delegate = self
+    }
+
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard (event.allTouches?.count ?? touches.count) == 1, let t = touches.first, t.type == .direct else { finish(); return }
+        start = t.location(in: view)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard let t = touches.first, let v = view, let s = start, let h = handler else { return }
+        let p = t.location(in: v)
+        guard h.canEdgeTurn else { return }
+        if !dragging {
+            guard hypot(p.x - s.x, p.y - s.y) > 8 else { return }
+            dragging = true
+            h.dragChanged(true)
+        }
+        // still resting (a finger is never quite still)
+        if let r = restPoint, hypot(p.x - r.x, p.y - r.y) < 6 { return }
+        restPoint = p
+        rest?.cancel()
+        let w = v.bounds.width
+        let zone = p.x > w - Self.edge ? 1 : (p.x < Self.edge ? -1 : 0)
+        let item = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.dragging else { return }
+                self.handler?.edgeRest(zone: zone)
+            }
+        }
+        rest = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: item)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { finish() }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { finish() }
+    override func reset() { super.reset(); finish(recognizerState: false) }
+
+    private func finish(recognizerState: Bool = true) {
+        rest?.cancel(); rest = nil
+        if dragging { handler?.dragChanged(false) }
+        dragging = false; start = nil; restPoint = nil
+        // never recognized: it only watches
+        if recognizerState, state == .possible { state = .failed }
     }
 }
 #endif
