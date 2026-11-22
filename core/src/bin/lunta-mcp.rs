@@ -410,6 +410,9 @@ fn tools() -> Value {
         t("outline_from_highlights", "An outline of the user's highlights and notes in some papers (`ids`, or a `collection`/folder name, or a `tag`), optionally about a `topic` (then only the highlights that mention it, unless none does): Markdown with headings per paper and section, each point a highlight word for word or the user's own note (marked Note), cited author-year with a lunta:// link and the citation key ([@key]), and a Sources list. Read-only. You may regroup the points into themes for the user, but keep every quote as it is and never present your own words as a highlight.",
           json!({"ids": ids, "collection": {"type": "string", "description": "Collection (folder) name"}, "tag": {"type": "string"},
                  "topic": {"type": "string", "description": "What the outline is about (keeps the highlights that mention it)"}}), &[], true),
+        t("check_citation", "Check Citations: the passages of each cited paper (in the library) that best match a sentence citing it, to judge whether the paper plausibly supports the claim. Per paper: which text was searched (full_text, or abstract only: then say the paper may say more), and the top 3 passages word for word with their section and word_overlap (the share of the claim's content words in the passage, 0–1; BM25 ranked). No model here and no verdict: you judge. Report Supported / Partly supported / Not found in this paper / Contradicted only with a passage quoted exactly as evidence, and never as certain (Lunta proposes, the researcher decides). Pass the sentence with its citation taken out; `context` is the sentence before it. Read-only, on this computer.",
+          json!({"claim": {"type": "string", "description": "The citing sentence (citations taken out)"}, "paper_ids": ids,
+                 "context": {"type": "string", "description": "The sentence before it (optional)"}}), &["claim", "paper_ids"], true),
         t("library_status", "Papers in the library flagged by Lunta's checks: retracted, withdrawn, corrected or with an expression of concern (Crossref and Retraction Watch notices), and preprints that have been published (with the published version), linked to it, or switched to it. Read-only; the apps check weekly.",
           json!({"id": {"type": "string", "description": "Only this paper"}}), &[], true),
     ])
@@ -655,6 +658,31 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
             if let Some(v) = a.get("keywords").and_then(|v| v.as_array()) { m.keywords = v.iter().filter_map(|x| x.as_str().map(String::from)).collect(); }
             lib.update_meta(id.clone(), m).map_err(|e| e.to_string())?;
             Ok(summary(&need(&id)?))
+        }
+        "check_citation" => {
+            let claim = arg_str(a, "claim").ok_or("claim is required")?;
+            let ids: Vec<String> = a.get("paper_ids").and_then(Value::as_array).map(|v| v.iter().filter_map(|x| x.as_str().map(String::from)).take(20).collect()).unwrap_or_default();
+            if ids.is_empty() {
+                return Err("paper_ids is required".into());
+            }
+            let claim = lunta_core::claims::strip_citations(&claim);
+            let papers = lib.claim_papers(claim.clone(), arg_str(a, "context").unwrap_or_default(), ids);
+            Ok(json!({
+                "claim": claim,
+                "note": "No model here: judge from the passages, quote them exactly as evidence, and say how sure (never certain). Not found among the top passages doesn't prove the paper never says it.",
+                "papers": papers.iter().map(|p| {
+                    let source = match p.source {
+                        lunta_core::claims::ClaimTextSource::FullText => "full_text",
+                        lunta_core::claims::ClaimTextSource::Abstract => "abstract",
+                        lunta_core::claims::ClaimTextSource::None => "none",
+                        lunta_core::claims::ClaimTextSource::Missing => "not_in_library",
+                    };
+                    json!({
+                        "id": p.paper_id, "title": p.title, "label": p.label, "searched": source,
+                        "passages": p.passages.iter().map(|x| json!({"text": x.text, "section": x.section, "word_overlap": x.score, "bm25": x.bm25, "open_in_app": x.link})).collect::<Vec<_>>(),
+                    })
+                }).collect::<Vec<_>>(),
+            }))
         }
         "check_references" => {
             let text = arg_str(a, "bibtex").or_else(|| arg_str(a, "text")).ok_or("text or bibtex is required")?;

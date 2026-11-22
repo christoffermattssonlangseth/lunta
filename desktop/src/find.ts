@@ -69,8 +69,12 @@ export async function findStep(forward: boolean) {
 }
 
 /** Opens the bar in `host` (or focuses it, with its text selected, if open). */
-export function openFind(host: HTMLElement, t: FindTarget, onClose: (moved: boolean) => void) {
-  if (bar && bar.isConnected) { bar.input!.focus(); bar.input!.select(); return; }
+/** `query`: searched at once (Check Citations' passage). */
+export function openFind(host: HTMLElement, t: FindTarget, onClose: (moved: boolean) => void, query?: string) {
+  if (bar && bar.isConnected) {
+    if (query) { bar.input!.value = query; search(); }
+    bar.input!.focus(); bar.input!.select(); return;
+  }
   target = t; closed = onClose; moved = false; result = null; searched = '';
   const input = h('input', { type: 'search', placeholder: 'Find in paper', 'aria-label': 'Find in paper', spellcheck: 'false' }) as HTMLInputElement;
   input.addEventListener('input', () => {
@@ -94,6 +98,7 @@ export function openFind(host: HTMLElement, t: FindTarget, onClose: (moved: bool
   host.append(bar);
   label();
   input.focus();
+  if (query) { input.value = query; search(); }
 }
 
 /** Closes the bar and takes the marks out of the page. */

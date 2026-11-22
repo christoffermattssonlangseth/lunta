@@ -454,6 +454,16 @@ function makeLuntaGDocs(deps) {
     return out;
   }
 
+  // ---- Check Citations: the citations and their paragraphs (Lunta's /claims checks them) ----
+
+  /** {sites: LuntaCite.claimSites(…), papers: the details the document keeps of the cited papers}. */
+  async function claimSites(docId) {
+    var doc = await deps.docs.get(docId), store = await decodeStore(D.read(doc).storeNames);
+    var sites = C.claimSites(D.claimParagraphs(doc));
+    var ids = C.unique([].concat.apply([], sites.map(function (s) { return s.ids; })));
+    return { sites: sites, papers: (store && store.papers) ? C.detailsFor(store.papers, ids) : {} };
+  }
+
   /**
    * The document requests of the panel ({op, docId, …}, see gdocs/panel.js), the same in every
    * browser: the background script answers them in Chrome, Edge and Firefox, Lunta for Mac in Safari.
@@ -491,6 +501,8 @@ function makeLuntaGDocs(deps) {
         return convertZotero(msg.docId, Object.assign(style, { cites: msg.cites || [], bibs: (msg.bibs || []).map(String) }));
       case 'scanPlaceholders':
         return scanPlaceholders(msg.docId);
+      case 'claimSites':
+        return claimSites(msg.docId);
       case 'writePlaceholder': {
         var p = msg.placeholder || {};
         return writePlaceholder(msg.docId, Object.assign(style, {
@@ -503,7 +515,7 @@ function makeLuntaGDocs(deps) {
     }
   }
 
-  return { state: state, update: update, finishInsert: finishInsert, details: details, editCitation: editCitation, scanZotero: scanZotero, convertZotero: convertZotero,
+  return { claimSites: claimSites, state: state, update: update, finishInsert: finishInsert, details: details, editCitation: editCitation, scanZotero: scanZotero, convertZotero: convertZotero,
            scanPlaceholders: scanPlaceholders, writePlaceholder: writePlaceholder,
            decodeStore: decodeStore, encodeStore: encodeStore, bareCount: bareCount, op: op };
 }

@@ -40,7 +40,21 @@ test('citations in document order, footnotes where their marks are, runs split b
   const body = Body(P(t1, c1), P('More ', note, cite('[2]', ['b'])), P(split));
   const gs = load(makeDocument({ body }));
   assert.deepEqual(gs.call('getState').citations, [['a'], ['n'], ['b'], ['b', 'c']]);
-  assert.equal(gs.call('version'), 4);
+  assert.equal(gs.call('version'), 5);
+});
+
+test('Check Citations: every paragraph’s text and its citations, footnotes after the body; nothing written', () => {
+  const note = new Footnote([P('See ', cite('(N)', ['n']), '.')]);
+  const body = Body(P('Microglia are immune cells.'), P('Rims have iron ', cite('(A)', ['a']), '. More ', note, cite('[2]', ['b', 'c']), '.'), P(''));
+  const gs = load(makeDocument({ body }));
+  const paras = gs.call('claimParagraphs');
+  assert.deepEqual(JSON.parse(JSON.stringify(paras)), [
+    { text: 'Microglia are immune cells.', cites: [] },
+    { text: 'Rims have iron (A). More [2].', cites: [{ text: '(A)', ids: ['a'] }, { text: '[2]', ids: ['b', 'c'] }] },
+    { text: 'See (N).', cites: [{ text: '(N)', ids: ['n'] }] }
+  ]);
+  const sites = C.claimSites(paras);
+  assert.deepEqual(sites.map((s) => s.text.slice(s.start, s.end)), ['(A)', '[2]', '(N)']);
 });
 
 test('Update All writes each citation; twice changes nothing', () => {

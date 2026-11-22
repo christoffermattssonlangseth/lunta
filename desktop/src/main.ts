@@ -8,13 +8,14 @@ import { api, smartApi, type Paper, type Row, type Sidebar, type Source, type Ci
 import { editDetails, editSmart, blankSmart } from './editors';
 import { setupDrag, type Payload } from './drag';
 import { fill, h, $, status, prompt, menu, menuBelow, copy, authorsShort, type MenuItem } from './ui';
-import { openReader, readerPaper, closeReader, showHighlightWhenReady } from './reader';
+import { openReader, readerPaper, closeReader, showHighlightWhenReady, findInReader } from './reader';
 import { startUpdateChecks, checkNow, updatesApi } from './updates';
 import { aiSettingsDialog, libraryAskButton, setAskOpener } from './ai';
 import { setOpenPaper, voiceDialog } from './listen';
 import { showForYou, hideForYou, forYouCount, setForYouHooks, startForYou, watchItems } from './foryou';
 import { importLibrary, importPdfFolder, makeMissingReadingViews, setImportReload } from './importer';
 import { resolveTexCitations } from './texresolve';
+import { checkTexCitations } from './claims';
 import { loadUpdates, updatesBadge, updatesBanner, checkMenuItems, paperCheckItems, folderCheckItem, setChecksReload } from './checks';
 import { openTidy, setTidyReload } from './tidy';
 import { outlineDialog, setOutlineOpener } from './outline';
@@ -584,6 +585,7 @@ const importItems = (): MenuItem[] => [
   { label: 'Import Folder of PDFs…', action: importPdfFolder },
   '-',
   { label: 'Resolve Citations in a .tex File…', action: () => resolveTex(null) },
+  { label: 'Check Citations in a .tex File…', action: () => checkTexCitations(openAtPassage) },
   '-',
   ...checkMenuItems(),
   '-',
@@ -595,6 +597,19 @@ $('#add-more').onclick = () => menuBelow($('#add-more'), importItems());
 setImportReload(() => { reload(); });
 setChecksReload(() => { reload(); });
 setTidyReload(() => { reload(); });
+// Check Citations' evidence (a .tex file's, or a Word or Google Docs panel's through /cite/open):
+// the paper's reading view, found at the passage's words
+async function openAtPassage(id: string, find: string) {
+  const p = await api.paper(id);
+  if (!p) return;
+  if (find && p.has_epub) findInReader(id, find);
+  if (readerPaper() === p.id) return;
+  if (readerPaper()) await closeReader();
+  read(p, p.has_epub ? 'reading' : 'pdf');
+}
+listen<string>('open-passage', (e) => {
+  try { const j = JSON.parse(e.payload); if (j.id) openAtPassage(String(j.id), String(j.find || '')); } catch { /* not ours */ }
+});
 // an outline's link to a paper opens it in the reader; a summary's citation at the highlight
 setOutlineOpener(async (id, highlight) => {
   const p = await api.paper(id);

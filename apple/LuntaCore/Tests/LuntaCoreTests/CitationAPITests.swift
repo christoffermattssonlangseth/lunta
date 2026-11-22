@@ -98,6 +98,51 @@ final class CitationAPITests: XCTestCase {
 
     // MARK: - answers
 
+    // MARK: - Check Citations
+
+    func testCheckCitations() throws {
+        let text = "Results\nWe found that chronic active lesions had a rim of iron-laden microglia in 42 of 50 patients, whereas inactive lesions had none.\nRemyelination was rare in lesions with rims; most remyelinated lesions were early lesions without iron.\n"
+        let p = try lib.addPaper(meta: meta("Iron rims", ["Petra Kukanja"], "2024", doi: "10.1016/j.rims.2024.01.001"), pdf: nil, epub: nil, fulltext: text)
+        let para = "Microglia are immune cells. Chronic active lesions have a rim of iron-laden microglia (Kukanja 2024). Next."
+        let cite = "(Kukanja 2024)"
+        let start = (para as NSString).range(of: cite).location
+        // no model: the passages, for the writer to judge
+        let (code, body, _) = send(request("POST", "/api/claims", json: ["text": para, "start": start, "end": start + cite.utf16.count, "ids": [p.id]]))
+        XCTAssertEqual(code, 200)
+        let j = try XCTUnwrap(body as? [String: Any])
+        XCTAssertEqual(j["claim"] as? String, "Chronic active lesions have a rim of iron-laden microglia.")
+        XCTAssertEqual(j["context"] as? String, "Microglia are immune cells.")
+        XCTAssertEqual(j["judged"] as? Bool, false)
+        XCTAssertTrue((j["privacy"] as? String ?? "").contains("nothing is sent anywhere"))
+        let r = try XCTUnwrap((j["results"] as? [[String: Any]])?.first)
+        XCTAssertEqual(r["verdict"] as? String, "possible")
+        XCTAssertEqual(r["verdictLabel"] as? String, "Possible support")
+        let top = try XCTUnwrap((r["passages"] as? [[String: Any]])?.first)
+        XCTAssertEqual(top["section"] as? String, "Results")
+        XCTAssertTrue((top["link"] as? String ?? "").hasPrefix("lunta://open?id=\(p.id)&find="))
+        // the app's model: its quote checked against the paper
+        api.judge = { _, prompt in
+            prompt.contains("iron-laden") ? "VERDICT: SUPPORTED\nEVIDENCE: [1] \"chronic active lesions had a rim of iron-laden microglia\"\nREASON: Stated." : nil
+        }
+        let judged = try XCTUnwrap(send(request("POST", "/api/claims", json: ["claim": "Chronic active lesions have iron-laden microglia [3].", "ids": [p.id]])).1 as? [String: Any])
+        XCTAssertEqual(judged["judged"] as? Bool, true)
+        let jr = try XCTUnwrap((judged["results"] as? [[String: Any]])?.first)
+        XCTAssertEqual(jr["verdict"] as? String, "supported")
+        XCTAssertEqual((jr["evidence"] as? [[String: Any]])?.first?["quote"] as? String, "chronic active lesions had a rim of iron-laden microglia")
+        // a quote that isn't in the paper: not found
+        api.judge = { _, _ in "VERDICT: SUPPORTED\nEVIDENCE: [1] \"every lesion has iron rims in all patients\"" }
+        let bad = try XCTUnwrap(send(request("POST", "/api/claims", json: ["claim": "Lesions have iron-laden microglia.", "ids": [p.id]])).1 as? [String: Any])
+        XCTAssertEqual(((bad["results"] as? [[String: Any]])?.first)?["verdict"] as? String, "notFound")
+        XCTAssertEqual(send(request("POST", "/api/claims", json: ["claim": "x"])).0, 400)
+        // the evidence's "open the paper at this passage"
+        final class Opened: @unchecked Sendable { var value: [String] = [] }
+        let opened = Opened()
+        api.openPaper = { id, find in opened.value = [id, find] }
+        XCTAssertEqual(send(request("POST", "/api/open", json: ["id": p.id, "find": "chronic active lesions"])).0, 200)
+        XCTAssertEqual(opened.value, [p.id, "chronic active lesions"])
+        XCTAssertEqual(send(request("POST", "/api/open", json: ["id": "nope"])).0, 404)
+    }
+
     func testStatusAndSearch() throws {
         let p = try lib.addPaper(meta: meta("Signals <10 Hz & the \"quiet\" cortex", ["Ada Lee", "Ludwig van Beethoven"], "2020", doi: "10.1000/xyz"),
                                  pdf: nil, epub: nil, fulltext: nil)

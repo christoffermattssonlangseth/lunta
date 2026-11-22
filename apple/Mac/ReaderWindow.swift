@@ -432,6 +432,8 @@ struct ReaderWindow: View {
         guard HighlightJump.has(paperID) else { return }
         Task { @MainActor in
             try? await Task.sleep(for: delay)
+            // a passage (Check Citations): found with the find bar
+            if let words = HighlightJump.takeFind(paperID) { find.open(); find.query = words; return }
             guard let id = HighlightJump.take(paperID), let a = model.annotations(paperID).first(where: { $0.id == id }) else { return }
             if mode == .pdf { pdfHighlights.show(a) } else { controller.showAnnotation(a.id) }
         }

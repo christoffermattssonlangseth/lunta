@@ -1,0 +1,21 @@
+/* Check Citations in a .tex file (claims.ts) */
+.claims-modal { width: min(860px, 94vw); }
+.claims-list { overflow: auto; flex: 1; min-height: 120px; max-height: 62vh; }
+.claims-item { padding: 8px 0 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.claims-item.decided .claims-claim { opacity: .6; }
+.claims-where { display: flex; gap: 8px; align-items: baseline; font-size: 11px; color: var(--dim); }
+.claims-where code { color: var(--accent, #2a6478); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.claims-where .grow { flex: 1; }
+.claims-claim { margin: 3px 0 4px; user-select: text; }
+.claims-r { margin: 4px 0 4px 8px; }
+.claims-rh { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.claims-badge { font-size: 11px; font-weight: 600; color: #fff; border-radius: 9px; padding: 1px 7px; white-space: nowrap; }
+.claims-badge.ok { background: #2e7d4f; } .claims-badge.part { background: #c77c12; } .claims-badge.bad { background: #b3261e; }
+.claims-badge.none { background: #7a7a80; } .claims-badge.maybe { background: #2a6478; }
+.claims-paper { font-size: 12px; color: var(--dim); }
+.claims-by, .claims-note { font-size: 12px; color: var(--dim); margin: 3px 0; }
+.claims-q { display: block; font-size: 12.5px; margin: 3px 0; text-align: left; }
+.claims-p { display: block; width: 100%; text-align: left; font-size: 12px; border: 0; border-left: 2px solid var(--line); background: none; padding: 2px 0 2px 8px; margin: 4px 0; cursor: pointer; color: inherit; }
+.claims-p:hover { background: var(--hover, #8881); }
+.claims-pm { display: block; font-size: 11px; color: var(--dim); }
+.claims-item details summary { cursor: pointer; font-size: 12px; color: var(--dim); }

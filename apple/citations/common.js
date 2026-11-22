@@ -949,6 +949,243 @@ var LuntaCite = (function () {
     return s;
   }
 
+  // ---- Check Citations (Lunta's /claims; core/src/claims) ----
+  // For each citation, the sentence it is in and the cited papers' passages that best match it,
+  // with (when Lunta has an on-device model) a suggested verdict whose quotes are checked word for
+  // word against the paper. Lunta proposes, the writer decides: "Looks right" or "Dismiss" per
+  // citation, remembered on this computer. Nothing in the document changes.
+
+  var CLAIM_VERDICTS = ['contradicted', 'notFound', 'partly', 'possible', 'noText', 'supported'];
+  var CLAIM_NAMES = { supported: 'supported', partly: 'partly supported', contradicted: 'contradicted', notFound: 'not found in the paper',
+    possible: 'possible support', noText: 'no text to check', noMatch: 'no matching passage' };
+  var CLAIM_PRIVACY = 'Checked on this computer by Lunta: the sentences and the papers stay on it, nothing is sent anywhere.';
+  var CLAIM_PRINCIPLE = 'Lunta proposes, you decide: for each citation, the passages of the cited paper that best match the sentence, and, with an on-device model, a suggested verdict whose quotes are checked word for word against the paper. It can be wrong: read the passages.';
+
+  /**
+   * The citations to check, from paragraphs as the panel reads them: [{text, cites: [{text, ids}]}]
+   * (a paragraph's text as shown, its citations in order, each as its text shows). Each citation
+   * is found in its paragraph after the one before it: [{ids, text, start, end, others, before,
+   * cite, key}] (offsets are JavaScript's, UTF-16, as Lunta wants them). `before`: the paragraph before.
+   */
+  function claimSites(paras) {
+    var out = [], prev = '';
+    (paras || []).forEach(function (p) {
+      var text = String(p.text || ''), at = 0, spans = [];
+      (p.cites || []).forEach(function (c) {
+        var t = String(c.text || '');
+        if (!t) return;
+        var i = text.indexOf(t, at);
+        if (i < 0) return;
+        spans.push({ start: i, end: i + t.length, ids: unique(c.ids), cite: t });
+        at = i + t.length;
+      });
+      spans.forEach(function (s, k) {
+        if (!s.ids.length) return;
+        out.push({ ids: s.ids, text: text, start: s.start, end: s.end, cite: s.cite, before: prev,
+          others: spans.filter(function (o, j) { return j !== k; }).map(function (o) { return [o.start, o.end]; }) });
+      });
+      if (text.trim()) prev = text;
+    });
+    return out;
+  }
+
+  /** What to ask Lunta for a citation (POST /claims). */
+  function claimBody(site, store, judge) {
+    return { text: clip(site.text, 20000), start: site.start, end: site.end, others: site.others || [], before: clip(site.before || '', 20000),
+      ids: site.ids, papers: detailsFor(store, site.ids), judge: judge !== false };
+  }
+
+  /** Where a decision about a citation is remembered: its papers and the sentence checked. */
+  function claimKey(ids, claim) { return unique(ids).join(',') + '|' + String(claim || '').replace(/\s+/g, ' ').trim(); }
+
+  function claimDecisions() {
+    try { return JSON.parse((storage() && storage().getItem('luntaClaims')) || '{}') || {}; } catch (e) { return {}; }
+  }
+  /** Remembers "right" (Looks right), "dismissed", or nothing (null). At most 2,000 kept. */
+  function rememberClaim(key, state) {
+    var all = claimDecisions();
+    if (state) all[key] = state; else delete all[key];
+    var keys = Object.keys(all);
+    if (keys.length > 2000) keys.slice(0, keys.length - 2000).forEach(function (k) { delete all[k]; });
+    try { storage().setItem('luntaClaims', JSON.stringify(all)); } catch (e) {}
+    return all;
+  }
+
+  /**
+   * Checks the citations one after another: ask(body) → Lunta's answer (a promise); progress(i, n)
+   * before each; stopped() true ends early. → [{site, answer | null, error | null}].
+   */
+  function runClaims(sites, ask, progress, stopped, store, judge) {
+    var out = [], i = 0;
+    function next() {
+      if (i >= sites.length || (stopped && stopped())) return Promise.resolve(out);
+      var s = sites[i];
+      if (progress) progress(i, sites.length);
+      i++;
+      return Promise.resolve().then(function () { return ask(claimBody(s, store, judge)); }).then(function (a) {
+        out.push({ site: s, answer: a, error: null });
+      }, function (e) {
+        if (e && e.kind === 'offline') throw e;
+        out.push({ site: s, answer: null, error: (e && e.message) || String(e) });
+      }).then(next);
+    }
+    return next();
+  }
+
+  /** The verdict's class and name: "Not found in this paper" is the model's; without one, "No matching passage". */
+  function claimVerdict(r) {
+    var v = r && r.verdict;
+    if (v === 'notFound' && !r.byModel) return { cls: 'none', name: 'No matching passage', key: 'noMatch' };
+    var names = { supported: 'Supported', partly: 'Partly supported', contradicted: 'Contradicted', notFound: 'Not found in this paper',
+      possible: 'Possible support', noText: 'No text to check' };
+    var cls = { supported: 'ok', partly: 'part', contradicted: 'bad', notFound: 'none', possible: 'maybe', noText: 'none' };
+    return { cls: cls[v] || 'none', name: r.verdictLabel || names[v] || 'Checked', key: v || 'noText' };
+  }
+
+  /** How the citations came out: {citations, checked, papers, byVerdict: {key: n}, judged, right, dismissed, failed}. */
+  function claimCounts(items, decisions) {
+    decisions = decisions || {};
+    var c = { citations: items.length, checked: 0, papers: 0, byVerdict: {}, judged: false, right: 0, dismissed: 0, failed: 0 };
+    items.forEach(function (it) {
+      if (!it.answer) { c.failed++; return; }
+      c.checked++;
+      if (it.answer.judged) c.judged = true;
+      var d = decisions[claimKey(it.site.ids, it.answer.claim)];
+      if (d === 'right') c.right++;
+      if (d === 'dismissed') c.dismissed++;
+      (it.answer.results || []).forEach(function (r) {
+        c.papers++;
+        var k = claimVerdict(r).key;
+        c.byVerdict[k] = (c.byVerdict[k] || 0) + 1;
+      });
+    });
+    return c;
+  }
+
+  /** "12 citations checked (14 papers): 7 supported, 2 partly supported, … · 3 marked Looks right". */
+  function claimSummary(c) {
+    var s = c.checked + ' citation' + (c.checked === 1 ? '' : 's') + ' checked';
+    if (c.papers !== c.checked) s += ' (' + c.papers + ' paper' + (c.papers === 1 ? '' : 's') + ')';
+    var parts = [];
+    ['supported', 'partly', 'contradicted', 'notFound', 'noMatch', 'possible', 'noText'].forEach(function (k) {
+      if (c.byVerdict[k]) parts.push(c.byVerdict[k] + ' ' + CLAIM_NAMES[k]);
+    });
+    if (parts.length) s += ': ' + parts.join(', ');
+    var tail = [];
+    if (c.right) tail.push(c.right + ' marked Looks right');
+    if (c.dismissed) tail.push(c.dismissed + ' dismissed');
+    if (c.failed) tail.push(c.failed + ' couldn’t be checked');
+    return s + (tail.length ? ' · ' + tail.join(', ') : '');
+  }
+
+  /** The lunta:// link's paper and words: {id, find}. */
+  function parseOpenLink(link) {
+    var m = /^lunta:\/\/open\?(.*)$/.exec(String(link || ''));
+    if (!m) return null;
+    var out = { id: '', find: '' };
+    m[1].split('&').forEach(function (kv) {
+      var i = kv.indexOf('='), k = i < 0 ? kv : kv.slice(0, i), v = i < 0 ? '' : kv.slice(i + 1);
+      try { v = decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) {}
+      if (k === 'id') out.id = v; else if (k === 'find') out.find = v;
+    });
+    return out.id ? out : null;
+  }
+
+  /** Most in need of a look first: contradicted, not found, partly, possible; supported last. */
+  function claimRank(it) {
+    if (!it.answer) return 1;
+    var rs = it.answer.results || [];
+    if (!rs.length) return 4;
+    return Math.min.apply(null, rs.map(function (r) { var i = CLAIM_VERDICTS.indexOf(r.verdict); return i < 0 ? 4 : i; }));
+  }
+
+  /**
+   * The results in `box`: the summary, what to know (privacy, model or not), and per citation the
+   * sentence, each paper's verdict badge, the model's reason, the quotes and passages (click: the
+   * paper at that passage in Lunta, opts.open(link)), "Looks right" / "Dismiss". opts: {open(link),
+   * onlyOpen, sort ('rank' | 'document'), changed()}. Returns {rows}.
+   */
+  function claimsReview(doc, box, items, opts) {
+    opts = opts || {};
+    var decisions = claimDecisions();
+    var el = function (tag, cls, text) { var e = doc.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+    box.innerHTML = '';
+    var counts = claimCounts(items, decisions);
+    box.appendChild(el('p', 'cl-sum', claimSummary(counts) + '.'));
+    box.appendChild(el('p', 'cl-note', CLAIM_PRINCIPLE));
+    if (counts.checked && !counts.judged) {
+      box.appendChild(el('p', 'cl-note', 'No on-device model in Lunta here, so the passages that share the most words with each sentence are shown, with their word overlap, for you to judge.'));
+    }
+    box.appendChild(el('p', 'cl-note', CLAIM_PRIVACY));
+    var list = items.map(function (it, i) { return { it: it, i: i }; });
+    if (opts.sort !== 'document') list.sort(function (a, b) { return claimRank(a.it) - claimRank(b.it) || a.i - b.i; });
+    var rows = [];
+    list.forEach(function (x) {
+      var it = x.it, a = it.answer;
+      var key = a ? claimKey(it.site.ids, a.claim) : '';
+      var state = key ? decisions[key] : null;
+      if (opts.onlyOpen && state) return;
+      var row = el('div', 'cl-item' + (state ? ' cl-' + state : ''));
+      row.appendChild(el('div', 'cl-cite', it.site.cite));
+      row.appendChild(el('div', 'cl-s', a ? (a.claim || a.sentence) : it.site.text.slice(Math.max(0, it.site.start - 160), it.site.end)));
+      if (!a) {
+        row.appendChild(el('div', 'cl-err', it.error || 'Couldn’t be checked.'));
+      } else if (!(a.results || []).length) {
+        row.appendChild(el('div', 'cl-rnote', a.note || 'Nothing to check.'));
+      } else if (state !== 'dismissed') {
+        (a.results || []).forEach(function (r) {
+          var v = claimVerdict(r), res = el('div', 'cl-r');
+          var head = el('div', 'cl-rh');
+          head.appendChild(el('span', 'cl-badge cl-' + v.cls, v.name));
+          head.appendChild(el('span', 'cl-paper', (r.label || 'Paper') + (r.title ? ' · ' + r.title : '')));
+          res.appendChild(head);
+          if (r.byModel) res.appendChild(el('div', 'cl-by', 'Suggested by the on-device model' + (r.reason ? ': ' + r.reason : '.')));
+          (r.evidence || []).forEach(function (e) {
+            var q = el('a', 'cl-q', '“' + e.quote + '”' + (e.section ? ' — ' + e.section : ''));
+            q.href = e.link; q.title = 'Open the paper at this passage in Lunta';
+            q.onclick = function (ev) { if (ev && ev.preventDefault) ev.preventDefault(); if (opts.open) opts.open(e.link); };
+            res.appendChild(q);
+          });
+          if (r.note) res.appendChild(el('div', 'cl-rnote', r.note));
+          var ps = r.passages || [];
+          if (ps.length) {
+            var det = el('details', 'cl-ps');
+            if (!r.byModel) det.open = true;
+            det.appendChild(el('summary', null, ps.length === 1 ? 'The best-matching passage' : 'The ' + ps.length + ' best-matching passages'));
+            ps.forEach(function (p) {
+              var pe = el('a', 'cl-p');
+              pe.href = p.link; pe.title = 'Open the paper at this passage in Lunta';
+              pe.appendChild(el('span', 'cl-pm', (p.section || 'Passage') + ' · ' + Math.round((p.score || 0) * 100) + ' % word overlap'));
+              pe.appendChild(el('span', 'cl-pt', p.text));
+              pe.onclick = function (ev) { if (ev && ev.preventDefault) ev.preventDefault(); if (opts.open) opts.open(p.link); };
+              det.appendChild(pe);
+            });
+            res.appendChild(det);
+          }
+          row.appendChild(res);
+        });
+      }
+      if (a) {
+        var b = el('div', 'cl-btns');
+        if (state) {
+          b.appendChild(el('span', 'cl-state', state === 'right' ? '✓ Looks right' : 'Dismissed'));
+          var undo = el('button', 'btn cl-undo', 'Undo');
+          undo.onclick = function () { rememberClaim(key, null); claimsReview(doc, box, items, opts); if (opts.changed) opts.changed(); };
+          b.appendChild(undo);
+        } else {
+          var ok = el('button', 'btn cl-ok', 'Looks right'), no = el('button', 'btn cl-no', 'Dismiss');
+          ok.onclick = function () { rememberClaim(key, 'right'); claimsReview(doc, box, items, opts); if (opts.changed) opts.changed(); };
+          no.onclick = function () { rememberClaim(key, 'dismissed'); claimsReview(doc, box, items, opts); if (opts.changed) opts.changed(); };
+          b.appendChild(ok); b.appendChild(no);
+        }
+        row.appendChild(b);
+      }
+      box.appendChild(row);
+      rows.push({ el: row, item: it, key: key, state: state });
+    });
+    return { rows: rows, counts: counts };
+  }
+
   // ---- talking to Lunta ----
 
   var OFFLINE = {
@@ -1085,7 +1322,10 @@ var LuntaCite = (function () {
     convertPlan: convertPlan, convertSummary: convertSummary, convertResolve: convertResolve, convertReview: convertReview, convertDone: convertDone, formatJournal: formatJournal, unknownMessage: unknownMessage, summary: summary,
     request: request, describe: describe,
     isJournal: isJournal, isStyle: isStyle, styleName: styleName, fillStyles: fillStyles, showJournals: showJournals,
-    rememberJournal: rememberJournal, hitMeta: hitMeta, pickedLabel: pickedLabel, useStorage: useStorage
+    rememberJournal: rememberJournal, hitMeta: hitMeta, pickedLabel: pickedLabel, useStorage: useStorage,
+    claimSites: claimSites, claimBody: claimBody, claimKey: claimKey, claimDecisions: claimDecisions, rememberClaim: rememberClaim, runClaims: runClaims,
+    claimVerdict: claimVerdict, claimCounts: claimCounts, claimSummary: claimSummary, claimsReview: claimsReview, parseOpenLink: parseOpenLink,
+    CLAIM_PRIVACY: CLAIM_PRIVACY
   };
 })();
 if (typeof module !== 'undefined') module.exports = LuntaCite;

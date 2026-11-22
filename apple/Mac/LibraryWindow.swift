@@ -141,10 +141,13 @@ struct LibraryWindow: View {
             }
         }
         .onOpenURL { url in
-            // lunta://open?id=<paper id>  (from the browser extension), &highlight=<annotation id> (a summary's citation)
+            // lunta://open?id=<paper id>  (from the browser extension), &highlight=<annotation id> (a summary's citation),
+            // &find=<words> (Check Citations: the passage)
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             if url.host == "open", let id = items.first(where: { $0.name == "id" })?.value {
                 if let h = items.first(where: { $0.name == "highlight" })?.value, !h.isEmpty { HighlightJump.request(paper: id, annotation: h) }
+                // &find=<words>: a passage (Check Citations' evidence), found in the reader
+                if let f = items.first(where: { $0.name == "find" })?.value, !f.isEmpty { HighlightJump.request(paper: id, find: String(f.prefix(200))) }
                 openFromExtension(id)
             }
         }

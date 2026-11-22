@@ -15,6 +15,8 @@ pub mod adder;
 pub mod bibimport;
 /// Checks against the published record: reference lists, retractions, published preprints.
 pub mod checks;
+/// Check Citations: does the cited paper plausibly say what the citing sentence says?
+pub mod claims;
 pub mod citeimport;
 pub mod csl;
 #[cfg(feature = "convert")]

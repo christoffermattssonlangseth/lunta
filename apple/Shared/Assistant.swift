@@ -942,12 +942,12 @@ final class AskEngine: ObservableObject {
     }
 
     @available(macOS 26.0, iOS 26.0, *)
-    private func makeSession(tools: [any Tool], instructions: String) async -> LanguageModelSession {
+    private func makeSession(tools: [any Tool], instructions: String, cloud: Bool = true) async -> LanguageModelSession {
         usingCloud = false
         if #available(macOS 27.0, iOS 27.0, *), usesOpenModel {
             await OpenModel.shared.prepare()
             return LanguageModelSession(model: OpenModel.shared.model, tools: tools, instructions: instructions)
-        } else if #available(macOS 27.0, iOS 27.0, *), cloudAvailable {
+        } else if cloud, #available(macOS 27.0, iOS 27.0, *), cloudAvailable {
             usingCloud = true
             return LanguageModelSession(model: PrivateCloudComputeLanguageModel(), tools: tools, instructions: instructions)
         }
@@ -956,10 +956,18 @@ final class AskEngine: ObservableObject {
 
     /// One prompt, no tools, no history: the model's plain answer (nil without a model, or on failure).
     /// Used by New for You to write searches and screen abstracts.
-    func plainAnswer(_ prompt: String, instructions: String) async -> String? {
-        guard unavailableReason == nil, #available(macOS 26.0, iOS 26.0, *) else { return nil }
-        let s = await makeSession(tools: [], instructions: instructions)
+    /// `onDeviceOnly`: never Private Cloud Compute (Check Citations: the manuscript stays on the device).
+    func plainAnswer(_ prompt: String, instructions: String, onDeviceOnly: Bool = false) async -> String? {
+        guard #available(macOS 26.0, iOS 26.0, *), onDeviceOnly ? onDeviceReady : unavailableReason == nil else { return nil }
+        let s = await makeSession(tools: [], instructions: instructions, cloud: !onDeviceOnly)
         return try? await s.respond(to: prompt, options: GenerationOptions(temperature: 0.2)).content
+    }
+
+    /// A model on this device is ready (Apple's, or the downloaded open model): nothing leaves it.
+    var onDeviceReady: Bool {
+        guard #available(macOS 26.0, iOS 26.0, *) else { return false }
+        if usesOpenModel { return !needsOpenModel }
+        return SystemLanguageModel.default.isAvailable
     }
 
     /// Answers a prompt that already holds everything needed, without tools (so the model can't wander

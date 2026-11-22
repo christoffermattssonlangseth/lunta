@@ -70,7 +70,7 @@ function makeWord(doc) {
   const body = {
     getOoxml() { return { value: doc.ooxml || '' }; },
     get fields() { return collection((doc.nodes || []).filter((n) => n.kind === 'field')); },
-    get paragraphs() { return collection((doc.paras || []).map((p) => ({ text: p.map(segText).join('') }))); },
+    get paragraphs() { return collection((doc.paras || []).map((p) => ({ text: p.map(segText).join(''), contentControls: collection(p.filter((seg) => typeof seg !== 'string')) }))); },
     search(t) {
       const items = [];
       (doc.paras || []).forEach((para) => para.forEach((seg, si) => {
@@ -162,7 +162,16 @@ function makeFetch(lunta) {
     if (lunta.down) return Promise.reject(new TypeError('Failed to fetch'));
     lunta.requests.push({ url, body: init.body && JSON.parse(init.body) });
     let body;
-    if (url.endsWith('/api/status')) body = { ok: true, papers: Object.keys(lunta.lib).length, api: 4 };
+    if (url.endsWith('/api/status')) body = { ok: true, papers: Object.keys(lunta.lib).length, api: 5 };
+    else if (url.endsWith('/api/claims')) {
+      // the sentence and a result per paper, roughly (the real ones: core/src/claims, tested there)
+      const j = JSON.parse(init.body);
+      const claim = (j.text.slice(0, j.start) + j.text.slice(j.end)).replace(/\s+\./g, '.').trim();
+      body = { claim, sentence: j.text, context: j.before, judged: false, note: '', privacy: 'p', results: j.ids.map((id) => ({ id, label: id, title: (lunta.lib[id] || {}).title || '',
+        source: 'fullText', verdict: 'possible', verdictLabel: 'Possible support', byModel: false, reason: '', note: '', evidence: [],
+        passages: [{ text: 'A passage of ' + id + '.', section: 'Results', score: 0.5, link: 'lunta://open?id=' + id + '&find=A%20passage' }] })) };
+    }
+    else if (url.endsWith('/api/open')) body = { ok: true };
     else if (url.endsWith('/api/match')) {
       // by DOI or title, roughly as the core does (core/src/citeimport.rs, tested there)
       body = { matches: JSON.parse(init.body).items.map((m) => {
@@ -571,4 +580,35 @@ test('Convert: the other manager’s bibliography stays while an unreadable cita
   await p.ctx.runConversion([]);
   assert.deepEqual(p.doc.nodes.map((n) => (n.kind === 'field' ? n.code.trim() : n.tag)), ['ADDIN EN.CITE', 'margins:b', 'ADDIN EN.REFLIST']);
   assert.match(p.status(), /Converted 1 citation\. 1 left as they were: the EndNote bibliography stays until its citations are converted/);
+});
+
+test('Check Citations: each citation’s sentence sent with its paragraph; the document isn’t changed; a passage opens in Lunta', async () => {
+  const p = await panel({
+    settings: { luntaStyle: 'apa' },
+    paras: [['Microglia are immune cells.'], ['Rims have iron ', ['margins:a', '(Smith, 2020)'], '. Lesions grow ', ['margins:b,c', '(Smith, 2020; Wu, 2019)'], '.'],
+            [['margins-bib', 'References']]]
+  });
+  await p.ctx.updateAll();
+  const before = JSON.stringify(paraTexts(p));
+  const writes = p.calls.insertText + p.calls.insertHtml;
+  await p.ctx.checkCitations();
+  await settle();
+  const asked = p.lunta.requests.filter((r) => r.url.endsWith('/api/claims')).map((r) => r.body);
+  assert.equal(asked.length, 2);
+  assert.deepEqual(plainJSON(asked.map((b) => b.ids)), [['a'], ['b', 'c']]);
+  assert.equal(asked[0].text.slice(asked[0].start, asked[0].end), '(Smith, 2020a)');
+  assert.equal(asked[0].before, 'Microglia are immune cells.');
+  assert.deepEqual(plainJSON(asked[0].others), [[asked[1].start, asked[1].end]]);
+  assert.ok(asked[0].papers.a && asked[0].papers.a.title === 'Alpha', 'the details the document keeps go along');
+  assert.equal(JSON.stringify(paraTexts(p)), before, 'the document is only read');
+  assert.equal(p.calls.insertText + p.calls.insertHtml, writes);
+  assert.equal(p.els.claimsBox.hidden, false);
+  assert.match(p.status(), /2 citations checked \(3 papers\): 3 possible support\./);
+  // a passage clicked: Lunta asked to show the paper there
+  const all = (e, out = []) => { out.push(e); (e.children || []).forEach((c) => all(c, out)); return out; };
+  const link = all(p.els.cllist).find((e) => e.onclick && e.href && e.href.startsWith('lunta://'));
+  link.onclick({ preventDefault() {} });
+  await settle();
+  const open = p.lunta.requests.find((r) => r.url.endsWith('/api/open'));
+  assert.deepEqual(plainJSON(open.body), { id: 'a', find: 'A passage' });
 });

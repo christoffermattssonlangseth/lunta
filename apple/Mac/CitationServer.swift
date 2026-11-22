@@ -42,6 +42,14 @@ final class CitationServer {
         guard let model else { return }
         api = CitationAPI(library: model.lib, cacheDir: Self.cslCache, token: token)
         api?.paperAdded = Self.paperAdded(model)
+        // Check Citations: the on-device model (never Private Cloud Compute), else the passages alone
+        api?.judge = ClaimModel.blocking()
+        api?.openPaper = { id, find in
+            Task { @MainActor in
+                if !find.isEmpty { HighlightJump.request(paper: id, find: find) }
+                NotificationCenter.default.post(name: .luntaOpenPaper, object: id)
+            }
+        }
         listen()
         // the certificate is renewed a month before it runs out; the app may run that long
         renewal = Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in

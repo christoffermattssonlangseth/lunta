@@ -568,12 +568,52 @@ var LuntaDocs = (function () {
     return { requests: reqs.concat(deletes), converted: converted };
   }
 
+  // ---- Check Citations: each paragraph's text and the citations in it ----
+
+  /**
+   * Every paragraph (every tab, tables, footnotes after the paragraph they are in) as Check
+   * Citations reads it: [{text, cites: [{text, ids}]}], the text as shown, the citations (linked
+   * runs, a link split into runs counted once) in order. LuntaCite.claimSites finds the sentences.
+   */
+  function claimParagraphs(doc) {
+    var out = [];
+    tabsOf(doc).forEach(function (tab) {
+      var dt = tab.documentTab, footnotes = dt.footnotes || {};
+      function walk(list) {
+        (list || []).forEach(function (el) {
+          if (el.paragraph) {
+            var text = '', cites = [], notes = [], last = null;
+            (el.paragraph.elements || []).forEach(function (pe) {
+              if (pe.footnoteReference) { notes.push(pe.footnoteReference.footnoteId); last = null; return; }
+              if (!pe.textRun) { last = null; return; }
+              var t = pe.textRun.content || '';
+              if (t.charAt(t.length - 1) === '\n') t = t.slice(0, -1);
+              if (!t) return;
+              var url = linkOf(pe.textRun), ids = url ? parseLink(url) : null;
+              if (ids && ids.length) {
+                if (last && last.url === url) last.text += t;
+                else { last = { url: url, text: t, ids: ids }; cites.push(last); }
+              } else last = null;
+              text += t;
+            });
+            out.push({ text: text, cites: cites.map(function (c) { return { text: c.text, ids: c.ids }; }) });
+            notes.forEach(function (id) { if (footnotes[id]) walk(footnotes[id].content); });
+          } else if (el.table) {
+            (el.table.tableRows || []).forEach(function (row) { (row.tableCells || []).forEach(function (c) { walk(c.content); }); });
+          }
+        });
+      }
+      walk((dt.body || {}).content);
+    });
+    return out;
+  }
+
   return {
     CITE: CITE, BIB: BIB, INSERT: INSERT, STORE_MAX: STORE_MAX,
     parseLink: parseLink, makeLink: makeLink, placeholderUrl: placeholderUrl, parsePlaceholder: parsePlaceholder,
     placeholderHTML: placeholderHTML, newToken: newToken,
     read: read, storePart: storePart, storeGenerations: storeGenerations, storeNames: storeNames, newGeneration: newGeneration,
-    sameStore: sameStore, planRequests: planRequests, plainSegments: plainSegments, placeholderRequests: placeholderRequests,
+    sameStore: sameStore, planRequests: planRequests, plainSegments: plainSegments, placeholderRequests: placeholderRequests, claimParagraphs: claimParagraphs,
     optionsCode: optionsCode, optionNames: optionNames, optionRequests: optionRequests, zoteroRequests: zoteroRequests, ZOTERO: ZOTERO
   };
 })();

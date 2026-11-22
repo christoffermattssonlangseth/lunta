@@ -132,7 +132,7 @@ const gdocsFlow = makeLuntaGDocs({
 
 const LUNTA_APP_GDOCS = "http://127.0.0.1:47480/gdocs";
 const APP_OPS = new Set(["status", "connect", "disconnect", "state", "update", "prepareInsert", "finishInsert", "details", "editCitation",
-  "scanPlaceholders", "writePlaceholder", "scanZotero", "convertZotero"]);
+  "scanPlaceholders", "writePlaceholder", "scanZotero", "convertZotero", "claimSites"]);
 
 /** Safari on the Mac (no sign-in for extensions; Lunta for Mac nearby). Not on iPhone and iPad. */
 async function docsThroughApp() {
@@ -190,6 +190,12 @@ async function handleGDocs(msg) {
       // converting Zotero's citations: the library's papers for their works
       case "match":
         return await luntaCite("/match", { items: Array.isArray(msg.items) ? msg.items : [] }, 60000);
+      // Check Citations: one citation's sentence against its papers (the model takes a while), and
+      // the paper opened at a passage in the app
+      case "claims":
+        return await luntaCite("/claims", msg.body || {}, 180000);
+      case "openPaper":
+        return await luntaCite("/open", { id: String(msg.id || ""), find: String(msg.find || "") }, 8000);
       default:
         return await gdocsFlow.op(msg);
     }

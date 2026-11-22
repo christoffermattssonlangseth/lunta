@@ -10,13 +10,14 @@
 // Microsoft store listing): either way the library comes from the Lunta app on this computer.
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
-var VERSION = '13';   // bump with the ?v= in index.html, so Word loads the new files
+var VERSION = '14';   // bump with the ?v= in index.html, so Word loads the new files
 var NS = 'https://lunta.app/ns/word-citations/1';
 var picked = [];          // [{id, title, ...}]
 var style = 'apa';
 var state = { papers: {} };   // what the document keeps: {style, styleTitle, bibStyle, papers}
 var styleUnknown = false;     // citations in the document, but no saved style: ask before updating
 var busy = false, ready = false, lastSearch = 0;
+var checking = false, stopChecking = false, claimItems = [];   // Check Citations
 var current = null;           // the citation the cursor is in: {id (content control), ids, opts}
 var editing = null;           // the paper of the current citation whose options are open
 
@@ -42,6 +43,7 @@ function setButtons() {
   $('bib').disabled = $('refresh').disabled = busy || !ready;
   $('style').disabled = busy || !ready;
   if ($('convert')) $('convert').disabled = busy || !ready;
+  if ($('claims')) $('claims').disabled = !ready || checking;
 }
 
 /** One change to the document at a time (a second click while updating does nothing). */
@@ -526,6 +528,65 @@ var resolveCitations = exclusive(function () {
   });
 });
 
+// ---- Check Citations: each citation's sentence against the cited papers (common.js, Lunta's /claims) ----
+// The document is only read: the body's paragraphs and the Lunta citations in each.
+
+function claimParagraphs() {
+  return Word.run(function (ctx) {
+    var paras = ctx.document.body.paragraphs;
+    paras.load('items/text');
+    return ctx.sync().then(function () {
+      var ccs = paras.items.map(function (p) { var c = p.contentControls; c.load('items/tag,items/text'); return c; });
+      return ctx.sync().then(function () {
+        return paras.items.map(function (p, i) {
+          return { text: p.text, cites: ccs[i].items.map(function (c) {
+            var ids = LuntaCite.parseTag(c.tag);
+            return ids && ids.length ? { text: c.text, ids: ids } : null;
+          }).filter(Boolean) };
+        });
+      });
+    });
+  });
+}
+
+/** Shows the paper at the passage in Lunta (the API asks the app; the lunta:// link is the way back). */
+function openPassage(link) {
+  var l = LuntaCite.parseOpenLink(link);
+  if (!l) return;
+  getJSON('/open', { id: l.id, find: l.find }, 8000).catch(fail);
+}
+
+function showClaims() {
+  LuntaCite.claimsReview(document, $('cllist'), claimItems, {
+    open: openPassage,
+    changed: function () { status(LuntaCite.claimSummary(LuntaCite.claimCounts(claimItems, LuntaCite.claimDecisions())) + '.'); }
+  });
+}
+
+function checkCitations() {
+  if (!ready || checking) return;
+  checking = true; stopChecking = false; setButtons();
+  status('Reading the citations…');
+  return getJSON('/status').then(function (s) {
+    if ((s.api || 0) < 5) throw new Error('This version of Lunta can’t check citations. Update Lunta and try again.');
+    return claimParagraphs();
+  }).then(function (paras) {
+    var sites = LuntaCite.claimSites(paras);
+    if (!sites.length) { status('This document has no Lunta citations to check.'); return; }
+    $('claimsBox').hidden = false; $('clstop').hidden = false;
+    $('cllist').textContent = LuntaCite.CLAIM_PRIVACY;
+    return LuntaCite.runClaims(sites, function (body) { return getJSON('/claims', body, 180000); },
+      function (i, n) { status('Checking citation ' + (i + 1) + ' of ' + n + '…'); },
+      function () { return stopChecking; }, state.papers).then(function (items) {
+      claimItems = items;
+      showClaims();
+      status(LuntaCite.claimSummary(LuntaCite.claimCounts(items, LuntaCite.claimDecisions())) + (stopChecking ? ' (stopped).' : '.'));
+    });
+  }).catch(fail).then(function () { checking = false; if ($('clstop')) $('clstop').hidden = true; setButtons(); });
+}
+
+function closeClaims() { stopChecking = true; $('claimsBox').hidden = true; $('cllist').innerHTML = ''; claimItems = []; status(''); }
+
 // ---- Convert Citations from Zotero, EndNote or Mendeley ----
 // The other manager's citations are read (word/fields.js: Word's fields in the body's OOXML, and
 // Mendeley Cite's content controls), their works found in the library (/match), the writer
@@ -786,6 +847,9 @@ Office.onReady(function () {
   $('rsclose').onclick = closeResolve;
   if ($('convert')) $('convert').onclick = convertCitations;
   if ($('cvclose')) $('cvclose').onclick = closeConvert;
+  if ($('claims')) $('claims').onclick = checkCitations;
+  if ($('clclose')) $('clclose').onclick = closeClaims;
+  if ($('clstop')) $('clstop').onclick = function () { stopChecking = true; };
   // clicking a citation in the text shows its papers here
   try {
     Office.context.document.addHandlerAsync(Office.EventType.DocumentSelectionChanged, onSelection, function () {});

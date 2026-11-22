@@ -255,6 +255,12 @@ async function show() {
 /** A highlight to show once the reading view is ready (a summary's Open in Paper), instead of the saved place. */
 let pendingHighlight: string | null = null;
 export function showHighlightWhenReady(id: string) { pendingHighlight = id.replace(/[^A-Za-z0-9-]/g, ''); }
+let pendingFind: string | null = null;
+/** Check Citations' passage: found with the find bar, now if the paper is open, else once its page is ready. */
+export function findInReader(id: string, words: string) {
+  if (paper && paper.id === id && frame) { startFind(words); return; }
+  pendingFind = words;
+}
 
 /** The page loaded: draw the highlights, then go to where the reader stopped (on any device). */
 async function pageReady() {
@@ -267,6 +273,12 @@ async function pageReady() {
     pendingHighlight = null;
     restored = true;
     setTimeout(() => run(`luntaShowAnnotation('${id}')`), 300);
+  }
+  if (pendingFind) {
+    const q = pendingFind;
+    pendingFind = null;
+    restored = true;
+    setTimeout(() => startFind(q), 400);
   }
   if (paper) summaryPageReady(paper.id, paper.meta.title, paper.meta.abstract_text, run);
   if (restored || !paper) return;
@@ -403,10 +415,10 @@ const pdfFinder: FindTarget = {
 };
 
 /** Opens the find bar (Ctrl+F, the toolbar). Closing it after going to a match offers the way back. */
-async function startFind() {
+async function startFind(query?: string) {
   if (!paper || !$('#reader') || document.querySelector('.modal-back, #figure, #figures')) return;
   closeAppearance();
-  if (findOpen()) { openFind($('#reader'), pageFind, () => {}); return; }   // focuses it
+  if (findOpen()) { openFind($('#reader'), pageFind, () => {}, query); return; }   // focuses it
   const reading = mode === 'reading';
   if (reading && !frame) return;
   const origin = reading ? await run<number>('luntaReadingOffset()') : null;
@@ -418,7 +430,7 @@ async function startFind() {
     const back = h('button#findback', { text: '↩ Back to where you were', onclick: () => { back.remove(); run(`luntaScrollToOffset(${Math.floor(origin)})`); frame?.contentWindow?.focus(); } });
     $('#reader')?.append(back);
     setTimeout(() => back.remove(), 6000);
-  });
+  }, query);
 }
 
 // ---- citation cards ----

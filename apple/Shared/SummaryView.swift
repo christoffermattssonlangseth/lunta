@@ -20,8 +20,19 @@ enum HighlightJump {
         NotificationCenter.default.post(name: .luntaShowHighlight, object: paper)
     }
 
-    static func has(_ paper: String) -> Bool { pending[paper] != nil }
+    static func has(_ paper: String) -> Bool { pending[paper] != nil || finds[paper] != nil }
     static func take(_ paper: String) -> String? { pending.removeValue(forKey: paper) }
+
+    private static var finds: [String: String] = [:]
+
+    /// Show this passage in its paper (Check Citations' evidence, lunta://open?id=…&find=…): the
+    /// reader finds its words.
+    static func request(paper: String, find text: String) {
+        finds[paper] = text
+        NotificationCenter.default.post(name: .luntaShowHighlight, object: paper)
+    }
+
+    static func takeFind(_ paper: String) -> String? { finds.removeValue(forKey: paper) }
 }
 
 extension View {

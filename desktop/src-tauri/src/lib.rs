@@ -15,6 +15,7 @@ mod citeapi;
 mod citecerts;
 mod citeserver;
 mod citesetup;
+mod claims;
 #[cfg(all(debug_assertions, target_os = "macos"))]
 mod devsnap;
 mod drivesync;
@@ -876,6 +877,8 @@ pub fn run() {
             extension::start(app.handle().clone());
             // Word's citation add-in (https://localhost:47481), as Lunta for Mac has it
             citeserver::start(app.handle().clone());
+            // Check Citations: the open model and "open at this passage" for the panels (claims.rs)
+            claims::start(app.handle().clone());
             // the weekly check for retractions and published versions (checks.rs)
             checks::start(app.handle().clone());
             // the window starts hidden (no white flash while the page loads); scripted debug
@@ -950,6 +953,9 @@ pub fn run() {
             texresolve::tex_open,
             texresolve::tex_suggest,
             texresolve::tex_write,
+            claims::tex_claims,
+            claims::check_claim,
+            claims::claims_model,
             find_pdf,
             pdf_bytes,
             pdfcite::pdf_prepare_citations,

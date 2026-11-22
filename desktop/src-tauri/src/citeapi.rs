@@ -25,6 +25,12 @@
 //!   Converting citations from Zotero, EndNote and Mendeley (api 4):
 //!   POST /cite/match {items: [meta]} → {matches: [{id, how} | null]}: the library's paper for each
 //!        (by DOI, PubMed id, title, or first author, year and nearly the same title); nothing added
+//!   Check Citations (api 5; core/src/claims): does the cited paper say what the sentence says?
+//!   POST /cite/claims {text, start, end, others?, before?} | {claim, context?}, ids, papers?, judge?
+//!        → {claim, sentence, context, judged, note, privacy, results: [{id, libraryId?, title, label,
+//!          source, verdict, verdictLabel, byModel, reason, note, evidence, passages}]}: Qwen3 on this
+//!          computer when downloaded (claims.rs sets the hook), else the passages and their word overlap
+//!   POST /cite/open {id, find?} → {ok}: the paper shown, found at those words
 
 use lunta_core::csl::CslCiteItem;
 use lunta_core::model::{CitationStyle, CitedPaper, Paper, PaperFilter, PaperMeta, SortKey};
@@ -33,7 +39,7 @@ use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 
 /// The API's version, as /cite/status says it (CitationAPI.version on the Mac).
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 5;
 
 /// Answers one `/cite/…` request. `cache_dir`: where journal styles are kept.
 pub(crate) fn route(lib: &Library, cache_dir: &str, method: &str, path: &str, query: &HashMap<String, String>, body: &[u8]) -> (u16, Value) {
@@ -199,6 +205,16 @@ pub(crate) fn route(lib: &Library, cache_dir: &str, method: &str, path: &str, qu
                 .map(|(m, f)| if m.is_none() || f.paper_id.is_empty() { Value::Null } else { json!({"id": f.paper_id, "how": f.how}) })
                 .collect();
             (200, json!({"matches": matches}))
+        }
+        ("POST", "/cite/claims") => lib.claims_answer(&String::from_utf8_lossy(body), Some(&crate::claims::HookJudge)),
+        ("POST", "/cite/open") => {
+            let j = object(body).unwrap_or_default();
+            let id = j.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+            if lib.paper(id.clone()).is_none() {
+                return error(404, "That paper isn’t in your Lunta library.");
+            }
+            crate::claims::open_passage(&id, &cap(j.get("find").and_then(Value::as_str).unwrap_or(""), 200));
+            (200, json!({"ok": true}))
         }
         _ => error(404, "Not found."),
     }

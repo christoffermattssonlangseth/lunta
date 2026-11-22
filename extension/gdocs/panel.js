@@ -87,6 +87,30 @@
       .cv-h { font-size: 12px; color: #2a6478; margin: 8px 0 2px; }
       .cv-row { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; padding: 3px 0; }
       .cv-note { font-size: 12px; color: #6e6e73; margin: 6px 0; }
+      .cl-sum { font-weight: 600; margin: 4px 0; }
+      .cl-note { font-size: 11.5px; opacity: .75; margin: 4px 0; }
+      .cl-item { border-top: 1px solid #8883; padding: 8px 0 6px; }
+      .cl-item.cl-right .cl-s, .cl-item.cl-dismissed .cl-s { opacity: .6; }
+      .cl-cite { font-size: 11px; color: #2a6478; }
+      .cl-s { font-size: 12.5px; margin: 2px 0 4px; }
+      .cl-r { margin: 4px 0 4px 6px; }
+      .cl-rh { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+      .cl-badge { font-size: 11px; font-weight: 600; color: #fff; border-radius: 9px; padding: 1px 7px; white-space: nowrap; }
+      .cl-ok { background: #2e7d4f; } .cl-part { background: #c77c12; } .cl-bad { background: #b3261e; }
+      .cl-none { background: #7a7a80; } .cl-maybe { background: #2a6478; }
+      .cl-paper { font-size: 11.5px; opacity: .8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+      .cl-by, .cl-rnote { font-size: 11.5px; opacity: .75; margin: 3px 0; }
+      .cl-err { font-size: 12px; color: #b3261e; }
+      a.cl-q { display: block; font-size: 12px; color: #2a6478; margin: 3px 0; text-decoration: none; cursor: pointer; }
+      a.cl-q:hover { text-decoration: underline; }
+      .cl-ps summary { font-size: 11.5px; cursor: pointer; color: #2a6478; margin: 3px 0; }
+      a.cl-p { display: block; font-size: 11.5px; color: inherit; text-decoration: none; border-left: 2px solid #9cc6d4; padding: 2px 0 2px 6px; margin: 4px 0; cursor: pointer; }
+      a.cl-p:hover { background: #8881; }
+      .cl-pm { display: block; font-size: 10.5px; opacity: .7; }
+      .cl-btns { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+      .cl-btns .btn { flex: 0 0 auto; font-size: 11.5px; padding: 3px 8px; }
+      .cl-state { font-size: 11.5px; color: #2e7d4f; }
+      .cl-dismissed .cl-state { color: inherit; opacity: .7; }
       [hidden] { display: none !important; }
       @media (prefers-color-scheme: dark) {
         .card, .tab { background: #2a2a2c; color: #eee; } header strong { color: #9ec9d8; }
@@ -119,6 +143,11 @@
           <div class="cvbox box" hidden>
             <div class="row"><strong>Convert Citations</strong><button class="link cvclose">Close</button></div>
             <div class="cvlist"></div>
+          </div>
+          <div class="buttons"><button class="btn claims" disabled title="Does each cited paper plausibly support its sentence? Lunta shows the best-matching passages (and, with an on-device model, a suggested verdict). Nothing in the document changes.">Check Citations…</button></div>
+          <div class="clbox box" hidden>
+            <div class="row"><strong>Check Citations</strong><button class="link clstop" hidden>Stop</button><button class="link clclose">Close</button></div>
+            <div class="cllist"></div>
           </div>
           <div class="rbox box" hidden>
             <div class="row"><strong>Resolve Citations</strong><button class="link rclose">Close</button></div>
@@ -164,6 +193,7 @@
   let picked = [], style = "apa", styleTitle = "", styleSaved = false, needsStyle = false, ready = false, busy = false, lastSearch = 0, opened = false;
   let viaApp = false;   // Safari on the Mac: Lunta for Mac signs in to Google and edits the document
   let luntaApi = 0;     // the citation API's version (3: Resolve Citations)
+  let checking = false, stopChecking = false, claimItems = [];   // Check Citations
   let pasting = null;   // Safari, waiting for the reader's ⌘V: {cancelled}
 
   function status(m, err) { const s = $(".status"); s.textContent = m || ""; s.className = "status" + (err ? " err" : ""); }
@@ -175,6 +205,7 @@
     $(".edit").disabled = !can || needsStyle;
     $(".resolve").disabled = !can || needsStyle;
     $(".convert").disabled = !can || needsStyle;
+    $(".claims").disabled = !ready || checking;
     $(".cadd").disabled = !can || !current || !picked.length;
   }
   function show(which) {
@@ -650,6 +681,42 @@
       status(LuntaCite.convertDone(r.converted, left, newPapers) + " " + (r.summary || ""), left.length > 0);
     });
   }
+  // ---- Check Citations: each citation's sentence against the cited papers (common.js, Lunta's /claims) ----
+
+  function showClaims() {
+    LuntaCite.claimsReview(document, $(".cllist"), claimItems, {
+      open: (link) => {
+        const l = LuntaCite.parseOpenLink(link);
+        if (l) send({ op: "openPaper", id: l.id, find: l.find }).then((r) => { if (r && r.error) status(r.error, true); });
+      },
+      changed: () => status(LuntaCite.claimSummary(LuntaCite.claimCounts(claimItems, LuntaCite.claimDecisions())) + "."),
+    });
+  }
+  async function openClaims() {
+    if (!ready || checking) return;
+    if (luntaApi < 5) { status("This version of Lunta can’t check citations. Update Lunta and try again.", true); return; }
+    checking = true; stopChecking = false; setButtons();
+    try {
+      status("Reading the citations…");
+      const r = check(await send({ op: "claimSites", docId: docId() }));
+      const sites = r.sites || [];
+      if (!sites.length) { status("This document has no Lunta citations to check."); return; }
+      $(".clbox").hidden = false; $(".clstop").hidden = false;
+      claimItems = [];
+      $(".cllist").textContent = LuntaCite.CLAIM_PRIVACY;
+      claimItems = await LuntaCite.runClaims(sites, async (body) => check(await send({ op: "claims", body })),
+        (i, n) => status("Checking citation " + (i + 1) + " of " + n + "…"), () => stopChecking, Object.fromEntries(Object.entries(r.papers || {}).map(([k, m]) => [k, { m }])));
+      showClaims();
+      status(LuntaCite.claimSummary(LuntaCite.claimCounts(claimItems, LuntaCite.claimDecisions())) + (stopChecking ? " (stopped)." : "."));
+    } catch (e) {
+      status(String((e && e.message) || e), true);
+    } finally {
+      checking = false; $(".clstop").hidden = true; setButtons();
+    }
+  }
+  $(".claims").onclick = openClaims;
+  $(".clstop").onclick = () => { stopChecking = true; };
+  $(".clclose").onclick = () => { stopChecking = true; $(".clbox").hidden = true; $(".cllist").innerHTML = ""; claimItems = []; status(""); };
   $(".convert").onclick = openConvert;
   $(".cvclose").onclick = closeConvert;
   $(".rclose").onclick = () => { $(".rbox").hidden = true; if (resolver) resolver.load([]); $(".rlist").innerHTML = ""; status(""); };

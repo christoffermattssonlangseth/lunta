@@ -92,6 +92,15 @@ class Container {
     const i = from ? all.indexOf(from.getElement()) + 1 : 0;
     return i < all.length ? { getElement: () => all[i] } : null;
   }
+  getParagraphs() {
+    const out = [];
+    (function walk(el) {
+      if (el.getType() === ElementType.PARAGRAPH || el.getType() === ElementType.LIST_ITEM) out.push(el);
+      if (el instanceof Footnote) return;
+      (el.children || []).forEach(walk);
+    })(this);
+    return out;
+  }
   // Body
   insertParagraph(i, s) { const p = new Container(ElementType.PARAGRAPH, s ? [new Text(s)] : []); p.parent = this; this.children.splice(i, 0, p); return p; }
   removeChild(c) {

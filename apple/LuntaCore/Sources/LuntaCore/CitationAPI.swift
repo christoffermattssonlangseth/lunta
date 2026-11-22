@@ -26,6 +26,13 @@ import Foundation
 //   Converting citations from Zotero, EndNote and Mendeley (api 4):
 //   POST /api/match {items: [meta]} → {matches: [{id, how} | null]}: the library's paper for each
 //        (by DOI, PubMed id, title, or first author, year and nearly the same title); nothing added
+//   Check Citations (api 5; core/src/claims): does the cited paper say what the sentence says?
+//   POST /api/claims {text, start, end, others?, before?} | {claim, context?}, ids, papers?, judge?
+//        → {claim, sentence, context, judged, note, privacy, results: [{id, libraryId?, title, label,
+//          source, verdict, verdictLabel, byModel, reason, note, evidence: [{quote, section, link}],
+//          passages: [{text, section, score, link}]}]}; the on-device model (`judge`) when there is
+//          one, else the passages with their word overlap. Nothing leaves the Mac.
+//   POST /api/open {id, find?} → {ok}: Lunta shows the paper, found at those words (the evidence)
 //
 // Who may ask: pages from this server, the hosted Word panel, and the Google Docs sidebar (served
 // from *.googleusercontent.com, so it must also present the pairing key). Requests a web page
@@ -129,7 +136,7 @@ public enum CitationHTTP {
 public final class CitationAPI: @unchecked Sendable {
     public static let port: UInt16 = 47481
     /// Bumped when the API grows; the add-ins read it from /api/status.
-    public static let version = 4
+    public static let version = 5
     /// Where the hosted Word panel lives (see .github/workflows/pages.yml).
     public static let hostedPanelOrigin = "https://getlunta.app"
     /// Where it was before the site moved (panels Word cached from there still ask).
@@ -143,6 +150,11 @@ public final class CitationAPI: @unchecked Sendable {
     /// Called (off the main thread) with the id of a paper /api/add put in the library, so the app
     /// can show it and look for its PDF.
     public var paperAdded: (@Sendable (String) -> Void)?
+    /// Check Citations: the on-device model's answer to (instructions, prompt), blocking; nil
+    /// without a model (then the passages are shown for the writer to judge). Never a cloud model.
+    public var judge: (@Sendable (String, String) -> String?)?
+    /// Check Citations' "open the paper at this passage": (paper id, words to find, maybe "").
+    public var openPaper: (@Sendable (String, String) -> Void)?
 
     /// `cacheDir`: where journal styles are kept. `token`: the Google Docs pairing key.
     public init(library: Library?, cacheDir: String, token: String) {
@@ -375,9 +387,25 @@ public final class CitationAPI: @unchecked Sendable {
                 m == nil || f.paperId.isEmpty ? NSNull() as Any : ["id": f.paperId, "how": f.how] as Any
             }
             return .json(200, ["matches": matches])
+        case ("POST", "/api/claims"):
+            let out = lib.claimsRequest(body: String(decoding: r.body, as: UTF8.self), judge: ModelJudge(judge))
+            return CitationResponse(status: Int(out.status), body: Data(out.body.utf8), contentType: "application/json")
+        case ("POST", "/api/open"):
+            guard let id = Self.object(r.body)?["id"] as? String, lib.paper(id: id) != nil else {
+                return .error(404, "That paper isn’t in your Lunta library.")
+            }
+            openPaper?(id, String(((Self.object(r.body)?["find"] as? String) ?? "").prefix(200)))
+            return .json(200, ["ok": true])
         default:
             return .error(404, "Not found.")
         }
+    }
+
+    /// The app's model for the core's Check Citations.
+    final class ModelJudge: ClaimJudge, @unchecked Sendable {
+        let ask: (@Sendable (String, String) -> String?)?
+        init(_ ask: (@Sendable (String, String) -> String?)?) { self.ask = ask }
+        func answer(instructions: String, prompt: String, maxTokens: UInt32) -> String? { ask?(instructions, prompt) }
     }
 
     static let emptyMeta = PaperMeta(title: "", authors: [], date: "", journal: "", volume: "", issue: "", pages: "", publisher: "", doi: "",

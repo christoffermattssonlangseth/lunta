@@ -7,7 +7,7 @@
 // A citation's options (each paper's page, prefix, suffix, author left out or in the text) are in
 // named ranges over its text, "lunta-o:<key>:<i>:<n>:<part of the code>" (common.js); scripts from
 // before them don't see them, and drop them when they rewrite that citation's text.
-var CODE_VERSION = 4;
+var CODE_VERSION = 5;
 var OPTS = 'lunta-o:';
 var ZOTERO = 'https://www.zotero.org/google-docs/?';
 var CITE = 'https://margins.local/cite?ids=';
@@ -174,6 +174,26 @@ function setOptionRanges_(r, names, start, end) {
 /** Citations in order, as lists of ids. */
 function listCitations() {
   return citations_(DocumentApp.getActiveDocument()).map(function (r) { return r.ids; });
+}
+
+// ---- Check Citations: the document is only read ----
+
+/** Every paragraph (tab by tab, tables included, then the footnotes) with the Lunta citations in
+ *  it, for common.js claimSites: [{text, cites: [{text, ids}]}]. */
+function claimParagraphs() {
+  var out = [];
+  sections_(DocumentApp.getActiveDocument()).forEach(function (sec) {
+    var containers = [sec.body].concat(sec.footnotes.map(function (fn) { return fn.getFootnoteContents(); }).filter(function (c) { return c; }));
+    containers.forEach(function (c) {
+      c.getParagraphs().forEach(function (p) {
+        var text = p.getText();
+        if (!text) return;
+        var cites = scan_(p).map(function (r) { return { text: r.el.getText().slice(r.start, r.end + 1), ids: r.ids }; });
+        out.push({ text: text, cites: cites });
+      });
+    });
+  });
+  return out;
 }
 
 // ---- what the sidebar needs ----
