@@ -10,16 +10,16 @@
 | Precision, median | 0.570 | 0.397 | 0.930 | 0.940 | 0.939 | 0.999 |
 | Kendall's τ, median | 0.992 | 0.937 | 0.998 | 1.000 | 1.000 | 1.000 |
 | Broken words / 1000, mean | 0.87 | 2.45 | 0.43 | 0.79 | 0.46 | 0.14 |
-| Papers with interleaving, % | 60.5 | 85.5 | 14.5 | 20.5 | 12.5 | 1.0 |
+| Papers with interleaving, % | 60.5 | 85.5 | 14.5 | 19.5 | 11.5 | 1.0 |
 | Papers with any boilerplate leak, % | 100.0 | 100.0 | 47.0 | 41.0 | 41.5 | 0.5 |
-| Figures identified (image + label), % | 0.0 | 0.0 | 0.0 | 66.4 | 72.2 | 0.0 |
+| Figures identified (image + label), % | 0.0 | 0.0 | 0.0 | 66.4 | 72.7 | 0.0 |
 | Reference items / XML refs, median | 0.00 | 0.00 | 1.00 | 1.00 | 1.00 | 1.00 |
 | Papers with no reference items | 199 | 199 | 0 | 2 | 2 | 2 |
 | s per page, median | 0.005 |  | 0.173 |  |  |  |
 
 swift − GROBID token F1: mean +0.002 [-0.011, +0.014], Wilcoxon p = 1.3e-01; swift better in 107, worse in 93
 
-rust − GROBID token F1: mean +0.006 [-0.005, +0.017], Wilcoxon p = 6.1e-02; rust better in 110, worse in 90
+rust − GROBID token F1: mean +0.006 [-0.005, +0.017], Wilcoxon p = 5.8e-02; rust better in 110, worse in 90
 
 swift_found_reference_list (n = 197): median F1 swift 0.956, rust 0.961, grobid 0.948, pdftotext 0.715
 
@@ -40,7 +40,7 @@ Families: [('Frontiers', 12), ('other', 7), ('PLOS', 6), ('Nature', 5)]
 | Recall, median | 0.995 | 0.995 | 0.973 | 0.978 | 1.000 | 0.967 | 0.903 |
 | Precision, median | 0.924 | 0.924 | 0.862 | 0.909 | 0.999 | 0.928 | 0.484 |
 | Broken words / 1000, mean | 0.05 | 0.05 | 0.55 | 0.46 | 0.01 | 0.74 | 0.64 |
-| Papers with interleaving, % | 0.0 | 0.0 | 26.7 | 10.0 | 0.0 | 16.7 | 66.7 |
+| Papers with interleaving, % | 0.0 | 0.0 | 23.3 | 6.7 | 0.0 | 16.7 | 66.7 |
 | Papers with any boilerplate leak, % | 76.7 | 76.7 | 46.7 | 43.3 | 0.0 | 43.3 | 100.0 |
 | Figures identified, % | 82.4 | 82.4 | 84.6 | 85.3 | 0.0 | 0.0 | 0.0 |
 | Tables identified, % | 8.4 | 8.4 | 53.0 | 50.6 | 100.0 | 0.0 | 0.0 |

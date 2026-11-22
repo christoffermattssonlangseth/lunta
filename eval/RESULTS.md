@@ -3,6 +3,12 @@
 Run on 2026-11-17 (macOS, Apple M1 Pro), converters of Lunta 1.0.4 (commit 86e764b); extended on
 2026-11-18 with outside reference points (pdftotext, GROBID) on the same 200 PDFs and with reading
 views made from the journal's article page (see the two sections after the headline numbers).
+**Ninth run on 2026-11-23, both converters (commits cc8c062, bf939d8)**: footnotes out of the running
+text into notes at the chapter's end with their markers linked, a book's margin notes after their
+paragraph, and superscripts the PDF gives as lines of their own put back on their line; see "What the
+footnotes changed" below. The eighth-run result files, figures, examples, binaries and Swift, Rust and
+pdffig outputs are in `data/prev-2026-11-23/`; numbers below are this run's where it changed them
+(interleaving, paragraph order, Rust's figures identified), the text of earlier sections is unchanged.
 **Eighth run on 2026-11-22, Swift converter only (the Rust converter's 40 library paper views are
 byte-identical; its outputs and numbers are the sixth run's)**: figure, table and box labels with
 chapter numbers ("Figure 1.2", "Fig. A.1", "Figure 3-4"), a caption beside its figure measured by its
@@ -68,11 +74,11 @@ bootstrap CI (of the mean, unless stated otherwise).
 | Token precision, median | 0.940 | 0.861 | 0.939 |
 | Word error rate, median | 0.087 | 0.221 | 0.079 |
 | Broken words / 1000 tokens, mean [CI] | **0.79** [0.45, 1.28] | 4.15 [2.65, 5.93] | 0.46 [0.25, 0.71] |
-| Paragraph order, Kendall's τ, median (mean) | 1.000 (0.986) | 1.000 (0.982) | 1.000 (0.989) |
-| Papers with ≥ 1 interleaving event | **20.5 %** [15.0, 26.0] | 34.0 % [27.5, 40.5] | 12.5 % [8.0, 17.5] |
+| Paragraph order, Kendall's τ, median (mean) | 1.000 (0.987) | 1.000 (0.982) | 1.000 (0.989) |
+| Papers with ≥ 1 interleaving event | **19.5 %** [14.0, 25.0] | 34.0 % [27.5, 40.5] | 11.5 % [7.5, 16.5] |
 | Papers with any boilerplate leak | **41.0 %** [34.0, 48.0] | 63.5 % [56.5, 70.0] | 41.5 % [35.0, 48.5] |
 | Figure images, count-based recall (precision) | 96.0 % (72.7 %) | 96.2 % (62.5 %) | 96.0 % (72.5 %) |
-| Figures identified (image + matching label/caption) | 66.4 % [59.0, 73.4] | 65.7 % | 72.2 % [65.6, 79.0] |
+| Figures identified (image + matching label/caption) | 66.4 % [59.0, 73.4] | 65.7 % | 72.7 % [66.1, 79.4] |
 | Highlights re-anchored correctly in the XML view | **89.5 %** [87.7, 91.0] | 82.9 % [80.6, 84.9] | 90.5 % [88.8, 92.0] |
 | Tables identified (image + matching label/caption) | 65.9 % [58.5, 72.9] | 56.0 % | 66.7 % [59.2, 73.8] |
 | Papers with XML references but no reference items | 2 (40 in the first 2026-11-18 run) | – | 2 (40) |
@@ -83,6 +89,51 @@ in this run, same binary); in that run the Swift CLI of the day took 0.199 s/pag
 this run are about 30 % shorter than on 2026-11-16 for both converters, but the 2026-11-16 and current
 `p2e` binaries took the same time when run side by side on four slow papers (e.g. 1.70 vs 1.46 s,
 1.33 vs 1.27 s, 1.06 vs 1.05 s, 1.40 vs 1.39 s): the difference is load on the machine, not code.
+
+**What the footnotes changed (2026-11-23, ninth run vs eighth run; both converters; same papers, same
+scripts).** Prompted by a textbook (Prince, *Understanding Deep Learning*), where every footnote sat as a
+paragraph where its page ended ("…improve that performance." then "²This iterative approach is not
+actually necessary…") and the margin notes ("Notebook 2.1", "Problems 2.1–2.2", "Appendix C.5.2") cut
+paragraphs and hyphenated words. Rules (the same in both converters, `PDFNotes.swift` / `notes.rs`):
+
+- *A footnote* is a block at the foot of the page in smaller type than the body, below every line of
+  body type, heading, equation, figure, table and caption in its column and set apart from them (or
+  stacked under another note), that starts with a marker — a superscript number, `*`, `†`, `‡`, `§`, `¶`,
+  `‖`, a letter, or a plain "2 This…" — which the page's text also has, as a superscript (a symbol also
+  plain) right after a word or a punctuation mark. A block without a marker continues the note beside
+  or above it, or, at the top of the next page's foot, the last note of the page before.
+- *Citations stay citations*: in a paper citing by superscript numbers a number becomes a note's marker
+  only if such a block is on its page; a block that reads like a reference stays text; if several
+  superscripts with the number could be the marker, the note is moved but not linked. Nothing from the
+  reference list on, and nothing the front matter takes (correspondence, affiliations, equal
+  contribution) is touched.
+- *Output*: the marker keeps its character as `<a epub:type="noteref" class="fnref">`, the note goes to
+  an `<aside epub:type="footnote">` at the end of the chapter its marker is in; the reader shows it in a
+  card. The eval's text walk reads the aside's paragraph like any other, so a moved note is still
+  output text (scored where it now stands).
+- *Superscripts on a line of their own* at a line's end ("outlier.²", "edgeR.⁶⁵") were dropped with the
+  page numbers (a lone short number); they are now put back on their line (its spans only: the line
+  still ends with its full stop for the paragraph rules).
+- *Books only*: margin notes (small type outside the text column) are taken out before the paragraphs
+  are made and follow the paragraph level with them; a margin text on 4+ pages is furniture and dropped.
+
+On the 200 papers: footnotes in 10 Swift views (38 notes, 34 linked) and 8 Rust views (32, 30); 12 Swift
+and 9 Rust views changed by these commits (2 further Rust views, PMC5498621 and PMC8861578, changed by the
+Rust half of the chapter-numbered labels, which the eighth run did not re-run). Notes out of the text
+removed interleaving events: papers with any 20.5 → 19.5 % (Swift), 12.5 → 11.5 % (Rust); PMC8282988
+(Gates Open Research, references as footnotes) 5 → 0 (Swift), PMC8448820 3 → 0, PMC10209315,
+PMC3549477, PMC7577192 1 → 0; Kendall's τ mean 0.986 → 0.987. Token F1 moves by under 0.001 in each
+changed paper (a note scored at the chapter's end instead of mid-text; restored superscript citations
+add 1–10 tokens); mean and median unchanged (Swift 0.927 / 0.955, Rust 0.932 / 0.960); recall unchanged
+or up, so no note text counts as lost. Highlights → XML: unchanged (Swift 89.5 %, Rust 90.5 %).
+On the 40 library PDFs against the converters at 3e3c8cf: 7 Swift and 3 Rust views change — two papers
+with footnotes (UMAP: 3 notes; an MS review: 2, its "¹Owing to space restrictions…" and "²See Appendix…"
+no longer between paragraphs), Pevsner's *Bioinformatics and Functional Genomics* (141 Swift / 135 Rust
+margin notes; "Genome Analysis", a part's name in the margin of 157 pages, out of the text: 114 → 12
+paragraphs of it in Swift; 6,257 → 6,098 paragraphs), and in Swift four papers whose line-end
+superscripts came back (citations "²⁸", "⁶⁵", "¹²", an author's "¹", "σ²" — one equation's text in
+order again). The textbook: 24 footnotes (Swift: all linked; Rust: 23), 275 margin notes (Rust 277),
+words broken across a margin note 23 → 0, eq. 2.3 cropped whole (its margin note had shared its lines).
 
 **What the chapter-numbered figure labels changed (2026-11-22, eighth run vs seventh run; Swift
 only; same papers, same scripts).** Prompted by the same textbook: in the reader's Figures sheet every
@@ -593,9 +644,9 @@ GROBID's deep-learning models (the `-full` image) are amd64-only and were not ru
 | Recall, median | 0.975 | 0.985 | 0.988 | 0.993 |
 | Precision, median | 0.570 | 0.930 | 0.940 | 0.939 |
 | Broken words / 1000, mean | 0.87 | 0.43 | 0.79 | 0.46 |
-| Papers with interleaving, % | 60.5 | 14.5 | 20.5 | 12.5 |
+| Papers with interleaving, % | 60.5 | 14.5 | 19.5 | 11.5 |
 | Papers with any boilerplate leak, % | 100.0 | 47.0 | 41.0 | 41.5 |
-| Figures identified (image + label), % | – | – | 66.4 | 72.2 |
+| Figures identified (image + label), % | – | – | 66.4 | 72.7 |
 | Papers with XML references but no reference items found | (no split) | 0 | 2 | 2 |
 | s per page, median | 0.005 | 0.173* | 0.124 | 0.047 |
 
@@ -666,7 +717,7 @@ papers, all views scored against the XML:
 | Recall, median | 0.995 | 0.973 | 0.978 | 0.967 | 0.903 | 1.000 |
 | Precision, median | 0.924 | 0.862 | 0.909 | 0.928 | 0.484 | 0.999 |
 | Broken words / 1000, mean | 0.05 | 0.55 | 0.46 | 0.74 | 0.64 | 0.01 |
-| Papers with interleaving, % | 0.0 | 26.7 | 10.0 | 16.7 | 66.7 | 0.0 |
+| Papers with interleaving, % | 0.0 | 23.3 | 6.7 | 16.7 | 66.7 | 0.0 |
 | Papers with licence/copyright lines in the text | 21 | 14 (second run) | – | – | – | 0 |
 | Figures identified (image + label), % | 82.4 (112/136) | 84.6 | 85.3 | – | – | – |
 | Reference items / XML refs, median | 1.00 | 1.00 | 1.00 | 1.00 | – | 1.00 |
