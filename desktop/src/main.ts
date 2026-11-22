@@ -355,7 +355,8 @@ function paperMenu(e: MouseEvent, p: Paper) {
     '-',
     { label: p.has_pdf ? 'Replace PDF…' : 'Add PDF…', action: () => choosePdf(p) },
     { label: 'Find PDF', action: () => findPdf(p), disabled: p.has_pdf },
-    { label: 'Make Reading View', action: () => makeReadingView(p), disabled: p.has_epub },
+    // replacing a reading view asks first
+    { label: p.has_epub ? 'Remake Reading View…' : 'Make Reading View', action: () => makeReadingView(p) },
     '-',
     ...watchItems(p),
     '-',
@@ -505,9 +506,16 @@ async function findPdf(p: Paper) {
   reload();
 }
 
+/** Make Reading View, or Remake Reading View… (asks first: it replaces the one there is; a
+ *  conversion that fails leaves it as it was). Highlights are found again by their quoted words. */
 async function makeReadingView(p: Paper) {
-  const ok = await work('Making the reading view…', async () => { await api.makeReadingView(p.id); return true; });
-  if (ok) status('Made the reading view');
+  const again = p.has_epub;
+  if (again && !(await ask('Lunta makes the reading view again from the best source it can find now (the publisher’s text, arXiv or the PDF). '
+    + 'Your highlights and notes are kept and found again in the new text by their words; a few may need checking if the text changed. '
+    + 'If no new reading view can be made, the current one stays.',
+  { title: 'Remake the reading view?', kind: 'info', okLabel: 'Remake', cancelLabel: 'Cancel' }))) return;
+  const ok = await work(again ? 'Remaking the reading view…' : 'Making the reading view…', async () => { await api.makeReadingView(p.id); return true; });
+  if (ok) status(again ? 'Remade the reading view' : 'Made the reading view');
   reload();
 }
 

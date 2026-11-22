@@ -947,6 +947,8 @@ final class LibraryModel: ObservableObject {
             try lib.attachFile(id: id, kind: .epub, data: epub)
             try lib.attachFile(id: id, kind: .fulltext, data: text)
         }.value
+        // a reader that has the paper open shows the new reading view
+        NotificationCenter.default.post(name: .luntaReadingViewMade, object: id)
         return true
     }
 
@@ -1029,19 +1031,24 @@ final class LibraryModel: ObservableObject {
         guard !ids.isEmpty else { return }
         let one = ids.count == 1
         var ok = 0, failed: [String] = []
+        // remaking: a failure keeps the reading view the paper had
+        let remaking = ids.contains { lib.paper(id: $0)?.hasEpub == true }
+        let verb = remaking ? "Remaking" : "Making"
         for (i, id) in ids.enumerated() {
             let title = lib.paper(id: id)?.meta.title ?? ""
             let short = title.count > 60 ? String(title.prefix(57)) + "…" : title
-            status = one ? "Making the reading view: \(short)" : "Making reading views: \(i + 1) of \(ids.count) — \(short)"
+            status = one ? "\(verb) the reading view: \(short)" : "\(verb) reading views: \(i + 1) of \(ids.count) — \(short)"
             progress = one ? nil : Double(i) / Double(ids.count)
             if await makeReadingView(id) { ok += 1 } else { failed.append(short) }
             if !one, (i + 1) % 5 == 0 { reload() }
         }
         reload()
         if one {
-            status = ok == 1 ? "Reading view ready." : "No open full text found for this paper."
+            status = ok == 1 ? (remaking ? "Reading view remade." : "Reading view ready.")
+                : remaking ? "Couldn’t make the reading view again; the current one is kept." : "No open full text found for this paper."
         } else {
-            status = "Reading views: \(ok) of \(ids.count) made." + (failed.isEmpty ? "" : " No open full text for \(failed.count).")
+            status = "Reading views: \(ok) of \(ids.count) \(remaking ? "remade" : "made")."
+                + (failed.isEmpty ? "" : remaking ? " \(failed.count) couldn’t be made (a reading view they had is kept)." : " No open full text for \(failed.count).")
         }
         // the result stays a moment (a full bar, not a spinner), then the status bar goes
         progress = 1

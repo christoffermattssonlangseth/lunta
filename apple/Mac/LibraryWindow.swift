@@ -175,6 +175,7 @@ struct LibraryWindow: View {
         .alert("Lunta", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK") { model.errorMessage = nil }
         } message: { Text(model.errorMessage ?? "") }
+        .modifier(LibraryRemakeAlert())
         .tint(.luntaTeal)
     }
 
@@ -542,7 +543,8 @@ struct PaperMenu: View {
         Divider()
         DownloadMenuItems(ids: ids)
         Button("Find PDF") { Task { for id in ids { await model.findPDF(id) } } }
-        Button("Make Reading View") { Task { await model.makeReadingViews(Array(ids)) } }
+        // "Remake Reading View(s)…" when one of them has a reading view: it asks first
+        Button(RemakeReadingView.title(Array(ids), model: model)) { RemakeReadingView.shared.makeOrAsk(Array(ids), model: model) }
         Button("Make Natural Narration") { NarrationRenderer.shared.enqueue(ids.filter { model.paper($0)?.hasEpub == true }) }
         Divider()
         Button("Check for Retractions and Published Versions") { Task { await model.checkUpdates(ids) } }
@@ -788,7 +790,7 @@ struct MultiSelection: View {
                 .buttonStyle(.borderedProminent)
             }
             Button("Find PDFs") { Task { for id in ids { await model.findPDF(id) } } }
-            Button("Make Reading Views") { Task { await model.makeReadingViews(Array(ids)) } }
+            Button(RemakeReadingView.title(ids, model: model)) { RemakeReadingView.shared.makeOrAsk(ids, model: model) }
             SharePanel(ids: ids).id(ids)
                 .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
         }

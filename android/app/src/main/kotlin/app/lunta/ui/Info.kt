@@ -38,6 +38,7 @@ fun InfoScreen(model: AppModel, id: String) {
     val scope = rememberCoroutineScope()
     var organizing by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var remaking by remember { mutableStateOf(false) }
     var citation by remember { mutableStateOf<Pair<String, String>?>(null) }
     var menu by remember { mutableStateOf(false) }
     val files by produceState(emptySet<String>(), p.id, p.hasEpub, p.hasPdf) { value = model.availableFiles(p.id) }
@@ -67,6 +68,8 @@ fun InfoScreen(model: AppModel, id: String) {
                             DropdownMenuItem({ Text("Folders & tags…") }, { menu = false; organizing = true })
                             DropdownMenuItem({ Text("Share as BibTeX") }, { menu = false; LibraryImport.share(model, ctx, listOf(p.id), ris = false, name = p.citeKey.ifBlank { p.meta.title }) })
                             DropdownMenuItem({ Text("Share as RIS") }, { menu = false; LibraryImport.share(model, ctx, listOf(p.id), ris = true, name = p.citeKey.ifBlank { p.meta.title }) })
+                            // replaces the reading view there is: asks first
+                            if (hasEpub) DropdownMenuItem({ Text("Remake reading view…") }, { menu = false; remaking = true })
                             DropdownMenuItem({ Text("Delete paper…") }, { menu = false; deleting = true })
                         }
                     }
@@ -188,6 +191,17 @@ fun InfoScreen(model: AppModel, id: String) {
         }
     }
     if (organizing) OrganizeSheet(model, p.id) { organizing = false }
+    if (remaking) AlertDialog(
+        onDismissRequest = { remaking = false },
+        title = { Text("Remake the reading view?") },
+        text = {
+            Text("Lunta makes the reading view again from the best source it can find now (the publisher’s text, arXiv or the PDF). " +
+                "Your highlights and notes are kept and found again in the new text by their words; a few may need checking if the text changed. " +
+                "If no new reading view can be made, the current one stays.")
+        },
+        confirmButton = { TextButton({ remaking = false; model.makeReadingView(p.id, again = true) }) { Text("Remake") } },
+        dismissButton = { TextButton({ remaking = false }) { Text("Cancel") } },
+    )
     if (deleting) AlertDialog(
         onDismissRequest = { deleting = false },
         title = { Text("Delete this paper?") },

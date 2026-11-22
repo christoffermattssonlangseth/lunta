@@ -61,6 +61,10 @@ struct ReaderView: View {
     @State private var listening = false
     @State private var asking = false
     @StateObject private var ask: AskEngine
+    /// Remake Reading View…: waiting for Remake; while it runs, what it is doing; then how it went.
+    @State private var remakeRequest: RemakeRequest?
+    @State private var remaking: String?
+    @State private var remakeNote: String?
 
     init(paperID: String) {
         self.paperID = paperID
@@ -122,6 +126,9 @@ struct ReaderView: View {
         }
         // retracted, corrected, or a preprint since published (Checks.swift)
         .safeAreaInset(edge: .top, spacing: 0) { if !chromeHidden { UpdatesBanner(paperID: paperID) } }
+        // Remake Reading View…: asks first, shows progress, then how it went; the new view when it's made
+        .modifier(RemakeProgress(paperID: paperID, request: $remakeRequest, text: remaking ?? remakeNote, busy: remaking != nil,
+                                 remake: remake, made: reloadBook))
         // find in paper: over the page, so the page keeps its size (and its pages)
         .modifier(FindOverlay(find: find, theme: mode == .reading ? theme : nil))
         .modifier(goToPageModifier)
@@ -203,6 +210,11 @@ struct ReaderView: View {
                     Button { organizing = true } label: { Label("Folders & Tags…", systemImage: "folder") }
                     Button { editing = true } label: { Label("Edit Details…", systemImage: "pencil") }
                     Button { sharing = true } label: { Label("Share…", systemImage: "square.and.arrow.up") }
+                    if let paper, paper.hasEpub || paper.hasPdf || !paper.meta.pmcid.isEmpty || !paper.meta.doi.isEmpty || !paper.meta.arxiv.isEmpty {
+                        // "Remake Reading View…" asks first (it replaces the one there is)
+                        Button { askRemake() } label: { Label(RemakeReadingView.title([paperID], model: model), systemImage: "wand.and.stars") }
+                            .disabled(remaking != nil)
+                    }
                     Button { showInfo = true } label: { Label("Paper Info", systemImage: "info.circle") }
                 } label: { Label("More", systemImage: "ellipsis.circle").labelStyle(.iconOnly) }
             }
@@ -573,6 +585,40 @@ struct ReaderView: View {
         }
         if book != nil || pdfURL != nil { model.markOpened(p) }
         loading = false
+    }
+
+    /// Make Reading View, or Remake Reading View… (asks first).
+    private func askRemake() {
+        let n = RemakeReadingView.existing([paperID], model: model)
+        if n == 0 { remake() } else { remakeRequest = RemakeRequest(ids: [paperID], existing: n) }
+    }
+
+    /// Makes the reading view (again); the new one is shown when it's there (`luntaReadingViewMade`).
+    private func remake() {
+        let had = model.paper(paperID)?.hasEpub == true
+        remakeNote = nil
+        chromeHidden = false
+        remaking = had ? "Remaking the reading view…" : "Making the reading view…"
+        Task {
+            let ok = await model.makeReadingView(paperID)
+            model.reload()
+            remaking = nil
+            let note = ok ? (had ? "Reading view remade." : "Reading view ready.")
+                : had ? "Couldn’t make the reading view again; the current one is kept." : "No open full text found for this paper."
+            remakeNote = note
+            try? await Task.sleep(for: .seconds(6))
+            if remakeNote == note { remakeNote = nil }
+        }
+    }
+
+    /// Opens the paper's reading view again (it was remade), at the same place.
+    private func reloadBook() {
+        if listening { stopListening() }
+        if extending != nil { cancelExtend() }
+        book = nil
+        message = "Opening the new reading view…"
+        loading = true
+        Task { await load() }
     }
 
     private func loadPDF() async {

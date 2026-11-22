@@ -486,9 +486,13 @@ class AppModel(val app: Application) {
         }
     }
 
-    fun makeReadingView(id: String) {
+    /** Makes the reading view, or (`again`) makes it again: a conversion that fails leaves the one there is. */
+    fun makeReadingView(id: String, again: Boolean = false) {
         val lib = library ?: return
-        busy("Making the reading view…", { withContext(Dispatchers.IO) { lib.makeReadingView(id, progress) } }) { reload() }
+        busy(if (again) "Remaking the reading view…" else "Making the reading view…", { withContext(Dispatchers.IO) { lib.makeReadingView(id, progress) } }) {
+            reload()
+            if (again) info = "Reading view remade."
+        }
     }
 
     /** Where the paper's journal page is: its DOI, else its link, else PubMed Central or arXiv. */

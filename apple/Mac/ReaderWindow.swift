@@ -44,6 +44,10 @@ struct ReaderWindow: View {
     @Environment(\.openWindow) private var openWindow
     /// Undo for highlights and notes in this window (⌘Z / ⇧⌘Z, see ReaderUndoKeys).
     @State private var undo = UndoManager()
+    /// Remake Reading View…: waiting for Remake; while it runs, what it is doing; then how it went.
+    @State private var remakeRequest: RemakeRequest?
+    @State private var remaking: String?
+    @State private var remakeNote: String?
 
     init(paperID: String) {
         self.paperID = paperID
@@ -129,6 +133,9 @@ struct ReaderWindow: View {
                 NowPlayingBar(style: .capsule, except: listening && mode == .reading ? narrator : nil)
                     .padding(.horizontal, 20).padding(.bottom, 14)
             }
+            // Remake Reading View…: asks first, shows progress, then how it went
+            .modifier(RemakeProgress(paperID: paperID, request: $remakeRequest, text: remaking ?? remakeNote, busy: remaking != nil,
+                                     remake: remake, made: reloadBook))
             // find in paper (⌘F): over the page, so the page keeps its size (and its pages)
             .modifier(FindOverlay(find: find, theme: mode == .reading ? theme : nil))
             .toolbar {
@@ -210,6 +217,15 @@ struct ReaderWindow: View {
                             .help("Larger text")
                     }
                 }
+                // the paper's actions (both views)
+                ToolbarItem {
+                    Menu {
+                        Button(RemakeReadingView.title([paperID], model: model)) { askRemake() }
+                            .disabled(remaking != nil)
+                    } label: { Image(systemName: "ellipsis.circle") }
+                    .menuIndicator(.hidden)
+                    .help("More")
+                }
             }
             // on the detail, not the split view: there it kept the toolbar re-laying itself out
             .inspector(isPresented: $asking) {
@@ -288,6 +304,7 @@ struct ReaderWindow: View {
             Text(error)
         } actions: {
             if model.paper(paperID)?.hasEpub == true { Button("Try Again") { self.error = nil; Task { await load() } } }
+            else { Button(remaking ?? "Make Reading View") { askRemake() }.disabled(remaking != nil) }
         }
     }
 
@@ -338,6 +355,38 @@ struct ReaderWindow: View {
         } catch {
             self.error = error.readable
         }
+    }
+
+    /// Make Reading View, or Remake Reading View… (asks first: the alert above).
+    private func askRemake() {
+        let n = RemakeReadingView.existing([paperID], model: model)
+        if n == 0 { remake() } else { remakeRequest = RemakeRequest(ids: [paperID], existing: n) }
+    }
+
+    /// Makes the reading view (again); the new one is shown when it's there (`luntaReadingViewMade`).
+    private func remake() {
+        let had = model.paper(paperID)?.hasEpub == true
+        remakeNote = nil
+        remaking = had ? "Remaking the reading view…" : "Making the reading view…"
+        Task {
+            let ok = await model.makeReadingView(paperID)
+            model.reload()
+            remaking = nil
+            let note = ok ? (had ? "Reading view remade." : "Reading view ready.")
+                : had ? "Couldn’t make the reading view again; the current one is kept." : "No open full text found for this paper."
+            remakeNote = note
+            try? await Task.sleep(for: .seconds(6))
+            if remakeNote == note { remakeNote = nil }
+        }
+    }
+
+    /// Opens the paper's reading view again (it was remade), at the same place.
+    private func reloadBook() {
+        if listening { stopListening() }
+        if book == nil { mode = .reading }   // its first: shown (the PDF was shown for want of one)
+        book = nil
+        error = nil
+        Task { await load() }
     }
 
     /// What the find bar searches: the reading view or the PDF.

@@ -21,6 +21,7 @@ struct PaperInfoView: View {
     @State private var deleting: Paper?
     @State private var choosingPDF = false
     @State private var pendingPDF: PendingPDF?
+    @State private var remakeRequest: RemakeRequest?
 
     var body: some View {
         if let p = model.paper(paperID) {
@@ -39,6 +40,14 @@ struct PaperInfoView: View {
                     if !p.hasPdf {
                         Button { choosingPDF = true } label: { Label("Have the PDF? Add it from Files…", systemImage: "doc.badge.plus") }
                             .font(.callout).tint(.luntaTeal)
+                    }
+                    if p.hasEpub {
+                        // replaces the reading view there is: asks first (progress and the result just below)
+                        Button { remakeRequest = RemakeRequest(ids: [p.id], existing: 1) } label: {
+                            Label("Remake Reading View…", systemImage: "wand.and.stars")
+                        }
+                        .font(.callout).tint(.luntaTeal)
+                        .disabled(busy != nil)
                     }
                     if let busy { HStack { ProgressView(); Text(busy).font(.footnote).foregroundStyle(.secondary) } }
                     if let note { Text(note).font(.footnote).foregroundStyle(.secondary) }
@@ -110,6 +119,13 @@ struct PaperInfoView: View {
                 if case .success(let url) = r { model.offerPDF(url, to: p, pending: $pendingPDF) }
             }
             .modifier(ReplacePDFConfirm(pending: $pendingPDF))
+            .modifier(RemakeReadingViewAlert(request: $remakeRequest) { _ in
+                run("Remaking the reading view…") {
+                    note = await model.makeReadingView(p.id) ? "Reading view remade."
+                        : "Couldn’t make the reading view again; the current one is kept."
+                    model.reload()
+                }
+            })
             .sheet(isPresented: $editing) { MetadataEditor(paperID: paperID).environmentObject(model) }
             .sheet(isPresented: $sharing) {
                 ScrollView { SharePanel(ids: [paperID]) }.environmentObject(model).presentationDetents([.medium, .large])
