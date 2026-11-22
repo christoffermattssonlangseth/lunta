@@ -37,7 +37,7 @@ fn meta_from(c: &ConversionResult) -> PaperMeta {
 fn run(input: Conv, log: &Logger) -> Result<(Vec<u8>, String, ConversionResult), String> {
     let tmp = tmp_dir("conv");
     let l = log.clone();
-    let opts = Options { log: Some(Box::new(move |m: &str| l.say(m.trim()))), offline: false, doi: None };
+    let opts = Options { log: Some(Box::new(move |m: &str| l.say(m.trim()))), offline: false, doi: None, work_type: None };
     let r = match &input {
         Conv::Input(s) => convert::convert_with(s, &tmp, &opts),
         Conv::File(p) => convert::convert_file_with(p, &tmp, &opts),

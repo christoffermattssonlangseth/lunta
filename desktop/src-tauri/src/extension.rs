@@ -475,7 +475,7 @@ fn full_text(cx: &Ctx, lib: &Library, r: &Request) -> (u16, Value) {
     let host = url_host(&sub.url);
     (cx.notify)("status", &format!("Making a reading view from {host}…"));
     let log = logger(cx);
-    let opts = Options { log: Some(Box::new(move |m: &str| log.say(m.trim()))), offline: cx.offline, doi: None };
+    let opts = Options { log: Some(Box::new(move |m: &str| log.say(m.trim()))), offline: cx.offline, doi: None, work_type: None };
     let result = pagetext::use_page_full_text(lib, &sub, &cx.backups, dry, &opts);
     pages_in_progress().lock().unwrap().remove(&key);
     match result {
