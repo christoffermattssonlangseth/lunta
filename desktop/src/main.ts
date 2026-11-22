@@ -8,7 +8,7 @@ import { api, smartApi, type Paper, type Row, type Sidebar, type Source, type Ci
 import { editDetails, editSmart, blankSmart } from './editors';
 import { setupDrag, type Payload } from './drag';
 import { fill, h, $, status, prompt, menu, menuBelow, copy, authorsShort, type MenuItem } from './ui';
-import { openReader, readerPaper, closeReader } from './reader';
+import { openReader, readerPaper, closeReader, showHighlightWhenReady } from './reader';
 import { startUpdateChecks, checkNow, updatesApi } from './updates';
 import { aiSettingsDialog, libraryAskButton, setAskOpener } from './ai';
 import { setOpenPaper, voiceDialog } from './listen';
@@ -581,11 +581,12 @@ $('#add-more').onclick = () => menuBelow($('#add-more'), importItems());
 setImportReload(() => { reload(); });
 setChecksReload(() => { reload(); });
 setTidyReload(() => { reload(); });
-// an outline's link to a paper opens it in the reader
-setOutlineOpener(async (id) => {
+// an outline's link to a paper opens it in the reader; a summary's citation at the highlight
+setOutlineOpener(async (id, highlight) => {
   const p = await api.paper(id);
   if (!p) return;
   if (readerPaper()) await closeReader();
+  if (highlight && p.has_epub) showHighlightWhenReady(highlight);
   read(p, p.has_epub ? 'reading' : 'pdf');
 });
 // Ask about the library (ai.ts), next to Settings; a paper it cites opens in the reader

@@ -29,3 +29,13 @@
   font-size: 13px; line-height: 1.5; user-select: text; }
 .outline-preview h1 { font-size: 18px; } .outline-preview h2 { font-size: 15px; } .outline-preview h3 { font-size: 14px; }
 .outline-preview li { margin: 3px 0; }
+.outline-tabs { align-self: flex-start; margin-bottom: 4px; }
+.summary-controls { display: flex; gap: 14px; font-size: 13px; }
+.summary-preview p, .summary-preview li { font-size: 14px; line-height: 1.6; }
+.summary-preview a.cite { color: var(--accent, #2a7f7a); font-weight: 600; text-decoration: none; }
+.summary-card { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; background: var(--sel); display: flex; flex-direction: column; gap: 4px; }
+.summary-card-head { display: flex; justify-content: space-between; }
+.summary-source { display: flex; gap: 8px; margin: 6px 0; }
+.summary-source .num { font-weight: 600; min-width: 2.2em; }
+.summary-source.on { background: var(--sel); border-radius: 6px; }
+.summary-preview button.link, .summary-card button.link { border: none; background: none; color: var(--accent); padding: 0; cursor: pointer; font-size: 12px; }

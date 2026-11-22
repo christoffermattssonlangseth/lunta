@@ -928,6 +928,7 @@ pub fn run() {
             tidy::tidy_apply_tags,
             tidy::tidy_undo,
             tidy::outline_make,
+            tidy::summary_make,
             open_book,
             annotations,
             add_highlight,

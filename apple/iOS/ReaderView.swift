@@ -222,7 +222,7 @@ struct ReaderView: View {
                         Button { askRemake() } label: { Label(RemakeReadingView.title([paperID], model: model), systemImage: "wand.and.stars") }
                             .disabled(remaking != nil)
                     }
-                    Button { outline = OutlineRequest(ids: [paperID], scope: "this paper") } label: { Label("Outline from Highlights…", systemImage: "list.bullet.indent") }
+                    Button { outline = OutlineRequest(ids: [paperID], scope: "this paper", inReader: true) } label: { Label("Outline from Highlights…", systemImage: "list.bullet.indent") }
                     Button { showInfo = true } label: { Label("Paper Info", systemImage: "info.circle") }
                 } label: { Label("More", systemImage: "ellipsis.circle").labelStyle(.iconOnly) }
             }
@@ -300,6 +300,7 @@ struct ReaderView: View {
         .onChange(of: find.shown) { _, shown in withAnimation { chromeHidden = shown && paged && mode == .reading } }
         .task { await setUp() }
         .onAppear { OpenReader.set(paperID); model.reading.insert(paperID); position.resume(); NowPlaying.shared.readerAppeared() }
+        .showsPendingHighlight(paperID) { pdfOnly, delay in if !pdfOnly || mode == .pdf { showPendingHighlight(after: delay) } }
         .onDisappear {
             model.reading.remove(paperID)
             NowPlaying.shared.readerDisappeared()
@@ -353,6 +354,16 @@ struct ReaderView: View {
         refreshHighlights()   // Highlight to…: the passage coloured meanwhile goes
     }
 
+    /// A highlight Open in Paper asked for (a summary's citation, HighlightJump): shown once the page is ready.
+    private func showPendingHighlight(after delay: Duration = .milliseconds(500)) {
+        guard HighlightJump.has(paperID) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: delay)
+            guard let id = HighlightJump.take(paperID), let a = model.annotations(paperID).first(where: { $0.id == id }) else { return }
+            if mode == .pdf { pdfHighlights.show(a) } else { controller.showAnnotation(a.id) }
+        }
+    }
+
     private func refreshHighlights() {
         controller.showAnnotations(model.annotations(paperID))
         controller.setLibraryIDs(model.libraryIDs())   // the citation card: "In library" for those
@@ -365,6 +376,7 @@ struct ReaderView: View {
             if extending != nil { endExtend() }   // the page was loaded again: its passage is gone
             controller.setHighlightMode(highlightMode, color: HighlightColor(rawValue: highlightModeColor) ?? .yellow)
             refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
+            showPendingHighlight()
             // (a book read chapter by chapter has no summary: one chapter isn't the paper)
             if let chapters { chapters.pageReady() } else { summary.pageReady(paperID, model: model, controller: controller) }
             resumeListening()

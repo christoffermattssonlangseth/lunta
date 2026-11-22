@@ -251,12 +251,22 @@ async function show() {
   }
 }
 
+/** A highlight to show once the reading view is ready (a summary's Open in Paper), instead of the saved place. */
+let pendingHighlight: string | null = null;
+export function showHighlightWhenReady(id: string) { pendingHighlight = id.replace(/[^A-Za-z0-9-]/g, ''); }
+
 /** The page loaded: draw the highlights, then go to where the reader stopped (on any device). */
 async function pageReady() {
   run(hlModeJS());
   if (paper) attachReader(paper.id, pageLink);
   if (showingRefs) loadRefs();
   await refreshHighlights();
+  if (pendingHighlight) {
+    const id = pendingHighlight;
+    pendingHighlight = null;
+    restored = true;
+    setTimeout(() => run(`luntaShowAnnotation('${id}')`), 300);
+  }
   if (paper) summaryPageReady(paper.id, paper.meta.title, paper.meta.abstract_text, run);
   if (restored || !paper) return;
   restored = true;

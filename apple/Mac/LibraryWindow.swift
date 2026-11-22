@@ -141,9 +141,12 @@ struct LibraryWindow: View {
             }
         }
         .onOpenURL { url in
-            // lunta://open?id=<paper id>  (from the browser extension)
-            if url.host == "open", let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "id" })?.value { openFromExtension(id) }
+            // lunta://open?id=<paper id>  (from the browser extension), &highlight=<annotation id> (a summary's citation)
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            if url.host == "open", let id = items.first(where: { $0.name == "id" })?.value {
+                if let h = items.first(where: { $0.name == "highlight" })?.value, !h.isEmpty { HighlightJump.request(paper: id, annotation: h) }
+                openFromExtension(id)
+            }
         }
         // the extension's Open, through Lunta's local endpoint (no lunta:// link for Safari to ask about)
         .onReceive(NotificationCenter.default.publisher(for: .luntaOpenPaper)) { n in

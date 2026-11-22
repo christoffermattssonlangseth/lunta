@@ -248,6 +248,7 @@ struct ReaderWindow: View {
         .onChange(of: highlightMode) { _, on in controller.setHighlightMode(on, color: hlColor) }
         .onChange(of: highlightModeColor) { controller.setHighlightMode(highlightMode, color: hlColor) }
         .onAppear { model.reading.insert(paperID) }
+        .showsPendingHighlight(paperID) { pdfOnly, delay in if !pdfOnly || mode == .pdf { showPendingHighlight(after: delay) } }
         .onDisappear { model.reading.remove(paperID); position.stop(paperID, model: model, controller: controller); summary.stop() }
         .onChange(of: summariesOn) { _, on in summary.setEnabled(on) }
         // stopped from the Now Playing bar or the Listen menu, or another paper is read aloud now
@@ -269,6 +270,7 @@ struct ReaderWindow: View {
             controller.onPageReady = {
                 controller.setHighlightMode(highlightMode, color: hlColor)
                 refreshHighlights(); position.pageReady(paperID, model: model, controller: controller)
+                showPendingHighlight()
                 // (a book read chapter by chapter has no summary: one chapter isn't the paper)
                 if let chapters { chapters.pageReady() } else { summary.pageReady(paperID, model: model, controller: controller) }
                 resumeListening()
@@ -422,6 +424,16 @@ struct ReaderWindow: View {
     private var findBackend: FindBackend? { mode == .pdf ? pdfFinder : (book != nil ? (bookFind as FindBackend?) ?? controller : nil) }
 
     private var hlColor: HighlightColor { HighlightColor(rawValue: highlightModeColor) ?? .yellow }
+
+    /// A highlight Open in Paper asked for (a summary's citation, HighlightJump): shown once the page is ready.
+    private func showPendingHighlight(after delay: Duration = .milliseconds(500)) {
+        guard HighlightJump.has(paperID) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: delay)
+            guard let id = HighlightJump.take(paperID), let a = model.annotations(paperID).first(where: { $0.id == id }) else { return }
+            if mode == .pdf { pdfHighlights.show(a) } else { controller.showAnnotation(a.id) }
+        }
+    }
 
     private func refreshHighlights() {
         controller.showAnnotations(model.annotations(paperID))

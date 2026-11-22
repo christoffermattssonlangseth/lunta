@@ -831,14 +831,40 @@ point. `outline_check` verifies an outline: every point must be a highlight's qu
 invented, altered and paraphrased points. Copy Markdown, Save as .md, and on the Mac (and iPhone, iPad) Copy as Rich Text
 (the outline's HTML).
 
+**Summarize Highlights** (`core/src/outline/summary.rs`): the same highlights and notes (with a topic, those that
+mention it) condensed by the on-device model, Short (3–5 sentences) or Longer (6–10), as Prose or Bullet points, every
+sentence ending with the highlights it is based on (`… iron-laden microglia [1, 4].`). `summary_plan(ids, topic, length,
+style, max_items, max_parts)` numbers them [1]…[n] (quote, author–year, section; 25 per prompt for Apple's model, 45 for
+Qwen3 on phones and Android, about 50 on Windows and Linux; at most 6 parts, what doesn't fit is said); more than fit one
+prompt are cut paper by paper into parts, each numbered 1…k in its prompt (`ModelPrompt.ids` maps back), summarized in
+2–4 sentences, then `summary_combine_prompt` gives the parts' checked sentences, with the original numbers, to the model
+to combine. `summary_from_answers` checks every sentence in code: split into sentences (bullets, "et al.", "Fig. 2",
+"e.g.", decimals and a citation after the full stop handled); dropped when it cites nothing, cites a number that wasn't
+given (combining: one the parts didn't cite), or isn't supported by the highlights it cites (fewer than 60 % of its
+content words in them, word endings allowed; a number not in them; a negation they don't have); repeats kept once. How
+many were dropped and why is said; when nothing holds up there is no summary (`ok` false) and the apps show the outline
+with that note. If combining gives nothing usable, the parts' sentences are shown. Citations are renumbered 1, 2… in the
+order first cited; Markdown (and HTML for rich text): the summary, "*Written by the on-device model from your
+highlights. Check it against the quotes below.*", **Highlights cited** footnote style (`[2] “quote” — [Kukanja et al.
+2024](lunta://open?id=…&highlight=…)`) and the Sources. `lunta://open?id=<paper>&highlight=<annotation>` opens the paper
+at the highlight on the Mac. `Library::summary_with_model` (feature `llm`) runs it all with `AiEngine`. MCP has no model:
+no summary there (an agent can summarize `outline_from_highlights` itself, quoting it).
+
 UI: Mac: Clean Up Library window (Lunta menu) with the suggestions under the duplicates; Outline from Highlights… in a
 folder's and a tag's menu, the papers' menu (the selection) and the File menu (the papers listed, so a search's).
 iPhone and iPad: Clean Up Library… in the library's list; Outline from Highlights… in a folder's and a tag's menu and the
 list's ⋯ menu. The on-device model is Apple's or Qwen3 via MLX (`AskEngine.plainAnswer`); without one the heuristics.
 Windows, Linux and Android: see their sections; they run Qwen3 through `tidy_topics_with_model` and `outline_with_model`.
+Summary: the outline sheet's Outline | Summary switch (Mac, iPhone, iPad: `SummaryView.swift`; also from the iPhone
+reader's ⋯ › Outline from Highlights…), Length and Style, Summarize / Regenerate; the summary with its citation numbers
+tappable (the quote, Open in Paper: the reader at the highlight, `HighlightJump`), the cited quotes below, Copy Markdown,
+Copy as Rich Text, Share, Save as .md. Without a model the Summary side says why (the assistant's availability texts:
+Apple Intelligence on macOS/iOS 26, the open model on 27). Windows and Linux (`outline.ts`, `summary_make`) and Android
+(`OutlineUi.kt`, `HighlightsOutline.summarize`) the same with Qwen3; without the downloaded model they point to
+On-Device AI in the settings.
 
 MCP: `outline_from_highlights(ids | collection | tag, topic?)`, read-only, by paper and section (the agent may regroup
-the points, keeping the quotes).
+the points, keeping the quotes). No Summarize Highlights: MCP has no model.
 
 Tests: `cargo test tidy outline` (duplicates by DOI and by a title that differs a little, preprint pairs, merging, DOIs on
 Crossref answers recorded in `testdata/tidy/` — `cargo test tidy -- --ignored record_tidy_fixtures` re-records them —, the

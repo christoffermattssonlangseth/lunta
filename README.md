@@ -67,7 +67,9 @@ which setup fits your devices, and how to move your library from Zotero, Mendele
   version, missing DOIs, PDFs and reading views, tags for untagged papers, new tags or folders by topic) and
   changes nothing until you tick it; **Check for Retractions and Published Versions** and **Check This Paper's
   References** compare your papers with the published record. **Outline from Highlights…** turns a folder's
-  highlights into a Markdown outline, every point your own quote with its citation.
+  highlights into a Markdown outline, every point your own quote with its citation; its **Summary** has the
+  on-device model condense them into a few sentences, each citing the highlights it comes from (sentences that
+  cite nothing or say more than their highlights are left out; tap a citation for the quote).
 - **Agents:** an [MCP server](docs/development.md#ai-agents-mcp) so Claude and other AI agents can search,
   read, cite and highlight in your library.
 

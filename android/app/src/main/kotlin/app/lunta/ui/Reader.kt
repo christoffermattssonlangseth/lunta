@@ -198,6 +198,16 @@ private fun EpubReader(model: AppModel, paper: Paper) {
         scope.launch { delay(3000); resumeNote = null }
     }
 
+    // a summary's Open in Paper: the highlight, once the page is ready
+    val jump = model.outline.jump
+    LaunchedEffect(jump, restored) {
+        val j = jump ?: return@LaunchedEffect
+        if (j.first != id || !restored) return@LaunchedEffect
+        model.outline.jump = null
+        delay(300)
+        js("luntaShowAnnotation('${j.second.filter { it.isLetterOrDigit() || it == '-' }}')")
+    }
+
     suspend fun saveSelection(o: JSONObject, color: String): Annotation {
         val a = Annotation(
             "", id, AnnotationKind.HIGHLIGHT, color, "epub", o.optInt("start").toString(),

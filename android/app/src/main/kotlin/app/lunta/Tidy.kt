@@ -13,7 +13,11 @@ import uniffi.lunta_core.DuplicateGroup
 import uniffi.lunta_core.FileKind
 import uniffi.lunta_core.GroupProposal
 import uniffi.lunta_core.MissingDetails
+import uniffi.lunta_core.HighlightSummary
 import uniffi.lunta_core.Outline
+import uniffi.lunta_core.SummaryLength
+import uniffi.lunta_core.SummarySource
+import uniffi.lunta_core.SummaryStyle
 import uniffi.lunta_core.ProgressListener
 import uniffi.lunta_core.TagSuggestion
 import uniffi.lunta_core.TidyChange
@@ -304,6 +308,8 @@ class LibraryTidy(private val model: AppModel) {
  * Outline from Highlights (core/src/outline.rs) for a set of papers: a folder, a tag, a list or a
  * search. Every point is a highlight word for word or the researcher's note; the on-device model,
  * when used, only groups and names the themes. OutlineDialog (ui/OutlineUi.kt) shows it.
+ * Summarize Highlights: the model condenses the same highlights, every sentence citing those it is
+ * based on and checked by the core (core/src/outline/summary.rs); when none holds up, the outline.
  */
 class HighlightsOutline(private val model: AppModel) {
     /** The papers and what they are ("Spatial transcriptomics", "the search “microglia”"). */
@@ -313,12 +319,25 @@ class HighlightsOutline(private val model: AppModel) {
         private set
     var result by mutableStateOf<Outline?>(null)
         private set
+    var summary by mutableStateOf<HighlightSummary?>(null)
+        private set
+    /** Why the summary isn't shown (none of its sentences held up): said over the outline. */
+    var summaryFailed by mutableStateOf<String?>(null)
+        private set
+    /** The dialog's Summary side, and its length and style (kept for Back and the next time). */
+    var asSummary by mutableStateOf(false)
+    var longer by mutableStateOf(false)
+    var bullets by mutableStateOf(false)
+    /** A summary's Open in Paper: (paper, highlight) for the reader to show once its page is ready. */
+    var jump by mutableStateOf<Pair<String, String>?>(null)
     private var generation = 0
 
     fun ask(title: String, ids: List<String>) {
         generation++
         running = false
         result = null
+        summary = null
+        summaryFailed = null
         topic = ""
         request = title to ids
     }
@@ -327,10 +346,47 @@ class HighlightsOutline(private val model: AppModel) {
         generation++
         request = null
         result = null
+        summary = null
+        summaryFailed = null
         running = false
     }
 
-    fun back() { generation++; result = null; running = false }
+    fun back() { generation++; result = null; summary = null; summaryFailed = null; running = false }
+
+    /** The summary by the on-device model (in parts when there are many highlights, then combined). */
+    fun summarize(topic: String, length: SummaryLength, style: SummaryStyle) {
+        val lib = model.library ?: return
+        val ids = request?.second ?: return
+        val gen = ++generation
+        running = true
+        summaryFailed = null
+        model.scope.launch {
+            try {
+                OnDeviceAi.init(model.app)
+                val engine = OnDeviceAi.engine() ?: error("download the on-device model first (Settings › On-device AI)")
+                val s = withContext(Dispatchers.IO) { lib.summaryWithModel(ids, topic, length, style, engine, LibraryTidy.MODEL_HIGHLIGHTS.toUInt()) }
+                if (gen != generation) return@launch
+                if (s.ok) summary = s
+                else {
+                    // nothing held up: the outline instead
+                    val o = withContext(Dispatchers.IO) { lib.outlineFromHighlights(ids, topic, null, null) }
+                    if (gen == generation) { summaryFailed = s.note; result = o }
+                }
+            } catch (e: Exception) {
+                if (gen == generation) model.error = "Couldn't summarize the highlights: ${e.message}"
+            } finally {
+                if (gen == generation) running = false
+            }
+        }
+    }
+
+    /** Open in Paper: the paper's reading view at the highlight. */
+    fun openAt(s: SummarySource) {
+        close()
+        jump = s.paperId to s.annotationId
+        val under = model.screen
+        if (!(under is Screen.Reader && under.id == s.paperId && !under.pdf)) model.push(Screen.Reader(s.paperId, false))
+    }
 
     fun make(topic: String, withModel: Boolean) {
         val lib = model.library ?: return

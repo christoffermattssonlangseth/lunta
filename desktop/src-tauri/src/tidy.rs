@@ -3,11 +3,14 @@
 //! details, topics and tags to approve (src/tidy.ts); what is approved is applied through the core
 //! (the change log, so it syncs) and comes back as a TidyChange the window can undo. Merging is
 //! not undoable (the window asks first). The open model (ai.rs) may propose the topics and group
-//! an outline's highlights into themes; every point of an outline stays a highlight or note.
+//! an outline's highlights into themes; every point of an outline stays a highlight or note. It
+//! also writes Summarize Highlights' summary, every sentence checked by the core against the
+//! highlights it cites.
 //!
 //! Events: `tidy-progress` (a line for the status bar while DOIs are looked up).
 
 use crate::{ai, err, AppState, R};
+use lunta_core::outline::summary::{HighlightSummary, SummaryLength, SummaryStyle};
 use lunta_core::outline::Outline;
 use lunta_core::tidy::{DoiReport, DoiSuggestion, GroupProposal, TagSuggestion, TidyChange, TidyReport};
 use lunta_core::ProgressListener;
@@ -119,6 +122,20 @@ pub async fn outline_make(app: AppHandle, state: State<'_, AppState>, ids: Vec<S
             Some(e) => lib.outline_with_model(ids, topic, e, budget().1),
             None => lib.outline_from_highlights(ids, topic, None, None),
         })
+    })
+    .await
+    .map_err(err)?
+}
+
+/// The open model's summary of these papers' highlights and notes (about `topic`, may be empty),
+/// checked by the core: `ok` false when none of its sentences held up (the window shows the
+/// outline then). A minute or more for many highlights (in parts, then combined).
+#[tauri::command]
+pub async fn summary_make(app: AppHandle, state: State<'_, AppState>, ids: Vec<String>, topic: String, length: SummaryLength, style: SummaryStyle) -> R<HighlightSummary> {
+    let lib = state.lib()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = ai::engine(&app)?.ok_or("Download the model first (Settings ▾ › On-Device AI…).")?;
+        Ok(lib.summary_with_model(ids, topic, length, style, engine, budget().1))
     })
     .await
     .map_err(err)?

@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::OnceLock;
 
+pub mod summary;
+
 /// A highlight or note as the outline uses it.
 #[derive(uniffi::Record, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct OutlineItem {
