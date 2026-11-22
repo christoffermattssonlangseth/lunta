@@ -1770,3 +1770,150 @@ fn a_margin_caption_beside_its_figure_is_nearer_than_the_paragraph_below() {
     // above or below: the vertical gap as before
     assert_eq!(caption_gap(&R::new(330.0, 270.0, 518.0, 300.0), &fig), 5.0);
 }
+
+// ---- footnotes and margin notes (notes.rs)
+
+/// A body line with a superscript marker after its words.
+fn marked(words: &str, mark: &str, rest: &str, page: usize, x0: f64, y0: f64) -> PLine {
+    let mut l = line(&format!("{words}{mark} {rest}"), page, x0, y0, 10.0);
+    l.spans = vec![
+        Span { text: words.into(), ..Default::default() },
+        Span { text: mark.into(), sup: true, ..Default::default() },
+        Span { text: format!(" {rest}"), ..Default::default() },
+    ];
+    l
+}
+
+/// A footnote's first line in 8 pt: the superscript marker, then its text.
+fn note_line(mark: &str, text: &str, page: usize, y0: f64) -> PLine {
+    let mut l = line(&format!("{mark}{text}"), page, 72.0, y0, 8.0);
+    l.spans = vec![Span { text: mark.into(), sup: true, ..Default::default() }, Span { text: text.into(), ..Default::default() }];
+    l
+}
+
+fn notes_book(pages: Vec<Page>, work_type: &str) -> Book {
+    let mut r = White;
+    let log = |_: &str| {};
+    let mut an = Analyzer::new(pages, &mut r, &log);
+    an.work_type = work_type.into();
+    let paras = an.analyze();
+    let body = an.body_size;
+    let info = std::mem::take(&mut an.book);
+    drop(an);
+    let opts = Options { offline: true, ..Default::default() };
+    assemble_book(paras, PaperMeta::default(), &PaperMeta::default(), body, &opts, &info).unwrap()
+}
+
+#[test]
+fn footnote_markers_and_scores() {
+    let n = note_line("2", "This is a note", 0, 700.0);
+    assert_eq!(notes::note_marker(&n).as_deref(), Some("2"));
+    let plain = |t: &str| notes::note_marker(&line(t, 0, 72.0, 700.0, 8.0));
+    assert_eq!(plain("2 This is a note").as_deref(), Some("2"));
+    assert_eq!(plain("2This is a note").as_deref(), Some("2"));
+    assert_eq!(plain("†These authors contributed equally").as_deref(), Some("†"));
+    assert_eq!(plain("2. Smith J, Doe A. A title. Nature 2019."), None);
+    assert_eq!(plain("[2] Smith J. A title."), None);
+    assert_eq!(plain("2019 was a year"), None);
+    let mut n = n;
+    notes::strip_marker(&mut n, "2");
+    assert_eq!(n.text, "This is a note");
+    assert_eq!(n.spans.len(), 1);
+    let mut ids = std::collections::HashSet::new();
+    assert_eq!(notes::note_id(11, "2", &mut ids), "fn-p12-2");
+    assert_eq!(notes::note_id(11, "2", &mut ids), "fn-p12-2-2");
+    assert_eq!(notes::note_id(2, "†", &mut ids), "fn-p3-s2");
+}
+
+fn paper_pages(extra: impl Fn(usize, &mut Vec<PLine>)) -> Vec<Page> {
+    let mut pages = Vec::new();
+    for pno in 0..5 {
+        let mut ls = Vec::new();
+        if pno == 0 {
+            ls.push(bold(line("A Tiny Test Paper About Notes", 0, 150.0, 80.0, 18.0)));
+            ls.push(bold(line("1 Introduction", 0, 72.0, 150.0, 12.0)));
+        }
+        ls.extend(para(LOREM, pno, 72.0, 180.0, 6, 90));
+        ls.extend(para(LOREM, pno, 72.0, 270.0, 6, 90));
+        extra(pno, &mut ls);
+        if pno == 4 {
+            ls.push(bold(line("References", 4, 72.0, 400.0, 12.0)));
+            ls.push(line("1. Someone. A paper. Journal 2020.", 4, 72.0, 420.0, 10.0));
+        }
+        pages.push(Page { width: 612.0, height: 792.0, lines: ls, graphics: PageGraphics::default() });
+    }
+    pages
+}
+
+#[test]
+fn footnote_goes_to_the_chapter_end_and_continues_on_the_next_page() {
+    let pages = paper_pages(|pno, ls| {
+        if pno == 2 {
+            ls.push(marked("so we can improve no further.", "2", "Then the text goes on", 2, 72.0, 350.0));
+            ls.push(note_line("2", "This iterative approach is not actually necessary for the linear model, as", 2, 700.0));
+            ls.push(line("closed-form expressions for the parameters exist, but", 2, 72.0, 710.0, 8.0));
+        }
+        if pno == 3 {
+            ls.push(line("it is easier to show the general method on a simple case.", 3, 72.0, 700.0, 8.0));
+        }
+    });
+    let book = notes_book(pages, "");
+    let h: String = book.chapters.iter().map(|c| c.html.as_str()).collect();
+    assert!(h.contains(r#"class="fnref">2</a>"#), "{h}");
+    assert!(
+        h.contains(r##"<aside epub:type="footnote" role="doc-footnote" id="fn-p3-2" class="footnote"><p><a href="#fnref-fn-p3-2">2</a> This iterative"##),
+        "{h}"
+    );
+    let at = h.find("<div class=\"footnotes\">").expect("notes block");
+    let (text, notes) = h.split_at(at);
+    assert!(notes.contains("it is easier to show the general method"), "{notes}");
+    assert!(!text.contains("iterative approach") && !text.contains("easier to show"), "{text}");
+}
+
+#[test]
+fn superscript_citations_stay_citations() {
+    // a paper citing by superscript numbers: no block at the foot, so nothing is a note; a block at
+    // the foot that reads like a reference stays as it is
+    let pages = paper_pages(|pno, ls| {
+        for k in 0..2 {
+            let n = (pno * 2 + k + 1).to_string();
+            ls.push(marked("as shown before.", &n, "More text follows here", pno, 72.0, 350.0 + 12.0 * k as f64));
+        }
+        if pno == 2 {
+            ls.push(note_line("5", "Smith, J. & Doe, A. A title of a paper. Nature 12, 34–56 (2019). doi:10.1038/x", 2, 700.0));
+        }
+    });
+    let book = notes_book(pages, "");
+    let h: String = book.chapters.iter().map(|c| c.html.as_str()).collect();
+    assert!(!h.contains("fnref") && !h.contains("doc-footnote"), "{h}");
+    assert!(h.contains("<sup>3</sup>"), "{h}");
+}
+
+#[test]
+fn book_margin_notes_follow_their_paragraph() {
+    // (a book of 20 pages or more: shorter documents are papers whatever their type)
+    let mut pages = Vec::new();
+    for pno in 0..22 {
+        let mut ls = para(LOREM, pno, 72.0, 100.0, 8, 60);
+        ls.extend(para(LOREM, pno, 72.0, 210.0, 8, 60));
+        ls.push(line(&format!("Notebook {pno}.1"), pno, 470.0, 234.0, 8.0));
+        ls.push(line("Background", pno, 470.0, 243.0, 8.0));
+        pages.push(Page { width: 612.0, height: 792.0, lines: ls, graphics: PageGraphics::default() });
+    }
+    let book = notes_book(pages, "book");
+    assert!(book.kind.is_book_like());
+    let h: String = book.chapters.iter().map(|c| c.html.as_str()).collect();
+    assert!(h.contains(r#"</p><aside class="sidenote" role="note"><p>Notebook 1.1 Background</p></aside>"#), "{h}");
+    // (once: not also as a paragraph of the text)
+    assert_eq!(h.matches("Notebook 1.1").count(), 1, "{h}");
+}
+
+#[test]
+fn a_superscript_on_a_line_of_its_own_goes_back_to_its_line() {
+    let mut ls = vec![line("we can improve no further.", 0, 72.0, 100.0, 10.0), line("2", 0, 72.0 + 0.5 * 10.0 * 26.0 + 0.5, 99.0, 6.0)];
+    ls[1].bbox = R::new(ls[1].bbox.x0, 99.0, ls[1].bbox.x0 + 3.0, 105.0);
+    notes::attach_markers(&mut ls, 10.0);
+    assert_eq!(ls.len(), 1);
+    assert_eq!(ls[0].text, "we can improve no further.2");
+    assert!(ls[0].spans.last().unwrap().sup);
+}

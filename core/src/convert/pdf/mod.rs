@@ -9,6 +9,7 @@
 pub mod book;
 pub mod extract;
 pub mod layout;
+pub mod notes;
 pub mod refs;
 pub mod symbols;
 
@@ -386,6 +387,40 @@ fn debug_dump(paras: &[Para]) {
     }
 }
 
+/// The notes at the end of the chapters their markers are in, each as an `<aside>` whose label leads
+/// back to the marker; a note whose marker wasn't found goes to the chapter it was found in.
+/// (`notes`: id, label, the note's HTML, the chapter it was found in.)
+pub fn place_footnotes(notes: &[(String, String, String, usize)], chapters: &mut [Chapter]) {
+    if notes.is_empty() || chapters.is_empty() {
+        return;
+    }
+    let mut by_chapter: Vec<(usize, String)> = Vec::new();
+    for (id, label, html, home) in notes {
+        let k = chapters.iter().position(|c| c.html.contains(&format!("href=\"#{id}\""))).unwrap_or((*home).min(chapters.len() - 1));
+        let label = if chapters[k].html.contains(&format!("id=\"fnref-{id}\"")) {
+            format!("<a href=\"#fnref-{id}\">{}</a>", esc(label))
+        } else {
+            format!("<span class=\"fn-label\">{}</span>", esc(label))
+        };
+        let aside = format!("<aside epub:type=\"footnote\" role=\"doc-footnote\" id=\"{id}\" class=\"footnote\"><p>{label} {html}</p></aside>");
+        match by_chapter.iter_mut().find(|x| x.0 == k) {
+            Some(x) => x.1 += &aside,
+            None => by_chapter.push((k, aside)),
+        }
+    }
+    for (k, html) in by_chapter {
+        let h = &mut chapters[k].html;
+        let block = format!("<div class=\"footnotes\">{html}</div>");
+        if h.ends_with("</section>") {
+            h.truncate(h.len() - "</section>".len());
+            *h += &block;
+            *h += "</section>";
+        } else {
+            *h += &block;
+        }
+    }
+}
+
 /// A PDF's reference list: its entries keep the numbers they are printed with.
 const REFS_OL: &str = "<ol class=\"refs\" style=\"list-style-type: none; padding-left: 0\">";
 
@@ -429,10 +464,15 @@ pub fn assemble_book(
     for p in paras {
         let text = p.text();
         if p.kind == Kind::Text && text.chars().next().is_some_and(|c| c.is_lowercase()) {
-            // (past figures, legends, front matter and boxes set between the columns)
-            let skip = |q: &Para| matches!(q.kind, Kind::Figure | Kind::Table | Kind::Caption | Kind::Front) || q.boxed != p.boxed;
+            // (past figures, legends, front matter, notes and boxes set between the columns)
+            let skip = |q: &Para| {
+                matches!(q.kind, Kind::Figure | Kind::Table | Kind::Caption | Kind::Front | Kind::Footnote | Kind::Sidenote) || q.boxed != p.boxed
+            };
             if let Some(j) = merged.iter().rposition(|q| !skip(q)) {
-                let between = merged[j + 1..].iter().filter(|q| q.boxed == p.boxed).count();
+                let between = merged[j + 1..]
+                    .iter()
+                    .filter(|q| q.boxed == p.boxed && !matches!(q.kind, Kind::Footnote | Kind::Sidenote))
+                    .count();
                 if merged[j].kind == Kind::Text && between <= 3 && !ends_sentence(&merged[j].text()) {
                     merged[j].lines.extend(p.lines);
                     continue;
@@ -581,6 +621,8 @@ pub fn assemble_book(
     let missing_title = meta.title.is_empty();
     let mut open_box: Option<usize> = None;
     let mut in_list = false;
+    // footnotes: each goes to the end of the chapter its marker is in (else the one it was found in)
+    let mut footnotes: Vec<(String, String, String, usize)> = Vec::new();
     for (i, p) in merged.iter().enumerate() {
         // appends to the current chapter, opening "Main text" if there is none
         macro_rules! append {
@@ -644,10 +686,20 @@ pub fn assemble_book(
             }
             continue;
         }
+        if p.kind == Kind::Footnote {
+            if let Some(id) = &p.note_id {
+                footnotes.push((id.clone(), p.note_label.clone().unwrap_or_default(), styled(p), chapters.len()));
+            }
+            continue;
+        }
         // reference entries: one list item each (numbered as printed)
         if in_list && !ref_entry[i] {
             append!("</ol>".to_string());
             in_list = false;
+        }
+        if p.kind == Kind::Sidenote {
+            append!(format!("<aside class=\"sidenote\" role=\"note\"><p>{}</p></aside>", styled(p)));
+            continue;
         }
         if ref_entry[i] {
             if !in_list {
@@ -765,6 +817,7 @@ pub fn assemble_book(
             Kind::Caption => {
                 append!(format!("<p class=\"caption\">{}</p>", styled(p)));
             }
+            Kind::Footnote | Kind::Sidenote => {}
             Kind::Text => {
                 if abstract_done && !intro_done && last_kind == Some(Kind::Abstract) && !has_intro && p.boxed.is_none() {
                     let id = next_id();
@@ -774,7 +827,7 @@ pub fn assemble_book(
                 append!(format!("<p>{}</p>", styled(p)));
             }
         }
-        if p.kind != Kind::Front {
+        if !matches!(p.kind, Kind::Front | Kind::Footnote | Kind::Sidenote) {
             last_kind = Some(p.kind);
         }
     }
@@ -787,6 +840,7 @@ pub fn assemble_book(
         }
     }
     close(&mut cur, &mut chapters);
+    place_footnotes(&footnotes, &mut chapters);
     if is_book {
         // outline entries with nothing under them (a "Contents" entry, its pages left out)
         chapters.retain(|c| re!(r"<(p|img|li|figure|table|div)\b").is_match(&c.html));

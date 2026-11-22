@@ -73,6 +73,8 @@ pub struct Span {
     pub italic: bool,
     pub sup: bool,
     pub sub: bool,
+    /// A footnote's marker in the text: the note's id (`notes.rs`)
+    pub note_ref: Option<String>,
 }
 
 impl Span {
@@ -106,6 +108,10 @@ pub enum Kind {
     Equation,
     Figure,
     Table,
+    /// a footnote, out of the running text (`notes.rs`)
+    Footnote,
+    /// a book's margin note, after the paragraph level with it
+    Sidenote,
 }
 
 #[derive(Debug, Clone)]
@@ -118,11 +124,14 @@ pub struct Para {
     pub region: Option<R>,
     /// The framed or shaded box (sidebar) the paragraph sits in, numbered per document.
     pub boxed: Option<usize>,
+    /// A footnote's id and its marker (the marker is no longer in its text)
+    pub note_id: Option<String>,
+    pub note_label: Option<String>,
 }
 
 impl Para {
     pub fn new(lines: Vec<PLine>, page: usize, kind: Kind) -> Para {
-        Para { lines, page, kind, level: 0, asset: None, region: None, boxed: None }
+        Para { lines, page, kind, level: 0, asset: None, region: None, boxed: None, note_id: None, note_label: None }
     }
     pub fn text(&self) -> String {
         join_lines(self.lines.iter().map(|l| l.text.as_str()))
@@ -164,7 +173,7 @@ pub(crate) fn first_max<T, K: PartialOrd>(v: &[T], key: impl Fn(&T) -> K) -> Opt
     best.map(|b| b.0)
 }
 
-fn trim(s: &str) -> &str {
+pub(crate) fn trim(s: &str) -> &str {
     super::super::trim_ws(s)
 }
 
@@ -845,8 +854,15 @@ impl<'a> Analyzer<'a> {
 
     pub fn analyze(&mut self) -> Vec<Para> {
         self.decide_kind();
-        let page_lines: Vec<Vec<PLine>> =
-            self.pages.iter().map(|p| p.lines.iter().filter(|l| !self.is_noise(l)).cloned().collect()).collect();
+        let page_lines: Vec<Vec<PLine>> = self
+            .pages
+            .iter()
+            .map(|p| {
+                let mut ls = p.lines.clone();
+                super::notes::attach_markers(&mut ls, self.body_size);
+                ls.into_iter().filter(|l| !self.is_noise(l)).collect()
+            })
+            .collect();
         let mut page_regions: Vec<Vec<Region>> =
             page_lines.iter().enumerate().map(|(i, ls)| self.find_regions(i, ls)).collect();
         // logos and banners that sit in the same place on many pages are not figures
@@ -871,6 +887,7 @@ impl<'a> Analyzer<'a> {
             rs.retain(|g| counts.get(&key(&g.rect)).copied().unwrap_or(0) < limit);
         }
         let mut all: Vec<Para> = Vec::new();
+        let mut sidenotes: Vec<Para> = Vec::new();
         let n = self.pages.len();
         for pno in 0..n {
             let lines = &page_lines[pno];
@@ -895,12 +912,24 @@ impl<'a> Analyzer<'a> {
                 })
                 .cloned()
                 .collect();
+            // a book's margin notes: out of the way of the page's paragraphs, placed after classifying
+            let free = if self.book.kind.is_book_like() {
+                let (rest, notes) = self.margin_notes(pno, free);
+                sidenotes.extend(notes);
+                rest
+            } else {
+                free
+            };
             all.extend(self.paragraphs(pno, free, regions));
             if pno % 5 == 4 {
                 (self.log)(&format!("Laying out page {} of {}", pno + 1, n));
             }
         }
-        self.classify(all)
+        if !sidenotes.is_empty() {
+            (self.log)(&format!("Margin notes: {}", sidenotes.len()));
+        }
+        let classified = self.classify(all);
+        self.find_footnotes(super::notes::place_sidenotes(classified, sidenotes))
     }
 
     pub fn paragraphs(&self, pno: usize, input: Vec<PLine>, regions: Vec<Region>) -> Vec<Para> {
@@ -1805,7 +1834,11 @@ pub fn styled(p: &Para) -> String {
             let trail: String = s.text.chars().rev().take_while(|&c| c == ' ').collect();
             let mut c = esc(core);
             let n = count(core);
-            if s.sup && n < 25 {
+            if let Some(id) = &s.note_ref {
+                c = format!(
+                    "<a epub:type=\"noteref\" role=\"doc-noteref\" href=\"#{id}\" id=\"fnref-{id}\" class=\"fnref\">{c}</a>"
+                );
+            } else if s.sup && n < 25 {
                 c = format!("<sup>{c}</sup>");
             } else if s.sub && n < 25 {
                 c = format!("<sub>{c}</sub>");

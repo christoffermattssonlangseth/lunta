@@ -83,6 +83,8 @@ final class ArxivConverter {
     private var headings: [Heading] = []
     private(set) var missingFigures = 0
     private var autoID = 0
+    /// footnotes of the chapter being rendered, as asides for its end
+    private var notes = ""
 
     init(root: XNode, base: URL) {
         self.root = root
@@ -116,7 +118,7 @@ final class ArxivConverter {
         if let ab = article.descendants("div").first(where: { $0.hasClass("ltx_abstract") }) {
             headings = [Heading(level: 1, id: "abstract", title: "Abstract")]
             let inner = ab.children.filter { !($0.name.hasPrefix("h") && $0.hasClass("ltx_title")) }.map { render($0, depth: 1) }.joined()
-            out.append(Chapter(title: "Abstract", html: "<section><h1 id=\"abstract\">Abstract</h1>\(inner)</section>", headings: headings))
+            out.append(Chapter(title: "Abstract", html: withNotes("<section><h1 id=\"abstract\">Abstract</h1>\(inner)</section>"), headings: headings))
         } else if !meta.abstract.isEmpty {
             out.append(Chapter(title: "Abstract", html: "<section><h1 id=\"abstract\">Abstract</h1><p>\(esc(meta.abstract))</p></section>",
                                headings: [Heading(level: 1, id: "abstract", title: "Abstract")]))
@@ -127,7 +129,7 @@ final class ArxivConverter {
                 let text = pending.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if text.count > 500 {
-                    out.append(Chapter(title: "Main text", html: "<section><h1 id=\"main\">Main text</h1>\(pending)</section>",
+                    out.append(Chapter(title: "Main text", html: withNotes("<section><h1 id=\"main\">Main text</h1>\(pending)</section>"),
                                        headings: [Heading(level: 1, id: "main", title: "Main text")]))
                 } else if !text.isEmpty, let last = out.indices.last {
                     // a short note before the first section (e.g. a licence line): tuck it under the abstract
@@ -138,7 +140,7 @@ final class ArxivConverter {
                 let html = render(c, depth: 0)
                 let title = headings.first?.title ?? "Section"
                 if headings.isEmpty { headings = [Heading(level: 1, id: c.attr("id") ?? nextID(), title: title)] }
-                out.append(Chapter(title: title, html: html, headings: headings))
+                out.append(Chapter(title: title, html: withNotes(html), headings: headings))
             } else if skipBlock(c) || (c.name == "div" && c.hasClass("ltx_abstract")) || c.name.hasPrefix("h") {
                 continue
             } else {
@@ -149,6 +151,15 @@ final class ArxivConverter {
     }
 
     private func nextID() -> String { autoID += 1; return "ax\(autoID)" }
+
+    /// The chapter with the footnotes rendered since the last one at its end.
+    private func withNotes(_ html: String) -> String {
+        guard !notes.isEmpty else { return html }
+        defer { notes = "" }
+        let block = "<div class=\"footnotes\">\(notes)</div>"
+        guard html.hasSuffix("</section>") else { return html + block }
+        return String(html.dropLast("</section>".count)) + block + "</section>"
+    }
 
     private func skipBlock(_ n: XNode) -> Bool {
         ["ltx_authors", "ltx_dates", "ltx_page_footer", "ltx_page_header", "ltx_pagination", "ltx_keywords_hidden",
@@ -166,12 +177,17 @@ final class ArxivConverter {
         if skipBlock(n) { return "" }
         if n.name == "math" { return mathml(n) }
         if n.name == "svg" { return svg(n) }
-        // footnotes: the mark becomes a superscript, the text follows in small type
+        // footnotes: the mark links to the note, which goes to the end of the chapter (as in a PDF's view)
         if n.hasClass("ltx_note") {
             let content = n.descendants("span").first { $0.hasClass("ltx_note_content") }
             guard let content else { return "" }
             let text = content.children.filter { !$0.hasClass("ltx_note_mark") && !$0.hasClass("ltx_tag") }.map { render($0, depth: depth) }.joined()
-            return " <small class=\"fn\">(\(text.trimmingCharacters(in: .whitespaces)))</small>"
+                .trimmingCharacters(in: .whitespaces)
+            let mark = n.descendants("sup").first { $0.hasClass("ltx_note_mark") }?.plain.trimmingCharacters(in: .whitespaces) ?? ""
+            let id = "fn-" + (n.attr("id") ?? nextID())
+            let label = mark.isEmpty ? "*" : mark
+            notes += "<aside epub:type=\"footnote\" role=\"doc-footnote\" id=\"\(esc(id))\" class=\"footnote\"><p><a href=\"#fnref-\(esc(id))\">\(esc(label))</a> \(text)</p></aside>"
+            return "<a epub:type=\"noteref\" role=\"doc-noteref\" href=\"#\(esc(id))\" id=\"fnref-\(esc(id))\" class=\"fnref\">\(esc(label))</a>"
         }
         switch n.name {
         case "h1", "h2", "h3", "h4", "h5", "h6":

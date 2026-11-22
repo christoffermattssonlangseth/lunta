@@ -252,6 +252,11 @@ enum Style {
     .frontmatter { font-size: 0.82em; color: #444; }
     .box { border: 1px solid #ccc; padding: 0.5em 0.8em; margin: 1em 0; background: #f7f7f7; }
     .refs, .notes { font-size: 0.85em; }
+    a.fnref { vertical-align: super; font-size: 0.75em; line-height: 0; text-decoration: none; }
+    .footnotes { margin-top: 1.5em; border-top: 1px solid #bbb; padding-top: 0.4em; font-size: 0.85em; }
+    aside.footnote p { margin: 0 0 0.4em 0; }
+    aside.sidenote { font-size: 0.8em; color: #666; margin: 0 0 0.7em 1.2em; padding-left: 0.5em; border-left: 2px solid #ccc; }
+    aside.sidenote p { margin: 0; }
     ol.refs li { margin-bottom: 0.45em; }
     .missing { color: #888; font-style: italic; }
     .smallcaps { font-variant: small-caps; }

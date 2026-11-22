@@ -23,7 +23,14 @@ extension ReaderAssets {
         '.m-cite-btn { font: 600 13px -apple-system, "Helvetica Neue", sans-serif; padding: 5px 10px; border-radius: 8px; text-decoration: none; ' +
         'color: #2a6478; background: rgba(42,100,120,.10); -webkit-tap-highlight-color: transparent; }' +
         '.m-cite-sep { border-top: 1px solid rgba(127,127,127,.25); margin: 10px 0; } ' +
-        '@media (prefers-color-scheme: dark) { .m-cite { box-shadow: 0 10px 30px rgba(0,0,0,.6); } .m-cite-btn { color: #9ec9d8; background: rgba(158,201,216,.14); } }';
+        '@media (prefers-color-scheme: dark) { .m-cite { box-shadow: 0 10px 30px rgba(0,0,0,.6); } .m-cite-btn { color: #9ec9d8; background: rgba(158,201,216,.14); } }' +
+        // footnotes (a PDF's, an arXiv paper's): the marker, the notes at the chapter's end, margin notes
+        'a.fnref { vertical-align: super; font-size: .72em; line-height: 0; text-decoration: none; color: #2a6478; }' +
+        '.footnotes { margin-top: 1.6em; padding-top: .5em; border-top: 1px solid rgba(127,127,127,.35); font-size: .85em; }' +
+        '.footnotes::before { content: "Notes"; display: block; font: 600 .8em -apple-system, "Helvetica Neue", sans-serif; letter-spacing: .05em; text-transform: uppercase; opacity: .6; margin-bottom: .4em; }' +
+        'aside.footnote p { margin: 0 0 .45em; } aside.footnote > p > a:first-child, aside.footnote .fn-label { text-decoration: none; font-weight: 600; }' +
+        'aside.sidenote { font-size: .8em; opacity: .72; margin: .1em 0 .8em 1.2em; padding-left: .6em; border-left: 2px solid rgba(127,127,127,.35); } aside.sidenote p { margin: 0; }' +
+        '@media (prefers-color-scheme: dark) { a.fnref { color: #9ec9d8; } }';
       document.documentElement.appendChild(st);
 
       var pop = null, pending = null;   // the card; the Add button pressed last
@@ -62,6 +69,23 @@ extension ReaderAssets {
           inRefs = !!(hd && /^\s*(references|bibliography|literature cited|works cited|references and notes)\b/i.test(hd.textContent));
         }
         return inRefs ? (t.closest('li') || t) : null;
+      }
+
+      // A footnote a link points to: an <aside role="doc-footnote"> (reading views made from a PDF or
+      // an arXiv page), a note of a JATS paper's notes (ol.notes, div.notes); null for anything else
+      // and for the note's own link back to its marker
+      var NOTE = '[role="doc-footnote"], [role="doc-endnote"], aside.footnote, li.footnote, div.notes, ol.notes';
+      function noteTarget(a){
+        var h = a.getAttribute('href') || '', i = h.indexOf('#');
+        if (i < 0) return null;
+        var id = h.slice(i + 1); try { id = decodeURIComponent(id); } catch (x) {}
+        if (!id) return null;
+        var t = byId(id); if (!t || !t.closest) return null;
+        var n = t.closest(NOTE);
+        if (n && n.matches('ol.notes')) n = t.closest('li');
+        if (!n && (a.getAttribute('role') === 'doc-noteref' || /(^|\s)fnref(\s|$)/.test(a.getAttribute('class') || ''))) n = t;
+        if (!n || n.contains(a)) return null;
+        return n;
       }
 
       // A reference without the publisher's link buttons: bioRxiv/HighWire pages put "↵" (back to
@@ -329,8 +353,38 @@ extension ReaderAssets {
         pop.appendChild(acts);
         }
         refs.forEach(function(ref, k){ if (k) { var hr = document.createElement('div'); hr.className = 'm-cite-sep'; pop.appendChild(hr); } section(ref); });
+        place(a);
+      }
 
-        // outside <body>: never part of the page text
+      // the card for a footnote: the note's text and "Show in Notes"
+      function openNote(a, note){
+        close();
+        pop = document.createElement('div'); pop.className = 'm-cite m-note';
+        var bs = getComputedStyle(document.body);
+        var bg = bs.backgroundColor; if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') bg = getComputedStyle(document.documentElement).backgroundColor;
+        pop.style.background = (bg && bg !== 'rgba(0, 0, 0, 0)') ? bg : '#fff';
+        pop.style.color = bs.color;
+        var body = document.createElement('div'); body.className = 'm-cite-ref';
+        var copy = note.cloneNode(true);
+        copy.querySelectorAll('[id]').forEach(function(x){ x.removeAttribute('id'); });
+        // (not its label leading back to the marker)
+        copy.querySelectorAll('a[href^="#fnref"], .fn-label').forEach(function(x){ x.remove(); });
+        body.innerHTML = copy.innerHTML;
+        pop.appendChild(body);
+        var acts = document.createElement('div'); acts.className = 'm-cite-actions';
+        var go = document.createElement('a'); go.className = 'm-cite-btn'; go.textContent = 'Show in Notes'; go.setAttribute('href', '#');
+        go.addEventListener('click', function(ev){
+          ev.preventDefault(); ev.stopPropagation(); close();
+          if (note.ownerDocument !== document && window.luntaShelf) window.location.href = window.luntaShelf.href + (note.id ? '#' + note.id : '');
+          else if (note.id) location.hash = note.id; else note.scrollIntoView({ block: 'center' });
+        });
+        acts.appendChild(go);
+        pop.appendChild(acts);
+        place(a);
+      }
+
+      // outside <body>: never part of the page text; below the anchor, or above it near the bottom
+      function place(a){
         document.documentElement.appendChild(pop);
         var r = a.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
         var w = pop.offsetWidth, h = pop.offsetHeight;
@@ -344,8 +398,10 @@ extension ReaderAssets {
         var wasOpen = !!pop;
         close();
         var a = ev.target.closest && ev.target.closest('a[href]');
-        var ref = a && !document.body.classList.contains('listening') ? refTarget(a) : null;
         var sel = window.getSelection();
+        var note = a && !document.body.classList.contains('listening') ? noteTarget(a) : null;
+        if (note && !(sel && !sel.isCollapsed)) { ev.preventDefault(); ev.stopPropagation(); openNote(a, note); return; }
+        var ref = a && !document.body.classList.contains('listening') ? refTarget(a) : null;
         if (ref && !(sel && !sel.isCollapsed)) { ev.preventDefault(); ev.stopPropagation(); open(a, group(a, ref)); return; }
         // a citation that isn't a link (reading views made from a PDF): a superscript "1,2" / "11–13"
         // or "[1-3]" in the text, when the paper has a numbered reference list

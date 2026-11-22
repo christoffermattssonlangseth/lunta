@@ -149,11 +149,13 @@ pub struct ArxivConverter<'a> {
     headings: Vec<Heading>,
     pub missing_figures: usize,
     auto_id: usize,
+    /// footnotes of the chapter being rendered, as asides for its end
+    notes: String,
 }
 
 impl<'a> ArxivConverter<'a> {
     pub fn new(doc: &'a Doc, base: Url) -> Self {
-        ArxivConverter { root: doc.root(), base, images: HashMap::new(), headings: vec![], missing_figures: 0, auto_id: 0 }
+        ArxivConverter { root: doc.root(), base, images: HashMap::new(), headings: vec![], missing_figures: 0, auto_id: 0, notes: String::new() }
     }
 
     fn resolve(&self, src: &str) -> Option<Url> {
@@ -203,7 +205,7 @@ impl<'a> ArxivConverter<'a> {
                 .collect();
             out.push(Chapter {
                 title: "Abstract".into(),
-                html: format!("<section><h1 id=\"abstract\">Abstract</h1>{inner}</section>"),
+                html: self.with_notes(format!("<section><h1 id=\"abstract\">Abstract</h1>{inner}</section>")),
                 headings: std::mem::take(&mut self.headings),
             });
         } else if !meta.abstract_text.is_empty() {
@@ -227,7 +229,7 @@ impl<'a> ArxivConverter<'a> {
                 if text.chars().count() > 500 {
                     out.push(Chapter {
                         title: "Main text".into(),
-                        html: format!("<section><h1 id=\"main\">Main text</h1>{pending}</section>"),
+                        html: self.with_notes(format!("<section><h1 id=\"main\">Main text</h1>{pending}</section>")),
                         headings: vec![Heading { level: 1, id: "main".into(), title: "Main text".into() }],
                     });
                 } else if !text.is_empty() {
@@ -246,6 +248,7 @@ impl<'a> ArxivConverter<'a> {
                     let id = c.attr("id").map(String::from).unwrap_or_else(|| self.next_id());
                     self.headings = vec![Heading { level: 1, id, title: title.clone() }];
                 }
+                let html = self.with_notes(html);
                 out.push(Chapter { title, html, headings: std::mem::take(&mut self.headings) });
             } else if skip_block(c) || (c.name() == "div" && c.has_class("ltx_abstract")) || c.name().starts_with('h') {
                 continue;
@@ -259,6 +262,18 @@ impl<'a> ArxivConverter<'a> {
     fn next_id(&mut self) -> String {
         self.auto_id += 1;
         format!("ax{}", self.auto_id)
+    }
+
+    /// The chapter with the footnotes rendered since the last one at its end.
+    fn with_notes(&mut self, html: String) -> String {
+        if self.notes.is_empty() {
+            return html;
+        }
+        let block = format!("<div class=\"footnotes\">{}</div>", std::mem::take(&mut self.notes));
+        match html.strip_suffix("</section>") {
+            Some(h) => format!("{h}{block}</section>"),
+            None => html + &block,
+        }
     }
 
     /// XHTML for a node. `depth` is the section depth (0 = chapter level).
@@ -277,7 +292,7 @@ impl<'a> ArxivConverter<'a> {
             svg(n, true, &mut s);
             return s;
         }
-        // footnotes: the mark becomes a superscript, the text follows in small type
+        // footnotes: the mark links to the note, which goes to the end of the chapter (as in a PDF's view)
         if n.has_class("ltx_note") {
             let Some(content) = n.descendants("span").into_iter().find(|s| s.has_class("ltx_note_content")) else {
                 return String::new();
@@ -287,7 +302,16 @@ impl<'a> ArxivConverter<'a> {
                 .filter(|c| !c.has_class("ltx_note_mark") && !c.has_class("ltx_tag"))
                 .map(|c| self.render(c, depth))
                 .collect();
-            return format!(" <small class=\"fn\">({})</small>", trim_ws(&text));
+            let mark = n.descendants("sup").into_iter().find(|s| s.has_class("ltx_note_mark")).map(|s| trim_ws(&s.plain()).to_string()).unwrap_or_default();
+            let id = format!("fn-{}", n.attr("id").map(String::from).unwrap_or_else(|| self.next_id()));
+            let label = if mark.is_empty() { "*".to_string() } else { mark };
+            self.notes += &format!(
+                "<aside epub:type=\"footnote\" role=\"doc-footnote\" id=\"{0}\" class=\"footnote\"><p><a href=\"#fnref-{0}\">{1}</a> {2}</p></aside>",
+                esc(&id),
+                esc(&label),
+                trim_ws(&text)
+            );
+            return format!("<a epub:type=\"noteref\" role=\"doc-noteref\" href=\"#{0}\" id=\"fnref-{0}\" class=\"fnref\">{1}</a>", esc(&id), esc(&label));
         }
         match n.name() {
             "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {

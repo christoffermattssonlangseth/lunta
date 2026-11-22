@@ -604,7 +604,7 @@ fn make_line(chars: Vec<C>, pno: usize) -> Option<PLine> {
             n_bold += st.bold as usize;
             n_math += st.math as usize;
         }
-        let sp = Span { text: ch.to_string(), bold: st.bold, italic: st.italic, sup, sub };
+        let sp = Span { text: ch.to_string(), bold: st.bold, italic: st.italic, sup, sub, note_ref: None };
         match spans.last_mut() {
             Some(l)
                 if (space && !l.sup && !l.sub)

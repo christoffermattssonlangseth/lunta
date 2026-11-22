@@ -15,6 +15,8 @@ typealias PFont = NSFont
 struct Span {
     var text: String
     var bold = false, italic = false, sup = false, sub = false
+    /// A footnote's marker in the text: the note's id (PDFNotes.swift)
+    var noteRef: String?
 }
 
 final class PLine {
@@ -33,7 +35,7 @@ final class PLine {
 }
 
 final class Para {
-    enum Kind { case text, heading, caption, front, title, abstract, equation, figure, table }
+    enum Kind { case text, heading, caption, front, title, abstract, equation, figure, table, footnote, sidenote }
     var lines: [PLine]
     let page: Int
     var kind: Kind
@@ -42,6 +44,8 @@ final class Para {
     var region: R?
     /// The framed or shaded box (sidebar) the paragraph sits in, numbered per document.
     var boxed: Int?
+    /// A footnote's id and its marker (the marker is no longer in its text)
+    var noteID: String?, noteLabel: String?
 
     init(_ lines: [PLine], page: Int, kind: Kind = .text, region: R? = nil) {
         self.lines = lines; self.page = page; self.kind = kind; self.region = region
@@ -809,6 +813,27 @@ final class PDFAnalyzer {
         running = Set(c.filter { Double($0.value) >= max(2, 0.3 * Double(n)) }.keys)
     }
 
+    /// A superscript at the end of a line that the PDF gives as a line of its own (a footnote's or a
+    /// citation's "2" after "outlier."): put back at the end of its line, as a superscript, rather than
+    /// dropped with the page numbers.
+    static func attachMarkers(_ lines: [PLine], body: CGFloat) -> [PLine] {
+        var gone = Set<ObjectIdentifier>()
+        for l in lines {
+            let t = l.text.trimmingCharacters(in: .whitespaces)
+            guard t.count <= 3, t.matches(#"^(\d{1,3}|[*†‡§¶‖]{1,3}|[a-z])$"#), l.size > 0, l.size < 0.85 * body else { continue }
+            guard let host = lines.first(where: { h in
+                h !== l && !gone.contains(ObjectIdentifier(h)) && h.text.count > 3 && h.size >= 0.85 * body
+                    && l.bbox.x0 >= h.bbox.x1 - 1 && l.bbox.x0 - h.bbox.x1 < 0.6 * h.size
+                    && l.bbox.y0 >= h.bbox.y0 - 0.5 * h.size && l.bbox.y1 <= h.bbox.y1 + 1 && (l.bbox.y0 + l.bbox.y1) / 2 < (h.bbox.y0 + h.bbox.y1) / 2
+            }) else { continue }
+            host.text += t
+            host.spans.append(Span(text: t, sup: true))
+            host.bbox = host.bbox.union(l.bbox)
+            gone.insert(ObjectIdentifier(l))
+        }
+        return gone.isEmpty ? lines : lines.filter { !gone.contains(ObjectIdentifier($0)) }
+    }
+
     func isNoise(_ l: PLine) -> Bool {
         if !dropped.isEmpty && dropped.contains(ObjectIdentifier(l)) { return true }
         let t = l.text.trimmingCharacters(in: .whitespaces)
@@ -1131,7 +1156,8 @@ final class PDFAnalyzer {
         extract()
         decideKind()
         var all: [Para] = []
-        let pageLines = pagesLines.map { $0.filter { !isNoise($0) } }
+        var sidenotes: [Para] = []
+        let pageLines = pagesLines.map { Self.attachMarkers($0, body: bodySize).filter { !isNoise($0) } }
         var pageRegions = pageLines.indices.map { findRegions($0, pageLines[$0]) }
         // logos and banners that sit in the same place on many pages are not figures
         func key(_ r: R) -> String { "\(Int(r.x0 / 6)),\(Int(r.y0 / 6)),\(Int(r.x1 / 6)),\(Int(r.y1 / 6))" }
@@ -1149,16 +1175,23 @@ final class PDFAnalyzer {
                     render(pno, rr, photo: photo, name: "p\(pno + 1)-\(regions[i].kind == .table ? "table" : "figure")\(i + 1)")
                 }
             }
-            let free = lines.filter { l in
+            var free = lines.filter { l in
                 !regions.contains { g in
                     g.rect.contains(l.bbox, tol: 3) || (l.bbox.area > 0 && g.rect.intersects(l.bbox)
                         && g.rect.intersection(l.bbox).area > 0.6 * l.bbox.area)
                 }
             }
+            // a book's margin notes: out of the way of the page's paragraphs, placed after classifying
+            if kind.isBookLike {
+                let (rest, notes) = marginNotes(pno, free)
+                free = rest
+                sidenotes += notes
+            }
             all += paragraphs(pno, free, regions)
             if pno % 5 == 4 { log("Laying out page \(pno + 1) of \(doc.pageCount)") }
         }
-        return classify(all)
+        if !sidenotes.isEmpty { log("Margin notes: \(sidenotes.count)") }
+        return findFootnotes(Self.placeSidenotes(classify(all), sidenotes))
     }
 
     func paragraphs(_ pno: Int, _ input: [PLine], _ regions: [Region]) -> [Para] {
@@ -1670,7 +1703,10 @@ final class PDFAnalyzer {
                 if core.isEmpty { h += esc(s.text); continue }
                 let lead = String(s.text.prefix { $0 == " " }), trail = String(s.text.reversed().prefix { $0 == " " })
                 var c = esc(core)
-                if s.sup && core.count < 25 { c = "<sup>\(c)</sup>" }
+                if let id = s.noteRef {
+                    c = "<a epub:type=\"noteref\" role=\"doc-noteref\" href=\"#\(id)\" id=\"fnref-\(id)\" class=\"fnref\">\(c)</a>"
+                }
+                else if s.sup && core.count < 25 { c = "<sup>\(c)</sup>" }
                 else if s.sub && core.count < 25 { c = "<sub>\(c)</sub>" }
                 else {
                     if s.bold && !paraBold { c = "<strong>\(c)</strong>" }
@@ -1768,10 +1804,10 @@ enum PDFBook {
         // merge paragraphs split across columns/pages
         var merged: [Para] = []
         for p in paras {
-            // (past figures, legends, front matter and boxes set between the columns)
+            // (past figures, legends, front matter, notes and boxes set between the columns)
             if p.kind == .text, p.text.first?.isLowercase == true,
-               let j = merged.lastIndex(where: { ![.figure, .table, .caption, .front].contains($0.kind) && $0.boxed == p.boxed }),
-               merged[j].kind == .text, merged[(j + 1)...].filter({ $0.boxed == p.boxed }).count <= 3 {
+               let j = merged.lastIndex(where: { ![.figure, .table, .caption, .front, .footnote, .sidenote].contains($0.kind) && $0.boxed == p.boxed }),
+               merged[j].kind == .text, merged[(j + 1)...].filter({ $0.boxed == p.boxed && $0.kind != .footnote && $0.kind != .sidenote }).count <= 3 {
                 let q = merged[j]
                 if !(q.text.hasSuffix(".") || q.text.hasSuffix("?") || q.text.hasSuffix("!") || q.text.hasSuffix(":")) {
                     q.lines += p.lines
@@ -1875,6 +1911,8 @@ enum PDFBook {
         let missingTitle = meta.title.isEmpty
         var openBox: Int?
         var inList = false
+        // footnotes: each goes to the end of the chapter its marker is in (else the one it was found in)
+        var footnotes: [(id: String, label: String, html: String, home: Int)] = []
         for (i, p) in merged.enumerated() {
             if let plan {
                 // the outline's entries that start here
@@ -1904,8 +1942,16 @@ enum PDFBook {
                 }
                 continue
             }
+            if p.kind == .footnote, let id = p.noteID {
+                footnotes.append((id, p.noteLabel ?? "", an.styled(p), chapters.count))
+                continue
+            }
             // reference entries: one list item each (numbered as printed)
             if inList && !refEntry[i] { append("</ol>"); inList = false }
+            if p.kind == .sidenote {
+                append("<aside class=\"sidenote\" role=\"note\"><p>\(an.styled(p))</p></aside>")
+                continue
+            }
             if refEntry[i] {
                 if !inList { append(refsOL); inList = true }
                 append("<li>\(an.styled(p))</li>")
@@ -1982,11 +2028,12 @@ enum PDFBook {
                 introDone = introDone || lastKind == .heading
                 append("<p>\(an.styled(p))</p>")
             }
-            if p.kind != .front { lastKind = p.kind }
+            if p.kind != .front && p.kind != .footnote && p.kind != .sidenote { lastKind = p.kind }
         }
         if inList { cur?.html += "</ol>" }
         if openBox != nil { cur?.html += "</div>" }
         close()
+        placeFootnotes(footnotes, in: &chapters)
         _ = hasAbstractHeading
         if isBook {
             // outline entries with nothing under them (a "Contents" entry, its pages left out)
@@ -2000,6 +2047,25 @@ enum PDFBook {
         if isBook { notes.append("Converted as a \(an.kind.rawValue)\(plan != nil ? ", chapters from the PDF's outline" : ""): \(an.kindReasons.joined(separator: "; ")).") }
         return Book(meta: meta, chapters: chapters, images: images, sourceLabel: "PDF (layout analysis)",
                     notes: notes, kind: an.kind, kindReasons: an.kindReasons)
+    }
+
+    /// The notes at the end of the chapters their markers are in, each as an `<aside>` whose label leads
+    /// back to the marker; a note whose marker wasn't found goes to the chapter it was found in.
+    static func placeFootnotes(_ notes: [(id: String, label: String, html: String, home: Int)], in chapters: inout [Chapter]) {
+        guard !notes.isEmpty, !chapters.isEmpty else { return }
+        var byChapter: [Int: String] = [:]
+        for n in notes {
+            let k = chapters.firstIndex { $0.html.contains("href=\"#\(n.id)\"") } ?? min(n.home, chapters.count - 1)
+            let label = chapters[k].html.contains("id=\"fnref-\(n.id)\"")
+                ? "<a href=\"#fnref-\(n.id)\">\(esc(n.label))</a>" : "<span class=\"fn-label\">\(esc(n.label))</span>"
+            byChapter[k, default: ""] += "<aside epub:type=\"footnote\" role=\"doc-footnote\" id=\"\(n.id)\" class=\"footnote\"><p>\(label) \(n.html)</p></aside>"
+        }
+        for (k, html) in byChapter {
+            var h = chapters[k].html
+            if h.hasSuffix("</section>") { h.removeLast("</section>".count); h += "<div class=\"footnotes\">\(html)</div></section>" }
+            else { h += "<div class=\"footnotes\">\(html)</div>" }
+            chapters[k].html = h
+        }
     }
 
     /// The figures in the PDF by their label ("fig 3", "extended data fig 2", "supplementary fig 1"):

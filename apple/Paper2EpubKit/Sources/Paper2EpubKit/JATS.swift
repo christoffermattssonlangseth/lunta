@@ -337,7 +337,9 @@ final class JATSConverter {
             let t = ch.child("title")?.plain ?? "References"
             return "<section class=\"references\"><h\(min(level, 6))>\(esc(t))</h\(min(level, 6))>\(refItems(ch))</section>"
         case "fn-group", "fn":
-            return "<div class=\"notes\">\(blocks(ch, level: level, skip: ["label"]))</div>"
+            // (a note keeps its id: its markers link to it and open it in the reader's note card)
+            let id = ch.name == "fn" ? ch.attr("id").map { " id=\"\(esc($0))\"" } ?? "" : ""
+            return "<div class=\"notes\"\(id)>\(blocks(ch, level: level, skip: ["label"]))</div>"
         default:
             let inner = inline(ch)
             return inner.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "<p>\(inner)</p>"

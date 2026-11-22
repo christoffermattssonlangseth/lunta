@@ -473,7 +473,11 @@ impl<'a> JatsConverter<'a> {
                 let h = level.min(6);
                 format!("<section class=\"references\"><h{h}>{}</h{h}>{}</section>", esc(&t), self.ref_items(ch))
             }
-            "fn-group" | "fn" => format!("<div class=\"notes\">{}</div>", self.blocks(ch, level, &["label"])),
+            // (a note keeps its id: its markers link to it and open it in the reader's note card)
+            "fn-group" | "fn" => {
+                let id = if ch.name() == "fn" { ch.attr("id").map(|i| format!(" id=\"{}\"", esc(i))).unwrap_or_default() } else { String::new() };
+                format!("<div class=\"notes\"{id}>{}</div>", self.blocks(ch, level, &["label"]))
+            }
             _ => {
                 let inner = self.inline(ch);
                 if inner.trim().is_empty() {

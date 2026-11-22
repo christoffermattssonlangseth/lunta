@@ -291,7 +291,7 @@ enum ReaderAssets {
     (function(){
       window.luntaNarration = function(includeCaptions){
         var out = [], n = 0;
-        var skip = '.references, ol.refs, .refs, .notes, table, .affiliations, .frontmatter, .license, .doi, .journal, nav, .supp';
+        var skip = '.references, ol.refs, .refs, .notes, .footnotes, aside.sidenote, table, .affiliations, .frontmatter, .license, .doi, .journal, nav, .supp';
         var els = document.querySelectorAll('h1, h2, h3, h4, p, li, figcaption, .titlepage .authors');
         for (var i = 0; i < els.length; i++) {
           var el = els[i];
@@ -300,7 +300,7 @@ enum ReaderAssets {
           var tag = el.tagName.toUpperCase();   // XHTML pages report lowercase names
           if (tag === 'LI' && el.querySelector('p')) continue;
           var c = el.cloneNode(true);
-          c.querySelectorAll('sup, .fn, .eqlabel, script, style, img').forEach(function(x){ x.remove(); });
+          c.querySelectorAll('sup, .fn, .fnref, .eqlabel, script, style, img').forEach(function(x){ x.remove(); });
           c.querySelectorAll('math').forEach(function(m){ m.replaceWith(document.createTextNode(' [equation] ')); });
           var t = (c.textContent || '').replace(/\s+/g, ' ').trim();
           if (t.length < 2) continue;
