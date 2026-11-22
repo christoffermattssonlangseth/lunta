@@ -485,7 +485,31 @@ extension PageMessageHandler {
     /// decides whether to turn.
     @MainActor fileprivate func edgeRest(zone: Int) {
         guard canEdgeTurn else { return }
-        webView?.evaluateJavaScript("window.luntaSelectionEdgeTurn ? luntaSelectionEdgeTurn(\(zone)) : 0")
+        webView?.evaluateJavaScript("window.luntaSelectionEdgeTurn ? luntaSelectionEdgeTurn(\(zone)) : 0") { [weak self] result, _ in
+            MainActor.assumeIsolated {
+                // turned: the finger is still down at the page's edge, and with the selection gone
+                // the scroll view would take its next move as a swipe and turn again; no swiping
+                // until the finger is lifted (and a moment after)
+                guard let self, let d = result as? Int, d != 0, let sv = self.webView?.scrollView else { return }
+                self.swipeLocked = true
+                sv.panGestureRecognizer.isEnabled = false
+            }
+        }
+    }
+
+    /// Swiping is off from an edge turn until the dragging finger is lifted.
+    @MainActor private var swipeLocked = false
+
+    /// The finger that dragged the selection is lifted.
+    @MainActor fileprivate func fingerLifted() {
+        guard swipeLocked else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.swipeLocked else { return }
+                self.swipeLocked = false
+                self.webView?.scrollView.panGestureRecognizer.isEnabled = true
+            }
+        }
     }
 
     @MainActor private func syncPage() {
@@ -592,6 +616,7 @@ final class SelectionDragWatcher: UIGestureRecognizer, UIGestureRecognizerDelega
     private func finish(recognizerState: Bool = true) {
         rest?.cancel(); rest = nil
         if dragging { handler?.dragChanged(false) }
+        handler?.fingerLifted()
         dragging = false; start = nil; restPoint = nil; lastAsk = nil; leftSide = true
         // never recognized: it only watches
         if recognizerState, state == .possible { state = .failed }
