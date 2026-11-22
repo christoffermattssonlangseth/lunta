@@ -90,6 +90,11 @@ pub struct SummarySource {
     pub reference: String,
     /// lunta://open?id=<paper>&highlight=<annotation>: the paper, at the highlight.
     pub link: String,
+    /// A region marked on a figure: the start of the figure's caption (`OutlineItem::context`),
+    /// given to the model and counted as the mark's words; "" for highlights and notes.
+    #[serde(default)]
+    #[uniffi(default = "")]
+    pub context: String,
 }
 
 /// What to ask the model, part by part.
@@ -208,6 +213,11 @@ fn part_prompt(part: &[&SummarySource], topic: &str, n: (usize, usize), style: S
         if !q.is_empty() {
             l += &format!(" \"{q}\"");
         }
+        if !s.context.is_empty() {
+            // a region marked on a figure: the model knows the figure only by its caption
+            let c: String = s.context.chars().take(240).collect();
+            l += &format!(" (a region the researcher marked on the figure; its caption: \"{c}\")");
+        }
         if !note.is_empty() {
             l += &format!(" Researcher's note: {note}");
         }
@@ -272,6 +282,7 @@ pub fn plan(items: &[OutlineItem], papers: &[Paper], topic: &str, length: Summar
                 cite_key: p.cite_key.clone(),
                 reference: one_line(&crate::export::citation(p, CitationStyle::Apa)),
                 link: highlight_link(&p.id, &it.annotation_id),
+                context: one_line(&it.context),
             }
         })
         .collect();
@@ -513,7 +524,7 @@ pub const SUPPORT: f64 = 0.6;
 pub fn supported(text: &str, cited: &[&SummarySource]) -> bool {
     let mut vocab: HashSet<String> = HashSet::new();
     for s in cited {
-        for t in tokens(&format!("{} {} {}", s.quote, s.note, s.label)) {
+        for t in tokens(&format!("{} {} {} {}", s.quote, s.note, s.label, s.context)) {
             vocab.insert(t);
         }
     }

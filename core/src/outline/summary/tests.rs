@@ -17,6 +17,7 @@ fn src(n: u32, paper: &str, label: &str, quote: &str, note: &str) -> SummarySour
         cite_key: String::new(),
         reference: format!("{label}. A paper."),
         link: highlight_link(paper, &format!("a{n}")),
+        context: String::new(),
     }
 }
 
@@ -157,7 +158,7 @@ fn long_sets_in_parts_keep_the_original_numbers() {
     // parts of at most 2: paper 1's three highlights don't fit one, paper 2's two make one
     let items: Vec<OutlineItem> = sources()
         .iter()
-        .map(|s| OutlineItem { annotation_id: s.annotation_id.clone(), paper_id: s.paper_id.clone(), quote: s.quote.clone(), note: s.note.clone(), section: String::new(), order: s.number as u64 })
+        .map(|s| OutlineItem { annotation_id: s.annotation_id.clone(), paper_id: s.paper_id.clone(), quote: s.quote.clone(), note: s.note.clone(), section: String::new(), order: s.number as u64, context: s.context.clone() })
         .collect();
     let paper = |id: &str, a: &str, y: &str| Paper { id: id.into(), meta: PaperMeta { title: "T".into(), authors: vec![a.into()], date: y.into(), ..Default::default() }, added: 0, modified: 0, has_pdf: false, has_epub: false, has_audio: false, read: false, starred: false, must_read: false, collections: vec![], tags: vec![], annotation_count: 0, cite_key: String::new() };
     let papers = vec![paper("p1", "Petra Kukanja", "2024"), paper("p2", "Rongqin Ke", "2013")];

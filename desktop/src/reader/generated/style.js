@@ -26,8 +26,17 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     '.m-fc-title { margin-top: 2px; font-size: .8rem; line-height: 1.35; color: rgba(29,29,31,.72); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }' +
     '.m-fc-label::before, .m-fc-title::before { content: attr(data-t); }' +
     '.m-figcard::after { content: "›"; flex: 0 0 auto; font-size: 1.4rem; line-height: 1; color: rgba(127,127,127,.6); padding-left: 2px; }' +
+    // regions marked on the figure (FigureMarks.swift): a small badge, its words from an attribute
+    '.m-fc-marks { display: none; margin-top: 4px; }' +
+    '.m-fc-marks[data-t] { display: inline-flex; align-items: center; gap: 4px; font-size: .7rem; font-weight: 600; line-height: 1;' +
+    ' padding: 3px 7px 3px 5px; border-radius: 999px; color: #6b5310; background: rgba(250,212,77,.3); }' +
+    '.m-fc-marks[data-t]::before { content: ""; width: 9px; height: 7px; border: 1.5px solid currentColor; border-radius: 2px; }' +
+    '.m-fc-marks[data-t]::after { content: attr(data-t); }' +
+    '.m-fc-marks.m-green { color: #2f6b23; background: rgba(140,209,122,.3); } .m-fc-marks.m-blue { color: #1d5b94; background: rgba(122,184,242,.3); }' +
+    '.m-fc-marks.m-pink { color: #8f2a50; background: rgba(245,143,179,.3); }' +
     '@media (prefers-color-scheme: dark) { .m-figcard { background: #0f0f0f; border-color: #2b2b2b; } .m-fc-label { color: #9ec9d8; }' +
-    ' .m-fc-title { color: rgba(216,213,206,.68); } .m-fc-thumb { opacity: .9; border-color: #333; } }';
+    ' .m-fc-title { color: rgba(216,213,206,.68); } .m-fc-thumb { opacity: .9; border-color: #333; }' +
+    ' .m-fc-marks[data-t] { color: #f2d77a; } .m-fc-marks.m-green { color: #a6dc95; } .m-fc-marks.m-blue { color: #9ccaf5; } .m-fc-marks.m-pink { color: #f5a6c3; } }';
   document.documentElement.appendChild(st);
 
   var PRE = '(Extended\\s+Data\\s+|Supplementa(?:ry|l)\\s+|Suppl?\\.\\s*)?';
@@ -253,11 +262,30 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     });
   }
 
-  // what the app needs to show figure i (its images, label, title, caption, highlights in the caption)
+  // where each figure is in the page's text (as a highlight's offset: in a book read chapter by chapter
+  // in the whole book's text), its first character or the text after it: a region marked on the figure
+  // is listed there among the highlights. Figures add no text, so it stays put once known.
+  var figAt = null;
+  function starts(){
+    if (figAt) return figAt;
+    var mb = document.querySelector('meta[name="lunta-text-base"]'), base = mb ? (parseInt(mb.getAttribute('content'), 10) || 0) : 0;
+    var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: function(n){
+      var q = n.parentNode && n.parentNode.nodeName.toLowerCase();
+      return (q === 'script' || q === 'style') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT; } }), n, pos = 0, k = 0;
+    figAt = [];
+    while ((n = w.nextNode())) {
+      while (k < figs.length && (figs[k].contains(n) || (figs[k].compareDocumentPosition(n) & 4))) figAt[k++] = pos + base;
+      pos += n.nodeValue.length;
+    }
+    while (k < figs.length) figAt[k++] = pos + base;
+    return figAt;
+  }
+  // what the app needs to show figure i (its images, label, title, caption, highlights in the caption,
+  // where it is in the text)
   function data(i){
     var f = figs[i], p = parts(f);
     var srcs = Array.prototype.slice.call(f.querySelectorAll('img')).map(function(x){ return x.src; });
-    return { index: i, srcs: srcs, label: p.label, title: p.title, caption: p.caption, marks: p.marks };
+    return { index: i, srcs: srcs, label: p.label, title: p.title, caption: p.caption, marks: p.marks, at: starts()[i] || 0 };
   }
   function all(){ return figs.map(function(_, i){ return data(i); }); }
   function send(m){ try { window.webkit.messageHandlers.fig.postMessage(m); return true; } catch (x) { return false; } }
@@ -272,7 +300,16 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     data: function(i){ return JSON.stringify({ all: all(), index: i }); },
     // the viewer's caption: a selection in it as the page's passage, and the highlights in it now
     select: function(i, from, to){ return capSelection(i, from, to); },
-    marks: function(i){ return figs[i] ? JSON.stringify(parts(figs[i]).marks) : '[]'; }
+    marks: function(i){ return figs[i] ? JSON.stringify(parts(figs[i]).marks) : '[]'; },
+    // the regions marked on each figure (FigureMarks.swift): {figure index: [colour, …]}, as a badge on its card
+    setRegions: function(json){
+      var by = {}; try { by = JSON.parse(json) || {}; } catch (x) {}
+      document.querySelectorAll('.m-fc-marks').forEach(function(b){
+        var c = by[b.getAttribute('data-fig-marks')] || [];
+        b.className = 'm-fc-marks' + (c.length ? ' m-' + (/^(yellow|green|blue|pink)$/.test(c[0]) ? c[0] : 'yellow') : '');
+        if (c.length) b.setAttribute('data-t', c.length === 1 ? '1 mark' : c.length + ' marks'); else b.removeAttribute('data-t');
+      });
+    }
   };
 
   // the cards
@@ -289,6 +326,7 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
     var title = d.title || d.caption.split(/(?<=[a-z0-9)\]][.;:])\s/)[0];
     if (title.length > 220) title = title.slice(0, 220) + '…';
     if (title) { var tt = document.createElement('div'); tt.className = 'm-fc-title'; tt.setAttribute('data-t', title); tx.appendChild(tt); }
+    var mk = document.createElement('div'); mk.className = 'm-fc-marks'; mk.setAttribute('data-fig-marks', i); tx.appendChild(mk);
     card.appendChild(th); card.appendChild(tx);
     f.insertBefore(card, f.firstChild);
     f.classList.add('m-carded');

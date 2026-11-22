@@ -101,6 +101,30 @@ Notes*, outlines and summaries, and syncs. The viewer draws the marks the page h
 highlights (`ReaderController.annotationsShown`). Captions of tables shown from a lone image (no figure
 of the page) are only read and copied.
 
+A region of a figure's image can be **marked** in the viewer (Mac, iPhone, iPad, Windows, Linux,
+Android): a rectangle or an ellipse with a colour and a note ("panel c", a cluster in a UMAP). Draw it
+with the Mark tool in the viewer's bar (or in highlight mode: at once, in its colour), with a long press
+and a drag (iPhone, iPad, Android), ⌥-drag (Mac) or Alt-drag (Windows, Linux), or the Apple Pencil; tap
+or click a mark for its editor (colour, shape, note, Delete). A mark is an annotation of kind
+`FigureMark` (`core/src/figmark.rs`): `location` "figure", `position` its `FigureRegion` as JSON (the
+figure's label, its image's file name and content hash, the region from 0 to 1 of the image from its top
+left, the shape, where the figure is in the text), `quote` "Figure 3 (region)", `suffix` the start of
+the caption. So it syncs, undoes, counts and lists like a highlight; versions before 1.3 skip its ops
+(they can't read the kind, and `Store::replay` skips lines it can't read). `save_annotation` keeps a
+mark a mark whatever kind an editor gives it. The reading view never looks for it in the text (the apps
+leave `location` "figure" out of `luntaApplyAnnotations`); the figure's card shows a badge
+(`luntaFigures.setRegions`, words from an attribute: no text added), the page gives each figure's text
+offset (`at` in `luntaFigures.data`) so marks are listed among the highlights at their figure.
+`place_figure_marks` finds a mark's figure in a reading view made anew: the label and the image's name,
+else the image's content hash, else the label alone (nearest its old place), else for an unlabelled
+figure the image's name; unplaced marks are kept and listed as not in this reading view.
+*Highlights & Notes* shows a mark as "Figure 3 · region — note" with its region cropped from the image
+(`Library::figure_mark_image` finds the image in the reading view on this device); tapping it opens the
+viewer at the mark (zoomed to it). Outlines and summaries take it as “Figure 3 (region)” with the note;
+the summary's model gets the caption's start too, the only text besides the note a sentence citing a
+mark may be checked against. Markdown gives the label, the caption's start and the note (no image).
+The MCP's `list_highlights` lists marks (kind `figure_mark`, figure, region, caption), read-only.
+
 ### Books and theses as PDFs
 
 Before laying out a PDF, both converters decide whether it is a **paper** or a **book** (a thesis is

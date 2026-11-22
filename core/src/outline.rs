@@ -32,6 +32,11 @@ pub struct OutlineItem {
     pub section: String,
     /// Where in the paper (to keep the paper's order).
     pub order: u64,
+    /// A region marked on a figure (quote "Figure 3 (region)"): the start of the figure's
+    /// caption, all a summary may say about it besides the note. "" for highlights and notes.
+    #[serde(default)]
+    #[uniffi(default = "")]
+    pub context: String,
 }
 
 /// A theme of the outline.
@@ -196,11 +201,13 @@ fn headings(xhtml: &str) -> Vec<(u64, String)> {
 
 /// A highlight's place: its section (or page) and its order in the paper.
 fn place(a: &Annotation, heads: Option<&Vec<(u64, String)>>) -> (String, u64) {
-    if a.location.starts_with("pdf") {
+    // a figure mark: where its figure is in the text
+    let fig = crate::figmark::region_of(a).map(|r| r.start);
+    if fig.is_none() && a.location.starts_with("pdf") {
         let page: u64 = a.location.trim_start_matches("pdf").trim_start_matches(':').parse().unwrap_or(0);
         return (if page > 0 { format!("Page {page}") } else { String::new() }, page * 1_000_000);
     }
-    let pos: u64 = a.position.trim().parse().unwrap_or(0);
+    let pos: u64 = fig.unwrap_or_else(|| a.position.trim().parse().unwrap_or(0));
     let sec = heads.and_then(|h| h.iter().rev().find(|(at, _)| *at <= pos)).map(|x| x.1.clone()).unwrap_or_default();
     (sec, pos)
 }
@@ -213,7 +220,7 @@ fn topic_words(topic: &str) -> Vec<String> {
 
 /// Whether a highlight (or its paper) is about the topic: one of the topic's words is in it.
 fn about(it: &OutlineItem, words: &[String]) -> bool {
-    let hay = crate::tidy::text::phrase_key(&format!("{} {}", it.quote, it.note));
+    let hay = crate::tidy::text::phrase_key(&format!("{} {} {}", it.quote, it.note, it.context));
     let hw: HashSet<&str> = hay.split(' ').collect();
     words.iter().any(|w| hw.contains(w.as_str()) || (w.len() >= 5 && hay.contains(w.as_str())))
 }
@@ -237,6 +244,9 @@ fn prompt_for(items: &[OutlineItem], labels: &HashMap<String, String>, topic: &s
         let mut l = format!("{}. ({who})", i + 1);
         if !q.is_empty() {
             l += &format!(" \"{q}\"");
+        }
+        if !it.context.is_empty() {
+            l += &format!(" Caption: {}", one_line(&it.context).chars().take(160).collect::<String>());
         }
         if !n.is_empty() {
             l += &format!(" Note: {n}");
@@ -551,7 +561,8 @@ impl Library {
                 .filter(|a| !one_line(&a.quote).is_empty() || !one_line(&a.note).is_empty())
                 .map(|a| {
                     let (section, order) = place(a, heads.as_ref());
-                    OutlineItem { annotation_id: a.id.clone(), paper_id: p.id.clone(), quote: a.quote.trim().to_string(), note: a.note.trim().to_string(), section, order }
+                    let context = if crate::figmark::is_mark(a) { one_line(&a.suffix) } else { String::new() };
+                    OutlineItem { annotation_id: a.id.clone(), paper_id: p.id.clone(), quote: a.quote.trim().to_string(), note: a.note.trim().to_string(), section, order, context }
                 })
                 .collect();
             mine.sort_by(|a, b| a.order.cmp(&b.order).then(a.annotation_id.cmp(&b.annotation_id)));

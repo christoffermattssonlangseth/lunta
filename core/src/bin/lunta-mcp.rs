@@ -209,9 +209,17 @@ fn highlight_json(a: &Annotation, title: Option<&str>) -> Value {
         "color": a.color,
         "quote": a.quote.split_whitespace().collect::<Vec<_>>().join(" "),
         "note": a.note,
-        "made_in": match a.location.split(':').next().unwrap_or("") { "epub" => "reading view", "pdf" => "pdf", _ => "note on the paper" },
+        "made_in": match a.location.split(':').next().unwrap_or("") { "epub" => "reading view", "pdf" => "pdf", "figure" => "figure", _ => "note on the paper" },
         "created": date(a.created),
     });
+    // a region the user marked on a figure's image (read-only here): which figure, where on it
+    // (0–1 of the image from its top left), and the start of its caption
+    if let Some(r) = lunta_core::figmark::region_of(a) {
+        v["kind"] = json!("figure_mark");
+        v["figure"] = json!(r.figure);
+        v["region"] = json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h, "shape": r.shape});
+        v["caption"] = json!(a.suffix);
+    }
     if let Some(t) = title {
         v["paper_title"] = json!(t);
     }
@@ -379,7 +387,7 @@ fn tools() -> Value {
           json!({"ids": ids, "read": {"type": "boolean"}, "starred": {"type": "boolean"}, "must_read": {"type": "boolean"}}), &["ids"], false),
         t("add_note", "Attach a note to a paper (shown in Lunta on Mac and iPhone). Optionally quote the passage it refers to.",
           json!({"id": {"type": "string"}, "note": {"type": "string"}, "quote": {"type": "string"}}), &["id", "note"], false),
-        t("list_highlights", "The user's highlights and notes across the library, newest first, with the paper each is in. Filter by paper, colour, tag, collection, or words in the highlighted text or note (e.g. to find papers where the user highlighted something).",
+        t("list_highlights", "The user's highlights and notes across the library, newest first, with the paper each is in. Figure marks (kind figure_mark: a region the user marked on a figure's image, with the figure's label, the region and the start of the caption) are listed too; they can't be added here. Filter by paper, colour, tag, collection, or words in the highlighted text or note (e.g. to find papers where the user highlighted something).",
           json!({"paper_id": {"type": "string"}, "color": {"type": "string", "enum": ["yellow", "green", "blue", "pink"]},
                  "tag": {"type": "string"}, "collection": {"type": "string", "description": "Collection name"},
                  "query": {"type": "string", "description": "Words that must all appear in the highlighted text or the note"},
@@ -627,7 +635,7 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
             if let Some(n) = a.get("note").and_then(|v| v.as_str()) {
                 h.note = n.trim().to_string();
                 // a quoted passage without a note is a plain highlight; a note on the paper stays a note
-                if !h.quote.trim().is_empty() {
+                if !h.quote.trim().is_empty() && !lunta_core::figmark::is_mark(&h) {
                     h.kind = if h.note.is_empty() { AnnotationKind::Highlight } else { AnnotationKind::Note };
                 }
             }

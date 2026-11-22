@@ -39,6 +39,8 @@ pub mod epub;
 pub mod export;
 /// New for You on Windows, Linux and Android (the Apple apps' feed, same files).
 pub mod foryou;
+/// Figure marks: regions marked on a figure's image in the figure viewer.
+pub mod figmark;
 pub mod highlight;
 pub mod import;
 /// Import from what was picked (folder, ZIP, export), for the desktop and Android apps.
@@ -500,6 +502,11 @@ impl Library {
 
     /// Creates or updates an annotation. Leave `id` empty to create; timestamps are set here.
     pub fn save_annotation(&self, mut a: Annotation) -> Result<Annotation> {
+        // a figure mark stays one, whatever an editor made of its kind from its note
+        if figmark::is_mark(&a) {
+            a.kind = AnnotationKind::FigureMark;
+            a.location = figmark::LOCATION.into();
+        }
         let now = now_ms();
         if a.id.is_empty() {
             a.id = uuid::Uuid::new_v4().to_string();

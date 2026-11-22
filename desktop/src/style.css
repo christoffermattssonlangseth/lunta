@@ -219,6 +219,23 @@ label.check { display: flex; gap: 6px; align-items: center; }
 .modal-back.over-figure { z-index: 95; }
 #figure mark.c-yellow { background: rgba(250,212,77,.45); } #figure mark.c-green { background: rgba(140,209,122,.45); }
 #figure mark.c-blue { background: rgba(122,184,242,.45); } #figure mark.c-pink { background: rgba(245,143,179,.45); }
+/* regions marked on the image (figure-marks.ts): drawn over it, zooming with it */
+#figure { --mk-yellow: 250,190,40; --mk-green: 90,170,70; --mk-blue: 60,140,220; --mk-pink: 225,90,140; }
+#figure .fv-marks { position: absolute; inset: 0; pointer-events: none; }
+#figure .fv-region, #figure .fv-live { position: absolute; box-sizing: border-box; border-radius: 3px; border: 2px solid rgb(var(--mk)); background: rgba(var(--mk), .16); }
+#figure .fv-region { pointer-events: auto; cursor: pointer; }
+#figure .fv-region.ellipse { border-radius: 50%; }
+#figure .fv-region.flash { background: rgba(var(--mk), .34); box-shadow: 0 0 0 4px rgba(var(--mk), .45); }
+#figure .fv-region.note::after { content: ''; position: absolute; top: -5px; right: -5px; width: 8px; height: 8px; border-radius: 50%; background: rgba(200,120,40,.95); }
+#figure .fv-live { border-style: dashed; }
+#figure .c-yellow { --mk: var(--mk-yellow); } #figure .c-green { --mk: var(--mk-green); } #figure .c-blue { --mk: var(--mk-blue); } #figure .c-pink { --mk: var(--mk-pink); }
+#figure .fv-stage.marking, #figure .fv-stage.marking img { cursor: crosshair; }
+#figure .fv-markbtn.on { color: var(--accent, #2a6478); opacity: 1; }
+.hl-mark .mark-thumb { flex: 0 0 48px; width: 48px; height: 48px; border-radius: 6px; background-color: #fff; border: 2px solid rgba(127,127,127,.4);
+  display: flex; align-items: center; justify-content: center; color: var(--dim); margin-right: 8px; }
+.hl-mark .mark-thumb.c-yellow { border-color: rgb(250,190,40); } .hl-mark .mark-thumb.c-green { border-color: rgb(90,170,70); }
+.hl-mark .mark-thumb.c-blue { border-color: rgb(60,140,220); } .hl-mark .mark-thumb.c-pink { border-color: rgb(225,90,140); }
+.mark-crop { height: 160px; border-radius: 8px; background-color: #fff; border: 1px solid var(--line); margin: 6px 0 10px; }
 #figure.dark { background: #000; color: #d8d5ce; }
 #figure.dark .fv-stage img { opacity: .92; }
 #figure.dark .fv-images { background: #1e1e1e; border-color: rgba(255,255,255,.12); }

@@ -82,6 +82,10 @@ pub enum AnnotationKind {
     Highlight,
     Underline,
     Note,
+    /// A region marked on a figure's image in the figure viewer (`location` "figure", `position`
+    /// its `FigureRegion` as JSON; see `figmark`). Versions before 1.3 don't know this kind: they
+    /// skip its ops when replaying the logs, as they skip any op they can't read.
+    FigureMark,
 }
 
 /// A highlight or note. `location` and `position` are owned by the UI (e.g. "pdf:3" plus a JSON
@@ -101,6 +105,36 @@ pub struct Annotation {
     pub note: String,
     pub created: i64,
     pub modified: i64,
+}
+
+/// Where a figure mark is: the figure (as the reading view labels it, and its image) and the
+/// region of that image, in the image's own coordinates from 0 to 1 (top left 0, 0), so it is the
+/// same at every size and zoom. Kept as JSON in the mark's `position`; `figmark::place_figure_marks`
+/// finds the figure again in a reading view made anew (by label and image name, the image's
+/// content hash, or the label alone).
+#[derive(uniffi::Record, Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default)]
+pub struct FigureRegion {
+    /// The figure's label in the reading view ("Figure 3", "Extended Data Fig. 2"); "" for one
+    /// without a label.
+    pub figure: String,
+    /// The figure's place among the reading view's figures (from 0) when it was marked.
+    pub index: u32,
+    /// The image's file name in the reading view ("fig3.jpg").
+    pub image: String,
+    /// The image file's content hash (`image_hash`).
+    pub hash: String,
+    /// The image's place among the figure's images (a figure in several images).
+    pub image_index: u32,
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    /// "rect" or "ellipse".
+    pub shape: String,
+    /// Where the figure is in the reading view's text (a UTF-16 offset, as a highlight's
+    /// `position`): orders the mark among the highlights.
+    pub start: u64,
 }
 
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]

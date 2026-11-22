@@ -15,7 +15,10 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -34,6 +37,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.outlined.BrokenImage
+import androidx.compose.material.icons.outlined.CropFree
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.SubtitlesOff
 import androidx.compose.material3.*
@@ -44,6 +48,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -86,6 +96,14 @@ data class FigMark(val text: String, val color: String, val start: Int = -1, val
 data class ReaderFigure(
     val index: Int, val images: List<String>, val label: String, val title: String, val caption: String, val marks: List<FigMark>,
     val inPage: Boolean = false,
+    /** where the figure is in the page's text (a highlight's offset): a region marked on it is listed there */
+    val at: Int = 0,
+)
+
+/** A region marked on a figure's image (core figmark.rs): 0–1 of the image from its top left, on image [image]. */
+data class RegionMark(
+    val id: String, val x: Float, val y: Float, val w: Float, val h: Float,
+    val ellipse: Boolean = false, val color: String = "yellow", val note: String = "", val image: Int = 0,
 )
 
 /** The caption as the viewer shows it (and the page counts it, figureJS shownText). */
@@ -114,16 +132,20 @@ class CaptionHighlights(
     /** the highlights the page has in figure `fig`'s caption now */
     val marks: suspend (fig: Int) -> List<FigMark>?,
     val drawn: Int,
+    /** the regions marked on figure `fig`'s images */
+    val regions: suspend (fig: Int) -> List<RegionMark> = { emptyList() },
+    /** a region drawn on image `image` of figure `fig` (x, y, w, h: 0–1 of the image): saved as a mark; null: no marking */
+    val addRegion: ((fig: Int, image: Int, r: Rect) -> Unit)? = null,
 )
 
 /** What the viewer opens: figure [index] of [set], at image [start], pointing to [panel] ("B" in "Fig. 2B"). */
-data class FigureOpen(val set: List<ReaderFigure>, val index: Int, val start: Int, val panel: String)
+data class FigureOpen(val set: List<ReaderFigure>, val index: Int, val start: Int, val panel: String, val focus: String = "")
 
 private fun figure(o: JSONObject, i: Int): ReaderFigure {
     val srcs = o.optJSONArray("srcs")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotEmpty() } }
         ?: listOfNotNull(o.optString("src").takeIf { it.isNotEmpty() })
     fun s(k: String) = o.optString(k).trim()
-    return ReaderFigure(o.optInt("index", i), srcs, s("label"), s("title"), s("caption"), figMarks(o.optJSONArray("marks")), o.has("index"))
+    return ReaderFigure(o.optInt("index", i), srcs, s("label"), s("title"), s("caption"), figMarks(o.optJSONArray("marks")), o.has("index"), o.optInt("at"))
 }
 
 /** The paper's figures, from the page's {list: […]} message (sent as it loads). */
@@ -214,6 +236,8 @@ fun FigureViewer(open: FigureOpen, bookDir: File, dark: Boolean = isSystemInDark
         var showCaption by rememberSaveable { mutableStateOf(true) }
         var zoomed by remember { mutableStateOf(false) }
         LaunchedEffect(pager.currentPage) { zoomed = false }
+        // the Mark tool: one finger draws a region on the image (else a long press, then drag)
+        var marking by remember { mutableStateOf(false) }
         Surface(Modifier.fillMaxSize(), color = if (dark) Color.Black else Paper, contentColor = if (dark) DarkText else Color(0xFF1D1D1F)) {
             Column(Modifier.systemBarsPadding()) {
                 val shown = figs[pager.currentPage]
@@ -224,6 +248,12 @@ fun FigureViewer(open: FigureOpen, bookDir: File, dark: Boolean = isSystemInDark
                         val sub = listOfNotNull(panel.takeIf { it.isNotEmpty() }?.let { "Panel $it" }, if (figs.size > 1) "${pager.currentPage + 1} of ${figs.size}" else null)
                         if (sub.isNotEmpty()) Text(sub.joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = LocalContentColor.current.copy(alpha = .65f))
                     }
+                    if (hl?.addRegion != null && shown.inPage && shown.images.isNotEmpty()) {
+                        IconButton({ marking = !marking }) {
+                            Icon(Icons.Outlined.CropFree, if (marking) "Done marking" else "Mark a region",
+                                tint = if (marking) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+                        }
+                    }
                     if (figs.any { it.caption.isNotEmpty() || it.title.isNotEmpty() }) {
                         IconButton({ showCaption = !showCaption }) {
                             Icon(if (showCaption) Icons.Filled.Subtitles else Icons.Outlined.SubtitlesOff, if (showCaption) "Hide the caption" else "Show the caption")
@@ -231,8 +261,8 @@ fun FigureViewer(open: FigureOpen, bookDir: File, dark: Boolean = isSystemInDark
                     }
                     IconButton(onDismiss) { Icon(Icons.Filled.Close, "Back to the text") }
                 }
-                HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), userScrollEnabled = !zoomed, beyondViewportPageCount = 1) { i ->
-                    FigurePage(figs[i], if (i == open.index) open.start else 0, showCaption, dark, bookDir, hl) { z -> if (i == pager.currentPage) zoomed = z }
+                HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), userScrollEnabled = !zoomed && !(marking || hl?.mode?.invoke() != null), beyondViewportPageCount = 1) { i ->
+                    FigurePage(figs[i], if (i == open.index) open.start else 0, showCaption, dark, bookDir, hl, marking, if (i == open.index) open.focus else "") { z -> if (i == pager.currentPage) zoomed = z }
                 }
             }
         }
@@ -240,15 +270,28 @@ fun FigureViewer(open: FigureOpen, bookDir: File, dark: Boolean = isSystemInDark
 }
 
 @Composable
-private fun FigurePage(f: ReaderFigure, start: Int, showCaption: Boolean, dark: Boolean, bookDir: File, hl: CaptionHighlights?, onZoom: (Boolean) -> Unit) {
+private fun FigurePage(f: ReaderFigure, start: Int, showCaption: Boolean, dark: Boolean, bookDir: File, hl: CaptionHighlights?,
+                       marking: Boolean, focus: String, onZoom: (Boolean) -> Unit) {
     var image by remember { mutableIntStateOf(start.coerceIn(0, max(0, f.images.size - 1))) }
+    // regions marked on this figure, again after each redraw of the page's highlights
+    var regions by remember(f) { mutableStateOf<List<RegionMark>>(emptyList()) }
+    LaunchedEffect(f.index, hl?.drawn) { if (hl != null && f.inPage) regions = hl.regions(f.index) }
+    val canMark = hl?.addRegion != null && f.inPage
     val hasCaption = f.caption.isNotEmpty() || f.title.isNotEmpty()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val maxH = maxHeight
         Column(Modifier.fillMaxSize()) {
             if (f.images.isNotEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
-                    key(f.images[image]) { ZoomableImage(figureFile(bookDir, f.images[image]), dark, onZoom) }
+                    key(f.images[image]) {
+                        ZoomableImage(
+                            figureFile(bookDir, f.images[image]), dark, onZoom,
+                            regions = regions.filter { it.image == image }, canMark = canMark,
+                            direct = canMark && (marking || hl?.mode?.invoke() != null),
+                            color = hl?.mode?.invoke() ?: "yellow", focus = focus,
+                            onDraw = { r -> hl?.addRegion?.invoke(f.index, image, r) }, onTap = { id -> hl?.edit?.invoke(id) },
+                        )
+                    }
                     if (f.images.size > 1) {   // a figure in several images
                         Surface(Modifier.align(Alignment.BottomCenter).padding(8.dp), shape = CircleShape, tonalElevation = 4.dp, shadowElevation = 2.dp) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -409,7 +452,16 @@ private fun captionText(f: ReaderFigure, dark: Boolean): AnnotatedString {
 
 /** The image fitted to the space; pinch or double-tap to zoom, drag to move about while zoomed. */
 @Composable
-private fun ZoomableImage(file: File?, dark: Boolean, onZoom: (Boolean) -> Unit) {
+private fun ZoomableImage(
+    file: File?, dark: Boolean, onZoom: (Boolean) -> Unit,
+    /** regions marked on the image: drawn over it, zooming with it */
+    regions: List<RegionMark> = emptyList(),
+    /** new regions can be drawn: a long press, then drag; at once ([direct]: the Mark tool, highlight mode) */
+    canMark: Boolean = false, direct: Boolean = false, color: String = "yellow",
+    /** a region to show as it opens: zoomed to and flashed */
+    focus: String = "",
+    onDraw: (Rect) -> Unit = {}, onTap: (String) -> Unit = {},
+) {
     var bmp by remember(file) { mutableStateOf<ImageBitmap?>(null) }
     var failed by remember(file) { mutableStateOf(false) }
     LaunchedEffect(file) { bmp = decodeImage(file, 4096); failed = bmp == null }
@@ -447,13 +499,80 @@ private fun ZoomableImage(file: File?, dark: Boolean, onZoom: (Boolean) -> Unit)
                 .background(Color.White),   // figures with a transparent background
             contentScale = ContentScale.Fit,
         )
+        // the image's own 0–1 coordinates and the screen (the image is centred, scaled about its centre)
+        fun toScreen(u: Float, v: Float) = Offset(boxW / 2 + offset.x + (u * w - w / 2) * scale, boxH / 2 + offset.y + (v * h - h / 2) * scale)
+        fun toImage(p: Offset) = Offset(
+            (((p.x - boxW / 2 - offset.x) / scale + w / 2) / w).coerceIn(0f, 1f),
+            (((p.y - boxH / 2 - offset.y) / scale + h / 2) / h).coerceIn(0f, 1f),
+        )
+        fun regionAt(p: Offset): String? = regions.filter { m ->
+            val a = toScreen(m.x, m.y); val z = toScreen(m.x + m.w, m.y + m.h)
+            p.x >= a.x - 12 && p.x <= z.x + 12 && p.y >= a.y - 12 && p.y <= z.y + 12
+        }.minByOrNull { it.w * it.h }?.id
+        var drawFrom by remember { mutableStateOf<Offset?>(null) }
+        var drawTo by remember { mutableStateOf<Offset?>(null) }
+        var flash by remember { mutableStateOf("") }
+        // opened at a mark: zoomed to a small one, which flashes
+        LaunchedEffect(focus, regions.any { it.id == focus }) {
+            val m = regions.firstOrNull { it.id == focus } ?: return@LaunchedEffect
+            if (m.w < .6f && m.h < .6f) {
+                val s2 = (0.5f / max(m.w, m.h)).coerceIn(1f, 8f)
+                val q = Offset(((m.x + m.w / 2) * w - w / 2), ((m.y + m.h / 2) * h - h / 2))
+                if (s2 > 1.01f) { scale = s2; offset = clamp(-q * s2, s2); onZoom(true) }
+            }
+            flash = m.id
+            kotlinx.coroutines.delay(1800)
+            flash = ""
+        }
+        val inks = regions.map { (HighlightColors[it.color] ?: HighlightColors.getValue("yellow")) }
+        val liveInk = HighlightColors[color] ?: HighlightColors.getValue("yellow")
+        Canvas(Modifier.matchParentSize()) {
+            regions.forEachIndexed { i, m ->
+                val a = toScreen(m.x, m.y); val z = toScreen(m.x + m.w, m.y + m.h)
+                val sz = Size(z.x - a.x, z.y - a.y)
+                val on = flash == m.id
+                if (m.ellipse) {
+                    drawOval(inks[i].copy(alpha = if (on) .34f else .16f), a, sz)
+                    drawOval(inks[i], a, sz, style = Stroke(if (on) 5f else 2.5f * density))
+                } else {
+                    drawRect(inks[i].copy(alpha = if (on) .34f else .16f), a, sz)
+                    drawRect(inks[i], a, sz, style = Stroke(if (on) 5f else 2.5f * density))
+                }
+                if (m.note.isNotBlank()) drawCircle(Color(0xFFC77829), 4f * density, Offset(z.x, a.y))
+            }
+            val s0 = drawFrom; val s1 = drawTo
+            if (s0 != null && s1 != null) {
+                val tl = Offset(min(s0.x, s1.x), min(s0.y, s1.y))
+                val sz = Size(kotlin.math.abs(s1.x - s0.x), kotlin.math.abs(s1.y - s0.y))
+                drawRect(liveInk.copy(alpha = .14f), tl, sz)
+                drawRect(liveInk, tl, sz, style = Stroke(2.5f * density, pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 8f))))
+            }
+        }
+        val directNow by rememberUpdatedState(direct)
+        val canMarkNow by rememberUpdatedState(canMark)
+        /** A drag on the image as a region (screen points to 0–1 of the image), if it isn't a slip. */
+        fun finish() {
+            val s0 = drawFrom; val s1 = drawTo
+            drawFrom = null; drawTo = null
+            if (s0 == null || s1 == null || kotlin.math.abs(s1.x - s0.x) < 24 || kotlin.math.abs(s1.y - s0.y) < 24) return
+            val a = toImage(Offset(min(s0.x, s1.x), min(s0.y, s1.y))); val z = toImage(Offset(max(s0.x, s1.x), max(s0.y, s1.y)))
+            onDraw(Rect(a.x, a.y, z.x, z.y))
+        }
         Box(
             Modifier.matchParentSize()
                 .pointerInput(b) {
                     detectTapGestures(onDoubleTap = { p ->
                         val q = p - Offset(boxW / 2, boxH / 2)
                         if (scale > 1.01f) zoom(1f, q) else zoom(3f, q)
-                    })
+                    }, onTap = { p -> if (canMarkNow) regionAt(p)?.let(onTap) })
+                }
+                .pointerInput(b, direct, canMark) {
+                    if (!canMark) return@pointerInput
+                    // the Mark tool or highlight mode: one finger draws at once; else after a long press
+                    val start: (Offset) -> Unit = { p -> drawFrom = p; drawTo = p }
+                    val move: (androidx.compose.ui.input.pointer.PointerInputChange, Offset) -> Unit = { c, _ -> drawTo = c.position; c.consume() }
+                    if (direct) detectDragGestures(onDragStart = start, onDragEnd = { finish() }, onDragCancel = { drawFrom = null; drawTo = null }, onDrag = move)
+                    else detectDragGesturesAfterLongPress(onDragStart = start, onDragEnd = { finish() }, onDragCancel = { drawFrom = null; drawTo = null }, onDrag = move)
                 }
                 .pointerInput(b) {
                     // two fingers zoom; one finger moves the image while zoomed (else the pager swipes)
@@ -462,7 +581,8 @@ private fun ZoomableImage(file: File?, dark: Boolean, onZoom: (Boolean) -> Unit)
                         do {
                             val ev = awaitPointerEvent()
                             val fingers = ev.changes.count { it.pressed }
-                            if (fingers > 1 || (fingers == 1 && scale > 1.01f)) {
+                            // (one finger draws a region with the Mark tool: two move and zoom)
+                            if (fingers > 1 || (fingers == 1 && scale > 1.01f && !(directNow && canMarkNow) && drawFrom == null)) {
                                 val c = ev.calculateCentroid(useCurrent = true)
                                 if (c != Offset.Unspecified) {
                                     zoom(scale * ev.calculateZoom(), c - Offset(boxW / 2, boxH / 2), ev.calculatePan())
@@ -513,5 +633,28 @@ private fun Thumbnail(file: File?, none: Boolean) {
     ) {
         b?.let { Image(it, null, Modifier.fillMaxSize().padding(4.dp).graphicsLayer { alpha = if (dark) .92f else 1f }, contentScale = ContentScale.Fit) }
             ?: if (none || file == null) Icon(Icons.Outlined.Image, null, tint = Color.Gray) else Unit
+    }
+}
+
+/** A mark's region cropped from its image (with a little around it), for the Highlights & Notes list and the mark's editor. */
+@Composable
+fun MarkThumb(file: File?, m: RegionMark?, size: androidx.compose.ui.unit.Dp = 48.dp) {
+    var b by remember(file) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(file) { b = decodeImage(file, 1200) }
+    val ink = HighlightColors[m?.color ?: "yellow"] ?: HighlightColors.getValue("yellow")
+    Box(
+        Modifier.size(size).clip(RoundedCornerShape(6.dp)).background(Color.White).border(2.dp, ink, RoundedCornerShape(6.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        val bmp = b
+        if (bmp != null && m != null) Canvas(Modifier.fillMaxSize().padding(2.dp)) {
+            val pad = .04f
+            val x0 = ((m.x - pad).coerceIn(0f, 1f) * bmp.width).toInt(); val y0 = ((m.y - pad).coerceIn(0f, 1f) * bmp.height).toInt()
+            val x1 = ((m.x + m.w + pad).coerceIn(0f, 1f) * bmp.width).toInt(); val y1 = ((m.y + m.h + pad).coerceIn(0f, 1f) * bmp.height).toInt()
+            val sw = max(1, x1 - x0); val sh = max(1, y1 - y0)
+            val fit = min(this.size.width / sw, this.size.height / sh)
+            val dw = (sw * fit).toInt(); val dh = (sh * fit).toInt()
+            drawImage(bmp, IntOffset(x0, y0), IntSize(sw, sh), IntOffset(((this.size.width - dw) / 2).toInt(), ((this.size.height - dh) / 2).toInt()), IntSize(dw, dh))
+        } else Icon(Icons.Outlined.CropFree, null, tint = LocalContentColor.current.copy(alpha = .5f))
     }
 }

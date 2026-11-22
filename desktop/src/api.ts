@@ -26,7 +26,7 @@ export interface Source { kind: 'all' | 'starred' | 'must_read' | 'unread' | 'fo
 export interface TocItem { title: string; level: number; anchor: string; }
 export interface Book { path: string; toc: TocItem[]; }
 export interface Annotation {
-  id: string; paper_id: string; kind: 'Highlight' | 'Underline' | 'Note'; color: string; location: string;
+  id: string; paper_id: string; kind: 'Highlight' | 'Underline' | 'Note' | 'FigureMark'; color: string; location: string;
   position: string; quote: string; prefix: string; suffix: string; note: string; created: number; modified: number;
 }
 export interface PageSelection { quote: string; prefix: string; suffix: string; start: number; }

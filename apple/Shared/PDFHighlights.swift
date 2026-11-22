@@ -61,7 +61,7 @@ final class PDFHighlighter: ObservableObject {
             guard let page = doc.page(at: i) else { continue }
             for a in page.annotations where (a.userName ?? "").hasPrefix("lunta:") { page.removeAnnotation(a) }
         }
-        for a in anns {
+        for a in anns where !a.isFigureMark {   // (a region marked on a figure is the reading view's)
             guard let (page, range) = locate(a, in: doc), let sel = page.selection(for: range) else { continue }
             let color = PlatformColor(HighlightColor(rawValue: a.color)?.color ?? HighlightColor.yellow.color).withAlphaComponent(0.45)
             for line in sel.selectionsByLine() {
@@ -78,7 +78,7 @@ final class PDFHighlighter: ObservableObject {
 
     /// Scrolls to a highlight (from the list of highlights).
     func show(_ a: Annotation) {
-        guard let v = view, let doc = v.document, let (page, range) = locate(a, in: doc),
+        guard !a.isFigureMark, let v = view, let doc = v.document, let (page, range) = locate(a, in: doc),
               let sel = page.selection(for: range) else { return }
         v.go(to: sel)
         v.setCurrentSelection(sel, animate: true)

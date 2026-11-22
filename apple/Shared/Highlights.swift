@@ -456,9 +456,11 @@ extension ReaderController {
     /// those made in the PDF, found by their text (a PDF highlight's position is a PDF offset,
     /// so it gives no hint here).
     func showAnnotations(_ all: [Annotation]) {
+        // regions marked on figures aren't in the text: their figures' cards show them (FigureMarks.swift)
+        showFigureMarkBadges(all)
         // a book read chapter by chapter: the highlights in the part shown; those found in no part
         // are missing (ChapterReader.split)
-        var list = all, unplaced = Set<String>()
+        var list = all.filter { !$0.isFigureMark }, unplaced = Set<String>()
         if let ch = chapters { (list, unplaced) = ch.split(all) }
         let items: [[String: Any]] = list.map { a in
             ["id": a.id, "quote": a.quote, "prefix": a.prefix, "suffix": a.suffix, "color": a.color, "note": a.note,
@@ -487,6 +489,11 @@ extension ReaderController {
     }
 
     func showAnnotation(_ id: String) {
+        // a region marked on a figure: the figure viewer, at the mark
+        if let model, model.annotations(paperID).contains(where: { $0.id == id && $0.isFigureMark }) {
+            showFigureMark(id)
+            return
+        }
         // a book read chapter by chapter: in its part (opened first)
         if let ch = chapters, let k = ch.part(ofAnnotation: id), k != ch.current {
             ch.go(k, then: .annotation(id))
@@ -613,7 +620,7 @@ extension LibraryModel {
 
     func saveAnnotation(_ a: Annotation) {
         var a = a
-        a.kind = a.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .highlight : .note
+        if !a.isFigureMark { a.kind = a.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .highlight : .note }
         do { _ = try lib.saveAnnotation(a: a) } catch { errorMessage = error.readable }
         reload()
     }
@@ -623,7 +630,7 @@ extension LibraryModel {
         try? lib.deleteAnnotation(paper: a.paperId, id: a.id)
         reload()
         undo?.registerUndo(withTarget: self) { m in MainActor.assumeIsolated { m.restoreAnnotation(a, undo: undo) } }
-        undo?.setActionName(a.note.isEmpty ? "Highlight" : "Note")
+        undo?.setActionName(a.isFigureMark ? "Figure Mark" : a.note.isEmpty ? "Highlight" : "Note")
     }
 
     /// Puts back a deleted highlight (undo of a delete, or redo of a highlight).
@@ -631,7 +638,7 @@ extension LibraryModel {
         do { _ = try lib.saveAnnotation(a: a) } catch { errorMessage = error.readable; return }
         reload()
         undo?.registerUndo(withTarget: self) { m in MainActor.assumeIsolated { m.deleteAnnotation(a, undo: undo) } }
-        undo?.setActionName(a.note.isEmpty ? "Highlight" : "Note")
+        undo?.setActionName(a.isFigureMark ? "Figure Mark" : a.note.isEmpty ? "Highlight" : "Note")
     }
 }
 
@@ -660,6 +667,11 @@ struct AnnotationEditor: View {
     static var focusNext: Date?
 
     var body: some View {
+        // a region marked on a figure has its own editor (FigureMarks.swift)
+        if annotation.isFigureMark { FigureMarkEditor(annotation: annotation, onDone: onDone) } else { highlightEditor }
+    }
+
+    private var highlightEditor: some View {
         NavigationStack {
             Form {
                 Section {
@@ -743,7 +755,7 @@ struct AnnotationsList: View {
     var onEdit: (Annotation) -> Void
 
     var body: some View {
-        let list = model.annotations(paperID).sorted { (Int($0.position) ?? 0) < (Int($1.position) ?? 0) }
+        let list = model.annotations(paperID).sorted { Self.order($0) < Self.order($1) }
         let lost = list.filter { missing.contains($0.id) }.count
         List {
             if list.isEmpty {
@@ -758,6 +770,7 @@ struct AnnotationsList: View {
             }
             ForEach(list) { a in
                 Button { onShow(a) } label: {
+                    if a.isFigureMark { markRow(a) } else {
                     HStack(alignment: .top, spacing: 10) {
                         RoundedRectangle(cornerRadius: 2).fill((HighlightColor(rawValue: a.color) ?? .yellow).color).frame(width: 4)
                         VStack(alignment: .leading, spacing: 4) {
@@ -772,11 +785,12 @@ struct AnnotationsList: View {
                         }
                     }
                     .contentShape(Rectangle())
+                    }
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
                     Button("Edit…") { onEdit(a) }
-                    Button("Copy Quote") { copyText(a.quote) }
+                    if !a.isFigureMark { Button("Copy Quote") { copyText(a.quote) } }
                     Button("Delete", role: .destructive) { model.deleteAnnotation(a, undo: undo) }
                 }
                 .swipeActions {
@@ -790,9 +804,39 @@ struct AnnotationsList: View {
         }
     }
 
+    /// A figure mark: the region cropped from its image, "Figure 3 · region", its note.
+    private func markRow(_ a: Annotation) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            MarkThumbnail(annotation: a)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(figureMarkTitle(a)).font(.callout.weight(.medium))
+                if !a.note.isEmpty {
+                    Label(a.note, systemImage: "note.text").font(.footnote).foregroundStyle(.secondary).lineLimit(4)
+                } else if !a.suffix.isEmpty {
+                    Text(a.suffix).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+    }
+
+    /// Where a highlight is in the paper (a mark: where its figure is), to list them in the paper's order.
+    static func order(_ a: Annotation) -> Int {
+        if a.isFigureMark { return Int(figureRegion(annotation: a)?.start ?? 0) }
+        return Int(a.position) ?? 0
+    }
+
     static func markdown(_ list: [Annotation], _ p: Paper?) -> String {
         var out = "## \(p?.meta.title ?? "Highlights")\n\n"
         for a in list {
+            if a.isFigureMark {
+                // the region as words: its figure, and the start of the caption
+                out += "> **\(figureMarkTitle(a))**" + (a.suffix.isEmpty ? "" : " — \(a.suffix)") + "\n"
+                if !a.note.isEmpty { out += "\n\(a.note)\n" }
+                out += "\n"
+                continue
+            }
             out += "> \(a.quote.trimmingCharacters(in: .whitespacesAndNewlines))\n"
             if !a.note.isEmpty { out += "\n\(a.note)\n" }
             out += "\n"

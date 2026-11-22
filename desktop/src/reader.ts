@@ -11,7 +11,8 @@ import { ask } from '@tauri-apps/plugin-dialog';
 import { api, type Annotation, type Paper, type PageSelection, type TocItem } from './api';
 import { fill, h, $, status, copy, menu, type MenuItem } from './ui';
 import { showPdf, closePdf, pdfZoom, pdfFind, pdfFindStep, pdfFindClear } from './pdf';
-import { closeFigureOverlay, figMarks, figureList, figureOpen, refreshFigureMarks, showFigureGrid, showFigureViewer, type CaptionHighlights, type Fig } from './figures';
+import { closeFigureOverlay, figMarks, figureList, figureOpen, refreshFigureMarks, shownCaption, showFigureGrid, showFigureViewer, type CaptionHighlights, type Fig } from './figures';
+import { cropStyle, fileName, hashBytes, markTitle, placeMarks, regionOf, type FigureRegion, type Mark } from './figure-marks';
 import { openFind, closeFind, findOpen, findStep, findUpdate, type FindResult, type FindTarget } from './find';
 import { summaryPageReady, summaryAction, summaryClosed, openAsk, askPaperClosed } from './ai';
 import { startNarration, attachReader, detachReader, narrationPaper, playFromId, playerBar, type NarrationItem, type ReaderLink } from './listen';
@@ -539,9 +540,97 @@ async function refreshHighlights() {
       id: a.id, quote: a.quote, prefix: a.prefix, suffix: a.suffix, color: a.color, note: a.note, start: parseInt(a.position, 10) || 0,
     }));
     await run(`luntaApplyAnnotations(${JSON.stringify(JSON.stringify(items))})`);
-    refreshFigureMarks();   // an open figure's caption shows them too
+    // regions marked on figures: a badge on each figure's card (FigureMarks.swift)
+    placed = await placedMarks(list);
+    const by: Record<string, string[]> = {};
+    for (const a of list) { const p = placed.get(a.id); if (p) (by[p.figure] ??= []).push(a.color); }
+    await run(`window.luntaFigures && luntaFigures.setRegions && luntaFigures.setRegions(${JSON.stringify(JSON.stringify(by))})`);
+    refreshFigureMarks();   // an open figure's caption (and its marks) shows them too
   }
   renderList(list);
+}
+
+// ---- regions marked on figures (core/src/figmark.rs, figure-marks.ts) ----
+
+const isMark = (a: Annotation) => a.location === 'figure' || a.kind === 'FigureMark';
+/** Where the paper's marks are among the page's figures (mark id -> figure, image), as last drawn. */
+let placed = new Map<string, { figure: number; image: number }>();
+
+/** An image's content hash, as the core makes it (for finding a mark's image again after a remake). */
+async function imageHash(src: string): Promise<string> {
+  try {
+    const r = await fetch(src);
+    return r.ok ? hashBytes(new Uint8Array(await r.arrayBuffer())) : '';
+  } catch { return ''; }
+}
+
+async function placedMarks(list: Annotation[]) {
+  const marks = list.filter(isMark);
+  if (!marks.length || !figures.length) return new Map<string, { figure: number; image: number }>();
+  return placeMarks(marks, figures.map((f) => ({ label: f.label, srcs: f.srcs })), imageHash);
+}
+
+/** The start of a caption, on one line (core figmark::caption_context). */
+function captionContext(c: string): string {
+  const one = c.split(/\s+/).filter(Boolean).join(' ');
+  if (one.length <= 240) return one;
+  let cut = one.slice(0, 240);
+  const sp = cut.lastIndexOf(' ');
+  if (sp > 120) cut = cut.slice(0, sp);
+  return cut.replace(/[,;:\s]+$/, '') + '…';
+}
+
+/** Opens the figure viewer at a mark (from the list). */
+async function showMark(a: Annotation) {
+  const p = placed.get(a.id);
+  if (!p || mode !== 'reading') { status('This figure isn’t in this version of the reading view. The mark is kept, with its note.'); return; }
+  const json = await run<string>(`window.luntaFigures ? luntaFigures.data(${p.figure}) : ''`);
+  let o = null;
+  try { o = json ? figureOpen(JSON.parse(json)) : null; } catch { o = null; }
+  o = o || { set: figures, index: p.figure, start: 0, panel: '' };
+  showFigureViewer({ ...o, start: p.image, focus: a.id }, refocus, readerDark(), captionHighlights());
+}
+
+/** A mark's editor: its region cropped from the image, colour, shape, note, Delete Mark. */
+function openMarkEditor(a: Annotation) {
+  const r = regionOf(a);
+  const note = h('textarea', { rows: 4, placeholder: 'What is here (panel c, a cluster…)' }) as HTMLTextAreaElement;
+  note.value = a.note;
+  let color = a.color || 'yellow', ellipse = r?.shape === 'ellipse';
+  const swatches = h('div.swatches', {}, COLORS.map((c) => h(`button.swatch.c-${c}` + (c === color ? '.on' : ''), {
+    title: c, onclick: (e: Event) => {
+      color = c;
+      swatches.querySelectorAll('.swatch').forEach((s) => s.classList.remove('on'));
+      (e.currentTarget as HTMLElement).classList.add('on');
+    },
+  })));
+  const shapes = h('div.segmented', {}, ...([['Rectangle', false], ['Ellipse', true]] as const).map(([t, v]) => h('button' + (ellipse === v ? '.on' : ''), {
+    text: t, onclick: (e: Event) => { ellipse = v; shapes.querySelectorAll('button').forEach((b) => b.classList.remove('on')); (e.currentTarget as HTMLElement).classList.add('on'); },
+  })));
+  const p = placed.get(a.id), src = p ? figures[p.figure]?.srcs[p.image] : undefined;
+  const close = () => back.remove();
+  const back = h('div.modal-back', { onmousedown: (e: MouseEvent) => { if (e.target === back) close(); } },
+    h('div.modal.wide', {},
+      h('h3', { text: markTitle(r) }),
+      src && r ? h('div.mark-crop', { style: cropStyle(src, r) }) : null,
+      a.suffix ? h('p.hint', { text: a.suffix }) : null,
+      h('h4', { text: 'Colour' }), swatches,
+      h('h4', { text: 'Shape' }), shapes,
+      h('h4', { text: 'Note' }), note,
+      h('div.buttons', {},
+        h('button.danger', { text: 'Delete Mark', onclick: async () => { close(); await api.deleteAnnotation(a.paper_id, a.id); refreshHighlights(); } }),
+        h('div.spacer'),
+        h('button', { text: 'Cancel', onclick: close }),
+        h('button.primary', { text: 'Save', onclick: async () => {
+          close();
+          const pos = r ? JSON.stringify({ ...r, shape: ellipse ? 'ellipse' : 'rect' }) : a.position;
+          localStorage.setItem('figureMarkColor', color);
+          await api.saveAnnotation({ ...a, color, note: note.value.trim(), position: pos });
+          refreshHighlights();
+        } }))));
+  if (document.querySelector('#figure')) back.classList.add('over-figure');
+  document.body.append(back);
+  note.focus();
 }
 
 async function editAnnotation(id: string) {
@@ -551,6 +640,7 @@ async function editAnnotation(id: string) {
 }
 
 function openEditor(a: Annotation) {
+  if (isMark(a)) { openMarkEditor(a); return; }
   const note = h('textarea', { rows: 5, placeholder: 'Add a note' }) as HTMLTextAreaElement;
   note.value = a.note;
   let color = a.color || 'yellow';
@@ -594,12 +684,25 @@ async function refreshList() {
 function renderList(all: Annotation[]) {
   const box = $('#hl-list');
   if (!box || !showingList || !paper) return;
-  const list = [...all].sort((a, b) => (parseInt(a.position, 10) || 0) - (parseInt(b.position, 10) || 0));
-  const md = () => `## ${paper?.meta.title || 'Highlights'}\n\n` + list.map((a) => `> ${a.quote.trim()}\n${a.note ? `\n${a.note}\n` : ''}\n`).join('');
+  // in the paper's order (a region marked on a figure: where its figure is)
+  const order = (a: Annotation) => (isMark(a) ? regionOf(a)?.start ?? 0 : parseInt(a.position, 10) || 0);
+  const list = [...all].sort((a, b) => order(a) - order(b));
+  const md = () => `## ${paper?.meta.title || 'Highlights'}\n\n` + list.map((a) => isMark(a)
+    ? `> **${markTitle(regionOf(a))}**${a.suffix ? ` — ${a.suffix}` : ''}\n${a.note ? `\n${a.note}\n` : ''}\n`
+    : `> ${a.quote.trim()}\n${a.note ? `\n${a.note}\n` : ''}\n`).join('');
+  const markRow = (a: Annotation) => {
+    const r = regionOf(a), p = placed.get(a.id), src = p ? figures[p.figure]?.srcs[p.image] : undefined;
+    return h('div.hl-item.hl-mark', { onclick: () => showMark(a), oncontextmenu: (e: MouseEvent) => { e.preventDefault(); openEditor(a); } },
+      h(`span.mark-thumb.c-${a.color || 'yellow'}`, src && r ? { style: cropStyle(src, r) } : { text: '⬚' }),
+      h('div', {}, h('div.quote', { text: markTitle(r) }),
+        a.note ? h('div.note', { text: `✎ ${a.note}` }) : a.suffix ? h('div.where', { text: a.suffix }) : null,
+        p ? null : h('div.where', { text: 'Not in this reading view' })),
+      h('button.icon.edit', { text: '…', title: 'Edit', onclick: (e: Event) => { e.stopPropagation(); openEditor(a); } }));
+  };
   fill(box,
     h('h4', { text: 'Highlights & Notes' }),
     list.length ? null : h('p.hint', { text: 'No highlights yet. Select text in the reading view, then pick a colour or Note.' }),
-    ...list.map((a) => h('div.hl-item', {
+    ...list.map((a) => isMark(a) ? markRow(a) : h('div.hl-item', {
       onclick: () => {
         if (a.location !== 'epub') { status('This highlight was made in the PDF on another device; PDF highlights show on the Mac and iPhone for now.'); return; }
         if (mode !== 'reading') return;
@@ -861,6 +964,29 @@ function captionHighlights(): CaptionHighlights | undefined {
       } catch (e) { status(String(e), 'error'); }
     },
     edit: (id) => { editAnnotation(id); },
+    regions: async (fig) => {
+      if (!paper) return [];
+      const list = await api.annotations(paper.id).catch(() => [] as Annotation[]);
+      placed = await placedMarks(list);
+      return list.filter((a) => placed.get(a.id)?.figure === fig).map((a): Mark => {
+        const r = regionOf(a)!;
+        return { id: a.id, x: r.x, y: r.y, w: r.w, h: r.h, ellipse: r.shape === 'ellipse', color: a.color, note: a.note, image: placed.get(a.id)!.image };
+      });
+    },
+    addRegion: async (fig, image, r) => {
+      const f = figures[fig];
+      if (!paper || !f || !f.srcs[image]) return;
+      const src = f.srcs[image];
+      const region: FigureRegion = { figure: f.label, index: fig, image: fileName(src),
+        hash: await imageHash(src), image_index: image, x: r.x, y: r.y, w: r.w, h: r.h, shape: 'rect', start: f.at };
+      const color = hlMode ? hlColor : localStorage.getItem('figureMarkColor') || 'yellow';
+      try {
+        const a = await api.saveAnnotation({ id: '', paper_id: paper.id, kind: 'FigureMark', color, location: 'figure', position: JSON.stringify(region),
+          quote: `${f.label || 'Figure'} (region)`, prefix: '', suffix: captionContext(shownCaption(f)), note: '', created: 0, modified: 0 });
+        await refreshHighlights();
+        if (!hlMode) openEditor(a);
+      } catch (e) { status(String(e), 'error'); }
+    },
     marks: async (fig) => {
       const json = await run<string>(`window.luntaFigures && luntaFigures.marks ? luntaFigures.marks(${fig}) : ''`);
       try { return json ? figMarks(JSON.parse(json)) : null; } catch { return null; }

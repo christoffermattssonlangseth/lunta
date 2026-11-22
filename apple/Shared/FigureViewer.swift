@@ -32,6 +32,10 @@ struct ReaderFigure: Identifiable, Equatable {
     /// One of the page's figures (`index` is its number there): its caption can be highlighted.
     var inPage = false
     var set: [ReaderFigure] = []
+    /// Where the figure is in the page's text (a highlight's offset): a region marked on it is listed there.
+    var at = 0
+    /// A region marked on it to show as it opens (FigureMarks.swift: from the Highlights & Notes list).
+    var focus = ""
 
     /// One figure as the page describes it.
     init(_ d: [String: Any]) {
@@ -43,6 +47,7 @@ struct ReaderFigure: Identifiable, Equatable {
         index = d["index"] as? Int ?? 0
         inPage = d["index"] is Int
         marks = FigureMark.list(d["marks"])
+        at = d["at"] as? Int ?? 0
     }
 
     /// The caption as the viewer shows it: the title, a space, the caption (as the page counts it, figureJS shownText).
@@ -170,8 +175,17 @@ extension ReaderAssets {
         '.m-fc-title { margin-top: 2px; font-size: .8rem; line-height: 1.35; color: rgba(29,29,31,.72); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }' +
         '.m-fc-label::before, .m-fc-title::before { content: attr(data-t); }' +
         '.m-figcard::after { content: "›"; flex: 0 0 auto; font-size: 1.4rem; line-height: 1; color: rgba(127,127,127,.6); padding-left: 2px; }' +
+        // regions marked on the figure (FigureMarks.swift): a small badge, its words from an attribute
+        '.m-fc-marks { display: none; margin-top: 4px; }' +
+        '.m-fc-marks[data-t] { display: inline-flex; align-items: center; gap: 4px; font-size: .7rem; font-weight: 600; line-height: 1;' +
+        ' padding: 3px 7px 3px 5px; border-radius: 999px; color: #6b5310; background: rgba(250,212,77,.3); }' +
+        '.m-fc-marks[data-t]::before { content: ""; width: 9px; height: 7px; border: 1.5px solid currentColor; border-radius: 2px; }' +
+        '.m-fc-marks[data-t]::after { content: attr(data-t); }' +
+        '.m-fc-marks.m-green { color: #2f6b23; background: rgba(140,209,122,.3); } .m-fc-marks.m-blue { color: #1d5b94; background: rgba(122,184,242,.3); }' +
+        '.m-fc-marks.m-pink { color: #8f2a50; background: rgba(245,143,179,.3); }' +
         '@media (prefers-color-scheme: dark) { .m-figcard { background: #0f0f0f; border-color: #2b2b2b; } .m-fc-label { color: #9ec9d8; }' +
-        ' .m-fc-title { color: rgba(216,213,206,.68); } .m-fc-thumb { opacity: .9; border-color: #333; } }';
+        ' .m-fc-title { color: rgba(216,213,206,.68); } .m-fc-thumb { opacity: .9; border-color: #333; }' +
+        ' .m-fc-marks[data-t] { color: #f2d77a; } .m-fc-marks.m-green { color: #a6dc95; } .m-fc-marks.m-blue { color: #9ccaf5; } .m-fc-marks.m-pink { color: #f5a6c3; } }';
       document.documentElement.appendChild(st);
 
       var PRE = '(Extended\\s+Data\\s+|Supplementa(?:ry|l)\\s+|Suppl?\\.\\s*)?';
@@ -397,11 +411,30 @@ extension ReaderAssets {
         });
       }
 
-      // what the app needs to show figure i (its images, label, title, caption, highlights in the caption)
+      // where each figure is in the page's text (as a highlight's offset: in a book read chapter by chapter
+      // in the whole book's text), its first character or the text after it: a region marked on the figure
+      // is listed there among the highlights. Figures add no text, so it stays put once known.
+      var figAt = null;
+      function starts(){
+        if (figAt) return figAt;
+        var mb = document.querySelector('meta[name="lunta-text-base"]'), base = mb ? (parseInt(mb.getAttribute('content'), 10) || 0) : 0;
+        var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: function(n){
+          var q = n.parentNode && n.parentNode.nodeName.toLowerCase();
+          return (q === 'script' || q === 'style') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT; } }), n, pos = 0, k = 0;
+        figAt = [];
+        while ((n = w.nextNode())) {
+          while (k < figs.length && (figs[k].contains(n) || (figs[k].compareDocumentPosition(n) & 4))) figAt[k++] = pos + base;
+          pos += n.nodeValue.length;
+        }
+        while (k < figs.length) figAt[k++] = pos + base;
+        return figAt;
+      }
+      // what the app needs to show figure i (its images, label, title, caption, highlights in the caption,
+      // where it is in the text)
       function data(i){
         var f = figs[i], p = parts(f);
         var srcs = Array.prototype.slice.call(f.querySelectorAll('img')).map(function(x){ return x.src; });
-        return { index: i, srcs: srcs, label: p.label, title: p.title, caption: p.caption, marks: p.marks };
+        return { index: i, srcs: srcs, label: p.label, title: p.title, caption: p.caption, marks: p.marks, at: starts()[i] || 0 };
       }
       function all(){ return figs.map(function(_, i){ return data(i); }); }
       function send(m){ try { window.webkit.messageHandlers.fig.postMessage(m); return true; } catch (x) { return false; } }
@@ -416,7 +449,16 @@ extension ReaderAssets {
         data: function(i){ return JSON.stringify({ all: all(), index: i }); },
         // the viewer's caption: a selection in it as the page's passage, and the highlights in it now
         select: function(i, from, to){ return capSelection(i, from, to); },
-        marks: function(i){ return figs[i] ? JSON.stringify(parts(figs[i]).marks) : '[]'; }
+        marks: function(i){ return figs[i] ? JSON.stringify(parts(figs[i]).marks) : '[]'; },
+        // the regions marked on each figure (FigureMarks.swift): {figure index: [colour, …]}, as a badge on its card
+        setRegions: function(json){
+          var by = {}; try { by = JSON.parse(json) || {}; } catch (x) {}
+          document.querySelectorAll('.m-fc-marks').forEach(function(b){
+            var c = by[b.getAttribute('data-fig-marks')] || [];
+            b.className = 'm-fc-marks' + (c.length ? ' m-' + (/^(yellow|green|blue|pink)$/.test(c[0]) ? c[0] : 'yellow') : '');
+            if (c.length) b.setAttribute('data-t', c.length === 1 ? '1 mark' : c.length + ' marks'); else b.removeAttribute('data-t');
+          });
+        }
       };
 
       // the cards
@@ -433,6 +475,7 @@ extension ReaderAssets {
         var title = d.title || d.caption.split(/(?<=[a-z0-9)\]][.;:])\s/)[0];
         if (title.length > 220) title = title.slice(0, 220) + '…';
         if (title) { var tt = document.createElement('div'); tt.className = 'm-fc-title'; tt.setAttribute('data-t', title); tx.appendChild(tt); }
+        var mk = document.createElement('div'); mk.className = 'm-fc-marks'; mk.setAttribute('data-fig-marks', i); tx.appendChild(mk);
         card.appendChild(th); card.appendChild(tx);
         f.insertBefore(card, f.firstChild);
         f.classList.add('m-carded');
@@ -501,6 +544,8 @@ struct FigureViewer: View {
     @Environment(\.colorScheme) private var scheme
     @State private var current: Int
     @State private var showCaption = true
+    /// The Mark tool: dragging on the image marks a region (FigureMarks.swift).
+    @State private var marking = false
     /// Shown as a card over the text (`figureOverlay`): closing goes through this instead of dismiss.
     var onClose: (() -> Void)? = nil
 
@@ -541,15 +586,15 @@ struct FigureViewer: View {
         #if os(iOS)
         TabView(selection: $current) {
             ForEach(figures.indices, id: \.self) { i in
-                FigurePage(figure: figures[i], start: figures[i].id == figure.id ? figure.start : 0, showCaption: showCaption, dark: scheme == .dark,
-                           controller: controller)
+                FigurePage(figure: figures[i], start: figures[i].id == figure.id ? figure.start : (figures[i].focus.isEmpty ? 0 : figures[i].start),
+                           showCaption: showCaption, dark: scheme == .dark, controller: controller, all: figures, marking: marking)
                     .tag(i)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         #else
-        FigurePage(figure: shown, start: shown.id == figure.id ? figure.start : 0, showCaption: showCaption, dark: scheme == .dark,
-                   controller: controller)
+        FigurePage(figure: shown, start: shown.id == figure.id ? figure.start : (shown.focus.isEmpty ? 0 : shown.start),
+                   showCaption: showCaption, dark: scheme == .dark, controller: controller, all: figures, marking: marking)
             .id(current)
         #endif
     }
@@ -574,6 +619,18 @@ struct FigureViewer: View {
                     .disabled(current == figures.count - 1).keyboardShortcut(.rightArrow, modifiers: []).help("Next figure (→)")
             }
             #endif
+            if controller?.model != nil, shown.inPage, !shown.images.isEmpty {
+                Button { marking.toggle() } label: {
+                    Image(systemName: marking ? "rectangle.dashed.badge.record" : "rectangle.dashed")
+                        .foregroundStyle(marking ? Color.accentColor : Color.primary.opacity(0.85))
+                }
+                #if os(iOS)
+                .help(marking ? "Done marking" : "Mark a region: drag on the image (or long-press and drag)")
+                #else
+                .help(marking ? "Done marking" : "Mark a region: drag on the image (or ⌥-drag)")
+                #endif
+                .accessibilityLabel(marking ? "Done Marking" : "Mark a Region")
+            }
             if figures.contains(where: { !$0.caption.isEmpty || !$0.title.isEmpty }) {
                 Button { withAnimation(.easeInOut(duration: 0.2)) { showCaption.toggle() } } label: {
                     Image(systemName: showCaption ? "text.below.photo.fill" : "text.below.photo")
@@ -604,7 +661,15 @@ private struct FigurePage: View {
     let showCaption: Bool
     let dark: Bool
     let controller: ReaderController?
+    /// All the page's figures (in its order): where marks are placed.
+    var all: [ReaderFigure] = []
+    /// The Mark tool is on.
+    var marking = false
     @State private var image: Int
+    /// Regions marked on this figure.
+    @State private var regions: [RegionMark] = []
+    /// A mark to show (zoomed to, flashed) once.
+    @State private var focus = ""
     @State private var captionHeight: CGFloat = 0
     @State private var marks: [FigureMark]
     @State private var editing: Annotation?
@@ -613,8 +678,10 @@ private struct FigurePage: View {
     @AppStorage("highlightMode") private var highlightMode = false
     @AppStorage("highlightModeColor") private var highlightModeColor = HighlightColor.yellow.rawValue
 
-    init(figure: ReaderFigure, start: Int, showCaption: Bool, dark: Bool, controller: ReaderController? = nil) {
+    init(figure: ReaderFigure, start: Int, showCaption: Bool, dark: Bool, controller: ReaderController? = nil,
+         all: [ReaderFigure] = [], marking: Bool = false) {
         self.figure = figure; self.showCaption = showCaption; self.dark = dark; self.controller = controller
+        self.all = all; self.marking = marking
         _image = State(initialValue: start)
         _marks = State(initialValue: figure.marks)
     }
@@ -628,7 +695,7 @@ private struct FigurePage: View {
         GeometryReader { geo in
             VStack(spacing: 0) {
                 if figure.images.indices.contains(image) {
-                    ZoomableImage(url: figure.images[image], dark: dark)
+                    ZoomableImage(url: figure.images[image], dark: dark, tool: markTool)
                         .id(figure.images[image])
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .overlay(alignment: .bottom) {
@@ -664,7 +731,17 @@ private struct FigurePage: View {
                 }
             }
         }
-        .onReceive(controller?.$annotationsShown.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()) { _ in reloadMarks() }
+        .onReceive(controller?.$annotationsShown.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()) { _ in reloadMarks(); reloadRegions() }
+        .task {
+            reloadRegions()
+            // opened at a mark: zoomed to it and flashed, once
+            if !figure.focus.isEmpty, regions.contains(where: { $0.id == figure.focus }) {
+                try? await Task.sleep(for: .milliseconds(450))
+                focus = figure.focus
+                try? await Task.sleep(for: .seconds(2))
+                focus = ""
+            }
+        }
         .sheet(item: $editing) { a in
             if let model = controller?.model {
                 AnnotationEditor(annotation: a) { [weak controller] in controller?.showAnnotations(model.annotations(a.paperId)) }
@@ -681,6 +758,37 @@ private struct FigurePage: View {
     }
 
     private var modeColor: HighlightColor { HighlightColor(rawValue: highlightModeColor) ?? .yellow }
+
+    /// Marks on the image shown: drawn over it, and drawn anew with the Mark tool, in highlight mode
+    /// (at once, in its colour), with a long press (⌥ on the Mac) or the Apple Pencil.
+    private var markTool: MarkTool {
+        MarkTool(regions: regions.filter { $0.image == image }, enabled: canHighlight, direct: canHighlight && (marking || highlightMode),
+                 color: highlightMode ? modeColor : FigureMarkColor.current, focus: focus,
+                 onDraw: { addRegion($0) }, onTap: { edit($0) })
+    }
+
+    /// The regions marked on this figure, as the library has them now.
+    private func reloadRegions() {
+        guard let controller, figure.inPage else { return }
+        regions = controller.regionMarks(figure: figure.index, figs: all.isEmpty ? controller.figures : all)
+    }
+
+    /// A region drawn on the image: saved as a mark (undo takes it away); its editor opens for a
+    /// colour and a note, except in highlight mode (marked in its colour, nothing more to do).
+    private func addRegion(_ r: CGRect) {
+        guard let controller, let model = controller.model, figure.images.indices.contains(image) else { return }
+        let url = figure.images[image]
+        let region = FigureRegion(figure: figure.label, index: UInt32(max(0, figure.index)), image: url.lastPathComponent,
+                                  hash: imageHash(path: url.isFileURL ? url.path : url.absoluteString), imageIndex: UInt32(image),
+                                  x: Double(r.minX), y: Double(r.minY), w: Double(r.width), h: Double(r.height), shape: "rect",
+                                  start: UInt64(max(0, figure.at)))
+        let paper = controller.paperID
+        let saved = model.addFigureMark(paper, region: region, color: highlightMode ? modeColor : FigureMarkColor.current,
+                                        caption: figure.shown, undo: controller.undo)
+        controller.showAnnotations(model.annotations(paper))
+        reloadRegions()
+        if !highlightMode, let saved { editing = saved }
+    }
 
     /// The highlights the page has in this caption now.
     private func reloadMarks() {
@@ -1176,6 +1284,9 @@ import UIKit
 struct ZoomableImage: UIViewRepresentable {
     let url: URL
     var dark = false
+    /// Regions marked on the image (FigureMarks.swift): drawn over it, zooming with it; new ones drawn
+    /// with a long press and a drag, at once with the Mark tool or in highlight mode, and with the Pencil.
+    var tool = MarkTool()
 
     final class ZoomScrollView: UIScrollView {
         var onLayout: (() -> Void)?
@@ -1201,18 +1312,139 @@ struct ZoomableImage: UIViewRepresentable {
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.doubleTap(_:)))
         tap.numberOfTapsRequired = 2
         sv.addGestureRecognizer(tap)
+        context.coordinator.addMarking(sv, iv, doubleTap: tap)
         return sv
     }
 
     func updateUIView(_ sv: UIScrollView, context: Context) {
         context.coordinator.imageView?.alpha = dark ? 0.92 : 1
+        context.coordinator.update(tool, sv)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    final class Coordinator: NSObject, UIScrollViewDelegate {
+    final class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
         var imageView: UIImageView?
         private var laidOutFor: CGSize = .zero
+        private var tool = MarkTool()
+        private var overlay: MarkOverlayView?
+        private var press: UILongPressGestureRecognizer?
+        private var pencil: UILongPressGestureRecognizer?
+        private var tapMark: UITapGestureRecognizer?
+        private var drawFrom: CGPoint?
+        private var focused = ""
+        private weak var scroll: UIScrollView?
+
+        /// The marks' layer over the image, and the gestures that draw and open them.
+        func addMarking(_ sv: UIScrollView, _ iv: UIImageView, doubleTap: UITapGestureRecognizer) {
+            scroll = sv
+            iv.isUserInteractionEnabled = true
+            let ov = MarkOverlayView(frame: iv.bounds)
+            ov.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            iv.addSubview(ov)
+            overlay = ov
+            // a finger: a long press, then drag (at once with the Mark tool or in highlight mode)
+            let lp = UILongPressGestureRecognizer(target: self, action: #selector(drawing(_:)))
+            lp.allowableMovement = .greatestFiniteMagnitude
+            lp.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+            lp.delegate = self
+            iv.addGestureRecognizer(lp)
+            press = lp
+            // the Apple Pencil draws marks as it touches the image
+            let pen = UILongPressGestureRecognizer(target: self, action: #selector(drawing(_:)))
+            pen.minimumPressDuration = 0
+            pen.allowableMovement = .greatestFiniteMagnitude
+            pen.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+            iv.addGestureRecognizer(pen)
+            pencil = pen
+            // a tap on a mark: its editor
+            let t = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+            t.require(toFail: doubleTap)
+            iv.addGestureRecognizer(t)
+            tapMark = t
+        }
+
+        func update(_ t: MarkTool, _ sv: UIScrollView) {
+            tool = t
+            press?.isEnabled = t.enabled
+            pencil?.isEnabled = t.enabled
+            tapMark?.isEnabled = t.enabled && !t.regions.isEmpty
+            press?.minimumPressDuration = t.direct ? 0 : 0.35
+            // (a long press: the finger held still first, else it moves the image or turns to the next figure)
+            press?.allowableMovement = t.direct ? .greatestFiniteMagnitude : 10
+            // marking: two fingers move the zoomed image, one draws
+            sv.panGestureRecognizer.minimumNumberOfTouches = t.enabled && t.direct ? 2 : 1
+            guard let ov = overlay else { return }
+            if ov.painter.marks != t.regions || ov.painter.flash != t.focus {
+                ov.painter.marks = t.regions
+                ov.painter.flash = t.focus
+                ov.setNeedsDisplay()
+            }
+            if !t.focus.isEmpty, t.focus != focused, let m = t.regions.first(where: { $0.id == t.focus }) {
+                focused = t.focus
+                zoom(to: m, sv)
+            }
+        }
+
+        /// Zoomed in on a small mark (a large one is shown as it is).
+        private func zoom(to m: RegionMark, _ sv: UIScrollView) {
+            guard let iv = imageView, m.rect.width < 0.6 || m.rect.height < 0.6 else { return }
+            let b = iv.bounds.size
+            let r = CGRect(x: m.rect.minX * b.width, y: m.rect.minY * b.height, width: m.rect.width * b.width, height: m.rect.height * b.height)
+            sv.zoom(to: r.insetBy(dx: -max(24, r.width * 0.35), dy: -max(24, r.height * 0.35)), animated: true)
+        }
+
+        @objc func drawing(_ g: UILongPressGestureRecognizer) {
+            guard let ov = overlay else { return }
+            let p = g.location(in: ov)
+            let zoom = scroll?.zoomScale ?? 1
+            switch g.state {
+            case .began:
+                drawFrom = p
+                ov.painter.liveColor = tool.color
+                ov.painter.scale = zoom
+                if g !== pencil { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+            case .changed:
+                guard let s = drawFrom else { return }
+                if g.numberOfTouches > 1 { cancel(g); return }   // a pinch: zooming, not marking
+                ov.painter.live = CGRect(x: min(s.x, p.x), y: min(s.y, p.y), width: abs(p.x - s.x), height: abs(p.y - s.y)).intersection(ov.bounds)
+                ov.setNeedsDisplay()
+            case .ended:
+                defer { drawFrom = nil; ov.painter.live = nil; ov.setNeedsDisplay() }
+                guard let s = drawFrom else { return }
+                if abs(p.x - s.x) * zoom >= 10, abs(p.y - s.y) * zoom >= 10 {
+                    tool.onDraw(normalizedRegion(s, p, in: ov.bounds.size))
+                } else if let id = markAt(p, in: ov.bounds.size, tool.regions, slack: 8 / zoom) {
+                    tool.onTap(id)
+                }
+            default:
+                drawFrom = nil; ov.painter.live = nil; ov.setNeedsDisplay()
+            }
+        }
+
+        private func cancel(_ g: UIGestureRecognizer) {
+            drawFrom = nil; overlay?.painter.live = nil; overlay?.setNeedsDisplay()
+            g.isEnabled = false; g.isEnabled = tool.enabled
+        }
+
+        @objc func tapped(_ g: UITapGestureRecognizer) {
+            guard let ov = overlay else { return }
+            let zoom = scroll?.zoomScale ?? 1
+            if let id = markAt(g.location(in: ov), in: ov.bounds.size, tool.regions, slack: 8 / zoom) { tool.onTap(id) }
+        }
+
+        // the long press and the pinch together (a second finger cancels the drawing)
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            other is UIPinchGestureRecognizer
+        }
+
+        func scrollViewDidEndZooming(_ sv: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+            // the marks' lines as thick as before, drawn sharp at this zoom
+            guard let ov = overlay else { return }
+            ov.painter.scale = scale
+            ov.contentScaleFactor = (sv.window?.screen.scale ?? 2) * min(scale, 4)
+            ov.setNeedsDisplay()
+        }
 
         /// Fits the image to the view (again whenever the view's size changes, e.g. the caption hides).
         func layout(_ sv: UIScrollView) {
@@ -1253,6 +1485,9 @@ import AppKit
 struct ZoomableImage: NSViewRepresentable {
     let url: URL
     var dark = false
+    /// Regions marked on the image (FigureMarks.swift): drawn over it, zooming with it; new ones drawn
+    /// with a drag with the Mark tool or in highlight mode, else ⌥-drag; a click on one opens it.
+    var tool = MarkTool()
 
     /// Keeps the image in the middle while it's smaller than the view.
     final class CenteringClipView: NSClipView {
@@ -1289,22 +1524,50 @@ struct ZoomableImage: NSViewRepresentable {
         sv.documentView = iv
         let click = NSClickGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.doubleClick(_:)))
         click.numberOfClicksRequired = 2
+        click.delaysPrimaryMouseButtonEvents = false   // a drag that marks a region starts at once
         sv.addGestureRecognizer(click)
         context.coordinator.scrollView = sv
         sv.onTile = { [weak coordinator = context.coordinator] in coordinator?.fit() }
+        let ov = MarkOverlayView(frame: iv.bounds)
+        ov.autoresizingMask = [.width, .height]
+        iv.addSubview(ov)
+        context.coordinator.overlay = ov
         return sv
     }
 
     func updateNSView(_ sv: NSScrollView, context: Context) {
         sv.documentView?.alphaValue = dark ? 0.92 : 1
         DispatchQueue.main.async { context.coordinator.fit() }
+        context.coordinator.update(tool)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     final class Coordinator: NSObject {
         weak var scrollView: NSScrollView?
+        weak var overlay: MarkOverlayView?
         private var fittedFor: CGSize = .zero
+        private var focused = ""
+
+        func update(_ t: MarkTool) {
+            guard let ov = overlay else { return }
+            let redraw = ov.painter.marks != t.regions || ov.painter.flash != t.focus || ov.tool.direct != t.direct
+            ov.tool = t
+            ov.painter.marks = t.regions
+            ov.painter.flash = t.focus
+            if redraw { ov.needsDisplay = true; ov.window?.invalidateCursorRects(for: ov) }
+            if !t.focus.isEmpty, t.focus != focused, let m = t.regions.first(where: { $0.id == t.focus }), m.rect.width < 0.6 || m.rect.height < 0.6 {
+                focused = t.focus
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                    guard let sv = self?.scrollView, let ov = self?.overlay, let doc = sv.documentView else { return }
+                    let b = ov.bounds.size
+                    let r = CGRect(x: m.rect.minX * b.width, y: m.rect.minY * b.height, width: m.rect.width * b.width, height: m.rect.height * b.height)
+                    let pad = r.insetBy(dx: -max(24, r.width * 0.35), dy: -max(24, r.height * 0.35))
+                    sv.magnify(toFit: ov.convert(pad, to: doc))
+                    ov.needsDisplay = true
+                }
+            }
+        }
 
         /// Fits the image to the view (again whenever the window is resized), unless zoomed in.
         func fit() {

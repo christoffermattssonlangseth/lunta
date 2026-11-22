@@ -166,6 +166,16 @@ private fun EpubReader(model: AppModel, paper: Paper) {
     fun hlModeJS() = "window.luntaHLMode = $hlMode; window.luntaHLColor = '$hlColor';" +
         "document.documentElement.classList.toggle('m-hlmode', $hlMode); document.documentElement.setAttribute('data-hlcolor', '$hlColor');"
 
+    // regions marked on figures (core figmark.rs, Figures.kt): mark id -> (figure, image) among the page's figures
+    var placed by remember { mutableStateOf<Map<String, Pair<Int, Int>>>(emptyMap()) }
+    fun imageFile(src: String): File? = book?.dir?.let { figureFile(File(it), src) }
+    suspend fun placeMarks(list: List<Annotation>): Map<String, Pair<Int, Int>> {
+        val marks = list.filter { it.isFigureMark() }
+        if (marks.isEmpty() || figures.isEmpty()) return emptyMap()
+        val figs = figures.map { f -> FigureImages(f.label, f.images.map { src -> imageFile(src)?.path ?: src }) }
+        return withContext(Dispatchers.IO) { placeFigureMarks(marks, figs) }.associate { it.annotationId to (it.figure.toInt() to it.image.toInt()) }
+    }
+
     suspend fun refreshHighlights() {
         val list = withContext(Dispatchers.IO) { lib.annotations(id) }
         annotations = list
@@ -175,8 +185,17 @@ private fun EpubReader(model: AppModel, paper: Paper) {
                 .put("color", a.color).put("note", a.note).put("start", a.position.toIntOrNull() ?: 0))
         }
         js("luntaApplyAnnotations(${JSONObject.quote(items.toString())})")
+        // a badge on each figure's card for the regions marked on it
+        placed = placeMarks(list)
+        val by = JSONObject()
+        for (a in list) placed[a.id]?.let { (fi, _) ->
+            (by.optJSONArray(fi.toString()) ?: org.json.JSONArray().also { by.put(fi.toString(), it) }).put(a.color)
+        }
+        js("window.luntaFigures && luntaFigures.setRegions && luntaFigures.setRegions(${JSONObject.quote(by.toString())})")
         marksDrawn++
     }
+    // the page's figures came after its highlights were drawn: their cards' badges now
+    LaunchedEffect(figures.size, restored) { if (figures.isNotEmpty() && restored) refreshHighlights() }
 
     suspend fun savePosition() {
         if (!restored) return
@@ -271,12 +290,14 @@ private fun EpubReader(model: AppModel, paper: Paper) {
         model.settings.readerFigureCards = on
         scope.launch { js("window.luntaFigureCards && luntaFigureCards($on)") }
     }
-    fun openFigure(i: Int) {
+    fun openFigure(i: Int, start: Int = 0, focus: String = "") {
         scope.launch {
             // as the page shows it now (with the highlights in its caption), else as it was listed
             val d = jsString("window.luntaFigures ? luntaFigures.data($i) : ''")()?.takeIf { it.isNotEmpty() }
-            figure = d?.let { runCatching { figureOpen(JSONObject(it)) }.getOrNull() }
+            val o = d?.let { runCatching { figureOpen(JSONObject(it)) }.getOrNull() }
                 ?: figures.takeIf { i in it.indices }?.let { FigureOpen(it, i, 0, "") }
+            // (at a region marked on it: that image, the mark shown)
+            figure = if (o != null && focus.isNotEmpty()) o.copy(start = start, focus = focus) else o
         }
     }
 
@@ -603,8 +624,31 @@ private fun EpubReader(model: AppModel, paper: Paper) {
             if (annotations.isEmpty()) item {
                 Text("No highlights yet. Select text in the reading view, then pick a colour.", Modifier.padding(horizontal = 24.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            val sorted = annotations.sortedBy { it.position.toIntOrNull() ?: 0 }
+            // in the paper's order (a region marked on a figure: where its figure is)
+            val sorted = annotations.sortedBy { if (it.isFigureMark()) figureRegion(it)?.start?.toInt() ?: 0 else it.position.toIntOrNull() ?: 0 }
             items(sorted, key = { it.id }) { a ->
+                if (a.isFigureMark()) {
+                    val p = placed[a.id]
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            if (p == null) model.info = "This figure isn't in this version of the reading view. The mark is kept, with its note."
+                            else { showList = false; chrome = false; openFigure(p.first, p.second, a.id) }
+                        }.padding(horizontal = 24.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        val src = p?.let { figures.getOrNull(it.first)?.images?.getOrNull(it.second) }
+                        MarkThumb(src?.let { imageFile(it) }, a.regionMark())
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(figureMarkTitle(a), style = MaterialTheme.typography.bodyMedium)
+                            if (a.note.isNotBlank()) Text("✎ ${a.note.trim()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                            else if (a.suffix.isNotBlank()) Text(a.suffix, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (p == null) Text("Not in this reading view", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                        }
+                        IconButton({ editing = a }) { Icon(Icons.Outlined.Edit, "Edit") }
+                    }
+                    return@items
+                }
                 Row(
                     Modifier.fillMaxWidth().clickable {
                         if (a.location != "epub") model.info = "This highlight was made in the PDF on another device; PDF highlights show on the Mac and iPhone for now."
@@ -624,7 +668,10 @@ private fun EpubReader(model: AppModel, paper: Paper) {
             }
             if (annotations.isNotEmpty()) item {
                 TextButton({
-                    val md = "## ${paper.meta.title}\n\n" + sorted.joinToString("") { "> ${it.quote.trim()}\n${if (it.note.isNotBlank()) "\n${it.note.trim()}\n" else ""}\n" }
+                    val md = "## ${paper.meta.title}\n\n" + sorted.joinToString("") {
+                        val head = if (it.isFigureMark()) "**${figureMarkTitle(it)}**" + (if (it.suffix.isNotBlank()) " — ${it.suffix}" else "") else it.quote.trim()
+                        "> $head\n${if (it.note.isNotBlank()) "\n${it.note.trim()}\n" else ""}\n"
+                    }
                     copyText(ctx, "highlights as Markdown", md)
                 }, Modifier.padding(horizontal = 16.dp)) { Text("Copy all as Markdown") }
             }
@@ -707,11 +754,53 @@ private fun EpubReader(model: AppModel, paper: Paper) {
             jsString("window.luntaFigures && luntaFigures.marks ? luntaFigures.marks($fig) : '[]'")()?.let { runCatching { figMarks(org.json.JSONArray(it)) }.getOrNull() }
         },
         drawn = marksDrawn,
+        regions = { fig ->
+            val list = withContext(Dispatchers.IO) { lib.annotations(id) }
+            val p = placeMarks(list)
+            placed = p
+            list.mapNotNull { a -> p[a.id]?.takeIf { it.first == fig }?.let { a.regionMark(it.second) } }
+        },
+        // a region drawn on the image: saved as a mark (its editor opens for a colour and a note, except in highlight mode)
+        addRegion = { fig, image, r ->
+            scope.launch {
+                val f = figures.getOrNull(fig) ?: return@launch
+                val src = f.images.getOrNull(image) ?: return@launch
+                val file = imageFile(src)
+                val hash = file?.let { withContext(Dispatchers.IO) { imageHash(it.path) } } ?: ""
+                val region = FigureRegion(
+                    f.label, fig.toUInt(), file?.name ?: Uri.decode(src.substringBefore('?').substringAfterLast('/')), hash, image.toUInt(),
+                    r.left.toDouble(), r.top.toDouble(), r.width.toDouble(), r.height.toDouble(), "rect", f.at.coerceAtLeast(0).toULong(),
+                )
+                val color = if (hlMode) hlColor else "yellow"
+                val saved = runCatching { withContext(Dispatchers.IO) { lib.saveAnnotation(newFigureMark(id, region, color, "", shownCaption(f))) } }
+                    .getOrElse { model.info = it.message ?: "Couldn't mark the region"; return@launch }
+                model.reload()
+                refreshHighlights()
+                if (!hlMode) editing = saved
+            }
+        },
     )
     figure?.let { f -> if (bookDir != null) FigureViewer(f, bookDir, readerDark, captionHl) { figure = null } }
 
     // (after the figure viewer: a highlight's editor opened from its caption shows over it)
-    editing?.let { a ->
+    editing?.takeIf { it.isFigureMark() }?.let { a ->
+        val p = placed[a.id]
+        val file = p?.let { figures.getOrNull(it.first)?.images?.getOrNull(it.second) }?.let { imageFile(it) }
+            ?: lib.figureMarkImage(a.paperId, a.id)?.let { File(it) }
+        MarkDialog(a, file, { editing = null }, onDelete = {
+            scope.launch { withContext(Dispatchers.IO) { lib.deleteAnnotation(a.paperId, a.id) }; editing = null; model.reload(); refreshHighlights() }
+        }, onSave = { color, note, ellipse ->
+            scope.launch {
+                withContext(Dispatchers.IO) {
+                    val r = figureRegion(a)
+                    val b = a.copy(color = color, note = note.trim())
+                    lib.saveAnnotation(if (r != null) setFigureRegion(b, r.copy(shape = if (ellipse) "ellipse" else "rect")) else b)
+                }
+                editing = null; model.reload(); refreshHighlights()
+            }
+        })
+    }
+    editing?.takeIf { !it.isFigureMark() }?.let { a ->
         AnnotationDialog(a, ctx, { editing = null }, onDelete = {
             scope.launch { withContext(Dispatchers.IO) { lib.deleteAnnotation(a.paperId, a.id) }; editing = null; model.reload(); refreshHighlights() }
         }, onSave = { color, note ->
@@ -796,6 +885,57 @@ private fun AnnotationDialog(a: Annotation, ctx: android.content.Context, onDism
             }
         },
         confirmButton = { TextButton({ onSave(color, note) }) { Text("Save") } },
+        dismissButton = { TextButton(onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** A region marked on a figure (core figmark.rs: location "figure"). */
+fun Annotation.isFigureMark() = kind == AnnotationKind.FIGURE_MARK || location == "figure"
+
+/** The mark as the viewer draws it, on image [image] of its figure. */
+fun Annotation.regionMark(image: Int = 0): RegionMark? = figureRegion(this)?.let { r ->
+    RegionMark(id, r.x.toFloat(), r.y.toFloat(), r.w.toFloat(), r.h.toFloat(), r.shape == "ellipse", color, note, image)
+}
+
+/** "Figure 3 · region": a mark's line in lists. */
+fun figureMarkTitle(a: Annotation) = "${figureRegion(a)?.figure?.ifBlank { null } ?: "Figure"} · region"
+
+/** A mark's editor: its region cropped from the image, colour, shape, note, Delete. */
+@Composable
+private fun MarkDialog(a: Annotation, file: File?, onDismiss: () -> Unit, onDelete: () -> Unit, onSave: (String, String, Boolean) -> Unit) {
+    var color by remember { mutableStateOf(a.color.ifBlank { "yellow" }) }
+    var note by remember { mutableStateOf(a.note.trim()) }
+    var ellipse by remember { mutableStateOf(figureRegion(a)?.shape == "ellipse") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(figureMarkTitle(a)) },
+        text = {
+            Column {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { MarkThumb(file, a.regionMark()?.copy(color = color), 140.dp) }
+                if (a.suffix.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(a.suffix, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    for (c in COLORS) {
+                        Box(
+                            Modifier.size(36.dp).clip(CircleShape).background(HighlightColors.getValue(c))
+                                .border(if (c == color) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape).clickable { color = c },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(!ellipse, { ellipse = false }, { Text("Rectangle") })
+                    FilterChip(ellipse, { ellipse = true }, { Text("Ellipse") })
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth(), label = { Text("Note") }, placeholder = { Text("What is here (panel c, a cluster…)") }, minLines = 3)
+                TextButton(onDelete, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Delete mark") }
+            }
+        },
+        confirmButton = { TextButton({ onSave(color, note, ellipse) }) { Text("Save") } },
         dismissButton = { TextButton(onDismiss) { Text("Cancel") } },
     )
 }
