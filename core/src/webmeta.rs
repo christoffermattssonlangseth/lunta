@@ -490,7 +490,10 @@ fn title_and_site(title: &str, site: &str, host: &str) -> (String, String) {
             // with no site to compare with: a short tail after a separator titles don't use
             // inside themselves ("·", "|"), or one that is the host's name
             let tail = site.is_empty() && b.split_whitespace().count() <= 4 && (matches!(sep, " | " | " · " | " :: " | " » ") || is_host);
-            if !a.is_empty() && (named || is_host || tail) {
+            // Sphinx and similar doc generators: "Page — Project 1.0 documentation", or a tail
+            // that repeats the title ("Dive into Deep Learning — Dive into Deep Learning 1.0.3 …")
+            let docs = lb.ends_with(" documentation") || (a.len() >= 8 && lb.starts_with(&a.to_lowercase()));
+            if !a.is_empty() && (named || is_host || tail || docs) {
                 return (a.to_string(), if named || !site.is_empty() { String::new() } else { b.to_string() });
             }
         }

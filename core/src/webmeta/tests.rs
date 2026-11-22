@@ -122,6 +122,9 @@ fn site_suffixes_off_titles() {
     assert_eq!(strip_site("Why Small Models Win | The Gradient Notebook", "The Gradient Notebook", "x.com"), "Why Small Models Win");
     assert_eq!(strip_site("The Gradient Notebook | Why Small Models Win", "The Gradient Notebook", "x.com"), "Why Small Models Win");
     assert_eq!(strip_site("Rust - the book", "", "rust-lang.org"), "Rust - the book");
+    assert_eq!(strip_site("Dive into Deep Learning — Dive into Deep Learning 1.0.3 documentation", "", "d2l.ai"), "Dive into Deep Learning");
+    assert_eq!(strip_site("Installation — Requests 2.32 documentation", "", "requests.readthedocs.io"), "Installation");
+    assert_eq!(strip_site("Origins — a history", "", "example.org"), "Origins — a history");
 }
 
 fn karpathy() -> crate::model::Paper {
