@@ -203,7 +203,8 @@ pub fn attach_markers(lines: &mut Vec<PLine>, body: f64) {
         });
         let Some(j) = host else { continue };
         let h = &mut lines[j];
-        h.text += &t;
+        // (in the spans only: the line's text, which decides where paragraphs end, still ends with its
+        // full stop)
         h.spans.push(Span { text: t, sup: true, ..Default::default() });
         h.bbox = h.bbox.union(&lb);
         gone.insert(i);

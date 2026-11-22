@@ -925,6 +925,14 @@ impl<'a> Analyzer<'a> {
                 (self.log)(&format!("Laying out page {} of {}", pno + 1, n));
             }
         }
+        // (a margin text on many pages is the book's furniture, a part's name in the margin: not a note)
+        // ("Problem 2.1" and "Problem 2.2" are not the same text)
+        let key = |p: &Para| trim(&p.text()).to_lowercase();
+        let mut margin_pages: HashMap<String, HashSet<usize>> = HashMap::new();
+        for n in &sidenotes {
+            margin_pages.entry(key(n)).or_default().insert(n.page);
+        }
+        sidenotes.retain(|n| margin_pages.get(&key(n)).map_or(0, |s| s.len()) < 4);
         if !sidenotes.is_empty() {
             (self.log)(&format!("Margin notes: {}", sidenotes.len()));
         }

@@ -826,7 +826,8 @@ final class PDFAnalyzer {
                     && l.bbox.x0 >= h.bbox.x1 - 1 && l.bbox.x0 - h.bbox.x1 < 0.6 * h.size
                     && l.bbox.y0 >= h.bbox.y0 - 0.5 * h.size && l.bbox.y1 <= h.bbox.y1 + 1 && (l.bbox.y0 + l.bbox.y1) / 2 < (h.bbox.y0 + h.bbox.y1) / 2
             }) else { continue }
-            host.text += t
+            // (in the spans only: the line's text, which decides where paragraphs end, still ends with its
+            // full stop)
             host.spans.append(Span(text: t, sup: true))
             host.bbox = host.bbox.union(l.bbox)
             gone.insert(ObjectIdentifier(l))
@@ -1190,6 +1191,12 @@ final class PDFAnalyzer {
             all += paragraphs(pno, free, regions)
             if pno % 5 == 4 { log("Laying out page \(pno + 1) of \(doc.pageCount)") }
         }
+        // (a margin text on many pages is the book's furniture, a part's name in the margin: not a note)
+        var marginPages: [String: Set<Int>] = [:]
+        // ("Problem 2.1" and "Problem 2.2" are not the same text)
+        let key = { (p: Para) in p.text.lowercased().trimmingCharacters(in: .whitespaces) }
+        for n in sidenotes { marginPages[key(n), default: []].insert(n.page) }
+        sidenotes.removeAll { (marginPages[key($0)]?.count ?? 0) >= 4 }
         if !sidenotes.isEmpty { log("Margin notes: \(sidenotes.count)") }
         return findFootnotes(Self.placeSidenotes(classify(all), sidenotes))
     }

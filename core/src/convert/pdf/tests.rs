@@ -1914,6 +1914,7 @@ fn a_superscript_on_a_line_of_its_own_goes_back_to_its_line() {
     ls[1].bbox = R::new(ls[1].bbox.x0, 99.0, ls[1].bbox.x0 + 3.0, 105.0);
     notes::attach_markers(&mut ls, 10.0);
     assert_eq!(ls.len(), 1);
-    assert_eq!(ls[0].text, "we can improve no further.2");
+    assert_eq!(ls[0].text, "we can improve no further.");
+    assert_eq!(ls[0].spans.last().unwrap().text, "2");
     assert!(ls[0].spans.last().unwrap().sup);
 }
