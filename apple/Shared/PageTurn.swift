@@ -495,15 +495,25 @@ extension PageMessageHandler {
 
 /// Watches a finger dragging a selection handle in pages, without taking part in any gesture
 /// (WebKit's handles, swipes and taps work as before): where it is, and when it has rested for
-/// half a second (it has to move again before the next rest counts, so a held finger turns one page).
+/// 0.7 s (then, before the next rest counts, 1.5 s must pass and the finger must move well away; at the
+/// screen's side it must also leave the side first, so a finger held there turns one page).
 final class SelectionDragWatcher: UIGestureRecognizer, UIGestureRecognizerDelegate {
     private weak var handler: PageMessageHandler?
     private var start: CGPoint?
     private var restPoint: CGPoint?
     private var dragging = false
     private var rest: DispatchWorkItem?
+    /// Where and when the last rest asked for a turn, and whether the finger has left the screen's
+    /// side since: a finger kept at the side (it is never quite still) must not flip page after page.
+    private var lastAsk: (point: CGPoint, at: Date)?
+    private var leftSide = true
     /// How close to the screen's side the finger counts as at its edge (points).
     static let edge: CGFloat = 24
+    /// How long the finger rests before a turn, and the least time between two turns.
+    static let hold: TimeInterval = 0.7
+    static let between: TimeInterval = 1.5
+    /// How far the finger must move after a turn (points), or leave the side, before the next rest counts.
+    static let moveAgain: CGFloat = 44
 
     init(handler: PageMessageHandler) {
         self.handler = handler
@@ -536,14 +546,23 @@ final class SelectionDragWatcher: UIGestureRecognizer, UIGestureRecognizerDelega
         rest?.cancel()
         let w = v.bounds.width
         let zone = p.x > w - Self.edge ? 1 : (p.x < Self.edge ? -1 : 0)
+        // well away from both sides again: the next rest at a side may turn
+        if p.x < w - 3 * Self.edge && p.x > 3 * Self.edge { leftSide = true }
         let item = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.dragging else { return }
+                if let last = self.lastAsk {
+                    if Date().timeIntervalSince(last.at) < Self.between { return }
+                    if hypot(p.x - last.point.x, p.y - last.point.y) < Self.moveAgain { return }
+                }
+                if zone != 0 && !self.leftSide { return }
+                self.lastAsk = (p, Date())
+                if zone != 0 { self.leftSide = false }
                 self.handler?.edgeRest(zone: zone)
             }
         }
         rest = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hold, execute: item)
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { finish() }
@@ -553,7 +572,7 @@ final class SelectionDragWatcher: UIGestureRecognizer, UIGestureRecognizerDelega
     private func finish(recognizerState: Bool = true) {
         rest?.cancel(); rest = nil
         if dragging { handler?.dragChanged(false) }
-        dragging = false; start = nil; restPoint = nil
+        dragging = false; start = nil; restPoint = nil; lastAsk = nil; leftSide = true
         // never recognized: it only watches
         if recognizerState, state == .possible { state = .failed }
     }
