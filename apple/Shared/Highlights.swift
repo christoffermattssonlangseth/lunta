@@ -31,7 +31,7 @@ struct PageSelection: Codable {
 
 extension ReaderAssets {
     static let annotationCSS = """
-    mark.m-hl { color: inherit; border-radius: 2px; padding: 0 1px; cursor: pointer; }
+    mark.m-hl { color: inherit; border-radius: 2px; padding: 0; cursor: pointer; }   /* no padding: a highlight must never move the text (marks are split per text node, so padding added up and re-wrapped lines) */
     mark.m-yellow { background: rgba(250,212,77,.45); }
     mark.m-green { background: rgba(140,209,122,.45); }
     mark.m-blue { background: rgba(122,184,242,.42); }
