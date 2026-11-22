@@ -30,12 +30,14 @@ fn main() {
     let page_url = take("--page");
     let images_dir = take("--images");
     let fulltext = take("--fulltext");
+    // --type <work type>: the type the library knows for the item ("book", "journal-article"…)
+    let work_type = take("--type");
     let Some(input) = args.first().cloned() else {
         eprintln!("usage: paper2epub [--offline] <DOI|PMCID|arXiv id|link|file.pdf|file.xml> [output-dir]");
         std::process::exit(2);
     };
     let out = args.get(1).map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap());
-    let opts = Options { log: Some(Box::new(|m| eprintln!("{m}"))), offline, doi: None };
+    let opts = Options { log: Some(Box::new(|m| eprintln!("{m}"))), offline, doi: None, work_type };
     let r = if input.to_lowercase().ends_with(".webarchive") {
         match std::fs::read(&input) {
             Ok(d) => convert::convert_webarchive_with(&d, &out, &opts),
@@ -79,6 +81,7 @@ fn main() {
         Ok(r) => {
             println!("✓ {}", r.file.display());
             println!("  source: {}   words: {}   images: {}", r.source, r.words, r.images);
+            println!("  kind: {}   ({})", r.kind, r.kind_reasons.join("; "));
             for n in &r.notes {
                 println!("  note: {n}");
             }

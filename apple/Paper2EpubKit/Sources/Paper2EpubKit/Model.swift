@@ -10,6 +10,9 @@ public struct PaperMeta: Sendable {
     public var license = ""
     public var keywords: [String] = []
     public var url = ""
+    /// The work type (Crossref/CSL: "journal-article", "book", "dissertation"…), when known: one of
+    /// the signals that decide whether a PDF is converted as a paper or as a book.
+    public var workType = ""
     /// Pre-rendered XHTML for affiliations, shown on the title page.
     public var affiliationsHTML = ""
 
@@ -26,6 +29,7 @@ public struct PaperMeta: Sendable {
         if license.isEmpty { license = other.license }
         if keywords.isEmpty { keywords = other.keywords }
         if url.isEmpty { url = other.url }
+        if workType.isEmpty { workType = other.workType }
     }
 }
 
@@ -53,6 +57,9 @@ public struct Book: Sendable {
     public var images: [BookImage]
     public var sourceLabel: String
     public var notes: [String]
+    /// What the converter took a PDF for (paper or book), and the signals that decided it.
+    public var kind: DocumentKind = .paper
+    public var kindReasons: [String] = []
 }
 
 public struct ConversionResult: Sendable {
@@ -69,6 +76,11 @@ public struct ConversionResult: Sendable {
     /// Text of the reading view as Lunta's reader shows it (for checking that highlights still
     /// anchor before replacing a reading view: see `HighlightLocator`).
     public var readerText: String = ""
+    /// Paper or book (a thesis is converted as a book): a library item converted as a book that has
+    /// no work type yet could be given the type "book" (or "thesis").
+    public var kind: DocumentKind = .paper
+    /// The signals that decided `kind` ("541 pages", "outline of 24 chapters", "ISBN"…).
+    public var kindReasons: [String] = []
 }
 
 public enum ConversionError: Error, LocalizedError {

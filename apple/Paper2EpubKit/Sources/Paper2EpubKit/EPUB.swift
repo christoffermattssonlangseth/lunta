@@ -14,6 +14,10 @@ enum EPUBWriter {
     }
 
     static func write(_ book: Book, cover: Data?, to url: URL) throws {
+        // a zip may hold a name once (a reader that finds it twice may refuse the book): the first wins
+        var book = book
+        var seen = Set<String>()
+        book.images = book.images.filter { seen.insert($0.fileName).inserted }
         let files = sections(book)
 
         var zip = ZipWriter()

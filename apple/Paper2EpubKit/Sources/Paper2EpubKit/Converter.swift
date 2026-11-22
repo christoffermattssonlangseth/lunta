@@ -17,6 +17,9 @@ public enum Paper2Epub {
     /// The paper's DOI when it is known (a library paper's): converting its PDF looks for an XML
     /// version by this DOI, also when the PDF doesn't show it.
     @TaskLocal public static var knownDOI = ""
+    /// The work type the library knows for the item ("book", "dissertation", "journal-article"…):
+    /// one of the signals for converting a PDF as a book or as a paper.
+    @TaskLocal public static var knownType = ""
 
     public static func convert(file: URL, into dir: URL, log: @escaping Log = { _ in }) async throws -> ConversionResult {
         let cands = try Resolver.candidates(forFile: file, log: log)
@@ -156,7 +159,8 @@ public enum Paper2Epub {
         }.joined(separator: "\n")
         return ConversionResult(file: url, title: book.meta.title, source: book.sourceLabel, words: words,
                                 images: book.images.count, notes: book.notes, meta: book.meta, fulltext: text,
-                                readerText: ReaderText.combined(EPUBWriter.sections(book).map(\.html)))
+                                readerText: ReaderText.combined(EPUBWriter.sections(book).map(\.html)),
+                                kind: book.kind, kindReasons: book.kindReasons)
     }
 }
 

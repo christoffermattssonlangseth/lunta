@@ -93,7 +93,7 @@ fn run(input: Conv, say: &Say) -> std::result::Result<Converted, String> {
         Conv::PaperPdf(_, d) if !d.is_empty() => Some(d.clone()),
         _ => None,
     };
-    let opts = Options { log: Some(Box::new(move |m: &str| s.say(m))), offline: false, doi };
+    let opts = Options { log: Some(Box::new(move |m: &str| s.say(m))), offline: false, doi, work_type: None };
     let r = match &input {
         Conv::Input(s) => convert::convert_with(s, &tmp, &opts),
         Conv::File(p) | Conv::PaperPdf(p, _) => convert::convert_file_with(p, &tmp, &opts),
@@ -202,7 +202,7 @@ impl Library {
         say.say("Making the reading view…");
         let tmp = std::env::temp_dir().join(format!("lunta-web-{}", uuid::Uuid::new_v4()));
         let s = say.clone();
-        let opts = Options { log: Some(Box::new(move |m: &str| s.say(m))), offline: false, doi: None };
+        let opts = Options { log: Some(Box::new(move |m: &str| s.say(m))), offline: false, doi: None, work_type: None };
         let conv = convert::convert_web_page_with(&page, &tmp, &opts)
             .map_err(|e| e.to_string())
             .and_then(|r| std::fs::read(&r.file).map(|d| (d, r.fulltext.clone())).map_err(|e| e.to_string()));
@@ -355,7 +355,7 @@ impl Library {
         let say = Say(progress);
         say.say("Making the reading view…");
         let s = say.clone();
-        let opts = Options { log: Some(Box::new(move |m: &str| s.say(m))), offline: false, doi: None };
+        let opts = Options { log: Some(Box::new(move |m: &str| s.say(m))), offline: false, doi: None, work_type: None };
         let o = pagetext::use_page_full_text(self, &page, Path::new(&backups_dir), dry_run, &opts).map_err(inv)?;
         if !dry_run && matches!(o.kind, PageOutcomeKind::Attached | PageOutcomeKind::Replaced) {
             // the unpacked book of the reading view that was there (open_epub's cache)

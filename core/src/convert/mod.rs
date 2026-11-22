@@ -102,13 +102,17 @@ pub struct BookImage {
     pub media_type: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Book {
     pub meta: PaperMeta,
     pub chapters: Vec<Chapter>,
     pub images: Vec<BookImage>,
     pub source_label: String,
     pub notes: Vec<String>,
+    /// What a PDF was taken for (paper or book), and the signals that decided it.
+    #[cfg(feature = "pdf")]
+    pub kind: pdf::book::DocumentKind,
+    pub kind_reasons: Vec<String>,
 }
 
 /// What `convert` produced; mirrors the Swift `ConversionResult`.
@@ -126,6 +130,11 @@ pub struct ConversionResult {
     pub meta: PaperMeta,
     /// Plain text of the whole paper, for full-text search.
     pub fulltext: String,
+    /// "paper" or "book" (a thesis is converted as a book; "paper" for everything but PDFs): a
+    /// library item converted as a book that has no work type yet could be given the type "book".
+    pub kind: String,
+    /// The signals that decided `kind` ("541 pages", "outline of 28 chapters", "ISBN"…).
+    pub kind_reasons: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -156,6 +165,9 @@ pub struct Options {
     /// The paper's DOI when it is known (a library paper's): converting its PDF looks for an XML
     /// version by this DOI, also when the PDF doesn't show it.
     pub doi: Option<String>,
+    /// The work type the library knows for the item ("book", "dissertation", "journal-article"…):
+    /// one of the signals for converting a PDF as a book or as a paper.
+    pub work_type: Option<String>,
 }
 
 impl Options {
@@ -342,7 +354,7 @@ fn build(src: Source, pdf: Option<&[u8]>, opts: &Options, earlier: &[String]) ->
                 .map(|x| x.1)
                 .filter(|i| all.contains(&format!("../images/{}\"", i.file_name)))
                 .collect();
-            Ok(Book { meta, chapters, images: imgs, source_label: label, notes })
+            Ok(Book { meta, chapters, images: imgs, source_label: label, notes, ..Default::default() })
         }
         Source::Jats { data, assets, meta: extra, label } => {
             opts.log(&format!("Converting {label}"));
@@ -405,7 +417,7 @@ fn build(src: Source, pdf: Option<&[u8]>, opts: &Options, earlier: &[String]) ->
                 .cloned()
                 .collect();
             imgs.sort_by(|a, b| a.file_name.cmp(&b.file_name));
-            Ok(Book { meta, chapters, images: imgs, source_label: label, notes })
+            Ok(Book { meta, chapters, images: imgs, source_label: label, notes, ..Default::default() })
         }
     }
 }
@@ -484,7 +496,16 @@ fn write(book: &Book, dir: &Path, opts: &Options) -> Result<ConversionResult> {
         notes: book.notes.clone(),
         meta: book.meta.clone(),
         fulltext: text,
+        kind: book_kind(book).to_string(),
+        kind_reasons: book.kind_reasons.clone(),
     })
+}
+
+fn book_kind(_book: &Book) -> &'static str {
+    #[cfg(feature = "pdf")]
+    return _book.kind.as_str();
+    #[cfg(not(feature = "pdf"))]
+    "paper"
 }
 
 /// Lower-case ASCII slug: runs of anything else become one dash.

@@ -1516,3 +1516,229 @@ fn pdfium_cell_highlights_bullets() {
     assert!(text.contains("© 2024 The Author(s)"), "{text}");
     assert!(!text.contains('ª'), "{text}");
 }
+
+// MARK: - Book mode
+
+use super::book::{self, DocumentKind, KindSignals, OutlineEntry};
+
+#[test]
+fn classifier_keeps_papers_papers() {
+    let s = KindSignals { pages: 12, abstract_: true, doi_line: true, ..Default::default() };
+    assert_eq!(book::classify(&s).0, DocumentKind::Paper);
+    // a long review with bookmarks and a contents box
+    let s = KindSignals { pages: 38, outline_entries: 30, outline_top: 9, outline_depth: 2, contents_page: true, numbered_heads: 0.9, ..Default::default() };
+    assert_eq!(book::classify(&s).0, DocumentKind::Paper);
+    // a 60-page supplement
+    let s = KindSignals { pages: 60, outline_entries: 12, outline_top: 6, outline_depth: 2, abstract_: true, doi_line: true, ..Default::default() };
+    assert_eq!(book::classify(&s).0, DocumentKind::Paper);
+    let s = KindSignals { pages: 90, outline_entries: 20, outline_top: 6, outline_depth: 2, work_type: "journal-article".into(), ..Default::default() };
+    assert_eq!(book::classify(&s).0, DocumentKind::Paper);
+}
+
+#[test]
+fn classifier_finds_books_and_theses() {
+    // Prince, Understanding Deep Learning
+    let s = KindSignals {
+        pages: 541,
+        outline_entries: 181,
+        outline_top: 28,
+        outline_depth: 2,
+        toc_pages: 5,
+        chapter_pages: 21,
+        index_page: true,
+        preface: true,
+        numbered_heads: 0.79,
+        ..Default::default()
+    };
+    let (k, why) = book::classify(&s);
+    assert_eq!(k, DocumentKind::Book);
+    assert!(why.iter().any(|w| w.contains("541 pages")), "{why:?}");
+    assert_eq!(book::classify(&KindSignals { pages: 320, isbn: true, ..Default::default() }).0, DocumentKind::Book);
+    assert_eq!(book::classify(&KindSignals { pages: 30, work_type: "book".into(), ..Default::default() }).0, DocumentKind::Book);
+    let s = KindSignals { pages: 180, outline_entries: 40, outline_top: 7, outline_depth: 2, toc_pages: 2, thesis_words: true, ..Default::default() };
+    assert_eq!(book::classify(&s).0, DocumentKind::Thesis);
+}
+
+#[test]
+fn running_head_numbers_and_titles() {
+    assert_eq!(book::head_number("28 3 Shallow neural networks"), Some(28));
+    assert_eq!(book::head_number("3.1 Neural network example 29"), Some(29));
+    assert_eq!(book::head_number("3.1 Neural network example"), None);
+    assert_eq!(book::head_number("29"), None);
+    assert!(book::same_title("1.1 Supervised learning", "Supervised learning"));
+    assert!(book::same_title("B.2 Binomial coeﬀicients", "Binomial coefficients"));
+    assert!(book::same_title("Acknowledgments", "Acknowledgements"));
+    assert!(!book::same_title("Summary", "Summaries of results"));
+    assert_eq!(book::chapter_label("Chapter 12").as_deref(), Some("12"));
+    assert_eq!(book::chapter_label("Appendix B").as_deref(), Some("B"));
+    assert!(book::chapter_label("Chapter 12 covers this").is_none());
+}
+
+/// A 60-page book as the analyser sees it: a title page, a contents page in dot leaders, a
+/// preface, five chapters of 11 pages ("Chapter N" and the title on the first, running heads with
+/// page numbers on the others: "12 1 Foundations of Things" on the left, "1.1 First Part of
+/// Chapter One 13" on the right, the page number a line of its own as PDFium gives it) and a
+/// two-page index. With the outline (whose "Preface" points to the contents page) or without.
+fn book_pages() -> (Vec<Page>, Vec<OutlineEntry>) {
+    let chapters = ["Foundations of Things", "Methods of Study", "Results in Detail", "Further Directions", "Closing Thoughts"];
+    let ordinals = ["One", "Two", "Three", "Four", "Five"];
+    let mut pages = Vec::new();
+    let mut marks = Vec::new();
+    let page = |lines: Vec<PLine>| Page { width: 612.0, height: 792.0, lines, graphics: Default::default() };
+    let body = |pno: usize, y: f64, tag: &str| -> Vec<PLine> {
+        let mut v = Vec::new();
+        for k in 0..6 {
+            let s = if k == 5 {
+                format!("This is sentence {k} of {tag}, and it ends here.")
+            } else {
+                format!("This is sentence {k} of {tag}, with words that run on and on to the margin")
+            };
+            v.push(line(&s, pno, 72.0, y + 12.0 * k as f64, 10.0));
+        }
+        v
+    };
+    pages.push(page(vec![line("A Book About Things", 0, 150.0, 185.0, 20.0), line("Jane Q. Writer", 0, 200.0, 241.0, 12.0)]));
+    let mut toc = vec![line("Contents", 1, 72.0, 85.0, 20.0)];
+    let mut y = 130.0;
+    toc.push(line("Preface . . . . . . . . . . . . . . . . iii", 1, 72.0, y, 10.0));
+    for (i, c) in chapters.iter().enumerate() {
+        y += 14.0;
+        toc.push(bold(line(&format!("{} {c} {}", i + 1, 4 + 11 * i), 1, 72.0, y, 10.0)));
+        for s in 1..=2 {
+            y += 14.0;
+            toc.push(line(&format!("{}.{s} Part {s} . . . . . . . . . . . . . {}", i + 1, 5 + 11 * i + 3 * s), 1, 90.0, y, 10.0));
+        }
+    }
+    pages.push(page(toc));
+    marks.push(OutlineEntry { title: "Preface".into(), level: 1, page: 1, y: 60.0 });
+    let mut pv = vec![line("Preface", 2, 72.0, 105.0, 20.0)];
+    pv.extend(body(2, 160.0, "the preface"));
+    pages.push(page(pv));
+    for (i, c) in chapters.iter().enumerate() {
+        for k in 0..11 {
+            let pno = pages.len();
+            let printed = pno - 2;
+            let mut ls = Vec::new();
+            let mut y = 132.0;
+            if k == 0 {
+                marks.push(OutlineEntry { title: c.to_string(), level: 1, page: pno, y: 90.0 });
+                ls.push(bold(line(&format!("Chapter {}", i + 1), pno, 72.0, 101.0, 12.0)));
+                ls.push(bold(line(c, pno, 72.0, 125.0, 20.0)));
+                y = 182.0;
+            } else if printed % 2 == 0 {
+                ls.push(line(&printed.to_string(), pno, 72.0, 50.0, 10.0));
+                ls.push(line(&format!("{} {c}", i + 1), pno, 90.0, 50.0, 10.0));
+            } else {
+                let part = if k < 6 { "First" } else { "Second" };
+                ls.push(line(&format!("{}.{} {part} Part of Chapter {}", i + 1, if k < 6 { 1 } else { 2 }, ordinals[i]), pno, 300.0, 50.0, 10.0));
+                ls.push(line(&printed.to_string(), pno, 520.0, 50.0, 10.0));
+            }
+            if k == 1 || k == 6 {
+                let (s, part) = if k == 1 { (1, "First") } else { (2, "Second") };
+                marks.push(OutlineEntry { title: format!("{part} Part of Chapter {}", ordinals[i]), level: 2, page: pno, y: y - 4.0 });
+                ls.push(bold(line(&format!("{}.{s} {part} Part of Chapter {}", i + 1, ordinals[i]), pno, 72.0, y, 12.0)));
+                y += 34.0;
+            }
+            ls.extend(body(pno, y, &format!("page {pno}")));
+            ls.extend(body(pno, y + 82.0, &format!("page {pno} again")));
+            pages.push(page(ls));
+        }
+    }
+    let words = ["apples", "bananas", "cherries", "dates", "elderberries", "figs", "grapes", "honeydew"];
+    for half in 0..2 {
+        let pno = pages.len();
+        if half == 0 {
+            marks.push(OutlineEntry { title: "Index".into(), level: 1, page: pno, y: 90.0 });
+        }
+        let mut ls = Vec::new();
+        let mut y = 100.0;
+        if half == 0 {
+            ls.push(line("Index", pno, 72.0, y, 20.0));
+            y += 40.0;
+        } else {
+            ls.push(line(&(pno - 2).to_string(), pno, 72.0, 50.0, 10.0));
+            ls.push(line("Index", pno, 90.0, 50.0, 10.0));
+        }
+        for (k, w) in words.iter().enumerate() {
+            let w = if half == 0 { w.to_string() } else { w.to_uppercase() };
+            ls.push(line(&format!("{w}, {}, {}", 3 + k, 17 + k), pno, 72.0, y, 10.0));
+            ls.push(line(&format!("{w} pie, {}", 30 + k), pno, 300.0, y, 10.0));
+            y += 12.0;
+        }
+        pages.push(page(ls));
+    }
+    (pages, marks)
+}
+
+fn book_from(pages: Vec<Page>, outline: Vec<OutlineEntry>) -> Book {
+    let mut r = White;
+    let log = |_: &str| {};
+    let mut an = Analyzer::new(pages, &mut r, &log);
+    an.book.outline = outline;
+    let paras = an.analyze();
+    let body = an.body_size;
+    let info = std::mem::take(&mut an.book);
+    drop(an);
+    let opts = Options { offline: true, ..Default::default() };
+    assemble_book(paras, PaperMeta::default(), &PaperMeta::default(), body, &opts, &info).unwrap()
+}
+
+#[test]
+fn book_with_outline() {
+    let (pages, outline) = book_pages();
+    let b = book_from(pages, outline);
+    assert_eq!(b.kind, DocumentKind::Book, "{:?}", b.kind_reasons);
+    let titles: Vec<&str> = b.chapters.iter().map(|c| c.title.as_str()).collect();
+    assert_eq!(
+        titles.iter().filter(|t| t.starts_with(|c: char| c.is_ascii_digit())).copied().collect::<Vec<_>>(),
+        ["1 Foundations of Things", "2 Methods of Study", "3 Results in Detail", "4 Further Directions", "5 Closing Thoughts"],
+        "{titles:?}"
+    );
+    assert!(titles.contains(&"Preface"), "{titles:?}");
+    assert_eq!(titles.last(), Some(&"Index"));
+    let ch1 = b.chapters.iter().find(|c| c.title.starts_with("1 ")).unwrap();
+    let secs: Vec<&str> = ch1.headings.iter().filter(|h| h.level == 2).map(|h| h.title.as_str()).collect();
+    assert_eq!(secs, ["1.1 First Part of Chapter One", "1.2 Second Part of Chapter One"]);
+    let all: String = b.chapters.iter().map(|c| c.html.as_str()).collect();
+    assert!(!re!(r"\d+ \d Foundations of Things").is_match(&all), "running head left in");
+    assert!(!re!(r"Part of Chapter One \d+").is_match(&all), "running head left in");
+    assert!(!all.contains(". . . ."), "table of contents left in");
+    assert!(!all.contains(">Chapter 1<"));
+    assert!(all.contains("This is sentence 3 of page 20"), "body text lost");
+    assert!(b.chapters.last().unwrap().html.contains("<p class=\"index\">apples, 3, 17</p>"));
+    assert!(!titles.contains(&"Abstract"));
+    assert_eq!(b.meta.authors, ["Jane Q. Writer"]);
+}
+
+#[test]
+fn book_without_outline() {
+    let (pages, _) = book_pages();
+    let b = book_from(pages, Vec::new());
+    assert_eq!(b.kind, DocumentKind::Book, "{:?}", b.kind_reasons);
+    let titles: Vec<&str> = b.chapters.iter().map(|c| c.title.as_str()).collect();
+    for t in ["1 Foundations of Things", "2 Methods of Study", "5 Closing Thoughts", "Index"] {
+        assert!(titles.contains(&t), "{t} not in {titles:?}");
+    }
+    assert!(titles.len() < 12, "{titles:?}");
+}
+
+#[test]
+fn short_pdf_stays_a_paper() {
+    // the sample paper: paper mode, no book steps
+    let (paras, _) = analyse(sample_pages());
+    assert!(!paras.is_empty());
+    let mut r = White;
+    let log = |_: &str| {};
+    let mut an = Analyzer::new(sample_pages(), &mut r, &log);
+    an.analyze();
+    assert_eq!(an.book.kind, DocumentKind::Paper);
+}
+
+#[test]
+fn image_names_do_not_repeat() {
+    let mut r = White;
+    let log = |_: &str| {};
+    let mut an = Analyzer::new(sample_pages(), &mut r, &log);
+    assert_eq!(an.unique_name("p296-eq192-143"), "p296-eq192-143");
+    assert_eq!(an.unique_name("p296-eq192-143"), "p296-eq192-143-2");
+}

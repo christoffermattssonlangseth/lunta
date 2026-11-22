@@ -158,6 +158,15 @@ final class PDFAnalyzer {
     var bodySize: CGFloat = 10
     var running = Set<String>()
     private var imageCounter = 0
+    private var usedNames = Set<String>()
+    /// `name`, or with "-2", "-3"… when an image of that name was made already: two equations on a
+    /// page may start on the same line ("p296-eq192"), and an EPUB (a zip) may not hold a file twice.
+    func uniqueName(_ name: String) -> String {
+        var n = name, k = 1
+        while usedNames.contains(n) { k += 1; n = "\(name)-\(k)" }
+        usedNames.insert(n)
+        return n
+    }
     /// Line-end markers in PLine.text: `glue` = the word continues on the next line (PDFKit removed a
     /// hyphenation hyphen); `hardHyphen` = a real hyphen at the end of a line ("sample-|level").
     static let glue = "\u{AD}", hardHyphen = "\u{2011}"
@@ -167,6 +176,16 @@ final class PDFAnalyzer {
     static let noSpaceBefore: Set<String> = [",", ".", ";", ":", "!", "?", ")", "]", "}", "’", "”", "%"]
     static let noSpaceAfter: Set<String> = ["(", "[", "{", "‘", "“"]
     let log: (String) -> Void
+    /// Paper or book (see DocumentClassifier), decided after the lines are read; the work type the
+    /// library knows for the item is one of its signals.
+    var workType = ""
+    var kind: DocumentKind = .paper
+    var kindReasons: [String] = []
+    /// Book mode: the PDF's outline, the margin and table-of-contents lines left out, the pages of the index.
+    var outline: [OutlineEntry] = []
+    var dropped = Set<ObjectIdentifier>()
+    var tocPages = Set<Int>()
+    var indexPages: [Range<Int>] = []
 
     init(doc: PDFDocument, log: @escaping (String) -> Void) {
         self.doc = doc
@@ -178,17 +197,20 @@ final class PDFAnalyzer {
     func extract() {
         var sizes: [CGFloat: Int] = [:]
         for pno in 0..<doc.pageCount {
-            guard let page = doc.page(at: pno) else { pagesLines.append([]); graphics.append(PageGraphics()); boxes.append(.zero); continue }
-            let mb = page.bounds(for: .mediaBox)
-            boxes.append(mb)
-            if Self.isCoverSheet(page) {
-                pagesLines.append([]); graphics.append(PageGraphics()); continue
+            // (PDFKit's selections and attributed strings of a page are autoreleased: let them go page by page)
+            autoreleasepool {
+                guard let page = doc.page(at: pno) else { pagesLines.append([]); graphics.append(PageGraphics()); boxes.append(.zero); return }
+                let mb = page.bounds(for: .mediaBox)
+                boxes.append(mb)
+                if Self.isCoverSheet(page) {
+                    pagesLines.append([]); graphics.append(PageGraphics()); return
+                }
+                let g = page.pageRef.map { PDFContentScanner(box: mb).scan($0) } ?? PageGraphics()
+                graphics.append(g)
+                let lines = extractLines(page, pno: pno, mb: mb, runs: g.runs, gaps: g.gaps, joints: g.joints, ligatures: g.ligatures)
+                for l in lines { sizes[l.size, default: 0] += l.text.count }
+                pagesLines.append(lines)
             }
-            let g = page.pageRef.map { PDFContentScanner(box: mb).scan($0) } ?? PageGraphics()
-            graphics.append(g)
-            let lines = extractLines(page, pno: pno, mb: mb, runs: g.runs, gaps: g.gaps, joints: g.joints, ligatures: g.ligatures)
-            for l in lines { sizes[l.size, default: 0] += l.text.count }
-            pagesLines.append(lines)
             if pno % 5 == 4 { log("Reading page \(pno + 1) of \(doc.pageCount)") }
         }
         if let best = sizes.max(by: { ($0.value, $0.key) < ($1.value, $1.key) }) { bodySize = best.key }
@@ -641,12 +663,21 @@ final class PDFAnalyzer {
                 }
                 chars = kept
             }
+            // the line's baseline as the content stream sets it: where every character has the full
+            // line's box, a smaller one is raised or lowered by its own baseline (TeX's θ₁₀, x²)
+            var mainBase: CGFloat?
+            if chars.contains(where: { $0.size > 0 && $0.size < 0.8 * dom }), mains.allSatisfy({ $0.box.h > 0.85 * mainHeight }) {
+                let bs = mains.compactMap { style($0.box, size: $0.size)?.baseline }.sorted()
+                if !bs.isEmpty { mainBase = bs[bs.count / 2] }
+            }
             for idx in chars.indices {
                 let c = chars[idx]
                 let isSpace = c.ch.trimmingCharacters(in: .whitespaces).isEmpty
                 var run = last
+                var own: TextRun?
                 if !isSpace, c.box.w > 0 || c.box.h > 0 {
-                    run = style(c.box, size: c.size) ?? last
+                    own = style(c.box, size: c.size)
+                    run = own ?? last
                     last = run
                 }
                 text += c.ch
@@ -655,8 +686,12 @@ final class PDFAnalyzer {
                 // some PDFs give every character the full line box: then fall back to "small citation-like text"
                 let flatBoxes = c.box.h > 0.85 * mainHeight
                 let citeLike = c.ch.range(of: #"^[0-9,–\-−*†‡§a-e]$"#, options: .regularExpression) != nil
-                let sup = !isSpace && small && (flatBoxes ? citeLike : center < mainCenter - 0.12 * dom)
-                let sub = !isSpace && small && !flatBoxes && center > mainCenter + 0.12 * dom
+                var sup = !isSpace && small && (flatBoxes ? citeLike : center < mainCenter - 0.12 * dom)
+                var sub = !isSpace && small && !flatBoxes && center > mainCenter + 0.12 * dom
+                if flatBoxes, !isSpace, small, let mb = mainBase, let b = own?.baseline {
+                    sup = b < mb - 0.15 * dom
+                    sub = b > mb + 0.08 * dom
+                }
                 if !isSpace {
                     n += 1
                     if run?.bold == true { nBold += 1 }
@@ -746,7 +781,7 @@ final class PDFAnalyzer {
 
     /// A margin line with its numbers left out ("2 of 11", "3of11", "e70999") and, if it has words, the
     /// punctuation at its ends, for finding running heads and feet.
-    private func norm(_ s: String) -> String {
+    func norm(_ s: String) -> String {
         let t = s.lowercased().replacingOccurrences(of: #"\d+\s*of\s*\d+"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"\b[es]?\d+\b"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
@@ -768,6 +803,7 @@ final class PDFAnalyzer {
     }
 
     func isNoise(_ l: PLine) -> Bool {
+        if !dropped.isEmpty && dropped.contains(ObjectIdentifier(l)) { return true }
         let t = l.text.trimmingCharacters(in: .whitespaces)
         let h = boxes[l.page].height
         let inMargin = l.bbox.y0 < 0.09 * h || l.bbox.y1 > 0.91 * h
@@ -1071,6 +1107,7 @@ final class PDFAnalyzer {
         guard let img = ctx.makeImage() else { return nil }
         r = rect
         imageCounter += 1
+        let name = uniqueName(name)
         if photo, let d = Images.jpeg(img, quality: 0.85) {
             return BookImage(fileName: "\(name).jpg", data: d, mediaType: "image/jpeg")
         }
@@ -1085,6 +1122,7 @@ final class PDFAnalyzer {
 
     func analyze() -> [Para] {
         extract()
+        decideKind()
         var all: [Para] = []
         let pageLines = pagesLines.map { $0.filter { !isNoise($0) } }
         var pageRegions = pageLines.indices.map { findRegions($0, pageLines[$0]) }
@@ -1100,7 +1138,9 @@ final class PDFAnalyzer {
             for i in regions.indices {
                 let rr = regions[i].rect
                 let photo = graphics[pno].images.contains { rr.contains($0, tol: 5) && $0.area > 0.3 * rr.area }
-                regions[i].image = render(pno, rr, photo: photo, name: "p\(pno + 1)-\(regions[i].kind == .table ? "table" : "figure")\(i + 1)")
+                regions[i].image = autoreleasepool {
+                    render(pno, rr, photo: photo, name: "p\(pno + 1)-\(regions[i].kind == .table ? "table" : "figure")\(i + 1)")
+                }
             }
             let free = lines.filter { l in
                 !regions.contains { g in
@@ -1482,7 +1522,61 @@ final class PDFAnalyzer {
             let t = p.text.trimmingCharacters(in: .whitespaces)
             if t.matches(#"^[\(\[\d·.,\s]+$"#) || t.hasPrefix("(") || t.hasPrefix("[") { p.kind = .text }
         }
-        // front matter: page-1 material before the first real section heading
+        // front matter: page-1 material before the first real section heading (papers only: a book's
+        // title page, copyright page and preface stay text)
+        if kind == .paper { frontMatter(paras, body: body) }
+        let ranks = headingSizes.sorted(by: >)
+        let big = ranks.filter { $0 >= body + 1 }
+        let titleText = paras.first { $0.kind == .title }?.text ?? ""
+        for p in paras where p.kind == .heading {
+            let t = p.text.trimmingCharacters(in: .whitespaces)
+            if !titleText.isEmpty && PDFBook.similar(t, titleText) { p.kind = .title; continue }
+            if Self.knownSections.test(t) && !t.matches(#"^\d+\.\d"#) { p.level = 1; continue }
+            if let m = Resolver.firstMatch(#"^(\d+(?:\.\d+)*)\.?\s"#, in: t) {
+                p.level = min(3, m.filter { $0 == "." }.count + 1)
+            } else {
+                p.level = min(3, (big.firstIndex(of: p.size).map { $0 + 1 }) ?? (big.count + 1))
+            }
+        }
+        // display equations: mostly math-font lines; merge stacked pieces
+        func mathFrac(_ p: Para) -> (CGFloat, Int) {
+            let n = p.lines.reduce(0) { $0 + $1.text.count }
+            return (p.lines.reduce(CGFloat(0)) { $0 + $1.math * CGFloat($1.text.count) } / CGFloat(max(1, n)), n)
+        }
+        var out: [Para] = []
+        for p in paras {
+            if p.kind == .text, !p.lines.isEmpty, p.boxed == nil {
+                let (mf, n) = mathFrac(p)
+                if mf > 0.3 && n < 400 && !Self.isProse(p.text) { p.kind = .equation }
+                // a book's display equations: numbered ("y = f[x, ϕ]. (2.2)"), or a short piece in math type
+                if kind.isBookLike, p.kind == .text, n < 200, !Self.isProse(p.text),
+                   mf > 0.1 && n < 60 && p.size >= body - 0.6 || mf > 0.05 && p.text.matches(#"\((\d{1,3}|[A-Z])\.\d{1,3}[a-z]?\)$"#) {
+                    p.kind = .equation
+                }
+            }
+            // stacked pieces (not a piece back up the page, at the top of the next column)
+            if let prev = out.last, prev.page == p.page, (p.kind == .equation || (p.kind == .text && p.boxed == nil)), prev.kind == .equation,
+               p.bbox.y0 - prev.bbox.y1 < 1.6 * body, p.bbox.y0 > prev.bbox.y0 - body,
+               p.kind == .equation || p.text.count < 30 {
+                out[out.count - 1] = Para(prev.lines + p.lines, page: p.page, kind: .equation)
+                continue
+            }
+            if let prev = out.last, prev.page == p.page, p.kind == .equation, prev.kind == .text, prev.boxed == nil, prev.text.count < 30,
+               p.bbox.y0 - prev.bbox.y1 < body, !prev.text.matches("[a-z]{4}") {
+                out[out.count - 1] = Para(prev.lines + p.lines, page: p.page, kind: .equation)
+                continue
+            }
+            out.append(p)
+        }
+        for p in out where p.kind == .equation {
+            p.asset = autoreleasepool { render(p.page, p.bbox, photo: false, name: "p\(p.page + 1)-eq\(Int(p.bbox.y0))") }
+        }
+        return out
+    }
+
+    /// Papers: page-1 material before the first real section heading is front matter (title page,
+    /// authors, affiliations, footnotes); the abstract is found there.
+    private func frontMatter(_ paras: [Para], body: CGFloat) {
         var boundary: Int?
         for (k, p) in paras.enumerated() {
             if p.page > 1 { break }
@@ -1528,48 +1622,6 @@ final class PDFAnalyzer {
         for p in paras where p.page <= 1 && p.kind == .text && p.boxed == nil {
             if Self.frontFootnote(p.text, size: p.size, body: body, atFoot: p.bbox.y0 > 0.75 * boxes[p.page].height) { p.kind = .front }
         }
-        let ranks = headingSizes.sorted(by: >)
-        let big = ranks.filter { $0 >= body + 1 }
-        let titleText = paras.first { $0.kind == .title }?.text ?? ""
-        for p in paras where p.kind == .heading {
-            let t = p.text.trimmingCharacters(in: .whitespaces)
-            if !titleText.isEmpty && PDFBook.similar(t, titleText) { p.kind = .title; continue }
-            if Self.knownSections.test(t) && !t.matches(#"^\d+\.\d"#) { p.level = 1; continue }
-            if let m = Resolver.firstMatch(#"^(\d+(?:\.\d+)*)\.?\s"#, in: t) {
-                p.level = min(3, m.filter { $0 == "." }.count + 1)
-            } else {
-                p.level = min(3, (big.firstIndex(of: p.size).map { $0 + 1 }) ?? (big.count + 1))
-            }
-        }
-        // display equations: mostly math-font lines; merge stacked pieces
-        func mathFrac(_ p: Para) -> (CGFloat, Int) {
-            let n = p.lines.reduce(0) { $0 + $1.text.count }
-            return (p.lines.reduce(CGFloat(0)) { $0 + $1.math * CGFloat($1.text.count) } / CGFloat(max(1, n)), n)
-        }
-        var out: [Para] = []
-        for p in paras {
-            if p.kind == .text, !p.lines.isEmpty, p.boxed == nil {
-                let (mf, n) = mathFrac(p)
-                if mf > 0.3 && n < 400 && !Self.isProse(p.text) { p.kind = .equation }
-            }
-            // stacked pieces (not a piece back up the page, at the top of the next column)
-            if let prev = out.last, prev.page == p.page, (p.kind == .equation || (p.kind == .text && p.boxed == nil)), prev.kind == .equation,
-               p.bbox.y0 - prev.bbox.y1 < 1.6 * body, p.bbox.y0 > prev.bbox.y0 - body,
-               p.kind == .equation || p.text.count < 30 {
-                out[out.count - 1] = Para(prev.lines + p.lines, page: p.page, kind: .equation)
-                continue
-            }
-            if let prev = out.last, prev.page == p.page, p.kind == .equation, prev.kind == .text, prev.boxed == nil, prev.text.count < 30,
-               p.bbox.y0 - prev.bbox.y1 < body, !prev.text.matches("[a-z]{4}") {
-                out[out.count - 1] = Para(prev.lines + p.lines, page: p.page, kind: .equation)
-                continue
-            }
-            out.append(p)
-        }
-        for p in out where p.kind == .equation {
-            p.asset = render(p.page, p.bbox, photo: false, name: "p\(p.page + 1)-eq\(Int(p.bbox.y0))")
-        }
-        return out
     }
 
     /// A "math" font that sets the running text (STIX-Regular in some Wiley and Springer journals) is
@@ -1687,8 +1739,11 @@ enum PDFBook {
         guard doc.pageCount > 0 else { throw fail("The PDF has no pages.") }
         log("Analysing \(doc.pageCount) pages")
         let an = PDFAnalyzer(doc: doc, log: log)
+        an.workType = extra.workType.isEmpty ? Paper2Epub.knownType : extra.workType
         let paras = an.analyze()
+        let isBook = an.kind.isBookLike
         var meta = an.metaGuess(paras)
+        if isBook && meta.authors.isEmpty { meta.authors = titlePageAuthors(paras) }
         let guessed = meta
         if !extra.title.isEmpty || !extra.authors.isEmpty { meta = extra; meta.merge(guessed) }
         if !meta.doi.isEmpty, let cr = await crossref(meta.doi) {
@@ -1765,6 +1820,12 @@ enum PDFBook {
             if let best { capOf[i] = best }
         }
         let usedCaps = Set(capOf.values)
+        // a book: chapters from its outline
+        let plan = isBook && !an.outline.isEmpty ? plan(merged, outline: an.outline) : nil
+        let outlineSections = plan?.entries.contains { $0.level >= 2 } ?? false
+        var nextEntry = 0
+        var indexOpened = false
+        var chapterLabel: String?
 
         var chapters: [Chapter] = []
         var cur: (title: String, id: String, html: String, headings: [Heading])?
@@ -1782,7 +1843,7 @@ enum PDFBook {
             cur = (title, id, "<h1 id=\"\(id)\">\(esc(title))</h1>", [Heading(level: 1, id: id, title: title)])
         }
         func append(_ html: String) {
-            if cur == nil { open("Main text") }
+            if cur == nil { open(isBook ? "Front matter" : "Main text") }
             cur!.html += html
         }
         func addImage(_ img: BookImage?) -> String? {
@@ -1799,6 +1860,34 @@ enum PDFBook {
         var openBox: Int?
         var inList = false
         for (i, p) in merged.enumerated() {
+            if let plan {
+                // the outline's entries that start here
+                while nextEntry < plan.entries.count && !before(p, plan.entries[nextEntry]) {
+                    if inList { append("</ol>"); inList = false }
+                    if openBox != nil { append("</div>"); openBox = nil }
+                    let e = plan.entries[nextEntry], title = plan.titles[nextEntry]
+                    if e.level <= 1 { open(title) } else {
+                        let id = nextID()
+                        let h = min(e.level, 3)
+                        append("<h\(h) id=\"\(id)\">\(esc(title))</h\(h)>")
+                        if h == 2 { cur!.headings.append(Heading(level: 2, id: id, title: title)) }
+                    }
+                    nextEntry += 1
+                }
+                if plan.consumed.contains(i) { continue }
+            }
+            // a book's index: one entry (line) per paragraph, in one chapter
+            if isBook, an.onIndexPage(p.page), [.text, .heading, .caption, .front, .title].contains(p.kind) {
+                if inList { append("</ol>"); inList = false }
+                if plan == nil && !indexOpened { open("Index"); indexOpened = true }
+                if PDFAnalyzer.isIndexTitle(p.text) { continue }
+                for l in p.lines {
+                    let t = l.text.replacingOccurrences(of: PDFAnalyzer.glue, with: "").replacingOccurrences(of: PDFAnalyzer.hardHyphen, with: "-")
+                        .trimmingCharacters(in: .whitespaces)
+                    if !t.isEmpty { append("<p class=\"index\">\(esc(t))</p>") }
+                }
+                continue
+            }
             // reference entries: one list item each (numbered as printed)
             if inList && !refEntry[i] { append("</ol>"); inList = false }
             if refEntry[i] {
@@ -1825,6 +1914,29 @@ enum PDFBook {
                 break
             case .title:
                 if missingTitle { meta.title = p.text }
+            case .heading where isBook:
+                var t = p.text.trimmingCharacters(in: .whitespaces)
+                if plan != nil {
+                    // the outline gives the chapters: a heading it doesn't list is a sub-heading
+                    let section = !outlineSections && t.matches(#"^(\d{1,3}|[A-Z])\.\d{1,3}\.?\s+\S"#)
+                    let id = nextID(), h = section ? 2 : 3
+                    append("<h\(h) id=\"\(id)\">\(esc(t))</h\(h)>")
+                    if section { cur!.headings.append(Heading(level: 2, id: id, title: t)) }
+                    break
+                }
+                // no outline: "Chapter 3" over the chapter's title makes one title, "3 Shallow neural networks"
+                if let m = PDFAnalyzer.chapterLabelRE.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)),
+                   let r = Range(m.range(at: 1), in: t), i + 1 < merged.count, merged[i + 1].kind == .heading {
+                    chapterLabel = String(t[r])
+                    break
+                }
+                if let l = chapterLabel { t = "\(l) \(t)"; chapterLabel = nil; open(t); break }
+                if p.level <= 1 { open(t) } else {
+                    let id = nextID()
+                    let h = min(p.level, 3)
+                    append("<h\(h) id=\"\(id)\">\(esc(t))</h\(h)>")
+                    if h == 2 { cur!.headings.append(Heading(level: 2, id: id, title: t)) }
+                }
             case .heading:
                 let t = p.text.trimmingCharacters(in: .whitespaces)
                 if Self.knownSections(t) == "abstract" { abstractDone = true }
@@ -1860,10 +1972,18 @@ enum PDFBook {
         if openBox != nil { cur?.html += "</div>" }
         close()
         _ = hasAbstractHeading
+        if isBook {
+            // outline entries with nothing under them (a "Contents" entry, its pages left out)
+            chapters.removeAll { ch in
+                ch.html.range(of: #"<(p|img|li|figure|table|div)\b"#, options: .regularExpression) == nil
+            }
+        }
         if !front.isEmpty && meta.affiliationsHTML.isEmpty { meta.affiliationsHTML = PDFAnalyzer.bulletLists(front) }
         guard !chapters.isEmpty else { throw fail("Could not find any text in the PDF (is it a scanned image?).") }
+        var notes = ["Converted from the PDF without AI: equations and tables are kept as images."]
+        if isBook { notes.append("Converted as a \(an.kind.rawValue)\(plan != nil ? ", chapters from the PDF's outline" : ""): \(an.kindReasons.joined(separator: "; ")).") }
         return Book(meta: meta, chapters: chapters, images: images, sourceLabel: "PDF (layout analysis)",
-                    notes: ["Converted from the PDF without AI: equations and tables are kept as images."])
+                    notes: notes, kind: an.kind, kindReasons: an.kindReasons)
     }
 
     /// The figures in the PDF by their label ("fig 3", "extended data fig 2", "supplementary fig 1"):
@@ -1945,6 +2065,7 @@ enum PDFBook {
             return s.isEmpty ? a["name"] as? String : s
         }
         meta.journal = (m["container-title"] as? [String])?.first ?? ""
+        meta.workType = m["type"] as? String ?? ""
         if let parts = ((m["issued"] as? [String: Any])?["date-parts"] as? [[Int]])?.first, let y = parts.first {
             meta.date = parts.count >= 3 ? String(format: "%04d-%02d-%02d", y, parts[1], parts[2]) : String(y)
         }

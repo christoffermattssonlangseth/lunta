@@ -595,7 +595,7 @@ pub(crate) fn generic(
     if r.math_count > 0 {
         notes.push(format!("{} equation(s) as MathML.", r.math_count));
     }
-    Ok(Book { meta, chapters, images: r.images, source_label: label.to_string(), notes })
+    Ok(Book { meta, chapters, images: r.images, source_label: label.to_string(), notes, ..Default::default() })
 }
 
 pub(crate) fn replace_missing(chapters: &mut [Chapter]) {
@@ -1729,5 +1729,5 @@ pub fn web_book(page: &crate::webmeta::WebPage, opts: &Options) -> Result<Book> 
     }
     let all: String = chapters.iter().map(|c| c.html.as_str()).collect();
     let images = images.into_iter().filter(|i| all.contains(&format!("../images/{}\"", i.file_name))).collect();
-    Ok(Book { meta, chapters, images, source_label: format!("Web page from {host}"), notes })
+    Ok(Book { meta, chapters, images, source_label: format!("Web page from {host}"), notes, ..Default::default() })
 }

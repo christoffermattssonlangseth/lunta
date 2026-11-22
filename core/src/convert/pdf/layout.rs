@@ -360,8 +360,13 @@ pub struct Analyzer<'a> {
     pub pages: Vec<Page>,
     pub body_size: f64,
     pub running: HashSet<String>,
+    /// Paper or book (decided in `analyze`), with a book's outline and index; the outline and the
+    /// work type the library knows are set before `analyze`.
+    pub book: super::book::BookInfo,
+    pub work_type: String,
     renderer: &'a mut dyn Renderer,
-    log: &'a dyn Fn(&str),
+    pub(crate) log: &'a dyn Fn(&str),
+    used_names: HashSet<String>,
 }
 
 impl<'a> Analyzer<'a> {
@@ -378,14 +383,23 @@ impl<'a> Analyzer<'a> {
         let mut pages = pages;
         mark_hard_hyphens(&mut pages);
         clear_math_if_body_font(&mut pages, body_size);
-        let mut a = Analyzer { pages, body_size, running: HashSet::new(), renderer, log };
+        let mut a = Analyzer {
+            pages,
+            body_size,
+            running: HashSet::new(),
+            book: Default::default(),
+            work_type: String::new(),
+            renderer,
+            log,
+            used_names: HashSet::new(),
+        };
         a.find_running();
         a
     }
 
     /// A margin line with its numbers left out ("2 of 11", "3of11", "e70999") and, if it has words,
     /// the punctuation at its ends, for finding running heads and feet.
-    fn norm(s: &str) -> String {
+    pub(crate) fn norm(s: &str) -> String {
         let s = s.to_lowercase();
         let s = re!(r"\d+\s*of\s*\d+").replace_all(&s, "");
         let s = re!(r"\b[es]?\d+\b").replace_all(&s, "");
@@ -797,12 +811,27 @@ impl<'a> Analyzer<'a> {
         }
         let scale = (200.0 / 72.0f64).min(1600.0 / r.w().max(r.h()));
         let img = self.renderer.render(pno, r, scale)?;
-        encode(&img, photo, name)
+        let name = self.unique_name(name);
+        encode(&img, photo, &name)
+    }
+
+    /// `name`, or with "-2", "-3"… when an image of that name was made already: an EPUB (a zip) may
+    /// not hold a file twice.
+    pub fn unique_name(&mut self, name: &str) -> String {
+        let mut n = name.to_string();
+        let mut k = 1;
+        while self.used_names.contains(&n) {
+            k += 1;
+            n = format!("{name}-{k}");
+        }
+        self.used_names.insert(n.clone());
+        n
     }
 
     // MARK: - Assembly
 
     pub fn analyze(&mut self) -> Vec<Para> {
+        self.decide_kind();
         let page_lines: Vec<Vec<PLine>> =
             self.pages.iter().map(|p| p.lines.iter().filter(|l| !self.is_noise(l)).cloned().collect()).collect();
         let mut page_regions: Vec<Vec<Region>> =
@@ -1414,7 +1443,101 @@ impl<'a> Analyzer<'a> {
                 p.kind = Kind::Text;
             }
         }
-        // front matter: page-1 material before the first real section heading
+        // front matter: page-1 material before the first real section heading (papers only: a book's
+        // title page, copyright page and preface stay text)
+        if !self.book.kind.is_book_like() {
+            self.front_matter(&mut paras);
+        }
+        heading_sizes.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+        let big: Vec<f64> = heading_sizes.iter().copied().filter(|&s| s >= body + 1.0).collect();
+        let title_text = paras.iter().find(|p| p.kind == Kind::Title).map(|p| p.text()).unwrap_or_default();
+        for p in paras.iter_mut().filter(|p| p.kind == Kind::Heading) {
+            let text = p.text();
+            let t = trim(&text);
+            if !title_text.is_empty() && similar(t, &title_text) {
+                p.kind = Kind::Title;
+                continue;
+            }
+            if known_sections().is_match(t) && !re!(r"^\d+\.\d").is_match(t) {
+                p.level = 1;
+                continue;
+            }
+            if let Some(c) = re!(r"^(\d+(?:\.\d+)*)\.?\s").captures(t) {
+                p.level = 3.min(c[1].matches('.').count() + 1);
+            } else {
+                let size = p.size();
+                p.level = 3.min(big.iter().position(|&s| s == size).map(|i| i + 1).unwrap_or(big.len() + 1));
+            }
+        }
+        // display equations: mostly math-font lines; merge stacked pieces
+        let math_frac = |p: &Para| -> (f64, usize) {
+            let n = p.char_count();
+            (p.lines.iter().map(|l| l.math * count(&l.text) as f64).sum::<f64>() / n.max(1) as f64, n)
+        };
+        let mut out: Vec<Para> = Vec::new();
+        for mut p in paras {
+            if p.kind == Kind::Text && !p.lines.is_empty() && p.boxed.is_none() {
+                let (mf, n) = math_frac(&p);
+                if mf > 0.3 && n < 400 && !is_prose(&p.text()) {
+                    p.kind = Kind::Equation;
+                }
+                // a book's display equations: numbered ("y = f[x, ϕ]. (2.2)"), or a short piece in math type
+                let text = p.text();
+                if self.book.kind.is_book_like()
+                    && p.kind == Kind::Text
+                    && n < 200
+                    && !is_prose(&text)
+                    && ((mf > 0.1 && n < 60 && p.size() >= body - 0.6)
+                        || (mf > 0.05 && re!(r"\((\d{1,3}|[A-Z])\.\d{1,3}[a-z]?\)$").is_match(&text)))
+                {
+                    p.kind = Kind::Equation;
+                }
+            }
+            if let Some(prev) = out.last_mut() {
+                let gap = p.bbox().y0 - prev.bbox().y1;
+                // stacked pieces (not a piece back up the page, at the top of the next column)
+                if prev.page == p.page
+                    && (p.kind == Kind::Equation || (p.kind == Kind::Text && p.boxed.is_none()))
+                    && prev.kind == Kind::Equation
+                    && gap < 1.6 * body
+                    && p.bbox().y0 > prev.bbox().y0 - body
+                    && (p.kind == Kind::Equation || count(&p.text()) < 30)
+                {
+                    let mut lines = std::mem::take(&mut prev.lines);
+                    lines.extend(p.lines);
+                    *prev = Para::new(lines, p.page, Kind::Equation);
+                    continue;
+                }
+                if prev.page == p.page
+                    && p.kind == Kind::Equation
+                    && prev.kind == Kind::Text
+                    && prev.boxed.is_none()
+                    && count(&prev.text()) < 30
+                    && gap < body
+                    && !re!(r"[a-z]{4}").is_match(&prev.text())
+                {
+                    let mut lines = std::mem::take(&mut prev.lines);
+                    lines.extend(p.lines);
+                    *prev = Para::new(lines, p.page, Kind::Equation);
+                    continue;
+                }
+            }
+            out.push(p);
+        }
+        for p in out.iter_mut() {
+            if p.kind == Kind::Equation {
+                let (page, b) = (p.page, p.bbox());
+                p.asset = self.render(page, b, false, &format!("p{}-eq{}-{}", page + 1, b.y0 as i64, b.x0 as i64));
+            }
+        }
+        out
+    }
+
+
+    /// Papers: page-1 material before the first real section heading is front matter (title page,
+    /// authors, affiliations, footnotes); the abstract is found there.
+    fn front_matter(&self, paras: &mut [Para]) {
+        let body = self.body_size;
         let mut boundary: Option<usize> = None;
         for (k, p) in paras.iter().enumerate() {
             if p.page > 1 {
@@ -1494,78 +1617,6 @@ impl<'a> Analyzer<'a> {
                 p.kind = Kind::Front;
             }
         }
-        heading_sizes.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-        let big: Vec<f64> = heading_sizes.iter().copied().filter(|&s| s >= body + 1.0).collect();
-        let title_text = paras.iter().find(|p| p.kind == Kind::Title).map(|p| p.text()).unwrap_or_default();
-        for p in paras.iter_mut().filter(|p| p.kind == Kind::Heading) {
-            let text = p.text();
-            let t = trim(&text);
-            if !title_text.is_empty() && similar(t, &title_text) {
-                p.kind = Kind::Title;
-                continue;
-            }
-            if known_sections().is_match(t) && !re!(r"^\d+\.\d").is_match(t) {
-                p.level = 1;
-                continue;
-            }
-            if let Some(c) = re!(r"^(\d+(?:\.\d+)*)\.?\s").captures(t) {
-                p.level = 3.min(c[1].matches('.').count() + 1);
-            } else {
-                let size = p.size();
-                p.level = 3.min(big.iter().position(|&s| s == size).map(|i| i + 1).unwrap_or(big.len() + 1));
-            }
-        }
-        // display equations: mostly math-font lines; merge stacked pieces
-        let math_frac = |p: &Para| -> (f64, usize) {
-            let n = p.char_count();
-            (p.lines.iter().map(|l| l.math * count(&l.text) as f64).sum::<f64>() / n.max(1) as f64, n)
-        };
-        let mut out: Vec<Para> = Vec::new();
-        for mut p in paras {
-            if p.kind == Kind::Text && !p.lines.is_empty() && p.boxed.is_none() {
-                let (mf, n) = math_frac(&p);
-                if mf > 0.3 && n < 400 && !is_prose(&p.text()) {
-                    p.kind = Kind::Equation;
-                }
-            }
-            if let Some(prev) = out.last_mut() {
-                let gap = p.bbox().y0 - prev.bbox().y1;
-                // stacked pieces (not a piece back up the page, at the top of the next column)
-                if prev.page == p.page
-                    && (p.kind == Kind::Equation || (p.kind == Kind::Text && p.boxed.is_none()))
-                    && prev.kind == Kind::Equation
-                    && gap < 1.6 * body
-                    && p.bbox().y0 > prev.bbox().y0 - body
-                    && (p.kind == Kind::Equation || count(&p.text()) < 30)
-                {
-                    let mut lines = std::mem::take(&mut prev.lines);
-                    lines.extend(p.lines);
-                    *prev = Para::new(lines, p.page, Kind::Equation);
-                    continue;
-                }
-                if prev.page == p.page
-                    && p.kind == Kind::Equation
-                    && prev.kind == Kind::Text
-                    && prev.boxed.is_none()
-                    && count(&prev.text()) < 30
-                    && gap < body
-                    && !re!(r"[a-z]{4}").is_match(&prev.text())
-                {
-                    let mut lines = std::mem::take(&mut prev.lines);
-                    lines.extend(p.lines);
-                    *prev = Para::new(lines, p.page, Kind::Equation);
-                    continue;
-                }
-            }
-            out.push(p);
-        }
-        for p in out.iter_mut() {
-            if p.kind == Kind::Equation {
-                let (page, b) = (p.page, p.bbox());
-                p.asset = self.render(page, b, false, &format!("p{}-eq{}-{}", page + 1, b.y0 as i64, b.x0 as i64));
-            }
-        }
-        out
     }
 
     // MARK: - Metadata

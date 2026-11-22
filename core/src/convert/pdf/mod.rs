@@ -6,6 +6,7 @@
 //! at run time — see [`pdfium`] for where it is looked for. The layout heuristics live in
 //! [`layout`] and do not touch PDFium.
 
+pub mod book;
 pub mod extract;
 pub mod layout;
 pub mod refs;
@@ -212,13 +213,71 @@ pub fn build(data: &[u8], extra: &PaperMeta, opts: &Options) -> Result<Book> {
     let log = |m: &str| opts.log(m);
     let pages = extract::pages(&doc, &log);
     let info = extract::doc_info(&doc);
+    let heights: Vec<f64> = pages.iter().map(|p| p.height).collect();
+    let outline = outline(&doc, &heights);
     let mut renderer = extract::PdfiumRenderer::new(&doc);
     let mut an = Analyzer::new(pages, &mut renderer, &log);
+    an.book.outline = outline;
+    an.work_type = opts.work_type.clone().unwrap_or_default();
     let paras = an.analyze();
     let guessed = an.meta_guess(&paras, &info, || quick_doi_doc(&doc));
     let body_size = an.body_size;
+    let book = std::mem::take(&mut an.book);
     drop(an);
-    assemble(paras, guessed, extra, body_size, opts)
+    assemble_book(paras, guessed, extra, body_size, opts, &book)
+}
+
+/// The PDF's outline (bookmarks) as a flat list in reading order, levels from 1, `y` from the top
+/// of the page (0 when the destination gives none). A lone top entry with entries below it (the
+/// book's title) is skipped; a part's chapters stay chapters ("PART I …" at the same level). Up to
+/// three levels.
+fn outline(doc: &PdfDocument, heights: &[f64]) -> Vec<book::OutlineEntry> {
+    use pdfium_render::prelude::{PdfBookmark, PdfDestinationViewSettings};
+    fn walk(b: Option<PdfBookmark>, level: usize, heights: &[f64], out: &mut Vec<book::OutlineEntry>, budget: &mut usize) {
+        let mut cur = b;
+        while let Some(bm) = cur {
+            if *budget == 0 || level > 3 {
+                return;
+            }
+            *budget -= 1;
+            let title = bm.title().unwrap_or_default().split_whitespace().collect::<Vec<_>>().join(" ");
+            if let Some(d) = bm.destination() {
+                if let Ok(pi) = d.page_index() {
+                    let page = pi as usize;
+                    if page < heights.len() && !title.is_empty() {
+                        let h = heights[page];
+                        let y = match d.view_settings() {
+                            Ok(PdfDestinationViewSettings::SpecificCoordinatesAndZoom(_, Some(y), _)) => {
+                                let y = y.value as f64;
+                                if y.is_finite() && y >= -1.0 && y <= h + 1.0 { (h - y).max(0.0) } else { 0.0 }
+                            }
+                            _ => 0.0,
+                        };
+                        out.push(book::OutlineEntry { title: title.clone(), level, page, y });
+                    }
+                }
+            }
+            let part = level == 1 && bm.first_child().is_some() && book::is_part_title(&title);
+            walk(bm.first_child(), if part { level } else { level + 1 }, heights, out, budget);
+            cur = bm.next_sibling();
+        }
+    }
+    let bookmarks = doc.bookmarks();
+    let mut root = bookmarks.root();
+    // a lone top entry with several below it: the book's title
+    while let Some(r) = &root {
+        if r.next_sibling().is_none() && r.children_len() > 1 {
+            root = r.first_child();
+        } else {
+            break;
+        }
+    }
+    let mut out = Vec::new();
+    let mut budget = 5000;
+    walk(root, 1, heights, &mut out, &mut budget);
+    let mut ix: Vec<usize> = (0..out.len()).collect();
+    ix.sort_by_key(|&i| (out[i].page, i));
+    ix.into_iter().map(|i| out[i].clone()).collect()
 }
 
 /// The figures in the PDF by their label ([`super::jats::figure_key`]: "fig 3", "extended data
@@ -315,6 +374,19 @@ const REFS_OL: &str = "<ol class=\"refs\" style=\"list-style-type: none; padding
 
 /// Turns analysed paragraphs into chapters (the rest of Swift's `PDFBook.build`).
 pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_size: f64, opts: &Options) -> Result<Book> {
+    assemble_book(paras, guessed, extra, body_size, opts, &book::BookInfo::default())
+}
+
+/// [`assemble`] for a paper or a book (`info` from the analyzer: kind, outline, index pages).
+pub fn assemble_book(
+    paras: Vec<Para>,
+    guessed: PaperMeta,
+    extra: &PaperMeta,
+    body_size: f64,
+    opts: &Options,
+    info: &book::BookInfo,
+) -> Result<Book> {
+    let is_book = info.kind.is_book_like();
     let mut meta = guessed.clone();
     if !extra.title.is_empty() || !extra.authors.is_empty() {
         meta = extra.clone();
@@ -327,6 +399,9 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
             cr.merge(&meta);
             meta = cr;
         }
+    }
+    if is_book && meta.authors.is_empty() {
+        meta.authors = book::title_page_authors(&paras);
     }
     if std::env::var_os("P2E_DEBUG").is_some() {
         debug_dump(&paras);
@@ -430,6 +505,12 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
         }
     }
 
+    // a book: chapters from its outline
+    let plan = if is_book && !info.outline.is_empty() { Some(book::plan(&merged, &info.outline)) } else { None };
+    let outline_sections = plan.as_ref().map(|p| p.entries.iter().any(|e| e.level >= 2)).unwrap_or(false);
+    let mut next_entry = 0;
+    let mut index_opened = false;
+    let mut chapter_label: Option<String> = None;
     struct Cur {
         title: String,
         html: String,
@@ -474,10 +555,61 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
                 let h: String = $html;
                 if cur.is_none() {
                     let id = next_id();
-                    open("Main text", id, &mut cur, &mut chapters);
+                    open(if is_book { "Front matter" } else { "Main text" }, id, &mut cur, &mut chapters);
                 }
                 cur.as_mut().unwrap().html += &h;
             }};
+        }
+        if let Some(plan) = &plan {
+            // the outline's entries that start here
+            while next_entry < plan.entries.len() && !book::before(p, &plan.entries[next_entry]) {
+                if in_list {
+                    append!("</ol>".to_string());
+                    in_list = false;
+                }
+                if open_box.is_some() {
+                    append!("</div>".to_string());
+                    open_box = None;
+                }
+                let (e, title) = (&plan.entries[next_entry], &plan.titles[next_entry]);
+                let id = next_id();
+                if e.level <= 1 {
+                    open(title, id, &mut cur, &mut chapters);
+                } else {
+                    let h = e.level.min(3);
+                    append!(format!("<h{h} id=\"{id}\">{}</h{h}>", esc(title)));
+                    if h == 2 {
+                        cur.as_mut().unwrap().headings.push(Heading { level: 2, id, title: title.clone() });
+                    }
+                }
+                next_entry += 1;
+            }
+            if plan.consumed.contains(&i) {
+                continue;
+            }
+        }
+        // a book's index: one entry (line) per paragraph, in one chapter
+        if is_book && info.on_index_page(p.page) && matches!(p.kind, Kind::Text | Kind::Heading | Kind::Caption | Kind::Front | Kind::Title) {
+            if in_list {
+                append!("</ol>".to_string());
+                in_list = false;
+            }
+            if plan.is_none() && !index_opened {
+                let id = next_id();
+                open("Index", id, &mut cur, &mut chapters);
+                index_opened = true;
+            }
+            if book::is_index_title(&p.text()) {
+                continue;
+            }
+            for l in &p.lines {
+                let t = l.text.replace(layout::GLUE, "").replace(layout::HARD_HYPHEN, "-");
+                let t = t.trim();
+                if !t.is_empty() {
+                    append!(format!("<p class=\"index\">{}</p>", esc(t)));
+                }
+            }
+            continue;
         }
         // reference entries: one list item each (numbered as printed)
         if in_list && !ref_entry[i] {
@@ -521,6 +653,37 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
             Kind::Title => {
                 if missing_title {
                     meta.title = p.text();
+                }
+            }
+            Kind::Heading if is_book => {
+                let text = p.text();
+                let mut t = super::trim_ws(&text).to_string();
+                if plan.is_some() {
+                    // the outline gives the chapters: a heading it doesn't list is a sub-heading
+                    let section = !outline_sections && re!(r"^(\d{1,3}|[A-Z])\.\d{1,3}\.?\s+\S").is_match(&t);
+                    let id = next_id();
+                    let h = if section { 2 } else { 3 };
+                    append!(format!("<h{h} id=\"{id}\">{}</h{h}>", esc(&t)));
+                    if section {
+                        cur.as_mut().unwrap().headings.push(Heading { level: 2, id, title: t });
+                    }
+                } else if let (Some(l), true) = (book::chapter_label(&t), merged.get(i + 1).is_some_and(|q| q.kind == Kind::Heading)) {
+                    // no outline: "Chapter 3" over the chapter's title makes one title
+                    chapter_label = Some(l);
+                } else if let Some(l) = chapter_label.take() {
+                    t = format!("{l} {t}");
+                    let id = next_id();
+                    open(&t, id, &mut cur, &mut chapters);
+                } else if p.level <= 1 {
+                    let id = next_id();
+                    open(&t, id, &mut cur, &mut chapters);
+                } else {
+                    let id = next_id();
+                    let h = p.level.min(3);
+                    append!(format!("<h{h} id=\"{id}\">{}</h{h}>", esc(&t)));
+                    if h == 2 {
+                        cur.as_mut().unwrap().headings.push(Heading { level: 2, id, title: t });
+                    }
                 }
             }
             Kind::Heading => {
@@ -591,18 +754,33 @@ pub fn assemble(paras: Vec<Para>, guessed: PaperMeta, extra: &PaperMeta, body_si
         }
     }
     close(&mut cur, &mut chapters);
+    if is_book {
+        // outline entries with nothing under them (a "Contents" entry, its pages left out)
+        chapters.retain(|c| re!(r"<(p|img|li|figure|table|div)\b").is_match(&c.html));
+    }
     if !front.is_empty() && meta.affiliations_html.is_empty() {
         meta.affiliations_html = layout::bullet_lists(&front);
     }
     if chapters.is_empty() {
         return Err(fail("Could not find any text in the PDF (is it a scanned image?)."));
     }
+    let mut notes = vec!["Converted from the PDF without AI: equations and tables are kept as images.".to_string()];
+    if is_book {
+        notes.push(format!(
+            "Converted as a {}{}: {}.",
+            info.kind.as_str(),
+            if plan.is_some() { ", chapters from the PDF's outline" } else { "" },
+            info.reasons.join("; ")
+        ));
+    }
     Ok(Book {
         meta,
         chapters,
         images,
         source_label: "PDF (layout analysis)".into(),
-        notes: vec!["Converted from the PDF without AI: equations and tables are kept as images.".into()],
+        notes,
+        kind: info.kind,
+        kind_reasons: info.reasons.clone(),
     })
 }
 

@@ -380,7 +380,7 @@ pub fn book(page: &str, url: Option<&url::Url>, images: &PageImages, opts: &Opti
     if conv.r.math_count > 0 {
         notes.push(format!("{} equation(s) as MathML.", conv.r.math_count));
     }
-    Ok(Book { meta, chapters, images: std::mem::take(&mut conv.r.images), source_label: site.label, notes })
+    Ok(Book { meta, chapters, images: std::mem::take(&mut conv.r.images), source_label: site.label, notes, ..Default::default() })
 }
 
 trait NodeBy<'a> {

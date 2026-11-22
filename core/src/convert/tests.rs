@@ -40,7 +40,7 @@ fn fixture_book() -> Book {
     let mut conv = jats::JatsConverter::new(doc.root(), &images);
     let meta = conv.meta();
     let chapters = conv.chapters();
-    Book { meta, chapters, images: vec![], source_label: "JATS file".into(), notes: vec![] }
+    Book { meta, chapters, images: vec![], source_label: "JATS file".into(), notes: vec![], ..Default::default() }
 }
 
 #[test]

@@ -220,7 +220,7 @@ pub fn book_with(
     if conv.math_count > 0 {
         notes.push(format!("{} equation(s) as MathML.", conv.math_count));
     }
-    Ok(Book { meta, chapters, images: imgs, source_label: "ScienceDirect full text".into(), notes })
+    Ok(Book { meta, chapters, images: imgs, source_label: "ScienceDirect full text".into(), notes, ..Default::default() })
 }
 
 // MARK: - Page pieces

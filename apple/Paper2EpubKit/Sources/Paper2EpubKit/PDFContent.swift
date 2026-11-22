@@ -107,6 +107,7 @@ final class PDFContentScanner {
     }
 
     static let boldRE = try! NSRegularExpression(pattern: "(?i:bold|black|heavy|semibold|demi|-bd\\b)|-(H|B|Bd|Hv|Hvy|Blk|SB|Sb|BdIt|BI|HI|Bol)$|[a-z](Bd|Blk|Hv)$", options: [])
+    static let cmapSuffix = #"-(Identity|Uni[A-Za-z0-9]+|[A-Za-z0-9]+-UCS2|UCS2)-[HV]$"#
     static let italicRE = try! NSRegularExpression(pattern: "(?i:ital|oblique|slant)|-(I|It|MI|LI|BI|HI|BdIt|SBIt|Ita)$|[a-z]It$", options: [])
     /// Math fonts. STIX counts, except STIXTwoText: the body text of Wiley's journals (their math is
     /// STIXTwoMath).
@@ -267,7 +268,10 @@ final class PDFContentScanner {
     private static func fontInfo(_ f: CGPDFDictionaryRef) -> FontInfo {
         let info = FontInfo()
         let base = name(f, "BaseFont") ?? ""
-        let clean = base.contains("+") ? String(base.split(separator: "+", maxSplits: 1).last ?? "") : base
+        var clean = base.contains("+") ? String(base.split(separator: "+", maxSplits: 1).last ?? "") : base
+        // a CID font's name may end in its CMap ("LMRoman10-Regular-Identity-H", XeLaTeX and LuaLaTeX):
+        // the "-H" (horizontal) is no "Heavy"
+        clean = clean.replacingOccurrences(of: Self.cmapSuffix, with: "", options: .regularExpression)
         let ns = clean as NSString
         let full = NSRange(location: 0, length: ns.length)
         info.bold = boldRE.firstMatch(in: clean, range: full) != nil

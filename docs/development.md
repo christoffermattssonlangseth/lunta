@@ -80,12 +80,40 @@ so a highlight made on the phone finds the same words on the Mac whatever the sc
 then **Highlight** / **Add Note** (right-click on the Mac, or ⇧⌘H; the edit menu on iPhone). Tap a
 highlight to change its colour or note; *Highlights & Notes* lists them and copies them as Markdown.
 A passage is found in the whole page's text, so one may run over paragraphs, a figure or (in pages on
-iPhone and iPad) a page's end; it stays one highlight. In pages, a selection handle held for half a
-second at the screen's side, or with the selection's end at the end of the page's last line (its start
-at the beginning of the first), turns the page and the selection goes on there (`luntaSelectionEdgeTurn`,
-one page per rest). Without dragging: **Highlight to…** in the selection menu, or **Extend…** in a
+iPhone and iPad) a page's end; it stays one highlight. In pages, a selection handle resting at the
+screen's side, or with the selection's end at the end of the page's last line (its start at the
+beginning of the first), turns the page (`luntaSelectionEdgeTurn`, one page per rest). The selection
+can't follow (iOS WebKit re-anchors a handle drag at what is on screen), so it becomes a pending
+Highlight to…: the passage stays coloured and the word tapped next ends it. Also without dragging: **Highlight to…** in the selection menu, or **Extend…** in a
 highlight's sheet, then turn the page and tap the word where the highlight should end (before its
 start: the start moves; inside it: it gets shorter); highlights it reaches are joined to it.
+
+### Books and theses as PDFs
+
+Before laying out a PDF, both converters decide whether it is a **paper** or a **book** (a thesis is
+converted as a book): `DocumentClassifier` in `apple/Paper2EpubKit/Sources/Paper2EpubKit/DocumentKind.swift`,
+`classify` in `core/src/convert/pdf/book.rs`. Anything under 40 pages is a paper (20 with a book or thesis
+work type). Longer ones are scored on the page count, the PDF's outline (chapters with sections), an ISBN,
+"Contents", "Preface", "Index" and "Chapter N" pages, dot-leader contents pages, running heads with page
+numbers, and the work type the library knows (`Paper2Epub.knownType`, `Options::work_type`, `p2e --type`,
+`paper2epub --type`); an abstract, a DOI line and received/accepted dates count against. A book needs a
+score of 4. Papers go through the paper pipeline unchanged. In book mode (`PDFBookLayout.swift`, `book.rs`):
+
+- chapters come from the outline (top level = chapter, second level = section in the contents, a part's
+  chapters stay chapters), each entry placed where its title is printed (hyperref's `\chapter*` bookmarks
+  point a page early) and titled as printed ("1.1 Supervised learning"); without an outline, from the
+  headings found ("Chapter 3" over the title makes "3 Title");
+- running heads and feet are the top and bottom lines that carry the printed page number (page index minus
+  the book's offset) or repeat within four pages, so heads that change with the chapter go too;
+- the printed table of contents (dot leaders, or the outline's "Contents" entry) is left out, the index is
+  one chapter with an entry per line, and there is no abstract, affiliation or front-matter detection: the
+  title page, copyright and dedication are a short "Front matter" chapter; authors come from the title page;
+- numbered display equations ("… (2.2)") are cropped as images even when few of their glyphs are in a math font.
+
+The decision and its signals are in the result (`ConversionResult.kind` / `kindReasons`; Rust `kind`,
+`kind_reasons`), the log ("Document kind: book (+2 541 pages; …)"), a note in the book, and p2e's and
+paper2epub's output. An app could give a library item converted as a book that has no work type yet the
+type `book` (or `thesis`); the apps don't do that yet.
 
 ### Web pages and blog posts
 

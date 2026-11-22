@@ -5,6 +5,9 @@ import Paper2EpubKit
 var argv = Array(CommandLine.arguments.dropFirst())
 let offline = argv.contains("--offline")
 argv.removeAll { $0 == "--offline" }
+// --type <work type>: the type the library knows for the item ("book", "journal-article"…)
+var knownType = ""
+if let i = argv.firstIndex(of: "--type"), i + 1 < argv.count { knownType = argv[i + 1]; argv.removeSubrange(i...(i + 1)) }
 // --pdf <file.pdf> with a JATS file: figures missing from the XML are cut from that PDF
 var pdfPath: String?
 if let i = argv.firstIndex(of: "--pdf"), i + 1 < argv.count { pdfPath = argv[i + 1]; argv.removeSubrange(i...(i + 1)) }
@@ -62,13 +65,16 @@ do {
         r = try await Paper2Epub.convert(jats: URL(fileURLWithPath: input), pdf: URL(fileURLWithPath: pdfPath), into: outDir, log: log)
     } else if FileManager.default.fileExists(atPath: input) {
         r = try await Paper2Epub.$offline.withValue(offline) {
-            try await Paper2Epub.convert(file: URL(fileURLWithPath: input), into: outDir, log: log)
+            try await Paper2Epub.$knownType.withValue(knownType) {
+                try await Paper2Epub.convert(file: URL(fileURLWithPath: input), into: outDir, log: log)
+            }
         }
     } else {
         r = try await Paper2Epub.convert(input, into: outDir, log: log)
     }
     print("✓ \(r.file.path)")
     print("  source: \(r.source)   words: \(r.words)   images: \(r.images)")
+    print("  kind: \(r.kind.rawValue)   (\(r.kindReasons.joined(separator: "; ")))")
     for n in r.notes { print("  note: \(n)") }
     if let fulltextPath { try r.fulltext.write(toFile: fulltextPath, atomically: true, encoding: .utf8) }
     if let readerTextPath { try r.readerText.write(toFile: readerTextPath, atomically: true, encoding: .utf8) }
