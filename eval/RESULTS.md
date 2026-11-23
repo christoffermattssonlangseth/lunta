@@ -3,6 +3,16 @@
 Run on 2026-11-17 (macOS, Apple M1 Pro), converters of Lunta 1.0.4 (commit 86e764b); extended on
 2026-11-18 with outside reference points (pdftotext, GROBID) on the same 200 PDFs and with reading
 views made from the journal's article page (see the two sections after the headline numbers).
+**Tenth run on 2026-11-23, both converters (commits eb59363–3583ad2; the Swift binary of 3583ad2,
+the Rust binary of cf237cf)**: fixes prompted by a reading-view audit of a textbook (Prince,
+*Understanding Deep Learning*): display equations found line by line and cropped whole with their
+numbers as text, sub- and superscripts by the glyphs' baselines, no word spaces from the next line's
+gaps (Swift), run-in heads kept in their paragraph (Swift), paragraphs joined past the figures set
+between their parts, ligature characters as letters (Swift), and book-only changes (running heads in
+pieces, code listings, algorithm boxes, Notes/Problems in the navigation, nested index entries, problem
+labels); see "What the textbook fixes changed" below. The ninth-run result files, figures, examples,
+binaries and Swift, Rust and pdffig outputs are in `data/prev-2026-11-23b/`; the headline table below
+has this run's numbers, the text of earlier sections is unchanged.
 **Ninth run on 2026-11-23, both converters (commits cc8c062, bf939d8)**: footnotes out of the running
 text into notes at the chapter's end with their markers linked, a book's margin notes after their
 paragraph, and superscripts the PDF gives as lines of their own put back on their line; see "What the
@@ -68,18 +78,19 @@ bootstrap CI (of the mean, unless stated otherwise).
 
 | | Swift, current | Swift, baseline (38d2bdc^) | Rust (PDFium) |
 |---|---|---|---|
-| Token F1 vs XML, median (IQR) | **0.955** (0.918–0.980) | 0.890 (0.798–0.948) | 0.960 (0.912–0.982) |
-| Token F1, mean [CI] | 0.927 [0.914, 0.940] | 0.860 [0.841, 0.877] | 0.932 [0.919, 0.944] |
-| Token recall of abstract+body, median | **0.988** | 0.966 | 0.993 |
-| Token precision, median | 0.940 | 0.861 | 0.939 |
-| Word error rate, median | 0.087 | 0.221 | 0.079 |
-| Broken words / 1000 tokens, mean [CI] | **0.79** [0.45, 1.28] | 4.15 [2.65, 5.93] | 0.46 [0.25, 0.71] |
-| Paragraph order, Kendall's τ, median (mean) | 1.000 (0.987) | 1.000 (0.982) | 1.000 (0.989) |
-| Papers with ≥ 1 interleaving event | **19.5 %** [14.0, 25.0] | 34.0 % [27.5, 40.5] | 11.5 % [7.5, 16.5] |
-| Papers with any boilerplate leak | **41.0 %** [34.0, 48.0] | 63.5 % [56.5, 70.0] | 41.5 % [35.0, 48.5] |
+| Token F1 vs XML, median (IQR) | **0.957** (0.921–0.981) | 0.890 (0.798–0.948) | 0.960 (0.912–0.982) |
+| Token F1, mean [CI] | 0.930 [0.917, 0.943] | 0.860 [0.841, 0.877] | 0.933 [0.919, 0.944] |
+| Token recall of abstract+body, median | **0.989** | 0.966 | 0.994 |
+| Token precision, median | 0.942 | 0.861 | 0.939 |
+| Word error rate, median | 0.083 | 0.221 | 0.080 |
+| Broken words / 1000 tokens, mean [CI] | **0.52** [0.31, 0.78] | 4.15 [2.65, 5.93] | 0.46 [0.25, 0.71] |
+| Paragraph order, Kendall's τ, median (mean) | 1.000 (0.986) | 1.000 (0.982) | 1.000 (0.989) |
+| Papers with ≥ 1 interleaving event | **20.5 %** [15.0, 26.0] | 34.0 % [27.5, 40.5] | 11.5 % [7.5, 16.5] |
+| Papers with any boilerplate leak | **40.0 %** [33.0, 47.0] | 63.5 % [56.5, 70.0] | 42.0 % [35.0, 49.0] |
 | Figure images, count-based recall (precision) | 96.0 % (72.7 %) | 96.2 % (62.5 %) | 96.0 % (72.5 %) |
-| Figures identified (image + matching label/caption) | 66.4 % [59.0, 73.4] | 65.7 % | 72.7 % [66.1, 79.4] |
-| Highlights re-anchored correctly in the XML view | **89.5 %** [87.7, 91.0] | 82.9 % [80.6, 84.9] | 90.5 % [88.8, 92.0] |
+| Figures identified (image + matching label/caption) | 66.4 % [59.0, 73.4] | 65.7 % | 72.8 % [66.2, 79.6] |
+| Highlights re-anchored correctly in the XML view | **90.5 %** [88.8, 92.0] | 82.9 % [80.6, 84.9] | 90.6 % [88.8, 92.1] |
+| Display equations kept as equations (XML 277) | 276 | 218 | 292 |
 | Tables identified (image + matching label/caption) | 65.9 % [58.5, 72.9] | 56.0 % | 66.7 % [59.2, 73.8] |
 | Papers with XML references but no reference items | 2 (40 in the first 2026-11-18 run) | – | 2 (40) |
 | Speed, s/page (one conversion at a time), median | 0.124 (CPU 0.085) | 0.190* (CPU 0.085*) | 0.047 (CPU 0.046) |
@@ -89,6 +100,57 @@ in this run, same binary); in that run the Swift CLI of the day took 0.199 s/pag
 this run are about 30 % shorter than on 2026-11-16 for both converters, but the 2026-11-16 and current
 `p2e` binaries took the same time when run side by side on four slow papers (e.g. 1.70 vs 1.46 s,
 1.33 vs 1.27 s, 1.06 vs 1.05 s, 1.40 vs 1.39 s): the difference is load on the machine, not code.
+
+**What the textbook fixes changed (2026-11-23, tenth run vs ninth run; both converters; same papers,
+same scripts).** Prompted by an audit of *Understanding Deep Learning* read as a book (a maths textbook
+set by xdvipdfmx in Latin Modern with Computer Modern math). Fixes, each in both converters unless said:
+
+- *Display equations, line by line* (`PDFEquations.swift`, `equations.rs`): before the paragraphs are made,
+  a line ending in an equation number set apart at a column's right edge ("(7.9)", "(C.8)", "(12)"),
+  with the formula's lines beside it, grown over its rows, fractions, limits and matrices; in a book also
+  math centred in the column. Its lines leave the text (the prose around it is no longer run into it), its
+  image is its ink cropped to the lines around it without the number, and the number stays text:
+  `<div class="equation" id="eq-7-9"><span class="eqlabel eqno">(7.9)</span><img alt="(its text)"/></div>`
+  (the reader's cross-references find "equation 7.9"). Computer Modern roman counts as math where the
+  text is set in another font. A line with four or more words of running text, a list item or a problem's
+  label is never part of one.
+- *Scripts by baselines*: a smaller character's run (Swift) or PDFium origin (Rust) against the line's
+  baseline decides raised or lowered (β₃ had come out as β³); a prime is no script. Swift: a character in a
+  box much taller than its type takes the content-stream run whose glyph starts where it does; pieces of
+  a line PDFKit gives as lines of their own go back into it at their place.
+- *Word spaces* (Swift): a gap in the content stream becomes a space only on the baseline of the text
+  there, not the next line's (in lines PDFKit gives tall boxes: "orang e po ints", "Figu re 8.1").
+- *Run-in heads* (Swift): a line joined from pieces has their shares of bold type ("Forward pass:" + the
+  text no longer breaks off as an `<h3>`); a numbered line is a heading only if its number is bold.
+- *Paragraphs past figures*: joined past up to eight figures, legends or notes (was three).
+- *Ligatures* (Swift; Rust already did): U+FB00–FB06 as their letters ("efficient", not "eﬀicient").
+- *Books only*: running heads given in pieces (Swift), code listings as `<pre><code>`, algorithm boxes as one
+  picture with their text as its alternative, Notes/Problems as `<h2>` in the navigation, nested index
+  entries, the copyright page's year, problem labels starting their paragraph.
+
+On the 200 papers (Swift / Rust): display equations kept as equations 131 → 276 / 135 → 292 of the
+XML's 277 (equations had mostly been paragraphs of text: their text left the body text, which the XML
+side also leaves out); token F1 mean 0.927 → 0.930 / 0.932 → 0.933, median 0.955 → 0.957 / 0.960 → 0.960,
+better in 44 / 12 papers and worse in 3 / 1 (the worst, PMC5189943 −0.016 in both, a figure legend now
+placed after a paragraph it had split); precision mean 0.905 → 0.910; broken words per 1,000 tokens 0.79 →
+0.52 (Swift; spurious splits 0.52 → 0.25, Nature papers 0.61 → 0.18, Wiley 0.33 → 0.15); highlights
+re-anchored correctly 89.5 → 90.5 % / 90.5 → 90.6 %; figure captions found 516 → 524 (Swift); papers
+with a boilerplate leak 41.0 → 40.0 % (Swift), 41.5 → 42.0 % (Rust, one paper); papers with an
+interleaving event 19.5 → 20.5 % (Swift, two papers whose paragraph now goes on past a legend the
+eval places differently). PMC7712227 (information theory, 188 display equations in the XML) loses 0.8 % recall in both:
+sentences of it set in math type with fewer than four words of running text now sit in equation images
+(with their text as the image's alternative); its F1 rises (0.917 → 0.961 Swift, 0.915 → 0.957 Rust: 97 →
+200 and 79 → 195 equations kept as equations). On the 40 library PDFs against the converters at
+3e3c8cf/9238ab4 (`p2e --offline`, reader text and EPUB counts): 37 Swift and 12 Rust views change —
+equations cropped with their numbers in 5 papers ("(P = 1)", "R² = 0.948" back in the text where the
+formula's equals signs had been), words no longer split ("templat e", "sens itive", "f unctio nal" in 9
+papers), sentences whole past a figure legend (5 papers), closing punctuation no longer spaced off a
+superscript ("escalator⁵ ."), primes and CD4⁺/MBP₈₃₋₉₉ scripts corrected; the 1,161-page textbook (Pevsner)
+gets 116 (Rust 78) code listings, its index nested, its year 2015, and loses 1,977 words of a part's running
+head left mid-sentence. The textbook: numbered equations with their number as text 0 → 487 (Rust 489)
+of 497, equation numbers left in paragraphs 128 → 1, words split by spaces 394 → 3, letter + `<sup>`
+264 → 27, run-in `<h3>` 146 → 4, running heads left in 17 → 0, ligature words 201 → 0, paragraphs cut by a
+figure 19 → 2, problems found by cross-references 185 → 197.
 
 **What the footnotes changed (2026-11-23, ninth run vs eighth run; both converters; same papers, same
 scripts).** Prompted by a textbook (Prince, *Understanding Deep Learning*), where every footnote sat as a
