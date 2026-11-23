@@ -95,6 +95,10 @@ pub struct PLine {
     pub math: f64,
     pub spans: Vec<Span>,
     pub page: usize,
+    /// fraction in a Computer Modern roman font (math where the text is set in another font)
+    pub cmr: f64,
+    /// an equation's number split off the end of a line (`equations.rs`), until the equations are found
+    pub tag_split: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,11 +131,31 @@ pub struct Para {
     /// A footnote's id and its marker (the marker is no longer in its text)
     pub note_id: Option<String>,
     pub note_label: Option<String>,
+    /// A display equation found line by line (`equations.rs`): its number ("7.9"), the area its ink
+    /// is cropped from, its number's box (painted out), and the ink's width once cropped
+    pub eq_label: Option<String>,
+    pub crop: Option<R>,
+    pub blank: Option<R>,
+    pub ink_width: Option<f64>,
 }
 
 impl Para {
     pub fn new(lines: Vec<PLine>, page: usize, kind: Kind) -> Para {
-        Para { lines, page, kind, level: 0, asset: None, region: None, boxed: None, note_id: None, note_label: None }
+        Para {
+            lines,
+            page,
+            kind,
+            level: 0,
+            asset: None,
+            region: None,
+            boxed: None,
+            note_id: None,
+            note_label: None,
+            eq_label: None,
+            crop: None,
+            blank: None,
+            ink_width: None,
+        }
     }
     pub fn text(&self) -> String {
         join_lines(self.lines.iter().map(|l| l.text.as_str()))
@@ -271,6 +295,28 @@ pub fn clear_math_if_body_font(pages: &mut [Page], body_size: f64) {
     }
 }
 
+/// Computer Modern roman (CMR10, CMBX10) in a document whose text is set in another font (Latin
+/// Modern, Times) sets only its formulas' digits, brackets and function names ("sin", "exp"): math.
+pub fn math_from_computer_modern(pages: &mut [Page], body_size: f64) {
+    let (mut body, mut in_cm, mut any) = (0usize, 0usize, false);
+    for l in pages.iter().flat_map(|p| &p.lines) {
+        any |= l.cmr > 0.0;
+        if (l.size - body_size).abs() <= 0.5 {
+            let n = count(&l.text);
+            body += n;
+            in_cm += (l.cmr * n as f64).round() as usize;
+        }
+    }
+    if !any || body == 0 || in_cm as f64 >= 0.1 * body as f64 {
+        return;
+    }
+    for l in pages.iter_mut().flat_map(|p| p.lines.iter_mut()) {
+        if l.cmr > 0.0 {
+            l.math = (l.math + l.cmr).min(1.0);
+        }
+    }
+}
+
 /// Running text rather than a formula: five or more words of three or more lower-case letters that
 /// make up most of it. Such a paragraph is kept as text (never cropped as an image), whatever its
 /// fonts say.
@@ -386,9 +432,11 @@ pub struct Analyzer<'a> {
     /// work type the library knows are set before `analyze`.
     pub book: super::book::BookInfo,
     pub work_type: String,
-    renderer: &'a mut dyn Renderer,
+    pub(crate) renderer: &'a mut dyn Renderer,
     pub(crate) log: &'a dyn Fn(&str),
     used_names: HashSet<String>,
+    /// The text columns' left and right ends, by the side of the page (`equations.rs`)
+    pub(crate) doc_edges: [(Vec<f64>, Vec<f64>); 2],
 }
 
 impl<'a> Analyzer<'a> {
@@ -404,7 +452,10 @@ impl<'a> Analyzer<'a> {
         let body_size = first_max(&sizes, |x| (x.1, x.0)).map(|x| x.0).unwrap_or(10.0);
         let mut pages = pages;
         mark_hard_hyphens(&mut pages);
+        math_from_computer_modern(&mut pages, body_size);
         clear_math_if_body_font(&mut pages, body_size);
+        let side = |k: usize| super::equations::edges_of(pages.iter().enumerate().filter(|(i, _)| i % 2 == k).flat_map(|(_, p)| &p.lines), body_size);
+        let doc_edges = [side(0), side(1)];
         let mut a = Analyzer {
             pages,
             body_size,
@@ -414,6 +465,7 @@ impl<'a> Analyzer<'a> {
             renderer,
             log,
             used_names: HashSet::new(),
+            doc_edges,
         };
         a.find_running();
         a
@@ -920,7 +972,8 @@ impl<'a> Analyzer<'a> {
             } else {
                 free
             };
-            all.extend(self.paragraphs(pno, free, regions));
+            let (rest, equations) = self.display_equations(pno, free, &regions);
+            all.extend(self.paragraphs_with(pno, rest, regions, equations));
             if pno % 5 == 4 {
                 (self.log)(&format!("Laying out page {} of {}", pno + 1, n));
             }
@@ -941,6 +994,11 @@ impl<'a> Analyzer<'a> {
     }
 
     pub fn paragraphs(&self, pno: usize, input: Vec<PLine>, regions: Vec<Region>) -> Vec<Para> {
+        self.paragraphs_with(pno, input, regions, vec![])
+    }
+
+    /// Paragraphs, with the page's display equations found before (`equations.rs`) among them.
+    pub fn paragraphs_with(&self, pno: usize, input: Vec<PLine>, regions: Vec<Region>, equations: Vec<Para>) -> Vec<Para> {
         // merge fragments on the same baseline (the text layer sometimes splits a line)
         let mut sorted = input;
         sorted.sort_by(|a, b| {
@@ -974,6 +1032,7 @@ impl<'a> Analyzer<'a> {
             p.asset = g.image;
             units.push(p);
         }
+        units.extend(equations);
         let (units, cols) = self.order_with_columns(pno, units);
         let txt: Vec<(R, (f64, f64))> =
             units.iter().zip(&cols).filter(|(u, _)| u.kind == Kind::Text).map(|(u, k)| (u.lines[0].bbox, *k)).collect();
@@ -1547,6 +1606,8 @@ impl<'a> Analyzer<'a> {
                 let gap = p.bbox().y0 - prev.bbox().y1;
                 // stacked pieces (not a piece back up the page, at the top of the next column)
                 if prev.page == p.page
+                    && prev.crop.is_none()
+                    && p.crop.is_none()
                     && (p.kind == Kind::Equation || (p.kind == Kind::Text && p.boxed.is_none()))
                     && prev.kind == Kind::Equation
                     && gap < 1.6 * body
@@ -1560,6 +1621,7 @@ impl<'a> Analyzer<'a> {
                 }
                 if prev.page == p.page
                     && p.kind == Kind::Equation
+                    && p.crop.is_none()
                     && prev.kind == Kind::Text
                     && prev.boxed.is_none()
                     && count(&prev.text()) < 30
@@ -1577,7 +1639,15 @@ impl<'a> Analyzer<'a> {
         for p in out.iter_mut() {
             if p.kind == Kind::Equation {
                 let (page, b) = (p.page, p.bbox());
-                p.asset = self.render(page, b, false, &format!("p{}-eq{}-{}", page + 1, b.y0 as i64, b.x0 as i64));
+                let name = format!("p{}-eq{}-{}", page + 1, b.y0 as i64, b.x0 as i64);
+                if let Some(crop) = p.crop {
+                    if let Some((img, w)) = self.render_ink(page, crop, p.blank, &name) {
+                        p.asset = Some(img);
+                        p.ink_width = Some(w);
+                        continue;
+                    }
+                }
+                p.asset = self.render(page, b, false, &name);
             }
         }
         out

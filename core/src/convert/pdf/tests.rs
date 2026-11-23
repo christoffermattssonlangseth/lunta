@@ -15,6 +15,8 @@ fn line(text: &str, page: usize, x0: f64, y0: f64, size: f64) -> PLine {
         math: 0.0,
         spans: vec![Span { text: text.into(), ..Default::default() }],
         page,
+        cmr: 0.0,
+        tag_split: false,
     }
 }
 
@@ -1917,4 +1919,60 @@ fn a_superscript_on_a_line_of_its_own_goes_back_to_its_line() {
     assert_eq!(ls[0].text, "we can improve no further.");
     assert_eq!(ls[0].spans.last().unwrap().text, "2");
     assert!(ls[0].spans.last().unwrap().sup);
+}
+
+/// Justified body text: `n` lines from `y`, each from 72 to 522.
+fn justified(page: usize, y: f64, n: usize, tag: &str) -> Vec<PLine> {
+    (0..n)
+        .map(|i| {
+            let s = if i == n - 1 { format!("this is the last line of the {tag} paragraph, and it ends here.") } else { format!("this is line {i} of the {tag} paragraph with words that run on and on to the margin") };
+            let mut l = line(&s, page, 72.0, y + i as f64 * 12.0, 10.0);
+            l.bbox.x1 = if i == n - 1 { 380.0 } else { 522.0 };
+            l
+        })
+        .collect()
+}
+
+#[test]
+fn a_numbered_display_is_one_equation_with_its_number_as_text() {
+    let mut p1 = vec![bold(line("A Tiny Test Paper About Sums", 0, 150.0, 60.0, 18.0)), bold(line("1 Introduction", 0, 72.0, 100.0, 12.0))];
+    p1.extend(justified(0, 120.0, 5, "first"));
+    // the formula: two rows set in from the column, in math type; its number at the column's right edge
+    let mut r1 = line("y = f[x, w] + b", 0, 220.0, 190.0, 10.0);
+    let mut r2 = line("z = g[y] − 1", 0, 220.0, 204.0, 10.0);
+    r1.math = 0.6;
+    r2.math = 0.6;
+    let mut tag = line("(2.5)", 0, 497.0, 204.0, 10.0);
+    tag.bbox.x1 = 522.0;
+    tag.tag_split = true;
+    p1.extend([r1, r2, tag]);
+    p1.extend(justified(0, 230.0, 5, "second"));
+    // a number in the running text, after an ordinary space, stays text
+    let mut inline = line("and so the result follows from what was said in (3)", 0, 72.0, 300.0, 10.0);
+    inline.bbox.x1 = 522.0;
+    p1.push(inline);
+    let p2 = justified(1, 80.0, 6, "third");
+    let pages = vec![
+        Page { width: 612.0, height: 792.0, lines: p1, graphics: PageGraphics::default() },
+        Page { width: 612.0, height: 792.0, lines: p2, graphics: PageGraphics::default() },
+    ];
+    let book = book_of(pages);
+    let h: String = book.chapters.iter().map(|c| c.html.as_str()).collect();
+    assert!(h.contains(r#"<div class="equation" id="eq-2-5"><span class="eqlabel eqno">(2.5)</span><img class="equation""#), "{h}");
+    assert!(h.contains(r#"alt="y = f[x, w] + b z = g[y] − 1""#), "{h}");
+    assert_eq!(h.matches("(2.5)").count(), 1, "{h}");
+    assert!(!h.contains("<p>y = f"), "{h}");
+    assert!(h.contains("what was said in (3)"), "{h}");
+    assert_eq!(h.matches("class=\"equation\"").count(), 2, "{h}");
+}
+
+#[test]
+fn equation_tags() {
+    for t in ["(2.5)", "(12)", "(C.8)", "(4.6a)", "(S3)", "(10.14)"] {
+        assert!(equations::is_equation_tag(t), "{t}");
+    }
+    for t in ["(2019)", "(a)", "(see 2.5)", "2.5", "(i)", "(1.2.3.4)"] {
+        assert!(!equations::is_equation_tag(t), "{t}");
+    }
+    assert_eq!(equations::tag_number("(C.8)").as_deref(), Some("C.8"));
 }

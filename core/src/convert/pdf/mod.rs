@@ -7,6 +7,7 @@
 //! [`layout`] and do not touch PDFium.
 
 pub mod book;
+pub mod equations;
 pub mod extract;
 pub mod layout;
 pub mod notes;
@@ -16,6 +17,7 @@ pub mod symbols;
 use super::{esc, fail, net, Book, BookImage, Chapter, ConvertError, Heading, Options, PaperMeta, Result};
 use layout::{re, styled, Analyzer, Kind, Para};
 use pdfium_render::prelude::*;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -592,6 +594,7 @@ pub fn assemble_book(
     let mut chapters: Vec<Chapter> = Vec::new();
     let mut cur: Option<Cur> = None;
     let mut images: Vec<BookImage> = Vec::new();
+    let mut eq_ids: HashSet<String> = HashSet::new();
     let mut front = String::new();
     let mut auto_id = 0;
     let mut next_id = || {
@@ -808,10 +811,24 @@ pub fn assemble_book(
                 if let Some(img) = p.asset.clone() {
                     let src = format!("../images/{}", img.file_name);
                     images.push(img);
-                    let wem = (p.bbox().w() + 8.0) / body_size.max(6.0) * 0.95;
-                    append!(format!(
-                        "<div class=\"equation\"><img class=\"equation\" src=\"{src}\" alt=\"equation\" style=\"width: {wem:.1}em\"/></div>"
-                    ));
+                    let wem = p.ink_width.map(|w| w + 4.0).unwrap_or(p.bbox().w() + 8.0) / body_size.max(6.0) * 0.95;
+                    // its text as the alternative (search, VoiceOver); its number as text, for references
+                    let alt = equations::equation_text(p);
+                    let alt = if alt.is_empty() { "equation".to_string() } else { alt };
+                    let img = format!("<img class=\"equation\" src=\"{src}\" alt=\"{}\" style=\"width: {wem:.1}em\"/>", esc(&alt));
+                    if let Some(label) = &p.eq_label {
+                        let key = label.replace('.', "-");
+                        let mut eid = format!("eq-{key}");
+                        let mut k = 1;
+                        while eq_ids.contains(&eid) {
+                            k += 1;
+                            eid = format!("eq-{key}-{k}");
+                        }
+                        eq_ids.insert(eid.clone());
+                        append!(format!("<div class=\"equation\" id=\"{eid}\"><span class=\"eqlabel eqno\">({})</span>{img}</div>", esc(label)));
+                    } else {
+                        append!(format!("<div class=\"equation\">{img}</div>"));
+                    }
                 }
             }
             Kind::Caption => {

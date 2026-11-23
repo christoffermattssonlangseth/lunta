@@ -4,7 +4,7 @@
 //! character and inserts the word spaces a content stream only implies by moving, so neither
 //! the content-stream walk nor its gap detection is needed.
 
-use super::layout::{DocInfo, PLine, Page, PageGraphics, Renderer, Span, R};
+use super::layout::{re, DocInfo, PLine, Page, PageGraphics, Renderer, Span, R};
 use pdfium_render::prelude::*;
 use std::collections::{HashMap, HashSet};
 
@@ -55,6 +55,8 @@ struct Style {
     bold: bool,
     italic: bool,
     math: bool,
+    /// Computer Modern roman (CMR10, CMBX10): math where the text is set in another font
+    cm_roman: bool,
 }
 
 fn style_for(name: &str, force_bold: bool, italic_flag: bool) -> Style {
@@ -63,7 +65,8 @@ fn style_for(name: &str, force_bold: bool, italic_flag: bool) -> Style {
         || layout_re::bold().is_match(clean);
     let italic = italic_flag || layout_re::italic().is_match(clean);
     let math = layout_re::math().is_match(clean) && !layout_re::stix_text().is_match(clean);
-    Style { bold, italic, math }
+    let cm_roman = re!(r"^(CMR|CMBX|CMSL|CMB)\d").is_match(clean);
+    Style { bold, italic, math, cm_roman }
 }
 
 pub(crate) mod layout_re {
@@ -368,7 +371,44 @@ pub fn extract_lines(text: &PdfPageText, mb: &MediaBox, pno: usize, hidden: &Hid
             eprintln!("LINE {t:?} {}", sz.join(" "));
         }
     }
-    raw_lines.into_iter().filter_map(|cs| make_line(cs, pno)).collect()
+    let mut out = Vec::new();
+    for cs in raw_lines {
+        // a display equation's number set apart at the line's end: a line of its own, for the
+        // equations to be found by (see `equations.rs`)
+        let (head, tag) = split_equation_tag(cs);
+        out.extend(make_line(head, pno));
+        if let Some(mut t) = tag.and_then(|t| make_line(t, pno)) {
+            t.tag_split = true;
+            out.push(t);
+        }
+    }
+    out
+}
+
+/// A line whose text ends in an equation number ("(7.11)") set apart from the rest by a wide gap
+/// (0.8 em or more): the line without it, and the number.
+fn split_equation_tag(cs: Vec<C>) -> (Vec<C>, Option<Vec<C>>) {
+    let Some(end) = cs.iter().rposition(|c| !is_space(c.ch)) else { return (cs, None) };
+    if cs[end].ch != ')' {
+        return (cs, None);
+    }
+    let Some(open) = cs[..end].iter().rposition(|c| c.ch == '(') else { return (cs, None) };
+    if end - open > 12 {
+        return (cs, None);
+    }
+    let tag: String = cs[open..=end].iter().map(|c| c.ch).collect();
+    if !super::equations::is_equation_tag(&tag) {
+        return (cs, None);
+    }
+    let Some(p) = cs[..open].iter().rposition(|c| !is_space(c.ch)) else { return (cs, None) };
+    let (a, b) = (cs[p].bx, cs[open].bx);
+    let size = cs[open..=end].iter().map(|c| c.size).fold(cs[p].size, f64::max).max(4.0);
+    if !(a.w() > 0.0 && b.w() > 0.0 && b.x0 - a.x1 >= 0.8 * size) {
+        return (cs, None);
+    }
+    let mut cs = cs;
+    let tag = cs.split_off(open);
+    (cs, Some(tag))
 }
 
 /// Line numbers (preprints, manuscripts) sit on the text's baseline a little to the left or
@@ -580,7 +620,7 @@ fn make_line(chars: Vec<C>, pno: usize) -> Option<PLine> {
     let main_height =
         if mains.is_empty() { bbox.h() } else { mains.iter().map(|c| c.bx.h()).sum::<f64>() / mains.len() as f64 };
     let mut spans: Vec<Span> = Vec::new();
-    let (mut n_bold, mut n_math, mut n) = (0usize, 0usize, 0usize);
+    let (mut n_bold, mut n_math, mut n_cmr, mut n) = (0usize, 0usize, 0usize, 0usize);
     let mut last: Option<Style> = None;
     let mut text = String::new();
     for c in chars {
@@ -603,6 +643,7 @@ fn make_line(chars: Vec<C>, pno: usize) -> Option<PLine> {
             n += 1;
             n_bold += st.bold as usize;
             n_math += st.math as usize;
+            n_cmr += st.cm_roman as usize;
         }
         let sp = Span { text: ch.to_string(), bold: st.bold, italic: st.italic, sup, sub, note_ref: None };
         match spans.last_mut() {
@@ -623,7 +664,17 @@ fn make_line(chars: Vec<C>, pno: usize) -> Option<PLine> {
         }
     }
     let nn = n.max(1) as f64;
-    Some(PLine { text, bbox, size: dom, bold: n_bold as f64 / nn, math: n_math as f64 / nn, spans, page: pno })
+    Some(PLine {
+        text,
+        bbox,
+        size: dom,
+        bold: n_bold as f64 / nn,
+        math: n_math as f64 / nn,
+        spans,
+        page: pno,
+        cmr: n_cmr as f64 / nn,
+        tag_split: false,
+    })
 }
 
 /// Text objects a page holds but does not show, by their bounds as PDFium reports them (in the

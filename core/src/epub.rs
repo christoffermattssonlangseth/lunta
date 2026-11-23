@@ -487,7 +487,7 @@ pub fn reading_parts(book: &EpubBook, force: bool) -> Result<ReadingParts> {
 /// performance" is `8`, "C.5.2 …" `C.5.2`, "Chapter 3 …" also `ch:3`, "Appendix B …" `app:B`
 /// and `B`, "Supplementary Note 2" `note:2`), a problem or exercise label at the start of its
 /// paragraph (`problem:3.5`), a table caption (`table:2`, a supplementary one `table:S2`) and an
-/// equation's number tag (`eq:2.3`). The script finds targets in its own page; these say which
+/// equation's number tag (`eq:2.3`, a PDF's `<span class="eqlabel eqno">(C.8)</span>` `eq:C.8`). The script finds targets in its own page; these say which
 /// other part has one.
 pub(crate) fn xref_keys(html: &str) -> Vec<String> {
     use std::sync::OnceLock;
@@ -502,7 +502,7 @@ pub(crate) fn xref_keys(html: &str) -> Vec<String> {
             .unwrap(),
             Regex::new(r"(?s)<(?:p|div|li)\b[^>]*>\s*<(?:strong|b)\b[^>]*>\s*(?:Problem|Exercise)\s+(\d+(?:\.\d+)*|[A-Z](?:\.\d+)+)\s*</(?:strong|b)>").unwrap(),
             Regex::new(r"(?s)<(caption|figcaption)\b[^>]*>(.*?)</(?:caption|figcaption)>").unwrap(),
-            Regex::new(r#"class="[^"]*\bltx_tag_equation\b[^"]*"[^>]*>\s*\((\d+(?:\.\d+)*[a-z]?)\)\s*<"#).unwrap(),
+            Regex::new(r#"class="[^"]*\b(?:ltx_tag_equation|eqno)\b[^"]*"[^>]*>\s*\(((?:\d+(?:\.\d+)*|[A-Z](?:\.\d+)+)[a-z]?)\)\s*<"#).unwrap(),
         ]
     });
     static TABLE: OnceLock<Regex> = OnceLock::new();
