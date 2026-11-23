@@ -1946,8 +1946,10 @@ enum PDFBook {
         for p in paras {
             // (past figures, legends, front matter, notes and boxes set between the columns)
             if p.kind == .text, p.text.first?.isLowercase == true,
-               let j = merged.lastIndex(where: { ![.figure, .table, .caption, .front, .footnote, .sidenote].contains($0.kind) && $0.boxed == p.boxed }),
-               merged[j].kind == .text, merged[(j + 1)...].filter({ $0.boxed == p.boxed && $0.kind != .footnote && $0.kind != .sidenote }).count <= 3 {
+               // (and a piece of a line cropped as a formula, a lone "∗")
+               let j = merged.lastIndex(where: { ![.figure, .table, .caption, .front, .footnote, .sidenote].contains($0.kind) && $0.boxed == p.boxed
+                   && !($0.kind == .equation && $0.eqLabel == nil && $0.text.trimmingCharacters(in: .whitespaces).count <= 3) }),
+               merged[j].kind == .text, merged[(j + 1)...].filter({ $0.boxed == p.boxed && $0.kind != .footnote && $0.kind != .sidenote }).count <= 8 {
                 let q = merged[j]
                 if !(q.text.hasSuffix(".") || q.text.hasSuffix("?") || q.text.hasSuffix("!") || q.text.hasSuffix(":")) {
                     q.lines += p.lines

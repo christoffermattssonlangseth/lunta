@@ -113,4 +113,18 @@ final class EquationTests: XCTestCase {
                                 options: .regularExpression), h)
         XCTAssertFalse(h.contains("<h3"), h)
     }
+
+    func testAParagraphGoesOnPastTheFiguresOfTheNextPages() async throws {
+        // a sentence cut at a page's end, two pages of figure legends (four of them) set in between
+        var p1 = [Piece(text: "A Study of Things", size: 20, x: 72, y: 80), Piece(text: "1 Introduction", size: 12, x: 72, y: 130)]
+        p1 += FootnoteTests.body("page 0", y: 160, n: 3)
+        p1.append(Piece(text: "and so we see that the direction of the deviation (whether the line is", x: 72, y: 700))
+        let legends = { (k: Int) in [Piece(text: "Figure \(k).1 A legend for a figure that is not drawn here.", size: 9, x: 72, y: 300),
+                                     Piece(text: "Figure \(k).2 Another legend for a figure not drawn.", size: 9, x: 72, y: 600)] }
+        let p4 = [Piece(text: "above or below the data) is unimportant, and the rest of it goes on here.", x: 72, y: 100)]
+            + FootnoteTests.body("page 3", y: 130, n: 3)
+        let book = try await PDFBook.build(FootnoteTests.pdf([p1, legends(1), legends(2), p4]), meta: PaperMeta(), log: { _ in })
+        let h = html(book)
+        XCTAssertTrue(h.contains("(whether the line is above or below the data) is unimportant"), h)
+    }
 }
