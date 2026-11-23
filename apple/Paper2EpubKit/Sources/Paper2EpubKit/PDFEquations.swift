@@ -83,7 +83,11 @@ extension PDFAnalyzer {
             let up = fc < mid
             let chars = Array(h.text)
             // where it goes: after the characters that start before it
-            let k = h.charBoxes.firstIndex { $0.w > 0 && ($0.x0 + $0.x1) / 2 > f.bbox.x0 } ?? chars.count
+            var k = h.charBoxes.firstIndex { $0.w > 0 && ($0.x0 + $0.x1) / 2 > f.bbox.x0 } ?? chars.count
+            // (right after the character before the word space it sits in: "transformer,¹ and", a note's
+            // marker set close to its word, not " ¹and")
+            while k > 0, k <= chars.count, chars[k - 1] == " ", let p = chars[..<(k - 1)].lastIndex(where: { $0 != " " }),
+                  h.charBoxes[p].w > 0, f.bbox.x0 - h.charBoxes[p].x1 < 0.25 * h.size { k -= 1 }
             // (a script follows something: a piece before the line's first letter is not one, an entry's
             // "1." beside a heading)
             guard k > 0 else { continue }
@@ -239,6 +243,7 @@ extension PDFAnalyzer {
         func mathLike(_ l: PLine, colLeft: CGFloat) -> Bool {
             let t = l.text.trimmingCharacters(in: .whitespaces)
             if t.isEmpty || Self.isProse(t) || Self.captionRE.test(t) || Self.problemLabelRE.test(t) { return false }
+            if Self.footType(l, body: body, height: boxes[pno].height) { return false }
             if l.bold > 0.6 && l.math < 0.2 && t.count > 3 { return false }   // a heading, a run-in head
             let words = Self.textWords(t)
             let em = max(l.size, body)

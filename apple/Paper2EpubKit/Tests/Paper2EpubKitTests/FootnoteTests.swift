@@ -151,4 +151,43 @@ final class FootnoteTests: XCTestCase {
         // (once: not also as a paragraph of the text)
         XCTAssertEqual(h.components(separatedBy: "Notebook 1.1").count, 2, h)
     }
+
+    func testAFootnoteWithALargeOperatorStaysANote() async throws {
+        // a book's footnote whose first line holds an inline Σ set large: the line's two pieces are one
+        // line of the note, not a display equation cut out of it
+        var pages: [[Piece]] = []
+        for k in 0..<22 {
+            var page = Self.body("page \(k)", y: 100, n: 8)
+            if k == 4 {
+                page = Self.body("page 4", y: 100, sup: "1", at: 2) + Self.body("page 4 again", y: 220)
+                let a = "For the purposes of this book, a linear function has the form z ="
+                let w = Self.width(a, 8)
+                page += [Piece(text: "1", size: 5, x: 72, y: 690, raise: 3), Piece(text: a, size: 8, x: 76, y: 690),
+                         Piece(text: "\u{2211}", size: 14, x: 76 + w + 2, y: 693),
+                         Piece(text: "b x. Any other type of", size: 8, x: 76 + w + 14, y: 690),
+                         Piece(text: "function is nonlinear, and the notes at the end of the chapter say more about it.", size: 8, x: 72, y: 700)]
+            }
+            pages.append(page)
+        }
+        var meta = PaperMeta(); meta.workType = "book"
+        let book = try await PDFBook.build(Self.pdf(pages), meta: meta, log: { _ in })
+        let h = html(book)
+        XCTAssertFalse(h.contains("class=\"equation\""), h)
+        XCTAssertTrue(h.contains(#"class="fnref">1</a>"#), h)
+        let note = h.range(of: "<div class=\"footnotes\">").map { String(h[$0.lowerBound...]) } ?? ""
+        XCTAssertTrue(note.contains("a linear function has the form z ="), note)
+        XCTAssertTrue(note.contains("Any other type of function is nonlinear"), note)
+    }
+
+    func testFootTypeLines() {
+        func l(_ t: String, size: CGFloat, y: CGFloat) -> PLine {
+            PLine(text: t, bbox: R(x0: 72, y0: y, x1: 400, y1: y + size), size: size, bold: 0, math: 0.4, spans: [Span(text: t)], page: 0)
+        }
+        // a note's line at the page's foot in small type: never part of a display equation
+        XCTAssertTrue(PDFAnalyzer.footType(l("= ϕ0 + Σi ϕizi. Any other type of", size: 8, y: 660), body: 10, height: 792))
+        // a formula's line in the body type, or small type higher up (a problem's), is not
+        XCTAssertFalse(PDFAnalyzer.footType(l("= ϕ0 + Σi ϕizi. Any other type of", size: 10, y: 660), body: 10, height: 792))
+        XCTAssertFalse(PDFAnalyzer.footType(l("= ϕ0 + Σi ϕizi. Any other type of", size: 8, y: 300), body: 10, height: 792))
+        XCTAssertFalse(PDFAnalyzer.footType(l("i = 1", size: 7, y: 660), body: 10, height: 792))
+    }
 }

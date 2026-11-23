@@ -203,6 +203,12 @@ final class PDFAnalyzer {
     static let spacingAccents: [String: String] = ["¨": "\u{0308}", "´": "\u{0301}", "ˆ": "\u{0302}", "˜": "\u{0303}",
                                                     "ˇ": "\u{030C}", "¸": "\u{0327}", "˚": "\u{030A}"]
     static let primes: Set<String> = ["′", "″", "‴"]
+    /// A line in a footnote's type at the foot of the page (well smaller than the body, in its lowest
+    /// third): a note's, never part of a display equation.
+    static func footType(_ l: PLine, body: CGFloat, height: CGFloat) -> Bool {
+        l.size > 0 && l.size <= body - 1.5 && l.bbox.y0 > 0.67 * height
+            && (proseWordRE.numberOfMatches(in: l.text, range: NSRange(location: 0, length: (l.text as NSString).length)) >= 2 || noteMarker(l) != nil)
+    }
     /// A problem's or exercise's label at the start of a line: "Problem 5.3", "Exercise 2.1".
     static let problemLabelRE = re(#"^\s*(Problem|Exercise)\s+(\d+\.\d+|[A-Z]\.\d+|\d+)\b"#)
     static let noSpaceBefore: Set<String> = [",", ".", ";", ":", "!", "?", ")", "]", "}", "’", "”", "%"]
@@ -925,6 +931,11 @@ final class PDFAnalyzer {
             }) else { continue }
             // (in the spans only: the line's text, which decides where paragraphs end, still ends with its
             // full stop)
+            // (right after its word: not after a space the line's spans end with)
+            while let last = host.spans.last, last.text.hasSuffix(" ") {
+                host.spans[host.spans.count - 1].text.removeLast()
+                if host.spans[host.spans.count - 1].text.isEmpty { host.spans.removeLast() }
+            }
             host.spans.append(Span(text: t, sup: true))
             host.bbox = host.bbox.union(l.bbox)
             gone.insert(ObjectIdentifier(l))
@@ -1333,9 +1344,12 @@ final class PDFAnalyzer {
         // merge fragments on the same baseline (PDFKit sometimes splits a line)
         // pieces of one line PDFKit gave apart, touching (within half an em), the same type, level by their
         // tops or, for a piece raised by a superscript in it, by their bottoms: one line
+        // (or one's box within the other's height: a piece made tall by a large operator in the text, "z′ = ϕ₀ + Σᵢ ϕᵢzᵢ. Any
+        // other type of" beside "For the purposes of this book, a linear function has the form")
         func level(_ a: PLine, _ b: PLine) -> Bool {
-            abs(a.bbox.y0 - b.bbox.y0) < 2 || abs(a.bbox.y1 - b.bbox.y1) < 2
-                && min(a.bbox.y1, b.bbox.y1) - max(a.bbox.y0, b.bbox.y0) > 0.6 * min(a.bbox.h, b.bbox.h)
+            let overlap = min(a.bbox.y1, b.bbox.y1) - max(a.bbox.y0, b.bbox.y0)
+            return abs(a.bbox.y0 - b.bbox.y0) < 2 || abs(a.bbox.y1 - b.bbox.y1) < 2 && overlap > 0.6 * min(a.bbox.h, b.bbox.h)
+                || overlap > 0.8 * min(a.bbox.h, b.bbox.h)
         }
         func join(_ m: PLine, _ l: PLine) {
             // (the joined line's share of bold and math type: a run-in head "Forward pass:" and the text
@@ -1352,6 +1366,10 @@ final class PDFAnalyzer {
                 m.spans += l.spans
             } else if let c = l.text.first.map(String.init), Self.noSpaceBefore.contains(c), l.bbox.x0 - m.bbox.x1 < 0.15 * l.size {
                 m.text += l.text   // ("described⁶⁸" + ", with")
+                m.spans += l.spans
+            } else if let f = l.spans.first, f.sup, f.text.trimmingCharacters(in: .whitespaces).count <= 3, !f.text.hasPrefix(" "),
+                      l.bbox.x0 - m.bbox.x1 < 0.3 * l.size {
+                m.text += l.text   // ("transformer," + "¹ and the parameters": the marker right after its word)
                 m.spans += l.spans
             } else {
                 m.text += (m.text.hasSuffix(" ") ? "" : " ") + l.text
@@ -1769,6 +1787,7 @@ final class PDFAnalyzer {
                 // in most of its lines)
                 let words = Self.textWords(p.text)
                 let talk = Self.isBullet(p.lines[0]) || Self.problemLabelRE.test(p.text) || words >= 4 && CGFloat(words) > 1.5 * CGFloat(p.lines.count)
+                    || Self.footType(p.lines[0], body: body, height: boxes[p.page].height)
                 if mf > 0.3 && n < 400 && !Self.isProse(p.text) && !talk { p.kind = .equation }
                 // a book's display equations: numbered ("y = f[x, ϕ]. (2.2)"), or a short piece in math type
                 if kind.isBookLike, p.kind == .text, n < 200, !Self.isProse(p.text),
