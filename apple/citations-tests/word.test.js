@@ -118,7 +118,13 @@ function makeWord(doc) {
   const Word = {
     run(fn) {
       const ctx = {
-        sync: () => { calls.syncs++; return Promise.resolve(); },
+        // doc.hang: Word doesn't answer (as Word for Mac while it saves); doc.onSync(n): an error for the n-th sync
+        sync: () => {
+          calls.syncs++;
+          if (doc.hang) return new Promise(() => {});
+          const e = doc.onSync && doc.onSync(calls.syncs);
+          return e ? Promise.reject(e) : Promise.resolve();
+        },
         document: {
           body,
           contentControls: Object.assign(collection(doc.ccs), {
@@ -166,16 +172,22 @@ function makeOffice(store) {
     return p;
   };
   store.parts = store.parts.map((x) => (typeof x === 'string' ? part(x) : x));
+  store.handlers = [];
+  store.handlerCalls = [];
   return {
     AsyncResultStatus: { Succeeded: 'succeeded' },
+    EventType: { DocumentSelectionChanged: 'documentSelectionChanged' },
     onReady(cb) { this.ready = cb; },
     context: {
       requirements: { isSetSupported: () => true },
       document: {
+        addHandlerAsync: (type, h, cb) => { store.handlerCalls.push('add'); store.handlers.push(h); if (cb) cb({ status: 'succeeded' }); },
+        removeHandlerAsync: (type, o, cb) => { store.handlerCalls.push('remove'); store.handlers = store.handlers.filter((h) => h !== o.handler); if (cb) cb({ status: 'succeeded' }); },
         settings: { get: (k) => (k in store.settings ? store.settings[k] : null), set: (k, v) => { store.settings[k] = v; }, saveAsync: (cb) => cb && cb() },
         customXmlParts: {
           getByNamespaceAsync: (ns, cb) => ok(cb, store.parts.filter((p) => p.xml.includes(ns))),
-          addAsync: (xml, cb) => { store.parts.push(part(xml)); ok(cb); }
+          // store.hangParts: Word doesn't call back (while it saves)
+          addAsync: (xml, cb) => { if (store.hangParts) return; store.parts.push(part(xml)); ok(cb); }
         }
       }
     }
@@ -283,6 +295,9 @@ async function panel(opts) {
   ctx.window = ctx;
   vm.createContext(ctx);
   for (const f of ['common.js', 'resolve.js', 'word/fields.js', 'word/app.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
+  // the cursor isn't looked at every second unless a test asks (it would add round trips to Word)
+  ctx.POLL_MS = 0;
+  if (opts.setup) opts.setup(ctx, doc);
   ctx.Office.ready();
   await settle();
   return { ctx, doc, store, lunta, calls: w.calls, cc: w.cc, status: () => els.status.textContent, els };
@@ -423,11 +438,14 @@ test('a click in a citation: one round trip to Word, the papers from memory; Lun
     p.doc.cursorIn = c;
     p.calls.syncs = 0;
     const asked = p.lunta.requests.length;
+    // Lunta answers late (10 ms): the papers show before, from the document's copy or this session's
+    const real = p.ctx.fetch;
+    p.ctx.fetch = (u, i) => new Promise((r) => setTimeout(r, 10)).then(() => real(u, i));
     p.ctx.onSelection();
-    // the papers show before Lunta answers: from the document's copy or this session's
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    for (let k = 0; k < 20; k++) await Promise.resolve();
     const now = p.els.current.hidden ? null : rowTexts(p);
     await settle();
+    p.ctx.fetch = real;
     return { syncs: p.calls.syncs, now, rows: p.els.current.hidden ? null : rowTexts(p), asked: p.lunta.requests.slice(asked).map((r) => r.url.replace(/.*\/api/, '')) };
   };
   let r = await click(p.doc.ccs[0]);
@@ -712,4 +730,142 @@ test('Convert: the other manager’s bibliography stays while an unreadable cita
   await p.ctx.runConversion([]);
   assert.deepEqual(p.doc.nodes.map((n) => (n.kind === 'field' ? n.code.trim() : n.tag)), ['ADDIN EN.CITE', 'margins:b', 'ADDIN EN.REFLIST']);
   assert.match(p.status(), /Converted 1 citation\. 1 left as they were: the EndNote bibliography stays until its citations are converted/);
+});
+
+// ---- after a save in Word for Mac: Word not answering, its errors, new control ids ----
+
+const wordError = (code, message) => Object.assign(new Error(message), { name: 'OfficeExtension.Error', code, debugInfo: { errorLocation: 'ContentControl.load' } });
+const STALLED = 'Lunta’s update stopped (Word didn’t answer). Try again.';
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const fast = (ctx) => { ctx.WORD_WAIT = 30; ctx.RETRY_WAIT = 1; };
+
+test('after a save: the card follows the cursor with new control ids, Word’s errors and Word not answering, or says it can’t', async () => {
+  const p = await panel({ settings: { luntaStyle: 'vancouver' }, ccs: [['margins:a,b', '(…)'], ['margins:c', '(…)'], ['', 'other'], ['margins-bib', 'x']], setup: fast });
+  const inner = p.cc('', '1');
+  inner.parentContentControlOrNullObject = Object.assign(p.doc.ccs[0], { isNullObject: false, load() {} });
+  p.doc.ccs[0].contentControls.items.push(inner);
+  const other = p.doc.ccs[2];
+  other.parentContentControlOrNullObject = { isNullObject: true, load() {} };
+  await p.ctx.updateAll();
+  const click = async (c) => { p.doc.cursorIn = c; p.ctx.onSelection(); await wait(80); return p.els.current.hidden ? null : rowTexts(p); };
+  assert.deepEqual(await click(inner), ['Alpha', 'Beta']);
+  assert.equal(await click(other), null);
+  // saved: Word gave the controls new ids, the one outside citations the inner one's old id
+  const [c0, c1] = p.doc.ccs;
+  const old = inner.id;
+  c0.id = 101; c1.id = 102; inner.id = 103; other.id = old;
+  assert.equal(await click(other), null, 'not taken for the control inside the citation');
+  assert.deepEqual(await click(inner), ['Alpha', 'Beta'], 'its new id: Word asked for its parent');
+  // ✕ on a citation clicked before the save (its old id): found by its tag and title
+  p.doc.cursorIn = c0; p.ctx.onSelection(); await wait(40);
+  p.ctx.current.id = 7;   // as before the save
+  await p.ctx.removeFromCitation('a');
+  assert.equal(c0.tag, 'margins:b');
+  assert.doesNotMatch(p.status(), /isn’t where|Word/);
+  // Word's error once (GeneralException after a save): asked again, the card right
+  let n = p.calls.syncs;
+  p.doc.onSync = (k) => (k === n + 1 ? wordError('GeneralException', 'The action isn’t supported.') : null);
+  assert.deepEqual(await click(c1), ['Gamma <&>']);
+  // twice: the card says so, with Word's words, instead of keeping the last citation
+  n = p.calls.syncs;
+  p.doc.onSync = (k) => (k <= n + 2 ? wordError('ItemNotFound', 'ItemNotFound') : null);
+  await click(c0);
+  assert.equal(p.els.current.hidden, false);
+  assert.match(p.els.citelist.children[0].textContent, /^Couldn’t read the citation here \(Word: ItemNotFound · ContentControl\.load\)\. Click it again\.$/);
+  // Word not answering: the card says so once the time is up, and the next click is looked at
+  p.doc.onSync = null;
+  p.doc.hang = true;
+  await click(c1);
+  assert.equal(p.els.citelist.children[0].textContent, 'Couldn’t read the citation here (Word didn’t answer). Click it again.');
+  p.doc.hang = false;
+  assert.deepEqual(await click(c1), ['Gamma <&>'], 'not stuck');
+});
+
+test('after a save: Update All never stops without a word; the buttons come back', async () => {
+  const p = await panel({ settings: { luntaStyle: 'vancouver' }, ccs: [['margins:a,b', '(…)'], ['margins:c', '(…)'], ['margins-bib', 'x']], setup: fast });
+  // Word not answering: the time is up, the panel says so and is free again
+  p.doc.hang = true;
+  await p.ctx.updateAll();
+  assert.equal(p.status(), STALLED);
+  assert.equal(p.els.status.className, 'status err');
+  assert.equal(p.ctx.busy, false);
+  assert.equal(p.els.refresh.disabled, false);
+  p.doc.hang = false;
+  await p.ctx.updateAll();
+  assert.deepEqual(texts(p).slice(0, 2), ['[1,2]', '[3]']);
+  assert.match(p.status(), /^2 citations, 3 references/);
+  // saved during Update All: the controls renumbered and Word's ItemNotFound; asked again from a fresh read
+  await p.ctx.setStyle('apa');
+  const n = p.calls.syncs;
+  p.doc.onSync = (k) => {
+    if (k !== n + 3) return null;
+    p.doc.ccs.forEach((c, i) => { c.id = 500 + i; });
+    return wordError('ItemNotFound', 'ItemNotFound');
+  };
+  await p.ctx.setStyle('vancouver');
+  assert.deepEqual(texts(p).slice(0, 2), ['[1,2]', '[3]']);
+  assert.match(p.status(), /^2 citations, 3 references/);
+  // Word's error twice: its words in the status line
+  p.doc.onSync = () => wordError('GeneralException', 'GeneralException');
+  await p.ctx.updateAll();
+  assert.equal(p.status(), 'Word stopped Lunta: GeneralException · ContentControl.load. Try again.');
+  assert.equal(p.ctx.busy, false);
+  p.doc.onSync = null;
+  // the document's copy of the papers not written (Word not calling back while it saves): updated, and said
+  p.store.hangParts = true;
+  await p.ctx.updateAll();
+  assert.match(p.status(), /couldn’t save the copy of the papers in the document/);
+  assert.equal(p.ctx.busy, false);
+  p.store.hangParts = false;
+  // Lunta not answering during Update All of a journal style: "Can’t reach Lunta"
+  p.ctx.style = 'csl:cell';
+  p.lunta.down = true;
+  await p.ctx.updateAll();
+  assert.match(p.status(), /^Can’t reach Lunta/);
+  assert.equal(p.ctx.busy, false);
+});
+
+test('a panel that can’t read the document says so; a click before it is ready isn’t silent', async () => {
+  const p = await panel({ ccs: [['margins:a', '(…)']], setup: (ctx, doc) => { fast(ctx); doc.hang = true; } });
+  await wait(80);
+  assert.equal(p.status(), 'Lunta couldn’t read this document (Word didn’t answer). Close and reopen the Lunta panel.');
+  p.ctx.updateAll();
+  assert.match(p.status(), /^Lunta is still loading this document/);
+});
+
+test('the card’s papers when Lunta can’t be reached and the document has no copy: says why', async () => {
+  const p = await panel({ settings: { luntaStyle: 'vancouver' }, ccs: [['margins:a', '(…)']], cursorIn: 0, down: true });
+  await settle();
+  assert.deepEqual(rowTexts(p), ['Details not available']);
+  assert.match(p.els.citelist.children[0].querySelector('.m').textContent, /^Can’t reach Lunta/);
+});
+
+test('Word not saying the selection changed (after a save): the cursor looked at anyway, the handler registered again', async () => {
+  const p = await panel({ settings: { luntaStyle: 'vancouver' }, ccs: [['margins:a,b', '(…)'], ['margins:c', '(…)']] });
+  assert.deepEqual(p.store.handlerCalls, ['add']);
+  // the panel shows again / gets the focus: registered again
+  p.ctx.document.visibilityState = 'visible';
+  // the cursor moves, Word says nothing
+  p.ctx.QUIET_MS = 0; p.ctx.POLL_MS = 10;
+  p.ctx.poll();
+  p.doc.cursorIn = p.doc.ccs[1];
+  await wait(80);
+  assert.deepEqual(rowTexts(p), ['Gamma <&>']);
+  assert.deepEqual(p.store.handlerCalls.slice(0, 3), ['add', 'remove', 'add'], 'the handler registered again');
+  assert.equal(p.store.handlers.length, 1, 'once');
+  // the panel hidden: not looked at
+  p.ctx.document.visibilityState = 'hidden';
+  await wait(30);
+  p.doc.cursorIn = p.doc.ccs[0];
+  await wait(50);
+  assert.deepEqual(rowTexts(p), ['Gamma <&>']);
+  // Word said it recently: no poll needed
+  p.ctx.document.visibilityState = 'visible';
+  p.ctx.QUIET_MS = 60000;
+  p.ctx.onSelection();
+  await wait(30);
+  const syncs = p.calls.syncs;
+  await wait(50);
+  assert.equal(p.calls.syncs, syncs);
+  p.ctx.POLL_MS = 0;
 });

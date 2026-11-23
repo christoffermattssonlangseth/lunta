@@ -16,6 +16,9 @@ final class CitationServer {
     private var api: CitationAPI?
     private var renewal: Timer?
     private var restarts = 0
+    /// Connections whose request is in and being answered: not closed by the 30 s limit (a journal
+    /// style's first download, Check Citations' /claims may take longer; the add-ins wait 90-180 s).
+    private var answering = Set<ObjectIdentifier>()
     let token: String
 
     /// Why the add-ins can't connect, for the Citations window (nil when serving).
@@ -129,7 +132,8 @@ final class CitationServer {
     private func accept(_ c: NWConnection) {
         c.start(queue: .main)
         // a connection that never sends a whole request is closed after a while
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            if self?.answering.contains(ObjectIdentifier(c)) == true { return }
             if c.state != .cancelled { c.cancel() }
         }
         read(c, Data())
@@ -143,6 +147,7 @@ final class CitationServer {
                 if let data { buf.append(data) }
                 switch CitationHTTP.parse(buf) {
                 case .request(let req):
+                    self.answering.insert(ObjectIdentifier(c))
                     self.respond(c, req)
                 case .bad(let status):
                     self.send(c, .error(status, status == 413 ? "Too large." : "Bad request."))
@@ -154,7 +159,10 @@ final class CitationServer {
     }
 
     private func send(_ c: NWConnection, _ r: CitationResponse) {
-        c.send(content: r.encoded(), completion: .contentProcessed { _ in c.cancel() })
+        c.send(content: r.encoded(), completion: .contentProcessed { [weak self] _ in
+            c.cancel()
+            Task { @MainActor in self?.answering.remove(ObjectIdentifier(c)) }
+        })
     }
 
     private func respond(_ c: NWConnection, _ r: CitationRequest) {
