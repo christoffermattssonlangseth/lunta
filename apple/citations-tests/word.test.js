@@ -234,7 +234,7 @@ async function panel(opts) {
     const fields = {};
     opts.nodes.forEach((n) => {
       if (n.field) { const f = doc.field(n.field, n.parent ? fields[n.parent] : undefined); fields[n.name || n.field] = f; doc.nodes.push(f); }
-      else { const c = w.cc(n[0], n[1]); doc.nodes.push(c); }
+      else { const c = w.cc(n[0], n[1]); if (n[2]) c.title = n[2]; doc.nodes.push(c); }
     });
     doc.ccs.push(...doc.nodes.filter((n) => n.kind !== 'field'));
   }
@@ -535,7 +535,7 @@ test('Convert: a document with nothing to convert says so; Zotero bookmarks are 
   assert.match(p.status(), /stored as bookmarks.*Store citations as: Fields/);
   const q = await panel({ settings: { luntaStyle: 'apa' }, ooxml: '<w:body></w:body>', nodes: [] });
   await q.ctx.convertCitations();
-  assert.match(q.status(), /no citations from Zotero, EndNote or Mendeley/);
+  assert.match(q.status(), /no citations from Zotero, EndNote, Mendeley or ReadCube Papers/);
 });
 
 test('Convert: Word listing EndNote’s nested field inside the outer one’s code still lines up', async () => {
@@ -580,6 +580,78 @@ test('Convert: the other manager’s bibliography stays while an unreadable cita
   await p.ctx.runConversion([]);
   assert.deepEqual(p.doc.nodes.map((n) => (n.kind === 'field' ? n.code.trim() : n.tag)), ['ADDIN EN.CITE', 'margins:b', 'ADDIN EN.REFLIST']);
   assert.match(p.status(), /Converted 1 citation\. 1 left as they were: the EndNote bibliography stays until its citations are converted/);
+});
+
+// ---- ReadCube Papers (SmartCite) ----
+
+const KE = { id: 'k', title: 'In situ sequencing for RNA analysis in preserved tissue and cells', authors: ['Rongqin Ke'], families: ['Ke'], year: '2013',
+  meta: { title: 'In situ sequencing for RNA analysis in preserved tissue and cells', authors: ['Rongqin Ke'], date: '2013', doi: '10.1038/nmeth.2563' } };
+const SC = 'ReadCube Papers (SmartCite)';
+const tagsOf = (p) => p.doc.nodes.map((n) => (n.tag.startsWith('margins') ? n.tag : n.title));
+
+test('Convert: ReadCube Papers (SmartCite) numbered citations ("1–3", "2,4"), their details from the bibliography; the controls stay where they are', async () => {
+  const d = X.smartCite([['1–3', [1, 2, 3]], ['2,4', [2, 4]], ['5', [5]], ['6', [6]]], X.SC_BIB_CELL);
+  const p = await panel({ settings: { luntaStyle: 'vancouver' }, ooxml: d.xml, nodes: d.nodes });
+  p.lunta.lib.k = KE;
+  const ids = p.doc.nodes.map((n) => n.id);
+  await p.ctx.convertCitations();
+  const plan = p.ctx.conversion.plan;
+  assert.deepEqual(plainJSON(plan.citations.map((c) => [c.source, c.text, c.works.length])), [[SC, '1–3', 3], [SC, '2,4', 2], [SC, '5', 1], [SC, '6', 1]]);
+  assert.deepEqual(plainJSON(plan.works.map((w) => [w.meta.doi || w.meta.arxiv || '', w.id])),
+    [['10.1038/nmeth.2563', 'k'], ['10.1126/science.aaa6090', ''], ['10.1126/science.aaf2403', ''], ['10.1038/s41586-021-03819-2', ''], ['', ''], ['1706.03762', '']]);
+  assert.equal(LuntaCiteForTests.convertSummary(plan), '4 citations, 6 papers: 1 in your library, 5 to add');
+  // the titles, authors and years from the bibliography; the ids from the citation
+  const jumper = plan.works[3].meta;
+  assert.equal(jumper.title, 'Highly accurate protein structure prediction with AlphaFold');
+  assert.equal(jumper.authors[0], 'J. Jumper');
+  assert.equal(jumper.date, '2021');
+  assert.equal(jumper.pmcid, 'PMC8371605');
+  assert.equal(plan.works[2].meta.title, 'Visualization and analysis of gene expression in tissue sections by spatial transcriptomics', 'an entry over two paragraphs');
+  assert.equal(plan.works[1].meta.pmid, '25858977');
+  assert.match(plan.works[4].meta.title, /^Molecular Biology of the Cell/);
+  // the review: where they're from, and the style they were in
+  const notes = p.els.cvlist.children.map((c) => c.textContent).join(' ');
+  assert.match(notes, /From ReadCube Papers \(SmartCite\)\./);
+  assert.match(notes, /“Cell Systems” style/);
+  assert.match(notes, /The ReadCube Papers \(SmartCite\) bibliography becomes Lunta’s/);
+  assert.ok(!p.lunta.requests.some((r) => r.url.endsWith('/api/add')), 'nothing added yet');
+
+  await p.ctx.runConversion(plan.works.filter((w) => !w.id).map((w) => w.key));
+  assert.deepEqual(p.doc.nodes.map((n) => n.id), ids, 'the same controls, in their places');
+  const titleOf = (id) => p.lunta.lib[id].title.slice(0, 20);
+  const cites = p.doc.nodes.slice(0, 4).map((n) => n.tag.slice('margins:'.length).split(',').map(titleOf));
+  assert.deepEqual(plainJSON(cites), [['In situ sequencing f', 'Spatially resolved, ', 'Visualization and an'], ['Spatially resolved, ', 'Highly accurate prot'],
+    ['Molecular Biology of'], ['Attention is all you']]);
+  assert.equal(p.doc.nodes[4].tag, 'margins-bib');
+  assert.equal(p.doc.nodes[4].title, 'Bibliography (Lunta)');
+  assert.deepEqual(texts(p).slice(0, 4), ['[1–3]', '[2,4]', '[5]', '[6]']);
+  assert.match(p.status(), /Converted 4 citations \(5 papers added to your library\)\./);
+});
+
+test('Convert: SmartCite, a paper not added: its citation and SmartCite’s bibliography stay', async () => {
+  const d = X.smartCite([['1–3', [1, 2, 3]], ['5', [5]]], X.SC_BIB_CELL);
+  const p = await panel({ settings: { luntaStyle: 'vancouver' }, ooxml: d.xml, nodes: d.nodes });
+  p.lunta.lib.k = KE;
+  await p.ctx.convertCitations();
+  const plan = p.ctx.conversion.plan;
+  await p.ctx.runConversion(plan.works.filter((w) => !w.id && w.meta.doi).map((w) => w.key));
+  assert.deepEqual(tagsOf(p).map((t) => t.replace(/:.*/, '')), ['margins', 'SmartCite Citation', 'SmartCite Bibliography']);
+  assert.match(p.status(), /Converted 1 citation \(2 papers added to your library\)\. 2 left as they were: “5”: “Molecular Biology of the Cell.*” isn’t in your library; the ReadCube Papers \(SmartCite\) bibliography stays until its citations are converted\./);
+});
+
+test('Convert: SmartCite author–year citations without identifiers in their tags, found in an APA bibliography; an unreadable one keeps the bibliography', async () => {
+  const d = X.smartCite([['(Ke et al., 2013; Chen et al., 2015)', [1, 2]], ['Ståhl et al. (2016)', [3]], ['(see above)', null]], X.SC_BIB_APA, { withIds: false, superscript: false });
+  const p = await panel({ settings: { luntaStyle: 'apa' }, ooxml: d.xml, nodes: d.nodes });
+  await p.ctx.convertCitations();
+  const plan = p.ctx.conversion.plan;
+  assert.deepEqual(plainJSON(plan.citations.map((c) => c.works.map((w) => w.meta.doi))), [['10.1038/nmeth.2563', '10.1126/science.aaa6090'], ['10.1126/science.aaf2403']]);
+  assert.equal(plan.works[0].meta.journal, 'Nature Methods');
+  assert.equal(plan.works[0].meta.issue, '9');
+  const notes = p.els.cvlist.children.map((c) => c.textContent).join(' ');
+  assert.match(notes, /1 citation couldn’t be read/);
+  assert.match(notes, /The ReadCube Papers \(SmartCite\) bibliography stays, as some of its citations can’t be read\./);
+  await p.ctx.runConversion(plan.works.map((w) => w.key));
+  assert.deepEqual(tagsOf(p).map((t) => t.replace(/:.*/, '')), ['margins', 'margins', 'SmartCite Citation', 'SmartCite Bibliography']);
 });
 
 test('Check Citations: each citation’s sentence sent with its paragraph; the document isn’t changed; a passage opens in Lunta', async () => {

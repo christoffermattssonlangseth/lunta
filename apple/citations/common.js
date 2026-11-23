@@ -829,12 +829,14 @@ var LuntaCite = (function () {
   }
   var ZOTERO_DOCS_URL = 'https://www.zotero.org/google-docs/?';
 
-  /** A work's key for finding the same work in several citations: its DOI, else its title and year. */
+  /** A work's key for finding the same work in several citations: its DOI, else its title and year, else its PubMed id. */
   function workKey(m) {
     var doi = String(m.doi || '').toLowerCase().replace(/^https?:\/\/(dx\.)?doi\.org\//, '').trim();
     if (doi) return 'doi:' + doi;
     var t = String(m.title || '').toLowerCase().replace(/[^a-z0-9À-￿]+/g, '');
-    return t ? 't:' + t + ':' + String(m.date || '').slice(0, 4) : '';
+    if (t) return 't:' + t + ':' + String(m.date || '').slice(0, 4);
+    // only a PubMed id (a ReadCube Papers citation whose bibliography entry wasn't found)
+    return /^\d+$/.test(String(m.pmid || '').trim()) ? 'pmid:' + String(m.pmid).trim() : '';
   }
 
   /**
@@ -909,7 +911,7 @@ var LuntaCite = (function () {
         var cb = el('input'); cb.type = 'checkbox'; cb.checked = true;
         checks.push({ cb: cb, key: w.key });
         var t = el('span', 'cv-t');
-        t.textContent = (w.meta.title || 'Untitled') + ' · ' + hitMeta({ authors: w.meta.authors, year: String(w.meta.date || '').slice(0, 4), journal: w.meta.journal });
+        t.textContent = (w.meta.title || (w.meta.doi ? 'doi:' + w.meta.doi : w.meta.pmid ? 'PMID ' + w.meta.pmid : 'Untitled')) + ' · ' + hitMeta({ authors: w.meta.authors, year: String(w.meta.date || '').slice(0, 4), journal: w.meta.journal });
         row.appendChild(cb); row.appendChild(t);
         box.appendChild(row);
       });
@@ -924,7 +926,7 @@ var LuntaCite = (function () {
         var cb = el('input'); cb.type = 'checkbox'; cb.checked = true;
         notSame.push({ cb: cb, key: w.key });
         var t = el('span', 'cv-t');
-        t.textContent = (w.meta.title || 'Untitled') + ' · ' + hitMeta({ authors: w.meta.authors, year: String(w.meta.date || '').slice(0, 4), journal: w.meta.journal });
+        t.textContent = (w.meta.title || (w.meta.doi ? 'doi:' + w.meta.doi : w.meta.pmid ? 'PMID ' + w.meta.pmid : 'Untitled')) + ' · ' + hitMeta({ authors: w.meta.authors, year: String(w.meta.date || '').slice(0, 4), journal: w.meta.journal });
         row.appendChild(cb); row.appendChild(t);
         box.appendChild(row);
       });

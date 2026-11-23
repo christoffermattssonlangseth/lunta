@@ -49,7 +49,7 @@ Lunta Citations brings your Lunta library into Word. Search your papers, insert 
 • Several papers in one citation: pick them together, or click inside a citation and add more.
 • Update All renumbers citations, rebuilds the bibliography and switches styles in one step, and is safe to run as often as you like.
 • Pages, prefixes and suffixes per paper ("see Smith, 2020, p. 12"), and the author left out "(2020)" or in the text "Smith (2020)".
-• Convert Citations from Zotero, EndNote or Mendeley: a manuscript's existing citations become Lunta citations, with their pages and prefixes, after you review the papers Lunta found in your library and the ones it would add.
+• Convert Citations from Zotero, EndNote, Mendeley or ReadCube Papers: a manuscript's existing citations become Lunta citations, with their pages and prefixes, after you review the papers Lunta found in your library and the ones it would add.
 • Documents keep the details of the papers they cite, so co-authors without your library, and you with Lunta closed, can still update them.
 • Private: the add-in talks only to the Lunta app on your own computer. No account, no server, nothing collected.
 

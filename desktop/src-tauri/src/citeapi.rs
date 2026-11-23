@@ -338,7 +338,8 @@ pub(crate) fn meta(d: &Map<String, Value>) -> Option<PaperMeta> {
         publisher: s("publisher"), doi: s("doi"), pmid: s("pmid"), pmcid: s("pmcid"), arxiv: s("arxiv"), url: s("url"),
         ..Default::default()
     };
-    if m.title.is_empty() && m.authors.is_empty() {
+    // a DOI or PubMed id alone finds (and adds) a paper too: ReadCube Papers' citations may have only that
+    if m.title.is_empty() && m.authors.is_empty() && m.doi.is_empty() && m.pmid.is_empty() {
         None
     } else {
         Some(m)
@@ -451,11 +452,14 @@ mod tests {
         let none = HashMap::new();
         let call = |path: &str, body: Value| route(&lib, &cache, "POST", path, &none, &serde_json::to_vec(&body).unwrap());
         let (st, j) = call("/cite/match", json!({"items": [{"title": "x", "doi": "https://doi.org/10.1234/ALPHA"},
-            {"title": "Alpha cells in the islet of mice: a study", "authors": ["Lee, A."], "year": "2020"}, {"title": "Unknown work here", "authors": ["Nobody"]}, {}]}));
+            {"title": "Alpha cells in the islet of mice: a study", "authors": ["Lee, A."], "year": "2020"}, {"title": "Unknown work here", "authors": ["Nobody"]}, {},
+            {"doi": "10.1234/alpha"}]}));
         assert_eq!(st, 200, "{j}");
         assert_eq!(j["matches"][0], json!({"id": p.id, "how": "doi"}));
         assert_eq!(j["matches"][1]["how"], json!("close"));
         assert_eq!((j["matches"][2].clone(), j["matches"][3].clone()), (Value::Null, Value::Null));
+        // a DOI alone (ReadCube Papers' citations)
+        assert_eq!(j["matches"][4], json!({"id": p.id, "how": "doi"}));
         let (st, j) = call("/cite/render", json!({"style": "test-loc", "citations": [[p.id], [p.id]],
             "options": [{(p.id.clone()): {"locator": "12", "prefix": "see"}}, null]}));
         assert_eq!(st, 200, "{j}");

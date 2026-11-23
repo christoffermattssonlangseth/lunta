@@ -10,7 +10,7 @@
 // Microsoft store listing): either way the library comes from the Lunta app on this computer.
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
-var VERSION = '14';   // bump with the ?v= in index.html, so Word loads the new files
+var VERSION = '15';   // bump with the ?v= in index.html, so Word loads the new files
 var NS = 'https://lunta.app/ns/word-citations/1';
 var picked = [];          // [{id, title, ...}]
 var style = 'apa';
@@ -587,12 +587,15 @@ function checkCitations() {
 
 function closeClaims() { stopChecking = true; $('claimsBox').hidden = true; $('cllist').innerHTML = ''; claimItems = []; status(''); }
 
-// ---- Convert Citations from Zotero, EndNote or Mendeley ----
+// ---- Convert Citations from Zotero, EndNote, Mendeley or ReadCube Papers ----
 // The other manager's citations are read (word/fields.js: Word's fields in the body's OOXML, and
 // Mendeley Cite's content controls), their works found in the library (/match), the writer
 // reviews what will be added, and only then are the citations replaced, one by one: a field is
 // selected (all of it, codes and shown text) and replaced by a Lunta citation (a content control
-// with the papers and the options the other manager kept); a Mendeley Cite control gets Lunta's tag.
+// with the papers and the options the other manager kept); a Mendeley Cite or ReadCube Papers
+// (SmartCite) control gets Lunta's tag and title, so it stays where it is, superscript or not.
+// SmartCite keeps only the works' DOIs and PubMed ids in its citations: their titles, authors and
+// years come from its bibliography's entries (word/fields.js parseBibliography).
 // The other manager's bibliography becomes Lunta's (or goes, if there is one already) once none of
 // its citations is left. Then Update All.
 
@@ -605,7 +608,7 @@ function readForeign(ctx) {
   var fields = body.fields;
   fields.load('items/code');
   var ccs = ctx.document.contentControls;
-  ccs.load('items/id,items/tag,items/text');
+  ccs.load('items/id,items/tag,items/text,items/title');
   return ctx.sync().then(function () {
     var scan = LuntaFields.scan(ooxml.value);
     // unreadable: how many citations can't be converted, per manager (its bibliography stays then)
@@ -629,13 +632,31 @@ function readForeign(ctx) {
       else if (!c.works || !c.works.length) unreadable(c.source);
       else out.cites.push({ ref: ref, works: c.works, text: f.text, source: c.source });
     });
+    // ReadCube Papers (SmartCite): the works' details are in its bibliography's entries
+    var formatted = [], entries = [];
     ccs.items.forEach(function (cc) {
-      var c = LuntaFields.classifyTag(cc.tag);
+      var c = LuntaFields.classifyTag(cc.tag) || LuntaFields.classifyControl(cc.title, cc.tag);
       if (!c) return;
       var ref = { cc: cc.id, tag: cc.tag };
-      if (c.kind === 'bib') out.bibs.push({ ref: ref, source: c.source });
+      if (c.kind === 'bib') {
+        out.bibs.push({ ref: ref, source: c.source, style: c.style || '' });
+        if (c.source === LuntaFields.SMARTCITE) {
+          // its text with a paragraph a line (the OOXML's), else Word's
+          var same = scan.controls.filter(function (x) { return x.title === cc.title && x.tag === cc.tag; })[0];
+          entries = entries.concat(LuntaFields.parseBibliography(same && same.text ? same.text : cc.text));
+        }
+      } else if (c.items) formatted.push({ ref: ref, items: c.items, text: cc.text, source: c.source });
       else if (!c.works || !c.works.length) unreadable(c.source);
       else out.cites.push({ ref: ref, works: c.works, text: cc.text, source: c.source });
+    });
+    // in the document's order among the others (content controls come after the fields anyway)
+    formatted.forEach(function (f) {
+      var works = LuntaFields.formattedCitation(f.text, f.items, entries);
+      if (!works || !works.length) { unreadable(f.source); return; }
+      out.cites.push({ ref: f.ref, works: works.map(function (w) { return { meta: w.meta, options: w.options }; }), text: f.text, source: f.source });
+    });
+    out.bibs.forEach(function (b) {
+      if (b.style) out.notes.push('The ' + b.source + ' bibliography was in the “' + b.style + '” style: choose it in the style menu (Find a journal style…) if it isn’t the document’s yet.');
     });
     if (LuntaFields.zoteroBookmarks(ooxml.value)) {
       out.notes.push('Some Zotero citations here are stored as bookmarks, which Lunta can’t read. In Zotero’s Document Preferences (Zotero tab in Word), choose “Store citations as: Fields”, then convert again.');
@@ -652,14 +673,14 @@ function sourcesOf(list) {
 }
 
 var convertCitations = exclusive(function () {
-  status('Looking for citations from Zotero, EndNote and Mendeley…');
+  status('Looking for citations from Zotero, EndNote, Mendeley and ReadCube Papers…');
   return getJSON('/status').then(function (s) {
     if ((s.api || 0) < 4) throw new Error('This version of Lunta can’t convert citations. Update Lunta and try again.');
     return Word.run(readForeign);
   }).then(function (found) {
     var box = $('convertBox');
     if (!found.cites.length) {
-      status(found.notes.length ? found.notes.join(' ') : 'This document has no citations from Zotero, EndNote or Mendeley.', !!found.notes.length);
+      status(found.notes.length ? found.notes.join(' ') : 'This document has no citations from Zotero, EndNote, Mendeley or ReadCube Papers.', !!found.notes.length);
       return;
     }
     var first = LuntaCite.convertPlan(found.cites);

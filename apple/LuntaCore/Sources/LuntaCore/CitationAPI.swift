@@ -491,7 +491,8 @@ public final class CitationAPI: @unchecked Sendable {
         return d
     }
 
-    /// A paper's details as a document sent them (nil without a title or authors to cite by).
+    /// A paper's details as a document sent them (nil without a title, authors, DOI or PubMed id to
+    /// find it by: ReadCube Papers' citations may have only a DOI).
     static func meta(_ d: [String: Any]) -> PaperMeta? {
         let s = { (k: String) -> String in
             if let v = d[k] as? String { return String(v.prefix(2000)) }
@@ -502,7 +503,7 @@ public final class CitationAPI: @unchecked Sendable {
         let m = PaperMeta(title: s("title"), authors: Array(authors), date: s("date").isEmpty ? s("year") : s("date"), journal: s("journal"),
                           volume: s("volume"), issue: s("issue"), pages: s("pages"), publisher: s("publisher"), doi: s("doi"),
                           pmid: s("pmid"), pmcid: s("pmcid"), arxiv: s("arxiv"), url: s("url"), abstractText: "", keywords: [], license: "")
-        return m.title.isEmpty && m.authors.isEmpty ? nil : m
+        return m.title.isEmpty && m.authors.isEmpty && m.doi.isEmpty && m.pmid.isEmpty ? nil : m
     }
 
     static func describe(_ e: Error) -> String {

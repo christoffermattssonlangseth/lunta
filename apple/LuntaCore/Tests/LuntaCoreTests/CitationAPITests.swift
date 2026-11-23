@@ -256,13 +256,15 @@ final class CitationAPITests: XCTestCase {
         // the library's papers for citations from another reference manager
         let items: [Any] = [["title": "x", "doi": "https://doi.org/10.1000/ALPHA"],
                             ["title": "Alpha cells in the islet of mice: an atlas", "authors": ["Smith, J."], "year": "2020"],
-                            ["title": "Nothing like it", "authors": ["Nobody"]], [:]]
+                            ["title": "Nothing like it", "authors": ["Nobody"]], [:],
+                            ["doi": "10.1000/alpha"]]   // a DOI alone (ReadCube Papers' citations)
         let m = try XCTUnwrap(send(request("POST", "/api/match", json: ["items": items])).1 as? [String: Any])
         let matches = try XCTUnwrap(m["matches"] as? [Any])
         XCTAssertEqual((matches[0] as? [String: Any])?["how"] as? String, "doi")
         XCTAssertEqual((matches[1] as? [String: Any])?["id"] as? String, a.id)
         XCTAssertTrue(matches[2] is NSNull)
         XCTAssertTrue(matches[3] is NSNull)
+        XCTAssertEqual((matches[4] as? [String: Any])?["how"] as? String, "doi")
         XCTAssertEqual(send(request("POST", "/api/match", json: [:])).0, 400)
     }
 

@@ -249,7 +249,7 @@ prefix and "Omit Author" / "Exclude Author", one with several papers, one long E
 and the bibliography). Keep the originals; compare the converted copy side by side.
 
 Word (Mac, then Windows, then Word on the web)
-- [ ] Zotero (Store citations as: Fields): Convert Citations from Zotero, EndNote or Mendeley…: the review says
+- [ ] Zotero (Store citations as: Fields): Convert Citations from Zotero, EndNote, Mendeley or Papers…: the review says
       "N citations, M papers: X in your library, Y to add", from Zotero, the papers to add listed. Nothing in the
       document has changed (Track Changes on: no revisions yet), nothing was added to Lunta.
 - [ ] Untick one paper, Convert: the ticked papers appear in Lunta, every citation whose papers are all there is a
@@ -265,6 +265,10 @@ Word (Mac, then Windows, then Word on the web)
       of many papers (stored as EN.CITE.DATA); EndNote's bibliography. All converted with their options; the
       bibliography becomes Lunta's. Titles with italics, non-English characters (å, ü, Chinese) and "&" come through.
 - [ ] Mendeley Cite (the add-in) and Mendeley Desktop (legacy fields): both converted; a document with both too.
+- [ ] ReadCube Papers (SmartCite), numbered superscript style (e.g. Cell Systems): the review says "From ReadCube
+      Papers (SmartCite)", names the style, "N citations, M papers"; after Convert each citation is a Lunta
+      citation in the same place (superscript in a superscript style), the SmartCite bibliography becomes Lunta's.
+      An author–year SmartCite style too. ReadCube's add-in finds no SmartCite citations left afterwards.
 - [ ] A document mixing Lunta citations with Zotero ones: the Lunta ones are untouched, numbering covers all after.
 - [ ] Undo: Word's Undo after converting undoes one citation at a time (Word has no undo group for add-ins):
       the review's advice to keep a copy is there.

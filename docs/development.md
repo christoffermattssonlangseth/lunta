@@ -425,10 +425,10 @@ built by `LuntaCite.optionsForm` (kind of locator, number, prefix, suffix, autho
   first names element out of it (hayagriva has no per-item affixes, and its `CitePurpose::Year` drops the
   citation's brackets and year suffixes).
 
-### Converting citations from Zotero, EndNote and Mendeley
+### Converting citations from Zotero, EndNote, Mendeley and ReadCube Papers
 
-Researchers bring manuscripts written with other reference managers. **Convert Citations from Zotero, EndNote or
-Mendeley…** (Word panel) and **Convert Citations from Zotero…** (Google Docs: the extension and the Apps Script
+Researchers bring manuscripts written with other reference managers. **Convert Citations from Zotero, EndNote,
+Mendeley or Papers…** (Word panel) and **Convert Citations from Zotero…** (Google Docs: the extension and the Apps Script
 sidebar) read the other manager's citations, find their papers, show a review ("12 citations, 34 papers: 30 in
 your library, 4 to add", the papers to add with a tick each, what can't be read), and change nothing until
 **Convert**. Then the papers ticked are added (`/add`), every citation whose papers are all in the library
@@ -454,6 +454,21 @@ style. A citation with a paper not found or not added stays exactly as it was an
     (EndNote's "`" for a kept space), `<Pages>` (the cited pages, only before `<record>`, whose `<pages>` are the
     article's), `ExcludeAuth="1"` (suppress), `AuthorYear="1"` (narrative). Bibliography `ADDIN EN.REFLIST`.
     Unformatted temporary citations ("{Smith, 2020 #12}") aren't read (Resolve Citations can take them).
+  - ReadCube Papers (SmartCite, Word add-in WA104380917): content controls titled (`<w:alias>`, Word's
+    `ContentControl.title`) "SmartCite Citation", tagged `<documentId>:<citationId>,…+\uE000{JSON}`: one id
+    per work in the citation's order, the JSON mapping each to `{doi, pmid, pmcid}` when it has them (no title,
+    authors or year; the shown text is the formatted citation, "1–4" superscript or "(Ke et al., 2013)"). The
+    bibliography is one control titled "SmartCite Bibliography", tagged `<style name>+{…}` (the style is named
+    in the review), holding the formatted entries. `parseBibliography` splits it into entries (its text from
+    the OOXML, a paragraph a line; numbered "1." / "[1]" / "1)" or author–year, a broken paragraph joined, a
+    heading left out, entries run together split at their numbers) and `referenceMeta` reads each (DOI,
+    PubMed / PMC / arXiv ids; authors, year, title, journal, volume, issue, pages in Cell, APA/Harvard,
+    Nature and Vancouver layouts). `formattedCitation` gives each work its entry by the tag's DOI (or PubMed
+    id), else by the citation's number ("1–4", "6,7", "[2, 5-7]") or author and year (a year letter tells
+    "2020a" from "2020b"; ambiguous → none) in the same place; the work's details are the entry's with the
+    tag's ids. A citation with neither is unreadable (its bibliography stays). The controls just get Lunta's
+    tag and title, so they stay where they are. Paperpile's Word add-in and ReadCube's Google Docs add-on
+    aren't read: nothing public says what they store.
   - Zotero in Google Docs: text linked to `https://www.zotero.org/google-docs/?<key>` (6 characters), the code in
     named ranges `Z_F<key><000…><part>` ("ITEM CSL_CITATION {…}"; "BIBL …" for the bibliography, whose
     paragraphs are linked to its key), as zotero-google-docs-integration writes them. Paperpile's links
@@ -464,12 +479,13 @@ style. A citation with a paper not found or not added stays exactly as it was an
   author, year and nearly the same title (shared words ≥ 0.8, and the same numbers, digits or roman numerals, so
   Part I and Part II or Phase 2 and Phase 3 stay apart; `how: "close"`, listed in the review to be unticked, which
   adds the work as a paper of its own). Works are taken once (by DOI, else title and
-  year) across citations.
+  year, else PubMed id) across citations. A work with only a DOI or PubMed id is accepted by `/match` and
+  `/add` (which fetches its details by DOI).
 - **Writing, Word**: the document's OOXML (`body.getOoxml()`) is read for the fields (instructions split over
   runs and paragraphs, entities, `fldData`, nesting); Word's own `body.fields` come in the same order and are
   matched by their code (`LuntaFields.sameCode`); a field is replaced by selecting it (`Field.select`, WordApi
   1.5) and inserting a Lunta citation (content control) in its place, so the text around it keeps its
-  formatting; the last first. Mendeley Cite's controls just get Lunta's tag and title. Word has no undo group
+  formatting; the last first. Mendeley Cite's and SmartCite's controls just get Lunta's tag and title. Word has no undo group
   for add-ins: the review says to keep a copy. Needs WordApi 1.5 (Word 2021, Microsoft 365, Word on the web) for
   fields; citations in footnotes aren't read (`body` only).
 - **Writing, Google Docs**: one `batchUpdate` for the revision read (extension `flow.js` `convertZotero`,
@@ -480,7 +496,9 @@ style. A citation with a paper not found or not added stays exactly as it was an
 
 Tests: `node --test apple/citations-tests/` (`fixtures-word.js`: Zotero with its code split over three runs and a
 title with `<&>`, EndNote inline and as `fldData` with a nested field, Mendeley Desktop and Mendeley Cite, a
-`HYPERLINK` field between them, the bibliographies; Zotero in Google Docs for the extension and `Code.gs`),
+`HYPERLINK` field between them, the bibliographies; SmartCite documents with numbered and author–year
+citations and Cell / APA bibliographies, `smartcite.test.js` for the parsing; Zotero in Google Docs for the
+extension and `Code.gs`),
 `cargo test citeimport` and `cargo test locators` in `core`, `cargo test citeapi` in `desktop/src-tauri`,
 `swift test --filter CitationAPITests`. Real documents: see citations-testing.md.
 

@@ -121,4 +121,67 @@ function endnoteUnreadable() {
   return { xml, nodes: [{ field: ' ADDIN EN.CITE ' }, { field: EN_INLINE_CODE }, { field: ' ADDIN EN.REFLIST ' }] };
 }
 
-module.exports = { documentXML, NODES, endnoteLong, endnoteUnreadable, ZOTERO_CODE, EN_INLINE_CODE, EN_INLINE_XML, EN_DATA_XML, MENDELEY_CODE, MENDELEY_CITE_TAG, ZOTERO_BIBL_CODE, b64 };
+// ReadCube Papers (SmartCite): content controls titled "SmartCite Citation", tagged with the works'
+// ids ("<document>:<citation>", one per work) and, after "+", a JSON of their DOIs and PubMed
+// ids; the bibliography one control titled "SmartCite Bibliography" with the formatted entries.
+// Placeholder sentences; the works are real, public papers (their DOIs and PubMed ids).
+const SC_DOC = '0b8f6c1e-1111-4a2b-9c3d-4e5f6a7b8c9d';
+const scId = (n) => SC_DOC + ':' + ('0000000' + n).slice(-8) + '-2222-4b3c-8d4e-5f6a7b8c9d0e';
+const SC_WORKS = {
+  1: { doi: '10.1038/nmeth.2563', pmid: '23852452' },
+  2: { doi: '10.1126/science.aaa6090', pmid: '25858977' },
+  3: { doi: '10.1126/science.aaf2403' },
+  4: { doi: '10.1038/s41586-021-03819-2', pmcid: 'PMC8371605' },
+  5: {},   // a book: no identifiers
+  6: {}    // a preprint: its arXiv id only in the bibliography
+};
+function smartCiteTag(ns, withIds) {
+  const ids = ns.map(scId);
+  if (withIds === false) return ids.join(',');
+  const json = {};
+  ns.forEach((n) => { if (Object.keys(SC_WORKS[n]).length) json[scId(n)] = SC_WORKS[n]; });
+  return ids.join(',') + '+' + JSON.stringify(json);
+}
+// Cell's style, numbered; one entry's paragraph broken in two
+const SC_BIB_CELL = [
+  '1. Ke, R., Mignardi, M., Pacureanu, A., Svedlund, J., Botling, J., Wählby, C., and Nilsson, M. (2013). In situ sequencing for RNA analysis in preserved tissue and cells. Nat Methods 10, 857–860. https://doi.org/10.1038/nmeth.2563.',
+  '2. Chen, K.H., Boettiger, A.N., Moffitt, J.R., Wang, S., and Zhuang, X. (2015). Spatially resolved, highly multiplexed RNA profiling in single cells. Science 348, aaa6090. https://doi.org/10.1126/science.aaa6090.',
+  '3. Ståhl, P.L., Salmén, F., Vickovic, S., Lundmark, A., Navarro, J.F., Magnusson, J., Giacomello, S., Asp, M., Westholm, J.O., Huss, M., et al. (2016). Visualization and analysis of gene expression in tissue sections by spatial transcriptomics.',
+  'Science 353, 78–82. https://doi.org/10.1126/science.aaf2403.',
+  '4. Jumper, J., Evans, R., Pritzel, A., Green, T., Figurnov, M., Ronneberger, O., Tunyasuvunakool, K., Bates, R., Žídek, A., Potapenko, A., et al. (2021). Highly accurate protein structure prediction with AlphaFold. Nature 596, 583–589. https://doi.org/10.1038/s41586-021-03819-2.',
+  '5. Alberts, B., Johnson, A., Lewis, J., Morgan, D., Raff, M., Roberts, K., and Walter, P. (2014). Molecular Biology of the Cell, Sixth edition (Garland Science).',
+  '6. Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser, L., and Polosukhin, I. (2017). Attention is all you need. Preprint at arXiv, arXiv:1706.03762.'
+];
+// APA, by author and year (no numbers), a heading first
+const SC_BIB_APA = [
+  'References',
+  'Chen, K. H., Boettiger, A. N., Moffitt, J. R., Wang, S., & Zhuang, X. (2015). Spatially resolved, highly multiplexed RNA profiling in single cells. Science, 348(6233), aaa6090. https://doi.org/10.1126/science.aaa6090',
+  'Ke, R., Mignardi, M., Pacureanu, A., Svedlund, J., Botling, J., Wählby, C., & Nilsson, M. (2013). In situ sequencing for RNA analysis in preserved tissue and cells. Nature Methods, 10(9), 857–860. https://doi.org/10.1038/nmeth.2563',
+  'Ståhl, P. L., Salmén, F., Vickovic, S., Lundmark, A., Navarro, J. F., Magnusson, J., Giacomello, S., Asp, M., Westholm, J. O., Huss, M., Mollbrink, A., Linnarsson, S., Codeluppi, S., Borg, Å., Pontén, F., Costea, P. I., Sahlén, P., Mulder, J., Bergmann, O., … Frisén, J. (2016). Visualization and analysis of gene expression in tissue sections by spatial transcriptomics. Science, 353(6294), 78–82. https://doi.org/10.1126/science.aaf2403'
+];
+
+/**
+ * A document with SmartCite citations ([shown text, work numbers]) and its bibliography (lines):
+ * {xml, nodes} (nodes: [tag, text, title] content controls in order; Word's text for the
+ * bibliography has its paragraphs separated by "\r").
+ */
+function smartCite(cites, bib, opts) {
+  opts = opts || {};
+  const sup = '<w:rPr><w:vertAlign w:val="superscript"/></w:rPr>';
+  const sdt = (title, tag, inner) => '<w:sdt><w:sdtPr><w:alias w:val="' + esc(title) + '"/><w:tag w:val="' + esc(tag).replace(/"/g, '&quot;') + '"/><w:id w:val="1938937121"/></w:sdtPr><w:sdtEndPr/><w:sdtContent>' + inner + '</w:sdtContent></w:sdt>';
+  const nodes = [];
+  const paras = cites.map(([text, ns], i) => {
+    const tag = ns ? smartCiteTag(ns, opts.withIds) : 'not-a-smartcite-tag';
+    nodes.push([tag, text, 'SmartCite Citation']);
+    const run = opts.superscript === false ? t(text) : r('<w:t>' + esc(text) + '</w:t>', sup.slice(7, -8));
+    return P(t('Placeholder sentence number ' + (i + 1) + ' about cells'), sdt('SmartCite Citation', tag, run), t('.'));
+  }).join('');
+  const bibTag = 'Cell Systems+{"language":"en-US","isSectionsModeOn":false}';
+  nodes.push([bibTag, bib.join('\r'), 'SmartCite Bibliography']);
+  const bibXML = sdt('SmartCite Bibliography', bibTag, bib.map((line) => P(t(line))).join(''));
+  const xml = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' + paras + bibXML + '<w:sectPr/></w:body></w:document>';
+  return { xml, nodes };
+}
+
+module.exports = { documentXML, NODES, endnoteLong, endnoteUnreadable, ZOTERO_CODE, EN_INLINE_CODE, EN_INLINE_XML, EN_DATA_XML, MENDELEY_CODE, MENDELEY_CITE_TAG, ZOTERO_BIBL_CODE, b64,
+  smartCite, smartCiteTag, scId, SC_WORKS, SC_BIB_CELL, SC_BIB_APA };
