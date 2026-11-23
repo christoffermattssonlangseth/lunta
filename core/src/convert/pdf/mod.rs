@@ -458,6 +458,15 @@ pub fn assemble_book(
     if is_book && meta.authors.is_empty() {
         meta.authors = book::title_page_authors(&paras);
     }
+    // (a book's year is the one its copyright page gives, not the date the PDF was made: a draft's
+    // build date, "February 8, 2026", for a book "released … in December 2023")
+    if is_book {
+        if let Some(y) = book::copyright_year(&paras) {
+            if meta.date.is_empty() || meta.date.get(..4).and_then(|d| d.parse::<i32>().ok()).is_none_or(|d| y < d) {
+                meta.date = y.to_string();
+            }
+        }
+    }
     if std::env::var_os("P2E_DEBUG").is_some() {
         debug_dump(&paras);
     }
@@ -603,6 +612,32 @@ pub fn assemble_book(
     let mut cur: Option<Cur> = None;
     let mut images: Vec<BookImage> = Vec::new();
     let mut eq_ids: HashSet<String> = HashSet::new();
+    // an index line's level by where it starts in its column: 0 an entry, 1 a sub-entry, 2 set in further
+    let mut index_lefts: std::collections::HashMap<usize, Vec<f64>> = Default::default();
+    if is_book {
+        for p in merged.iter().filter(|p| info.on_index_page(p.page)) {
+            for l in &p.lines {
+                index_lefts.entry(l.page).or_default().push(l.bbox.x0);
+            }
+        }
+    }
+    let index_level = |l: &layout::PLine| -> usize {
+        let mut xs = index_lefts.get(&l.page).cloned().unwrap_or_default();
+        xs.sort_by(|a, b| a.total_cmp(b));
+        // the column's entries' left edge: the leftmost start within 60 pt left of this line
+        let Some(left) = xs.iter().copied().find(|&x| x > l.bbox.x0 - 60.0 && x <= l.bbox.x0 + 1.0) else { return 0 };
+        let d = l.bbox.x0 - left;
+        if d < 4.0 {
+            return 0;
+        }
+        // the sub-entries' indent: the most common indent in the column (to the nearest 2 pt)
+        let mut counts: std::collections::HashMap<i64, usize> = Default::default();
+        for x in xs.iter().filter(|&&x| x - left >= 4.0 && x - left < 60.0) {
+            *counts.entry(((x - left) / 2.0).round() as i64).or_default() += 1;
+        }
+        let step = counts.iter().max_by_key(|(k, v)| (**v, -**k)).map(|(k, _)| *k as f64 * 2.0).unwrap_or(d);
+        if d < step + 4.0 { 1 } else { 2 }
+    };
     let mut front = String::new();
     let mut auto_id = 0;
     let mut next_id = || {
@@ -691,8 +726,20 @@ pub fn assemble_book(
             for l in &p.lines {
                 let t = l.text.replace(layout::GLUE, "").replace(layout::HARD_HYPHEN, "-");
                 let t = t.trim();
-                if !t.is_empty() {
-                    append!(format!("<p class=\"index\">{}</p>", esc(t)));
+                if t.is_empty() {
+                    continue;
+                }
+                // (a sub-entry is set in from its column's entries; set in further, a sub-entry's sub-entry,
+                // or, starting with a page number, the entry's numbers going on)
+                match index_level(l) {
+                    1 => append!(format!("<p class=\"index sub\">{}</p>", esc(t))),
+                    2 if t.starts_with(|c: char| c.is_ascii_digit()) && cur.as_ref().is_some_and(|c| c.html.ends_with("</p>")) => {
+                        let c = cur.as_mut().unwrap();
+                        c.html.truncate(c.html.len() - 4);
+                        c.html += &format!(" {}</p>", esc(t));
+                    }
+                    2 => append!(format!("<p class=\"index sub sub2\">{}</p>", esc(t))),
+                    _ => append!(format!("<p class=\"index\">{}</p>", esc(t))),
                 }
             }
             continue;
@@ -765,7 +812,13 @@ pub fn assemble_book(
                 let mut t = super::trim_ws(&text).to_string();
                 if plan.is_some() {
                     // the outline gives the chapters: a heading it doesn't list is a sub-heading
-                    let section = !outline_sections && re!(r"^(\d{1,3}|[A-Z])\.\d{1,3}\.?\s+\S").is_match(&t);
+                    // (and a chapter's Notes, Problems, Exercises: sections of it, in the navigation)
+                    let section = (!outline_sections && re!(r"^(\d{1,3}|[A-Z])\.\d{1,3}\.?\s+\S").is_match(&t)) || book::is_end_section(&t);
+                    // (the title page's author and date lines are no headings)
+                    if !section && p.page <= 2 && (meta.authors.iter().any(|a| layout::similar(a, &t)) || book::is_date_line(&t)) {
+                        append!(format!("<p class=\"titlepage\">{}</p>", esc(&t)));
+                        continue;
+                    }
                     let id = next_id();
                     let h = if section { 2 } else { 3 };
                     append!(format!("<h{h} id=\"{id}\">{}</h{h}>", esc(&t)));

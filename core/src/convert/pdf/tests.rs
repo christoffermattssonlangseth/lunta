@@ -2026,3 +2026,60 @@ fn a_books_code_listing_is_preformatted() {
     assert!(h.contains("<figure class=\"code\"><pre><code>for epoch in range(100):\n    for i, data in enumerate(loader):\n        pred = model(x_batch)"), "{h}");
     assert!(h.contains("\n    scheduler.step()</code></pre><figcaption>Figure 5.1 Sample code"), "{h}");
 }
+
+#[test]
+fn book_end_sections_dates_and_copyright_year() {
+    assert!(book::is_end_section("Notes"));
+    assert!(book::is_end_section("Problems"));
+    assert!(!book::is_end_section("Notes on the method"));
+    assert!(book::is_date_line("February 8, 2026"));
+    assert!(book::is_date_line("8 February 2026"));
+    assert!(!book::is_date_line("In February 2026 we"));
+    let paras = vec![
+        Para::new(vec![line("February 8, 2026", 0, 72.0, 100.0, 10.0)], 0, Kind::Text),
+        Para::new(vec![line("Copyright in this work has been licensed; the final version was released in December 2023.", 1, 72.0, 100.0, 9.0)], 1, Kind::Text),
+    ];
+    assert_eq!(book::copyright_year(&paras), Some(2023));
+}
+
+#[test]
+fn index_sub_entries_and_end_sections_in_a_book() {
+    // a 22-page book whose chapter has a Notes section and whose last pages are an index with sub-entries
+    let mut pages = Vec::new();
+    for pno in 0..22 {
+        let mut ls = para(LOREM, pno, 72.0, 100.0, 6, 60);
+        if pno == 3 {
+            ls.push(bold(line("Notes", pno, 72.0, 200.0, 10.0)));
+            ls.extend(para(LOREM, pno, 72.0, 220.0, 3, 60));
+        }
+        if pno >= 20 {
+            ls = vec![];
+            if pno == 20 {
+                ls.push(bold(line("Index", pno, 72.0, 80.0, 18.0)));
+            }
+            for k in 0..8 {
+                let y = 120.0 + 36.0 * k as f64;
+                ls.push(line(&format!("entry {pno}{k}, {}", 3 + k), pno, 72.0, y, 8.0));
+                ls.push(line(&format!("sub {pno}{k}, {}", 40 + k), pno, 84.0, y + 12.0, 8.0));
+                ls.push(line(&format!("other {pno}{k}, {}", 50 + k), pno, 84.0, y + 24.0, 8.0));
+            }
+        }
+        pages.push(Page { width: 612.0, height: 792.0, lines: ls, graphics: PageGraphics::default() });
+    }
+    let mut r = White;
+    let log = |_: &str| {};
+    let mut an = Analyzer::new(pages, &mut r, &log);
+    an.work_type = "book".into();
+    an.book.outline = vec![
+        OutlineEntry { title: "Chapter One".into(), level: 1, page: 1, y: 0.0 },
+        OutlineEntry { title: "Index".into(), level: 1, page: 20, y: 0.0 },
+    ];
+    let paras = an.analyze();
+    let body = an.body_size;
+    let info = an.book.clone();
+    let opts = Options { offline: true, ..Default::default() };
+    let book = assemble_book(paras, PaperMeta::default(), &PaperMeta::default(), body, &opts, &info).unwrap();
+    let h: String = book.chapters.iter().map(|c| c.html.as_str()).collect();
+    assert!(h.contains("<p class=\"index\">entry 200, 3</p><p class=\"index sub\">sub 200, 40</p>"), "{h}");
+    assert!(book.chapters.iter().any(|c| c.headings.iter().any(|x| x.level == 2 && x.title == "Notes")), "{h}");
+}

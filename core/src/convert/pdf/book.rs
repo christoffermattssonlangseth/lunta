@@ -187,6 +187,30 @@ pub fn is_contents_title(t: &str) -> bool {
     re!(r"(?i)^((table of )?contents( in brief)?|brief contents|contents at a glance)$").is_match(t.trim())
 }
 
+/// A chapter's closing sections that a book prints without a number: "Notes", "Problems", "Exercises".
+pub fn is_end_section(t: &str) -> bool {
+    re!(r"(?i)^(notes|problems|exercises|further reading|bibliographic notes|chapter notes)$").is_match(t.trim())
+}
+
+/// A date on its own: "February 8, 2026", "8 February 2026", "2026-02-08".
+pub fn is_date_line(t: &str) -> bool {
+    const M: &str = "January|February|March|April|May|June|July|August|September|October|November|December";
+    static R: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    R.get_or_init(|| regex::Regex::new(&format!(r"^(({M})\s+\d{{1,2}},\s+\d{{4}}|\d{{1,2}}\s+({M})\s+\d{{4}}|\d{{4}}-\d{{2}}-\d{{2}})$")).unwrap())
+        .is_match(t.trim())
+}
+
+/// The year a book's first pages give for it: "© 2023", "Copyright 2019 …", "published in 2021",
+/// "released the final version … in December 2023". The latest such year there (a later edition's).
+pub fn copyright_year(paras: &[Para]) -> Option<i32> {
+    let re = re!(r"(?i)(?:©|\(c\)|copyright|published|released|first edition|edition)[^.;\n]{0,80}?\b((?:19|20)\d\d)\b");
+    paras
+        .iter()
+        .filter(|p| p.page < 8 && matches!(p.kind, Kind::Text | Kind::Front | Kind::Heading | Kind::Caption))
+        .flat_map(|p| re.captures_iter(&p.text()).filter_map(|c| c[1].parse::<i32>().ok()).collect::<Vec<_>>())
+        .max()
+}
+
 pub fn is_index_title(t: &str) -> bool {
     re!(r"(?i)^(subject |general |author |name )?index$").is_match(t.trim())
 }
