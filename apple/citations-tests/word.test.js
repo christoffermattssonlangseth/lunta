@@ -11,10 +11,13 @@ const ROOT = path.join(__dirname, '..', 'citations');
 // ---- the page ----
 function element(id) {
   const el = {
-    id, textContent: '', className: '', disabled: false, hidden: false, value: '', innerHTML: '', children: [], dataset: {},
+    id, textContent: '', className: '', disabled: false, hidden: false, value: '', children: [], dataset: {},
+    // emptied, as the page's: its children go
+    html: '', get innerHTML() { return el.html; }, set innerHTML(v) { el.html = v; if (!v) el.children = []; },
     classList: { toggle() {} }, focus() {}, addEventListener(type, fn) { el['on' + type] = fn; },
     appendChild(c) { el.children.push(c); return c; },
-    querySelector() { return element(); }
+    // the same element for the same selector, so a row's texts can be read
+    querySelector(sel) { el.found = el.found || {}; return (el.found[sel] = el.found[sel] || element()); }
   };
   return el;
 }
@@ -293,6 +296,8 @@ async function panel(opts) {
     doc.paras = opts.paras.map((p) => p.map((seg) => (typeof seg === 'string' ? seg : w.cc(seg[0], seg[1]))));
     doc.ccs = [].concat(...doc.paras.map((p) => p.filter((seg) => typeof seg !== 'string')));
   }
+  // the cursor already in a citation when the panel opens
+  if (opts.cursorIn != null) doc.cursorIn = doc.ccs[opts.cursorIn];
   const els = {};
   const local = {};
   const ctx = {
@@ -403,6 +408,38 @@ test('a document whose style wasn’t saved with it isn’t rewritten in another
   const again = await panel({ parts: p.store.parts.map((x) => x.xml), ccs: [['margins:a', '[1]']] });
   assert.equal(again.ctx.style, 'vancouver');
   assert.doesNotMatch(again.status(), /wasn’t saved/);
+});
+
+const rowTexts = (p) => p.els.citelist.children.map((r) => r.querySelector('.t').textContent);
+
+test('a document opened again shows the papers of the citation under the cursor at once, without Update All', async () => {
+  const first = await panel({ settings: { luntaStyle: 'vancouver' }, ccs: [['margins:a,b', '(…)'], ['margins:c', '(…)'], ['margins-bib', 'x']] });
+  await first.ctx.updateAll();
+  const saved = first.store.parts.map((x) => x.xml), ccs = first.doc.ccs.map((c) => [c.tag, c.text]);
+  // reopened with the cursor in the first citation: the box shows it as soon as the panel is ready
+  const p = await panel({ parts: saved, ccs, cursorIn: 0 });
+  await settle();
+  assert.equal(p.els.current.hidden, false, 'the citation box shows');
+  assert.deepEqual(rowTexts(p), ['Alpha', 'Beta']);
+  assert.equal(p.calls.insertText + p.calls.insertHtml, 0, 'nothing updated');
+  assert.ok(!p.lunta.requests.some((r) => r.url.endsWith('/api/render')), 'no Update All');
+  // Lunta closed: from the document's copy of the papers
+  const off = await panel({ parts: saved, ccs, cursorIn: 1, down: true });
+  assert.deepEqual(rowTexts(off), ['Gamma <&>']);
+  // a click while Update All runs isn't dropped: looked at when it is done
+  p.doc.cursorIn = p.doc.ccs[1];
+  const running = p.ctx.updateAll();
+  p.ctx.checkSelection();
+  await running;
+  await new Promise((r) => setTimeout(r, 260));
+  assert.deepEqual(rowTexts(p), ['Gamma <&>']);
+  // a citation inside a control another add-in left (the cursor in the inner one): the outer citation
+  const inner = p.cc('', '3');
+  inner.parentContentControlOrNullObject = Object.assign(p.doc.ccs[0], { isNullObject: false, load() {} });
+  p.doc.cursorIn = inner;
+  p.ctx.onSelection();
+  await new Promise((r) => setTimeout(r, 260));
+  assert.deepEqual(rowTexts(p), ['Alpha', 'Beta']);
 });
 
 test('clicking a citation shows its papers; ✕ removes one; the last one removes the citation', async () => {
