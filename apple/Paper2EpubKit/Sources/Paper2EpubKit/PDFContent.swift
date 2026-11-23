@@ -30,6 +30,8 @@ struct TextRun {
     /// a Computer Modern roman font (CMR10, CMBX10): math in a book or paper whose text is set in
     /// another font (Latin Modern, Times), the text font where everything is set in Computer Modern
     var cmRoman = false
+    /// a monospaced font (LMMono, Courier, Inconsolata): code
+    var mono = false
     /// drawn outside the bounding box of the form it is in, so not shown (see GState.clip)
     var hidden = false
     /// the bounding box of the form it is in (page coordinates): the run's letters outside it are not shown
@@ -87,7 +89,7 @@ final class PDFContentScanner {
         var font: FontInfo?
     }
     final class FontInfo {
-        var bold = false, italic = false, math = false, cmRoman = false
+        var bold = false, italic = false, math = false, cmRoman = false, mono = false
         var twoByte = false
         var firstChar = 0
         var widths: [CGFloat] = []
@@ -119,6 +121,7 @@ final class PDFContentScanner {
         options: .caseInsensitive)
 
     static let cmRomanRE = try! NSRegularExpression(pattern: "^(CMR|CMBX|CMSL|CMB)\\d", options: [])
+    static let monoRE = try! NSRegularExpression(pattern: "(?i)mono|courier|^CMTT|^SFTT|consol|menlo|inconsolata|typewriter|SourceCodePro|FiraCode|^LMTT", options: [])
 
     private var gstack: [GState] = [GState()]
     private var ts = TextState()
@@ -283,6 +286,7 @@ final class PDFContentScanner {
         info.italic = italicRE.firstMatch(in: clean, range: full) != nil
         info.math = mathRE.firstMatch(in: clean, range: full) != nil
         info.cmRoman = cmRomanRE.firstMatch(in: clean, range: full) != nil
+        info.mono = monoRE.firstMatch(in: clean, range: full) != nil
         var desc: CGPDFDictionaryRef?
         var descFont = f
         if name(f, "Subtype") == "Type0" {
@@ -500,11 +504,11 @@ final class PDFContentScanner {
         // text outside the form's box is not shown: its baseline outside, or all of it to one side
         if let c = gstack.last?.clip, a.y < c.y0 || a.y - 0.5 * effSize > c.y1 || max(a.x, b.x) < c.x0 || min(a.x, b.x) > c.x1 {
             out.runs.append(TextRun(x0: min(a.x, b.x), x1: max(a.x, b.x), baseline: a.y, size: effSize,
-                                    bold: font.bold, italic: font.italic, math: font.math, cmRoman: font.cmRoman, hidden: true, starts: xs))
+                                    bold: font.bold, italic: font.italic, math: font.math, cmRoman: font.cmRoman, mono: font.mono, hidden: true, starts: xs))
             return
         }
         out.runs.append(TextRun(x0: min(a.x, b.x), x1: max(a.x, b.x), baseline: a.y, size: effSize,
-                                bold: font.bold, italic: font.italic, math: font.math, cmRoman: font.cmRoman, clip: gstack.last?.clip, starts: xs))
+                                bold: font.bold, italic: font.italic, math: font.math, cmRoman: font.cmRoman, mono: font.mono, clip: gstack.last?.clip, starts: xs))
         for (l0, l1, lig, low, reads, byRead) in ligs {
             let p0 = CGPoint(x: l0, y: 0).applying(trm).x - origin.x, p1 = CGPoint(x: l1, y: 0).applying(trm).x - origin.x
             out.ligatures.append(Ligature(x0: min(p0, p1), x1: max(p0, p1), baseline: a.y, size: effSize, text: lig, lowCode: low,

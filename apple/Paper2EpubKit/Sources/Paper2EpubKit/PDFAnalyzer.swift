@@ -27,6 +27,8 @@ final class PLine {
     var math: CGFloat      // fraction in a math font
     /// fraction in a Computer Modern roman font (math where the text is set in another font)
     var cmr: CGFloat = 0
+    /// fraction in a monospaced font (code)
+    var mono: CGFloat = 0
     /// the box of each character of `text` while the page's lines are read (for putting a piece of
     /// a line PDFKit gave as a line of its own back in its place); empty afterwards
     var charBoxes: [R] = []
@@ -42,7 +44,7 @@ final class PLine {
 }
 
 final class Para {
-    enum Kind { case text, heading, caption, front, title, abstract, equation, figure, table, footnote, sidenote }
+    enum Kind { case text, heading, caption, front, title, abstract, equation, figure, table, footnote, sidenote, code }
     var lines: [PLine]
     let page: Int
     var kind: Kind
@@ -56,6 +58,8 @@ final class Para {
     /// A display equation found line by line (PDFEquations.swift): its number ("7.9"), the area its
     /// ink is cropped from, and the ink's width once cropped
     var eqLabel: String?, crop: R?, blank: R?, inkWidth: CGFloat?
+    /// A picture's text alternative where it has text (an algorithm's box)
+    var alt: String?
 
     init(_ lines: [PLine], page: Int, kind: Kind = .text, region: R? = nil) {
         self.lines = lines; self.page = page; self.kind = kind; self.region = region
@@ -651,7 +655,7 @@ final class PDFAnalyzer {
             let mainCenter = mains.isEmpty ? bbox.y0 + bbox.h / 2 : mains.map { ($0.box.y0 + $0.box.y1) / 2 }.reduce(0, +) / CGFloat(mains.count)
             let mainHeight = mains.isEmpty ? bbox.h : mains.map(\.box.h).reduce(0, +) / CGFloat(mains.count)
             var spans: [Span] = []
-            var nBold = 0, nMath = 0, nCMR = 0, n = 0
+            var nBold = 0, nMath = 0, nCMR = 0, nMono = 0, n = 0
             var last: TextRun?
             var text = ""
             // Some PDFs place words by position and never encode a space: put one back wherever the
@@ -767,6 +771,7 @@ final class PDFAnalyzer {
                     if run?.bold == true { nBold += 1 }
                     if run?.math == true { nMath += 1 }
                     if run?.cmRoman == true { nCMR += 1 }
+                    if run?.mono == true { nMono += 1 }
                 }
                 let sp = Span(text: c.ch, bold: run?.bold ?? false, italic: run?.italic ?? false, sup: sup, sub: sub)
                 if let lastSpan = spans.last, (isSpace && !lastSpan.sup && !lastSpan.sub) ||
@@ -822,6 +827,7 @@ final class PDFAnalyzer {
             let line = PLine(text: text, bbox: bbox, size: dom, bold: CGFloat(nBold) / CGFloat(max(1, n)),
                              math: CGFloat(nMath) / CGFloat(max(1, n)), spans: spans, page: pno)
             line.cmr = CGFloat(nCMR) / CGFloat(max(1, n))
+            line.mono = CGFloat(nMono) / CGFloat(max(1, n))
             line.charBoxes = chars.map(\.box)
             // a display equation's number set apart at the line's end ("= 2(f₃ − yᵢ).      (7.11)"): a line
             // of its own, for the equations to be found by (see PDFEquations.swift)
@@ -931,7 +937,7 @@ final class PDFAnalyzer {
 
     // MARK: - Figure / table regions
 
-    struct Region { var rect: R; var kind: Para.Kind; var image: BookImage? }
+    struct Region { var rect: R; var kind: Para.Kind; var image: BookImage?; var alt: String? = nil }
 
     private struct Cluster { var rect: R; var hasImage: Bool; var n: Int }
 
@@ -1022,16 +1028,34 @@ final class PDFAnalyzer {
         }
 
         // tables: caption + horizontal rules, or a borderless grid of short cells
-        let caps = lines.filter { $0.text.trimmingCharacters(in: .whitespaces).matches(#"^(Supplementary\s+)?Table\s*"# + Self.labelNumber, .caseInsensitive) }
+        // (and in a book an algorithm's box, between its rules: kept as a picture of it, its text as its alternative)
+        let caps = lines.filter { l in
+            let t = l.text.trimmingCharacters(in: .whitespaces)
+            return t.matches(#"^(Supplementary\s+)?Table\s*"# + Self.labelNumber, .caseInsensitive)
+                || kind.isBookLike && t.matches(#"^Algorithm\s*"# + Self.labelNumber + #"\s*[:.]"#)
+        }
         // a rule drawn in pieces (one per column of the table) is one rule
         var hrules: [R] = []
         for r in thin.filter({ $0.w > 2.5 && $0.h < 2.5 }).sorted(by: { ($0.y0, $0.x0) < ($1.y0, $1.x0) }) {
             if let m = hrules.last, abs(m.y0 - r.y0) < 1, r.x0 <= m.x1 + 2 { hrules[hrules.count - 1] = m.union(r) } else { hrules.append(r) }
         }
         hrules = hrules.filter { $0.w > 80 }.sorted { $0.y0 < $1.y0 }
+        if Self.debugGapsPage == pno + 1 {
+            print("REGIONS caps \(caps.map { "\($0.text)@\(Int($0.bbox.y0))-\(Int($0.bbox.y1))" }) hrules \(hrules.map { "\(Int($0.x0))-\(Int($0.x1))@\(Int($0.y0))" }) regions \(regions.map { "\(Int($0.rect.y0))-\(Int($0.rect.y1))" })")
+        }
         for cap in caps {
-            if regions.contains(where: { cap.bbox.intersects($0.rect, pad: 30) }) { continue }
-            let below = hrules.filter { $0.y0 > cap.bbox.y0 - 2 }
+            let algorithm = cap.text.trimmingCharacters(in: .whitespaces).hasPrefix("Algorithm")
+            // (algorithm boxes stand one under the other: only a box it is in already, which then starts
+            // under its caption)
+            if algorithm, let k = regions.firstIndex(where: { $0.rect.contains(cap.bbox, tol: 2) }) {
+                if regions[k].rect.y0 < cap.bbox.y1, let under = hrules.first(where: { $0.y0 >= cap.bbox.y1 - 1 && $0.y0 < regions[k].rect.y1 }) {
+                    regions[k].rect.y0 = under.y0
+                }
+                continue
+            }
+            if !algorithm && regions.contains(where: { cap.bbox.intersects($0.rect, pad: 30) }) { continue }
+            // (an algorithm's box: from the rule under its caption)
+            let below = hrules.filter { algorithm ? $0.y0 >= cap.bbox.y1 - 1 : $0.y0 > cap.bbox.y0 - 2 }
             let above = hrules.filter { $0.y1 < cap.bbox.y0 + 2 }
             // the table's rules are about as wide as the one next to its caption: a rule much wider (the
             // running head's rule over both columns of the page) or narrower (a table in the other column) is
@@ -1059,7 +1083,13 @@ final class PDFAnalyzer {
             }
             let grp = group(true).flatMap { $0.count >= 2 ? $0 : nil } ?? group(false)
             if let grp, grp.count >= 2 {
-                regions.append(Region(rect: R.union(grp), kind: .table))
+                let r = R.union(grp)
+                // (an algorithm's text as its picture's alternative)
+                let alt = algorithm ? lines.filter { r.contains($0.bbox, tol: 2) }.sorted { ($0.bbox.y0, $0.bbox.x0) < ($1.bbox.y0, $1.bbox.x0) }
+                    .map { lineEndsCleaned($0.text).trimmingCharacters(in: .whitespaces) }.joined(separator: " ") : nil
+                regions.append(Region(rect: r, kind: algorithm ? .figure : .table, alt: alt))
+            } else if algorithm {
+                continue
             } else if let tr = textTableRegion(cap, lines, mb) {
                 regions.append(Region(rect: tr, kind: .table))
             }
@@ -1260,8 +1290,14 @@ final class PDFAnalyzer {
                 free = rest
                 sidenotes += notes
             }
-            let (rest, equations) = displayEquations(pno, free, regions)
-            all += paragraphs(pno, rest, regions, equations: equations)
+            var (rest, blocks) = displayEquations(pno, free, regions)
+            // a book's code listings
+            if kind.isBookLike {
+                let (r2, code) = codeBlocks(pno, rest)
+                rest = r2
+                blocks += code
+            }
+            all += paragraphs(pno, rest, regions, equations: blocks)
             if pno % 5 == 4 { log("Laying out page \(pno + 1) of \(doc.pageCount)") }
         }
         // (a margin text on many pages is the book's furniture, a part's name in the margin: not a note)
@@ -1330,6 +1366,7 @@ final class PDFAnalyzer {
         for g in regions {
             let p = Para([], page: pno, kind: g.kind, region: g.rect)
             p.asset = g.image
+            p.alt = g.alt
             units.append(p)
         }
         units += equations
@@ -1947,7 +1984,7 @@ enum PDFBook {
             // (past figures, legends, front matter, notes and boxes set between the columns)
             if p.kind == .text, p.text.first?.isLowercase == true,
                // (and a piece of a line cropped as a formula, a lone "∗")
-               let j = merged.lastIndex(where: { ![.figure, .table, .caption, .front, .footnote, .sidenote].contains($0.kind) && $0.boxed == p.boxed
+               let j = merged.lastIndex(where: { ![.figure, .table, .caption, .front, .footnote, .sidenote, .code].contains($0.kind) && $0.boxed == p.boxed
                    && !($0.kind == .equation && $0.eqLabel == nil && $0.text.trimmingCharacters(in: .whitespaces).count <= 3) }),
                merged[j].kind == .text, merged[(j + 1)...].filter({ $0.boxed == p.boxed && $0.kind != .footnote && $0.kind != .sidenote }).count <= 8 {
                 let q = merged[j]
@@ -1985,11 +2022,13 @@ enum PDFBook {
         merged = withRefs
         // attach captions to the nearest figure/table on the same page
         var capOf: [Int: Int] = [:]
-        for (i, p) in merged.enumerated() where p.kind == .figure || p.kind == .table {
+        for (i, p) in merged.enumerated() where p.kind == .figure || p.kind == .table || p.kind == .code {
             var best: Int?, bd = CGFloat.greatestFiniteMagnitude
             for j in max(0, i - 4)..<min(merged.count, i + 5) {
                 let c = merged[j]
                 guard c.kind == .caption, c.page == p.page, !capOf.values.contains(j) else { continue }
+                // (an algorithm's caption heads its box)
+                if c.text.hasPrefix("Algorithm"), c.bbox.y0 > p.bbox.y0 { continue }
                 let isTab = c.text.matches(#"^(supplementary\s+)?table"#, .caseInsensitive)
                 if (p.kind == .table) != isTab { continue }
                 let d = captionGap(c.bbox, p.bbox)
@@ -2107,13 +2146,17 @@ enum PDFBook {
                 openBox = p.boxed
             }
             switch p.kind {
+            case .code:
+                // a listing: its lines as they are set, under its caption ("Figure 7.8 Sample code…")
+                let code = "<pre><code>\(esc(PDFAnalyzer.codeText(p)))</code></pre>"
+                if let c = capOf[i] { append("<figure class=\"code\">\(code)<figcaption>\(an.styled(merged[c]))</figcaption></figure>") } else { append(code) }
             case .figure, .table:
                 let cap = capOf[i].map { an.styled(merged[$0]) } ?? ""
                 guard let src = addImage(p.asset) else { break }
                 if p.kind == .table {
                     append("<div class=\"table-wrap\">\(cap.isEmpty ? "" : "<p class=\"caption\">\(cap)</p>")<img src=\"\(src)\" alt=\"Table\"/></div>")
                 } else {
-                    append("<figure><img src=\"\(src)\" alt=\"Figure\"/>\(cap.isEmpty ? "" : "<figcaption>\(cap)</figcaption>")</figure>")
+                    append("<figure><img src=\"\(src)\" alt=\"\(esc(p.alt ?? "Figure"))\"/>\(cap.isEmpty ? "" : "<figcaption>\(cap)</figcaption>")</figure>")
                 }
             case _ where usedCaps.contains(i):
                 break

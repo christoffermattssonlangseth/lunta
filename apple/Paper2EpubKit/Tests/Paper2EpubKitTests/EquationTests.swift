@@ -127,4 +127,27 @@ final class EquationTests: XCTestCase {
         let h = html(book)
         XCTAssertTrue(h.contains("(whether the line is above or below the data) is unimportant"), h)
     }
+
+    func testABooksCodeListingIsPreformatted() async throws {
+        // a book's page with a listing in Courier, indented, under its legend
+        var pages: [[Piece]] = []
+        for k in 0..<22 {
+            var page = FootnoteTests.body("page \(k)", y: 100, n: 6)
+            if k == 5 {
+                let code = [("for epoch in range(100):", 0), ("for i, data in enumerate(loader):", 1), ("pred = model(x_batch)", 2),
+                            ("loss = criterion(pred, y_batch)", 2), ("loss.backward()", 2), ("scheduler.step()", 1)]
+                for (j, (t, indent)) in code.enumerated() {
+                    page.append(Piece(text: t, size: 8, x: 90 + 4.8 * 4 * CGFloat(indent), y: 220 + 9.5 * CGFloat(j), font: "Courier"))
+                }
+                page.append(Piece(text: "Figure 5.1 Sample code for training a network.", size: 9, x: 90, y: 290))
+                page += FootnoteTests.body("page \(k) on", y: 320, n: 4)
+            }
+            pages.append(page)
+        }
+        var meta = PaperMeta(); meta.workType = "book"
+        let book = try await PDFBook.build(FootnoteTests.pdf(pages), meta: meta, log: { _ in })
+        let h = html(book)
+        XCTAssertTrue(h.contains("<figure class=\"code\"><pre><code>for epoch in range(100):\n    for i, data in enumerate(loader):\n        pred = model(x_batch)"), h)
+        XCTAssertTrue(h.contains("\n    scheduler.step()</code></pre><figcaption>Figure 5.1 Sample code"), h)
+    }
 }
