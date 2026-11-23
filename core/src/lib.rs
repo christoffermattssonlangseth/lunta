@@ -585,14 +585,51 @@ impl Library {
 
     // ---- search & export ----
 
+    /// Papers matching the query, best first. A DOI, PubMed ID, PMCID or arXiv ID in the query
+    /// (bare, with "doi:" and the like, or as a link) finds the paper that has it, ranked first;
+    /// the query's other words are searched as usual (with only identifiers: the full texts that
+    /// mention them, after).
     pub fn search(&self, query: String, limit: u32) -> Result<Vec<SearchHit>> {
         let g = self.inner.lock().unwrap();
-        let hits = g.index.search(&query, limit)?;
-        Ok(hits
-            .into_iter()
-            .filter(|(id, _, _)| g.state.papers.contains_key(id))
-            .map(|(id, snippet, score)| SearchHit { paper: paper_of(&g, &id), snippet, score })
-            .collect())
+        let (ids, rest) = index::query_ids(&query);
+        let mut out: Vec<SearchHit> = Vec::new();
+        let mut words = rest;
+        let mut id_words = Vec::new();
+        for (qid, word) in &ids {
+            let mut found = false;
+            for (pid, p) in &g.state.papers {
+                if qid.matches(&p.meta) {
+                    found = true;
+                    if !out.iter().any(|h| h.paper.id == *pid) {
+                        let snippet = format!("{} [{}]", id_label(qid), qid.text());
+                        out.push(SearchHit { paper: paper_of(&g, pid), snippet, score: 1e6 });
+                    }
+                }
+            }
+            // A number that is no paper's PubMed ID may be just a number in the text.
+            if !found && matches!(qid, index::QueryId::Pmid(_)) {
+                words.push(word.clone());
+            } else if !id_words.contains(&qid.text().to_string()) {
+                id_words.push(qid.text().to_string());
+            }
+        }
+        if words.is_empty() {
+            words = id_words;
+        }
+        out.truncate(limit as usize);
+        let left = limit.saturating_sub(out.len() as u32);
+        if left > 0 && !words.is_empty() {
+            let hits = g.index.search(&words.join(" "), limit)?;
+            for (id, snippet, score) in hits {
+                if out.len() >= limit as usize {
+                    break;
+                }
+                if g.state.papers.contains_key(&id) && !out.iter().any(|h| h.paper.id == id) {
+                    out.push(SearchHit { paper: paper_of(&g, &id), snippet, score });
+                }
+            }
+        }
+        Ok(out)
     }
 
     /// BibTeX for the papers, with their citation keys (which this fixes, if they weren't yet).
@@ -943,6 +980,15 @@ fn notes_text(st: &State, id: &str) -> String {
         .get(id)
         .map(|m| m.values().map(|a| format!("{} {}", a.quote, a.note)).collect::<Vec<_>>().join("\n"))
         .unwrap_or_default()
+}
+
+fn id_label(q: &index::QueryId) -> &'static str {
+    match q {
+        index::QueryId::Doi(_) => "DOI",
+        index::QueryId::Pmid(_) => "PMID",
+        index::QueryId::Pmcid(_) => "PMCID",
+        index::QueryId::Arxiv(_) => "arXiv",
+    }
 }
 
 fn paper_of(g: &Inner, id: &str) -> Paper {
