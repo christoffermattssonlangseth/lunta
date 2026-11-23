@@ -10,7 +10,7 @@
 // Microsoft store listing): either way the library comes from the Lunta app on this computer.
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
-var VERSION = '13.1';   // bump with the ?v= in index.html, so Word loads the new files
+var VERSION = '13.2';   // bump with the ?v= in index.html, so Word loads the new files
 var NS = 'https://lunta.app/ns/word-citations/1';
 var picked = [];          // [{id, title, ...}]
 var style = 'apa';
@@ -49,8 +49,14 @@ function exclusive(fn) {
   return function () {
     if (busy || !ready) return;
     busy = true; setButtons();
-    return Promise.resolve().then(fn).catch(fail).then(function () { busy = false; setButtons(); });
+    return Promise.resolve().then(fn).catch(fail).then(idle);
   };
+}
+
+/** Done changing the document: the buttons back, and a click in the text meanwhile looked at now. */
+function idle() {
+  busy = false; setButtons();
+  if (selPending) onSelection();
 }
 
 function renderPicked() {
@@ -215,22 +221,43 @@ var insertBibliography = exclusive(function () {
 
 // ---- the citation under the cursor: its papers, to remove some or add more ----
 
-var selTimer = null, lastShown = '';
+// Word says when the selection changes, not where it is when the panel opens: the citation under
+// the cursor is looked at once the panel is ready, and a click while it was loading or changing the
+// document (Update All) is looked at when it is done, not dropped. Before, a citation clicked before
+// opening the panel, or while it loaded, showed nothing until Update All rewrote the text under the
+// cursor (and Word said the selection had changed).
+var selTimer = null, lastShown = '', selPending = false, selSeq = 0;
+var seen = {};   // papers' details Lunta gave for the citation box this session: {id: entry}
 function onSelection() {
   clearTimeout(selTimer);
-  selTimer = setTimeout(function () {
-    if (busy || !ready) return;
-    Word.run(function (ctx) {
-      var cc = ctx.document.getSelection().parentContentControlOrNullObject;
-      cc.load('isNullObject,id,tag,title');
-      return ctx.sync().then(function () {
-        var ids = cc.isNullObject ? null : LuntaCite.parseTag(cc.tag);
-        current = ids && ids.length ? { id: cc.id, ids: ids, opts: LuntaCite.optionsOfTitle(cc.title) || {} } : null;
-        if (!current) editing = null;
-        showCurrent();
-      });
-    }).catch(function () {});
-  }, 200);
+  selTimer = setTimeout(checkSelection, 200);
+}
+function checkSelection() {
+  if (busy || !ready) { selPending = true; return; }
+  selPending = false;
+  var mine = ++selSeq;
+  return Word.run(function (ctx) {
+    return citationAt(ctx, ctx.document.getSelection().parentContentControlOrNullObject, 0).then(function (cc) {
+      if (mine !== selSeq) return;   // a later click answered first
+      var ids = cc ? LuntaCite.parseTag(cc.tag) : null;
+      current = ids && ids.length ? { id: cc.id, ids: ids, opts: LuntaCite.optionsOfTitle(cc.title) || {} } : null;
+      if (!current) editing = null;
+      showCurrent();
+    });
+  }).catch(function () {});
+}
+
+/** The Lunta citation `cc` is or is inside (a control another add-in left in it, converted
+ *  citations), or null. */
+function citationAt(ctx, cc, depth) {
+  if (!cc) return Promise.resolve(null);
+  cc.load('isNullObject,id,tag,title');
+  return ctx.sync().then(function () {
+    if (cc.isNullObject) return null;
+    if (LuntaCite.parseTag(cc.tag)) return cc;
+    if (cc.tag === LuntaCite.BIB_TAG || depth >= 3) return null;
+    return citationAt(ctx, cc.parentContentControlOrNullObject, depth + 1);
+  });
 }
 
 /** One line per paper of the current citation: from Lunta, or from the document's copy. */
@@ -250,9 +277,10 @@ function showCurrent() {
     row.className = 'cite-row';
     row.innerHTML = '<div class="cite-text"><div class="t"></div><div class="m"></div><div class="o"></div></div>' +
       '<button class="cite-o" title="Page, prefix, suffix, author (for this paper in this citation)">Page…</button><button class="cite-x" title="Remove from this citation">✕</button>';
-    var rec = state.papers[id];
-    row.querySelector('.t').textContent = rec ? (rec.t || 'Untitled') : '…';
-    row.querySelector('.m').textContent = rec ? [(rec.f || []).slice(0, 3).join(', ') + ((rec.f || []).length > 3 ? ' et al.' : ''), rec.y].filter(Boolean).join(' · ') : '';
+    // at once from the document's copy (or what Lunta gave earlier), then fresh from Lunta below
+    var rec = state.papers[id], got = seen[id];
+    row.querySelector('.t').textContent = rec ? (rec.t || 'Untitled') : got ? (got.title || 'Untitled') : '…';
+    row.querySelector('.m').textContent = rec ? [(rec.f || []).slice(0, 3).join(', ') + ((rec.f || []).length > 3 ? ' et al.' : ''), rec.y].filter(Boolean).join(' · ') : got ? LuntaCite.hitMeta(got) : '';
     row.querySelector('.o').textContent = LuntaCite.optionsLabel((current.opts || {})[id]);
     row.querySelector('.cite-x').onclick = function () { removeFromCitation(id); };
     row.querySelector('.cite-o').onclick = function () { editing = editing === id ? null : id; lastShown = ''; showCurrent(); };
@@ -268,6 +296,7 @@ function showCurrent() {
   // fresh details from Lunta (also for papers cited before the document kept their copy)
   var st = LuntaCite.isJournal(style) ? 'apa' : style;
   getJSON('/bibliography', { style: st, ids: current.ids, papers: LuntaCite.detailsFor(state.papers, current.ids) }).then(function (res) {
+    (res.entries || []).forEach(function (e) { if (e && e.id && !e.missing) seen[e.id] = e; });
     if (lastShown !== key) return;
     (res.entries || []).forEach(function (e) {
       var row = rows[e.id]; if (!row) return;
@@ -552,8 +581,8 @@ function writePlaceholder(ph, ids, leftover) {
   }).then(function () {
     resolved.push({ text: ph.text, occurrence: ph.occurrence });
     return update();
-  }).then(function () { busy = false; setButtons(); }, function (e) {
-    busy = false; setButtons();
+  }).then(idle, function (e) {
+    idle();
     if (e && e.kind) e = new Error(LuntaCite.describe(e, 'word'));
     throw e;
   });
@@ -843,25 +872,38 @@ Office.onReady(function () {
   if ($('convert')) $('convert').onclick = convertCitations;
   if ($('cvclose')) $('cvclose').onclick = closeConvert;
   // clicking a citation in the text shows its papers here
-  try {
-    Office.context.document.addHandlerAsync(Office.EventType.DocumentSelectionChanged, onSelection, function () {});
-  } catch (e) {}
+  var watching = null;   // null: Word hasn't answered yet
+  var watch = function () {
+    try {
+      Office.context.document.addHandlerAsync(Office.EventType.DocumentSelectionChanged, onSelection, function (r) {
+        watching = !r || r.status === Office.AsyncResultStatus.Succeeded;
+      });
+    } catch (e) { watching = false; }
+  };
+  watch();
   status('Loading…');
   // the document's style before anything may be updated
   loadState().then(function (st) {
     state = st;
-    if (LuntaCite.isStyle(st.style)) { style = st.style; return; }
-    style = lastStyle();
+    var saved = LuntaCite.isStyle(st.style);
+    style = saved ? st.style : lastStyle();
+    // the document's citations: is there any without a saved style
     return Word.run(function (ctx) {
       var all = ctx.document.contentControls;
       all.load('items/tag');
       return ctx.sync().then(function () {
-        styleUnknown = all.items.some(function (c) { return LuntaCite.parseTag(c.tag); });
+        styleUnknown = !saved && all.items.some(function (c) { return LuntaCite.parseTag(c.tag); });
       });
+    }).catch(function (e) {
+      if (!saved) throw e;   // can't tell: never update in a guessed style
+      if (window.console) console.error('reading the citations', e);
     });
   }).then(function () {
     fillStyles();
     ready = true; setButtons();
+    if (watching === false) watch();   // Word wasn't ready for it at first
+    // the citation the cursor is in already, without waiting for a click or Update All
+    checkSelection();
     if (styleUnknown) {
       status('This document has citations but its style wasn’t saved with it (it was made with another copy of the add-in). Choose its style in the menu above.', true);
       return;
