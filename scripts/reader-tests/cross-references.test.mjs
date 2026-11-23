@@ -111,6 +111,16 @@ test('papers: numbered sections, supplementary notes, tables and numbered equati
   assert.equal(p.after, p.before);
 });
 
+test('a book made from a PDF: the equation numbers it keeps as text, appendix ones too', () => {
+  const p = page(`<html><head></head><body><h1>7 Gradients</h1>
+    <p>Combining equations 7.9 and 7.10 with equation C.8 gives it.</p>
+    <div class="equation" id="eq-7-9"><span class="eqlabel eqno">(7.9)</span><img class="equation" src="e.png" alt="f0 = b0 + w0 x"/></div>
+    <div class="equation" id="eq-C-8"><span class="eqlabel eqno">(C.8)</span><img class="equation" src="c.png" alt="E[x]"/></div>
+    <div class="equation" id="eq-7-10"><span class="eqlabel eqno">(7.10)</span><img class="equation" src="d.png" alt="d"/></div></body></html>`);
+  assert.deepEqual(p.links.map((l) => [l[0], l[1]]), [['equations 7.9', 'eq:7.9'], ['7.10', 'eq:7.10'], ['equation C.8', 'eq:C.8']]);
+  assert.equal(p.after, p.before);
+});
+
 test('with figure mentions: both linked, neither in the other, the text unchanged', () => {
   const p = page(`<html><head></head><body><h1>2 Supervised</h1><h2>2.1 Overview</h2>
     <figure><img src="f.png" alt="Figure"/><figcaption><strong>Figure 2.1</strong> A model (see section 2.1).</figcaption></figure>

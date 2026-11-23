@@ -25,6 +25,13 @@ final class PLine {
     var size: CGFloat
     var bold: CGFloat      // fraction of characters in a bold font
     var math: CGFloat      // fraction in a math font
+    /// fraction in a Computer Modern roman font (math where the text is set in another font)
+    var cmr: CGFloat = 0
+    /// the box of each character of `text` while the page's lines are read (for putting a piece of
+    /// a line PDFKit gave as a line of its own back in its place); empty afterwards
+    var charBoxes: [R] = []
+    /// an equation's number split off this line's end (PDFEquations.swift), until the equations are found
+    var tagOf: PLine?
     var spans: [Span]
     let page: Int
 
@@ -46,6 +53,9 @@ final class Para {
     var boxed: Int?
     /// A footnote's id and its marker (the marker is no longer in its text)
     var noteID: String?, noteLabel: String?
+    /// A display equation found line by line (PDFEquations.swift): its number ("7.9"), the area its
+    /// ink is cropped from, and the ink's width once cropped
+    var eqLabel: String?, crop: R?, blank: R?, inkWidth: CGFloat?
 
     init(_ lines: [PLine], page: Int, kind: Kind = .text, region: R? = nil) {
         self.lines = lines; self.page = page; self.kind = kind; self.region = region
@@ -197,6 +207,8 @@ final class PDFAnalyzer {
     var dropped = Set<ObjectIdentifier>()
     var tocPages = Set<Int>()
     var indexPages: [Range<Int>] = []
+    /// The text columns' left and right ends, by the side of the page (PDFEquations.swift)
+    var docEdges: [Int: (lefts: [CGFloat], rights: [CGFloat])] = [:]
 
     init(doc: PDFDocument, log: @escaping (String) -> Void) {
         self.doc = doc
@@ -237,8 +249,20 @@ final class PDFAnalyzer {
                 for l in ends { l.text = String(l.text.dropLast()) + Self.hardHyphen }
             }
         }
+        Self.mathFromComputerModern(pagesLines.joined(), bodySize: bodySize)
         Self.clearMathIfBodyFont(pagesLines.joined(), bodySize: bodySize)
         findRunning()
+        // P2E_DEBUG_LINES=12,13: the lines read on those pages (1-based)
+        if let pages = ProcessInfo.processInfo.environment["P2E_DEBUG_LINES"] {
+            for s in pages.split(separator: ",") {
+                guard let k = Int(s), k >= 1, k <= pagesLines.count else { continue }
+                for l in pagesLines[k - 1] {
+                    print(String(format: "L%-3d (%5.1f,%5.1f)-(%5.1f,%5.1f) sz%4.1f m%.2f b%.2f ", k, l.bbox.x0, l.bbox.y0, l.bbox.x1, l.bbox.y1,
+                                 l.size, l.math, l.bold) + l.text + "  ⟦" + l.spans.map { s in
+                                    (s.sup ? "^" : s.sub ? "_" : "") + (s.italic ? "/" : "") + (s.bold ? "*" : "") + s.text }.joined(separator: "|") + "⟧")
+                }
+            }
+        }
     }
 
     private func extractLines(_ page: PDFPage, pno: Int, mb: CGRect, runs: [TextRun], gaps: [CGPoint], joints: [CGPoint],
@@ -273,6 +297,18 @@ final class PDFAnalyzer {
             let cx = cb.cx
             var best: TextRun?
             var bestD = CGFloat.greatestFiniteMagnitude
+            // A box much taller than the type (PDFKit gives some lines' characters the whole line's box,
+            // a formula's with its fraction or matrix): the run that has a glyph starting where the
+            // character starts, anywhere in the box
+            if cb.h > 1.6 * max(size, 4) {
+                for k in (Int(cb.y0 / 4) - 1)...(Int(cb.y1 / 4) + 1) {
+                    for r in buckets[k] ?? [] where cx >= r.x0 - 0.8 && cx <= r.x1 + 0.8 && r.baseline >= cb.y0 && r.baseline <= cb.y1 + 1 {
+                        let d = r.starts.map { abs($0 - cb.x0) }.min() ?? 0.5 * max(size, 4)
+                        if d < bestD { bestD = d; best = r }
+                    }
+                }
+                return best
+            }
             let key = Int(cb.y1 / 4)
             for k in (key - 2)...(key + 2) {
                 for r in buckets[k] ?? [] where cx >= r.x0 - 0.8 && cx <= r.x1 + 0.8
@@ -601,7 +637,7 @@ final class PDFAnalyzer {
             let mainCenter = mains.isEmpty ? bbox.y0 + bbox.h / 2 : mains.map { ($0.box.y0 + $0.box.y1) / 2 }.reduce(0, +) / CGFloat(mains.count)
             let mainHeight = mains.isEmpty ? bbox.h : mains.map(\.box.h).reduce(0, +) / CGFloat(mains.count)
             var spans: [Span] = []
-            var nBold = 0, nMath = 0, n = 0
+            var nBold = 0, nMath = 0, nCMR = 0, n = 0
             var last: TextRun?
             var text = ""
             // Some PDFs place words by position and never encode a space: put one back wherever the
@@ -707,6 +743,7 @@ final class PDFAnalyzer {
                     n += 1
                     if run?.bold == true { nBold += 1 }
                     if run?.math == true { nMath += 1 }
+                    if run?.cmRoman == true { nCMR += 1 }
                 }
                 let sp = Span(text: c.ch, bold: run?.bold ?? false, italic: run?.italic ?? false, sup: sup, sub: sub)
                 if let lastSpan = spans.last, (isSpace && !lastSpan.sup && !lastSpan.sub) ||
@@ -759,9 +796,21 @@ final class PDFAnalyzer {
                 // (only PDFKit's own: they tell whether it takes out hyphenation hyphens)
                 if !onAfterLigature && !onAfterAccent { gluedLines[(dom * 2).rounded() / 2, default: 0] += 1 }
             }
-            out.append(PLine(text: text, bbox: bbox, size: dom, bold: CGFloat(nBold) / CGFloat(max(1, n)),
-                             math: CGFloat(nMath) / CGFloat(max(1, n)), spans: spans, page: pno))
+            let line = PLine(text: text, bbox: bbox, size: dom, bold: CGFloat(nBold) / CGFloat(max(1, n)),
+                             math: CGFloat(nMath) / CGFloat(max(1, n)), spans: spans, page: pno)
+            line.cmr = CGFloat(nCMR) / CGFloat(max(1, n))
+            line.charBoxes = chars.map(\.box)
+            // a display equation's number set apart at the line's end ("= 2(f₃ − yᵢ).      (7.11)"): a line
+            // of its own, for the equations to be found by (see PDFEquations.swift)
+            if let tag = Self.splitEquationTag(line, chars: chars.map { ($0.ch, $0.box, $0.size) }) {
+                out.append(line)
+                out.append(tag)
+                continue
+            }
+            out.append(line)
         }
+        Self.attachFragments(&out)
+        for l in out { l.charBoxes = [] }
         return out
     }
 
@@ -1188,7 +1237,8 @@ final class PDFAnalyzer {
                 free = rest
                 sidenotes += notes
             }
-            all += paragraphs(pno, free, regions)
+            let (rest, equations) = displayEquations(pno, free, regions)
+            all += paragraphs(pno, rest, regions, equations: equations)
             if pno % 5 == 4 { log("Laying out page \(pno + 1) of \(doc.pageCount)") }
         }
         // (a margin text on many pages is the book's furniture, a part's name in the margin: not a note)
@@ -1201,21 +1251,46 @@ final class PDFAnalyzer {
         return findFootnotes(Self.placeSidenotes(classify(all), sidenotes))
     }
 
-    func paragraphs(_ pno: Int, _ input: [PLine], _ regions: [Region]) -> [Para] {
+    func paragraphs(_ pno: Int, _ input: [PLine], _ regions: [Region], equations: [Para] = []) -> [Para] {
         // merge fragments on the same baseline (PDFKit sometimes splits a line)
-        let sorted = input.sorted { (($0.bbox.y0).rounded(), $0.bbox.x0) < (($1.bbox.y0).rounded(), $1.bbox.x0) }
+        // pieces of one line PDFKit gave apart, touching (within half an em), the same type, level by their
+        // tops or, for a piece raised by a superscript in it, by their bottoms: one line
+        func level(_ a: PLine, _ b: PLine) -> Bool {
+            abs(a.bbox.y0 - b.bbox.y0) < 2 || abs(a.bbox.y1 - b.bbox.y1) < 2
+                && min(a.bbox.y1, b.bbox.y1) - max(a.bbox.y0, b.bbox.y0) > 0.6 * min(a.bbox.h, b.bbox.h)
+        }
+        func join(_ m: PLine, _ l: PLine) {
+            if m.text.hasSuffix(Self.glue) {   // the word goes on (PDFKit broke the line at a ligature)
+                m.text.removeLast()
+                m.text += l.text
+                m.spans += l.spans
+            } else if let c = l.text.first.map(String.init), Self.noSpaceBefore.contains(c), l.bbox.x0 - m.bbox.x1 < 0.15 * l.size {
+                m.text += l.text   // ("described⁶⁸" + ", with")
+                m.spans += l.spans
+            } else {
+                m.text += (m.text.hasSuffix(" ") ? "" : " ") + l.text
+                m.spans += [Span(text: " ")] + l.spans
+            }
+            m.bbox = m.bbox.union(l.bbox)
+        }
+        var pieces = input.sorted { $0.bbox.x0 < $1.bbox.x0 }
+        var k = 0
+        while k < pieces.count {
+            let l = pieces[k]
+            if let m = pieces[..<k].last(where: { m in
+                level(m, l) && abs(m.size - l.size) < 0.5 && l.bbox.x0 >= m.bbox.x1 - 1 && l.bbox.x0 - m.bbox.x1 < 0.5 * l.size
+            }) {
+                join(m, l)
+                pieces.remove(at: k)
+                continue
+            }
+            k += 1
+        }
+        let sorted = pieces.sorted { (($0.bbox.y0).rounded(), $0.bbox.x0) < (($1.bbox.y0).rounded(), $1.bbox.x0) }
         var merged: [PLine] = []
         for l in sorted {
             if let m = merged.last, abs(m.bbox.y0 - l.bbox.y0) < 2, l.bbox.x0 >= m.bbox.x1 - 1, l.bbox.x0 - m.bbox.x1 < 1.2 * l.size {
-                if m.text.hasSuffix(Self.glue) {   // the word goes on (PDFKit broke the line at a ligature)
-                    m.text.removeLast()
-                    m.text += l.text
-                    m.spans += l.spans
-                } else {
-                    m.text += (m.text.hasSuffix(" ") ? "" : " ") + l.text
-                    m.spans += [Span(text: " ")] + l.spans
-                }
-                m.bbox = m.bbox.union(l.bbox)
+                join(m, l)
             } else {
                 merged.append(l)
             }
@@ -1226,6 +1301,7 @@ final class PDFAnalyzer {
             p.asset = g.image
             units.append(p)
         }
+        units += equations
         let (ordered, cols) = order(pno, units)
         units = ordered
         let txt = zip(units, cols).filter { $0.0.kind == .text }.map { ($0.0.lines[0].bbox, $0.1) }
@@ -1602,13 +1678,14 @@ final class PDFAnalyzer {
                 }
             }
             // stacked pieces (not a piece back up the page, at the top of the next column)
-            if let prev = out.last, prev.page == p.page, (p.kind == .equation || (p.kind == .text && p.boxed == nil)), prev.kind == .equation,
+            if let prev = out.last, prev.page == p.page, prev.crop == nil, p.crop == nil,
+               (p.kind == .equation || (p.kind == .text && p.boxed == nil)), prev.kind == .equation,
                p.bbox.y0 - prev.bbox.y1 < 1.6 * body, p.bbox.y0 > prev.bbox.y0 - body,
                p.kind == .equation || p.text.count < 30 {
                 out[out.count - 1] = Para(prev.lines + p.lines, page: p.page, kind: .equation)
                 continue
             }
-            if let prev = out.last, prev.page == p.page, p.kind == .equation, prev.kind == .text, prev.boxed == nil, prev.text.count < 30,
+            if let prev = out.last, prev.page == p.page, p.kind == .equation, p.crop == nil, prev.kind == .text, prev.boxed == nil, prev.text.count < 30,
                p.bbox.y0 - prev.bbox.y1 < body, !prev.text.matches("[a-z]{4}") {
                 out[out.count - 1] = Para(prev.lines + p.lines, page: p.page, kind: .equation)
                 continue
@@ -1616,6 +1693,13 @@ final class PDFAnalyzer {
             out.append(p)
         }
         for p in out where p.kind == .equation {
+            if let crop = p.crop {
+                if let (img, w) = autoreleasepool(invoking: { renderInk(p.page, crop, blank: p.blank, name: "p\(p.page + 1)-eq\(Int(p.bbox.y0))") }) {
+                    p.asset = img
+                    p.inkWidth = w
+                    continue
+                }
+            }
             p.asset = autoreleasepool { render(p.page, p.bbox, photo: false, name: "p\(p.page + 1)-eq\(Int(p.bbox.y0))") }
         }
         return out
@@ -1669,6 +1753,20 @@ final class PDFAnalyzer {
         for p in paras where p.page <= 1 && p.kind == .text && p.boxed == nil {
             if Self.frontFootnote(p.text, size: p.size, body: body, atFoot: p.bbox.y0 > 0.75 * boxes[p.page].height) { p.kind = .front }
         }
+    }
+
+    /// Computer Modern roman (CMR10, CMBX10) in a document whose text is set in another font (Latin
+    /// Modern, Times) sets only its formulas' digits, brackets and function names ("sin", "exp"): math.
+    static func mathFromComputerModern<S: Sequence>(_ lines: S, bodySize: CGFloat) where S.Element == PLine {
+        var body = 0, inCM = 0, any = false
+        for l in lines {
+            if l.cmr > 0 { any = true }
+            guard abs(l.size - bodySize) <= 0.5 else { continue }
+            body += l.text.count
+            inCM += Int((l.cmr * CGFloat(l.text.count)).rounded())
+        }
+        guard any, body > 0, Double(inCM) < 0.1 * Double(body) else { return }
+        for l in lines where l.cmr > 0 { l.math = min(1, l.math + l.cmr) }
     }
 
     /// A "math" font that sets the running text (STIX-Regular in some Wiley and Springer journals) is
@@ -1920,6 +2018,7 @@ enum PDFBook {
         var inList = false
         // footnotes: each goes to the end of the chapter its marker is in (else the one it was found in)
         var footnotes: [(id: String, label: String, html: String, home: Int)] = []
+        var eqIDs = Set<String>()
         for (i, p) in merged.enumerated() {
             if let plan {
                 // the outline's entries that start here
@@ -2025,8 +2124,19 @@ enum PDFBook {
                 append("<p>\(s)</p>")
             case .equation:
                 if let src = addImage(p.asset) {
-                    let wem = (p.bbox.w + 8) / max(an.bodySize, 6) * 0.95
-                    append("<div class=\"equation\"><img class=\"equation\" src=\"\(src)\" alt=\"equation\" style=\"width: \(String(format: "%.1f", wem))em\"/></div>")
+                    let wem = (p.inkWidth.map { $0 + 4 } ?? p.bbox.w + 8) / max(an.bodySize, 6) * 0.95
+                    // its text as the alternative (search, VoiceOver); its number as text, for references
+                    let alt = PDFAnalyzer.equationText(p)
+                    let img = "<img class=\"equation\" src=\"\(src)\" alt=\"\(esc(alt.isEmpty ? "equation" : alt))\" style=\"width: \(String(format: "%.1f", wem))em\"/>"
+                    if let label = p.eqLabel {
+                        let key = label.replacingOccurrences(of: ".", with: "-")
+                        var eid = "eq-\(key)", k = 1
+                        while eqIDs.contains(eid) { k += 1; eid = "eq-\(key)-\(k)" }
+                        eqIDs.insert(eid)
+                        append("<div class=\"equation\" id=\"\(eid)\"><span class=\"eqlabel eqno\">(\(esc(label)))</span>\(img)</div>")
+                    } else {
+                        append("<div class=\"equation\">\(img)</div>")
+                    }
                 }
             case .caption:
                 append("<p class=\"caption\">\(an.styled(p))</p>")

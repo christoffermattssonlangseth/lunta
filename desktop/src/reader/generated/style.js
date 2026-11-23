@@ -1159,7 +1159,7 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
   var HEAD = new RegExp('^(?:([Cc]hapter|CHAPTER|[Ss]ection|SECTION|[Aa]ppendix|APPENDIX|[Ss]upplementary\\s+[Nn]ote|SUPPLEMENTARY\\s+NOTE)\\s+)?(' + NUM + ')[.:]?(?:\\s+(\\S)|$)');
   var PROBLEM = /^\s*(?:Problem|Exercise)\s+(\d+(?:\.\d+)*|[A-Z](?:\.\d+)+)\s*$/;
   var TABLE = new RegExp('^(Supplementary\\s+|Suppl?\\.\\s*|Extended\\s+Data\\s+)?Table\\s+(S?\\d+(?:\\.\\d+)*|[A-Z](?:\\.\\d+)+)(?![A-Za-z0-9])');
-  var EQTAG = /^\s*\((\d+(?:\.\d+)*[a-z]?)\)\s*$/;
+  var EQTAG = /^\s*\(((?:\d+(?:\.\d+)*|[A-Z](?:\.\d+)+)[a-z]?)\)\s*$/;
   function lettered(n){ return /^[A-Z](\.|$)/.test(n); }
   function tableKey(pre, n){
     pre = (pre || '').toLowerCase();
@@ -1230,7 +1230,7 @@ var s=document.createElement('style');s.textContent="html { font-size: calc(112%
       case 'note': return /^S?\d+$/.test(n) ? ['note:' + n.replace(/^S/, '')] : [];
       case 'prob': return lettered(n) && n.length === 1 ? [] : ['problem:' + n];
       case 'tab': return ['table:' + tableKey(pre, n)];
-      case 'eq': return /^\d/.test(n) ? ['eq:' + n] : [];
+      case 'eq': return /^(\d|[A-Z]\.\d)/.test(n) ? ['eq:' + n] : [];
     }
     return [];
   }
