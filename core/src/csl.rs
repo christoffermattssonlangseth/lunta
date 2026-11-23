@@ -303,7 +303,8 @@ fn item(p: &Paper) -> Item {
     if !parts.is_empty() {
         j["issued"] = serde_json::json!({ "date-parts": [parts] });
     }
-    // the journal's abbreviation, for styles that use it (Cell: "Nat Methods"); otherwise its name,
+    // the journal's abbreviation in ISO 4 form, for styles that use it (Cell, Nature: "Nat. Methods";
+    // Vancouver's strip-periods makes it NLM's "Nat Methods"); otherwise its name,
     // as CSL's short form falls back to the long one (see `load_style`)
     if !m.journal.trim().is_empty() {
         let short = if kind == "article-journal" { crate::journal::abbreviation(&m.journal) } else { None };
@@ -976,7 +977,7 @@ mod tests {
         assert_eq!(b[0], "La Manno, G., and Siletti, K. (2020). Molecular architecture of the developing mouse brain. Preprint at bioRxiv, https://doi.org/10.1101/2020.07.02.184051.");
         assert_eq!(
             b[1],
-            "van Velthoven, C.T.J., van der Velthoven, A., dos Santos, D.M., and Leonard, W.J. (2023). A title. Nat Methods *10*, 857–860. https://doi.org/10.1038/nmeth.2563."
+            "van Velthoven, C.T.J., van der Velthoven, A., dos Santos, D.M., and Leonard, W.J. (2023). A title. Nat. Methods *10*, 857–860. https://doi.org/10.1038/nmeth.2563."
         );
         assert_eq!(b[2], "Lucchinetti, C.F., Popescu, B.F.G., and Lassmann, H. (2011). Another title. Bioinformatics *145*, awac016.");
         assert_eq!(b[3], "Santos e Silva, J. (2019). A chapter. In Methods in Molecular Biology.");
@@ -1020,6 +1021,32 @@ mod tests {
         let r = render(&dir, "test-thesis", &papers, &[vec!["t".into()], vec!["m".into()]]).unwrap();
         let b: Vec<&str> = r.bibliography.iter().map(|e| e.text.as_str()).collect();
         assert_eq!(b, ["*Cells in Time and Space* [Doctoral dissertation, Stockholm University].", "*Cells in Time and Space* [Master’s thesis, Stockholm University]."]);
+    }
+
+    /// Vancouver's journal (as vancouver.csl has it): the short form without full stops.
+    const NLM: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
+  <info><title>Test NLM</title><id>test-nlm</id><updated>2026-01-01T00:00:00+00:00</updated></info>
+  <citation><layout><text variable="citation-number"/></layout></citation>
+  <bibliography><layout><text variable="container-title" form="short" strip-periods="true" suffix=". "/><date variable="issued"><date-part name="year"/></date></layout></bibliography>
+</style>"#;
+
+    #[test]
+    fn journal_abbreviations_with_full_stops_unless_the_style_strips_them() {
+        let dir = cache();
+        std::fs::write(Path::new(&dir).join("csl/test-cell.csl"), CELL).unwrap();
+        std::fs::write(Path::new(&dir).join("csl/test-nlm.csl"), NLM).unwrap();
+        let p = |id: &str, journal: &str| {
+            crate::cited_paper(id, PaperMeta { title: "T".into(), authors: vec!["Ann Lee".into()], date: "2020".into(), journal: journal.into(), volume: "1".into(), pages: "2".into(), work_type: "journal-article".into(), ..Default::default() })
+        };
+        let papers = [p("a", "Genome biology"), p("b", "Proceedings of the National Academy of Sciences"), p("c", "Cell Systems")];
+        let ids: Vec<Vec<String>> = papers.iter().map(|p| vec![p.id.clone()]).collect();
+        let cell = render(&dir, "test-cell", &papers, &ids).unwrap();
+        let b: Vec<&str> = cell.bibliography.iter().map(|e| e.text.as_str()).collect();
+        assert_eq!(b, ["Lee, A. (2020). T. Genome Biol. *1*, 2.", "Lee, A. (2020). T. Proc. Natl. Acad. Sci. USA *1*, 2.", "Lee, A. (2020). T. Cell Syst. *1*, 2."]);
+        let nlm = render(&dir, "test-nlm", &papers, &ids).unwrap();
+        let b: Vec<&str> = nlm.bibliography.iter().map(|e| e.text.as_str()).collect();
+        assert_eq!(b, ["Genome Biol. 2020", "Proc Natl Acad Sci USA. 2020", "Cell Syst. 2020"]);
     }
 
     #[test]

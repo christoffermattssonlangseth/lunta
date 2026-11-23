@@ -544,12 +544,14 @@ pub fn ris(papers: &[Paper]) -> String {
 }
 
 /// A conference paper or chapter: cited "In *Book title*", without volume and issue.
-/// The journal's name as styles that abbreviate it write it (Vancouver, AMA, Cell: NLM's "Nat
-/// Methods"); its name when it has no abbreviation or isn't a journal.
-fn short_journal(m: &PaperMeta) -> String {
+/// The journal's name as styles that abbreviate it write it: Cell in ISO 4 form ("Nat.
+/// Methods"), Vancouver and AMA in NLM's (`nlm`: "Nat Methods"); its name when it has no
+/// abbreviation or isn't a journal.
+fn short_journal(m: &PaperMeta, nlm: bool) -> String {
     use crate::worktype::Kind;
+    let abbr = if nlm { crate::journal::nlm_abbreviation(&m.journal) } else { crate::journal::abbreviation(&m.journal).map(String::from) };
     match crate::worktype::kind(m) {
-        Kind::Article | Kind::Other => crate::journal::abbreviation(&m.journal).map(String::from).unwrap_or_else(|| m.journal.clone()),
+        Kind::Article | Kind::Other => abbr.unwrap_or_else(|| m.journal.clone()),
         _ => m.journal.clone(),
     }
 }
@@ -638,7 +640,7 @@ fn styled(p: &Paper, style: CitationStyle) -> String {
                     s += &format!(" p. {}.", m.pages);
                 }
             } else if !m.journal.is_empty() {
-                s += &format!(" {}. {}", short_journal(m), m.year());
+                s += &format!(" {}. {}", short_journal(m, true), m.year());
                 if !m.volume.is_empty() {
                     s += &format!(";{}", m.volume);
                     if !m.issue.is_empty() {
@@ -816,7 +818,7 @@ fn more_citation(p: &Paper, style: CitationStyle, book: bool) -> String {
                 s += ".";
                 if !m.publisher.is_empty() { s += &format!(" {}.", m.publisher); }
             } else if !m.journal.is_empty() {
-                s += &format!(" {}", short_journal(m));
+                s += &format!(" {}", short_journal(m, false));
                 if !m.volume.is_empty() { s += &format!(" *{}*", m.volume); }
                 if !pages.is_empty() { s += &format!(", {pages}"); }
                 s += ".";
@@ -871,7 +873,7 @@ fn more_citation(p: &Paper, style: CitationStyle, book: bool) -> String {
                 if !m.pages.is_empty() { s += &format!(":{}", m.pages); }
                 s += ".";
             } else if !m.journal.is_empty() {
-                s += &format!(" *{}*. {year}", short_journal(m));
+                s += &format!(" *{}*. {year}", short_journal(m, true));
                 if !m.volume.is_empty() {
                     s += &format!(";{}", m.volume);
                     if !m.issue.is_empty() { s += &format!("({})", m.issue); }

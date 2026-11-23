@@ -1,6 +1,6 @@
 //! Journal names as citations write them: the name cleaned of what PubMed and Crossref add
 //! ("Bioinformatics (Oxford, England)", "Brain : a journal of neurology", "Nature methods"), and
-//! the journal's abbreviation ("Nat Methods") for styles that use abbreviated names (Cell,
+//! the journal's abbreviation ("Nat. Methods") for styles that use abbreviated names (Cell,
 //! Nature, Vancouver: CSL's `container-title-short`).
 //!
 //! The library doesn't keep abbreviations (Crossref's `short-container-title` and PubMed's
@@ -8,8 +8,10 @@
 //! (`journal_abbrev.tsv`, ~1,500 life-science journals: the Nature, Cell, Science, PLOS, BMC,
 //! Frontiers, Trends, Annual Reviews, Lancet and JAMA families, neuroscience, immunology,
 //! genomics…), looked up by the journal's name. A journal not in it is written in full, as
-//! before. The abbreviations are NLM's, without full stops ("Nat Methods", "Proc Natl Acad Sci
-//! U S A"), as PubMed, Zotero and ReadCube give them.
+//! before. The abbreviations are ISO 4's, with full stops ("Nat. Methods", "Genome Biol.",
+//! "Proc. Natl. Acad. Sci. USA"), as Cell Press, Nature, ACS and AMA print them and Zotero gives
+//! them to CSL; a style that wants NLM's form strips them (CSL's `strip-periods`, the built-in
+//! Vancouver and AMA: `nlm_abbreviation`, "Nat Methods", "Proc Natl Acad Sci U S A").
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -136,10 +138,20 @@ fn table() -> &'static HashMap<&'static str, &'static str> {
     })
 }
 
-/// The journal's abbreviation (NLM's: "Nature Methods" → "Nat Methods", "Bioinformatics
+/// The journal's abbreviation in ISO 4 form ("Nature Methods" → "Nat. Methods", "Bioinformatics
 /// (Oxford, England)" → none: its abbreviation is its name), if the table has it.
 pub fn abbreviation(journal: &str) -> Option<&'static str> {
     table().get(key(journal).as_str()).copied()
+}
+
+/// The journal's abbreviation as NLM (MEDLINE, Vancouver, AMA) writes it: without full stops
+/// ("Nat Methods", "Proc Natl Acad Sci U S A"), if the table has it.
+pub fn nlm_abbreviation(journal: &str) -> Option<String> {
+    let a = abbreviation(journal)?.replace('.', "");
+    Some(match a.strip_suffix(" USA") {
+        Some(rest) => format!("{rest} U S A"),
+        None => a,
+    })
 }
 
 #[cfg(test)]
@@ -185,21 +197,28 @@ mod tests {
     }
 
     #[test]
-    fn abbreviations_from_nlm() {
+    fn abbreviations_in_iso_4_form() {
         for (journal, abbr) in [
-            ("Nature Methods", Some("Nat Methods")),
-            ("Nature methods", Some("Nat Methods")),
-            ("Genome Biology", Some("Genome Biol")),
-            ("Nature Biotechnology", Some("Nat Biotechnol")),
-            ("Proceedings of the National Academy of Sciences", Some("Proc Natl Acad Sci U S A")),
-            ("Proceedings of the National Academy of Sciences of the United States of America", Some("Proc Natl Acad Sci U S A")),
-            ("The Lancet Neurology", Some("Lancet Neurol")),
-            ("The Journal of Neuroscience", Some("J Neurosci")),
-            ("Journal of immunology (Baltimore, Md. : 1950)", Some("J Immunol")),
-            ("Cell Death & Differentiation", Some("Cell Death Differ")),
-            ("Biochimica et Biophysica Acta (BBA) - Molecular Basis of Disease", Some("Biochim Biophys Acta Mol Basis Dis")),
-            ("New England Journal of Medicine", Some("N Engl J Med")),
-            ("Nucleic Acids Research", Some("Nucleic Acids Res")),
+            ("Nature Methods", Some("Nat. Methods")),
+            ("Nature methods", Some("Nat. Methods")),
+            ("Genome Biology", Some("Genome Biol.")),
+            ("Nature Biotechnology", Some("Nat. Biotechnol.")),
+            ("Proceedings of the National Academy of Sciences", Some("Proc. Natl. Acad. Sci. USA")),
+            ("Proceedings of the National Academy of Sciences of the United States of America", Some("Proc. Natl. Acad. Sci. USA")),
+            ("The Lancet Neurology", Some("Lancet Neurol.")),
+            ("The Journal of Neuroscience", Some("J. Neurosci.")),
+            ("Journal of immunology (Baltimore, Md. : 1950)", Some("J. Immunol.")),
+            ("Cell Death & Differentiation", Some("Cell Death Differ.")),
+            ("Biochimica et Biophysica Acta (BBA) - Molecular Basis of Disease", Some("Biochim. Biophys. Acta Mol. Basis Dis.")),
+            ("New England Journal of Medicine", Some("N. Engl. J. Med.")),
+            ("Nucleic Acids Research", Some("Nucleic Acids Res.")),
+            // whole words keep no full stop: a section letter, a word of the title
+            ("Cell Systems", Some("Cell Syst.")),
+            ("Cell Reports Methods", Some("Cell Rep. Methods")),
+            ("Alzheimer's & Dementia", Some("Alzheimers Dement.")),
+            ("Journal of the Royal Society Interface", Some("J. R. Soc. Interface")),
+            ("Philosophical Transactions of the Royal Society B: Biological Sciences", Some("Philos. Trans. R. Soc. Lond. B Biol. Sci.")),
+            ("Philosophical transactions of the Royal Society of London. Series B, Biological sciences", Some("Philos. Trans. R. Soc. Lond. B Biol. Sci.")),
             // the abbreviation is the name, or not a journal in the table
             ("Bioinformatics", None),
             ("Cell", None),
@@ -207,6 +226,15 @@ mod tests {
             ("Proceedings of the 2023 CHI Conference on Human Factors in Computing Systems", None),
         ] {
             assert_eq!(abbreviation(journal), abbr, "{journal}");
+        }
+        // NLM's form, for Vancouver and AMA
+        for (journal, abbr) in [
+            ("Nature Methods", Some("Nat Methods")),
+            ("Proceedings of the National Academy of Sciences", Some("Proc Natl Acad Sci U S A")),
+            ("New England Journal of Medicine", Some("N Engl J Med")),
+            ("Bioinformatics", None),
+        ] {
+            assert_eq!(nlm_abbreviation(journal).as_deref(), abbr, "{journal}");
         }
     }
 }

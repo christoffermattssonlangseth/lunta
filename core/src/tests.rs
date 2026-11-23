@@ -1462,12 +1462,22 @@ fn built_in_styles_and_bibtex_write_names_and_journals_as_journals_do() {
     for (style, want) in [
         (CitationStyle::Apa, "La Manno, G., van Velthoven, C. T. J., & Leonard, W. J. (2013). A title. *Nature Methods*, *10*, 857–860. https://doi.org/10.1038/nmeth.2563"),
         (CitationStyle::Nature, "La Manno, G., van Velthoven, C. T. J. & Leonard, W. J. A title. *Nature Methods* **10**, 857–860 (2013)."),
-        // the styles that abbreviate journals, with NLM's abbreviation
+        // the styles that abbreviate journals: Vancouver and AMA as NLM (no full stops), Cell in
+        // ISO 4 form (with them)
         (CitationStyle::Vancouver, "La Manno G, van Velthoven CTJ, Leonard WJ. A title. Nat Methods. 2013;10:857-860. doi:10.1038/nmeth.2563"),
         (CitationStyle::Ama, "La Manno G, van Velthoven CTJ, Leonard WJ. A title. *Nat Methods*. 2013;10:857-860. doi:10.1038/nmeth.2563"),
-        (CitationStyle::Cell, "La Manno, G., van Velthoven, C.T.J., and Leonard, W.J. (2013). A title. Nat Methods *10*, 857–860. https://doi.org/10.1038/nmeth.2563."),
+        (CitationStyle::Cell, "La Manno, G., van Velthoven, C.T.J., and Leonard, W.J. (2013). A title. Nat. Methods *10*, 857–860. https://doi.org/10.1038/nmeth.2563."),
     ] {
         assert_eq!(export::citation(&art, style), want, "{}", style.name());
+    }
+    let pnas = keyed_paper(PaperMeta { journal: "Proceedings of the National Academy of Sciences".into(), ..art.meta.clone() }, "pnas");
+    for (style, journal) in [
+        (CitationStyle::Vancouver, " Proc Natl Acad Sci U S A. 2013;"),
+        (CitationStyle::Ama, " *Proc Natl Acad Sci U S A*. 2013;"),
+        (CitationStyle::Cell, " Proc. Natl. Acad. Sci. USA *10*,"),
+    ] {
+        let c = export::citation(&pnas, style);
+        assert!(c.contains(journal), "{}: {c}", style.name());
     }
     let bib = export::bibtex(&[art]);
     assert!(bib.contains("author = {La Manno, Gioele and van Velthoven, Cindy T. J. and Leonard, Warren J.}"), "{bib}");

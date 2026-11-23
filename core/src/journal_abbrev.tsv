@@ -1,1526 +1,1533 @@
-# Journal abbreviations (NLM's MEDLINE abbreviations, MedAbbr) for CSL's container-title-short.
+# Journal abbreviations in ISO 4 form, with full stops ("Nat. Methods", "Proc. Natl. Acad. Sci. USA"),
+# as Cell Press, Nature, ACS and Zotero's styles print them, for CSL's container-title-short.
 # Generated from NLM's J_Medline.txt (https://ftp.ncbi.nlm.nih.gov/pubmed/J_Medline.txt, public domain):
 # the life-science journal families most cited (Nature, Cell, Science, PLOS, BMC, Frontiers, Trends,
 # Annual Reviews, Lancet, JAMA, neuroscience, immunology, genomics…; journals with an online ISSN).
+# NLM writes its abbreviations (MedAbbr, IsoAbbr) without full stops; ISO 4 ends every shortened
+# word with one, so a word of the abbreviation that isn't a word of the journal's title got one
+# ("Nat Methods" → "Nat. Methods", "Cell Syst" → "Cell Syst.", "Philos Trans R Soc Lond B Biol Sci"
+# → "Philos. Trans. R. Soc. Lond. B Biol. Sci."), and "U S A" is "USA". Styles that want NLM's form
+# (Vancouver, AMA) drop the full stops (strip-periods, journal::nlm_abbreviation).
 # Key: the title as journal::key() writes it (lower case, letters and digits, no "The", no
 # parenthetical place, no " : subtitle"). Journals whose abbreviation is their title are left out.
 # A few names Crossref gives that differ from NLM's follow at the end.
-acs chemical neuroscience	ACS Chem Neurosci
-acta neurologica scandinavica	Acta Neurol Scand
-acta neuropathologica	Acta Neuropathol
-acta neuropathologica communications	Acta Neuropathol Commun
-advances in experimental medicine and biology	Adv Exp Med Biol
+acs chemical neuroscience	ACS Chem. Neurosci.
+acta neurologica scandinavica	Acta Neurol. Scand.
+acta neuropathologica	Acta Neuropathol.
+acta neuropathologica communications	Acta Neuropathol. Commun.
+advances in experimental medicine and biology	Adv. Exp. Med. Biol.
 age and ageing	Age Ageing
-ageing and cancer research and treatment	Ageing Cancer Res Treat
-ageing and longevity	Ageing Longev
-ageing and longevity research	Ageing Longev Res
-ageing and neurodegenerative diseases	Ageing Neurodegener Dis
-ageing and society	Ageing Soc
-ageing international	Ageing Int
-ageing research	Ageing Res
-ageing research reviews	Ageing Res Rev
-aging advances	Aging Adv
+ageing and cancer research and treatment	Ageing Cancer Res. Treat.
+ageing and longevity	Ageing Longev.
+ageing and longevity research	Ageing Longev. Res.
+ageing and neurodegenerative diseases	Ageing Neurodegener. Dis.
+ageing and society	Ageing Soc.
+ageing international	Ageing Int.
+ageing research	Ageing Res.
+ageing research reviews	Ageing Res. Rev.
+aging advances	Aging Adv.
 aging and cancer	Aging Cancer
-aging and disease	Aging Dis
-aging and health research	Aging Health Res
-aging and mental health	Aging Ment Health
-aging and neurodegeneration	Aging Neurodegener
-aging and society	Aging Soc
-aging biology	Aging Biol
-aging clinical and experimental research	Aging Clin Exp Res
-aging medicine milton	Aging Med (Milton)
-aging pathobiology and therapeutics	Aging Pathobiol Ther
-aging research	Aging Res
-ajnr american journal of neuroradiology	AJNR Am J Neuroradiol
-alzheimer s and dementia	Alzheimers Dement
-american family physician	Am Fam Physician
-american journal of human genetics	Am J Hum Genet
-american journal of pathology	Am J Pathol
-american journal of physiology lung cellular and molecular physiology	Am J Physiol Lung Cell Mol Physiol
-analytical biochemistry	Anal Biochem
-analytical chemistry	Anal Chem
-analytical chemistry insights	Anal Chem Insights
-analytical chemistry research	Anal Chem Res
-anatomical record	Anat Rec
-angewandte chemie novit	Angew Chem Novit
-annals of clinical and translational neurology	Ann Clin Transl Neurol
-annals of neurology	Ann Neurol
-annals of the new york academy of sciences	Ann N Y Acad Sci
-annual review of analytical chemistry	Annu Rev Anal Chem (Palo Alto Calif)
-annual review of animal biosciences	Annu Rev Anim Biosci
-annual review of applied linguistics	Annu Rev Appl Linguist
-annual review of biochemistry	Annu Rev Biochem
-annual review of biomedical data science	Annu Rev Biomed Data Sci
-annual review of biomedical engineering	Annu Rev Biomed Eng
-annual review of biophysics	Annu Rev Biophys
-annual review of biophysics and biomolecular structure	Annu Rev Biophys Biomol Struct
-annual review of cancer biology	Annu Rev Cancer Biol
-annual review of cell and developmental biology	Annu Rev Cell Dev Biol
-annual review of chemical and biomolecular engineering	Annu Rev Chem Biomol Eng
-annual review of clinical psychology	Annu Rev Clin Psychol
-annual review of condensed matter physics	Annu Rev Condens Matter Phys
-annual review of control robotics and autonomous systems	Annu Rev Control Robot Auton Syst
-annual review of criminology	Annu Rev Criminol
-annual review of cybertherapy and telemedicine	Annu Rev Cyberther Telemed
-annual review of developmental psychology	Annu Rev Dev Psychol
-annual review of ecology evolution and systematics	Annu Rev Ecol Evol Syst
-annual review of economics	Annu Rev Econom
-annual review of entomology	Annu Rev Entomol
-annual review of environment and resources	Annu Rev Environ Resour
-annual review of fish diseases	Annu Rev Fish Dis
-annual review of fluid mechanics	Annu Rev Fluid Mech
-annual review of food science and technology	Annu Rev Food Sci Technol
-annual review of genetics	Annu Rev Genet
-annual review of genomics and human genetics	Annu Rev Genomics Hum Genet
-annual review of immunology	Annu Rev Immunol
-annual review of law and social science	Annu Rev Law Soc Sci
-annual review of linguistics	Annu Rev Linguist
-annual review of marine science	Ann Rev Mar Sci
-annual review of materials research	Annu Rev Mater Res
-annual review of medicine	Annu Rev Med
-annual review of microbiology	Annu Rev Microbiol
-annual review of neuroscience	Annu Rev Neurosci
-annual review of nuclear science	Annu Rev Nucl Sci
-annual review of nutrition	Annu Rev Nutr
-annual review of pathology	Annu Rev Pathol
-annual review of pharmacology and toxicology	Annu Rev Pharmacol Toxicol
-annual review of physical chemistry	Annu Rev Phys Chem
-annual review of physiology	Annu Rev Physiol
-annual review of phytopathology	Annu Rev Phytopathol
-annual review of plant biology	Annu Rev Plant Biol
-annual review of political science	Annu Rev Polit Sci (Palo Alto)
-annual review of psychology	Annu Rev Psychol
-annual review of public health	Annu Rev Public Health
-annual review of resource economics	Annu Rev Resour Economics
-annual review of sociology	Annu Rev Sociol
-annual review of statistics and its application	Annu Rev Stat Appl
-annual review of virology	Annu Rev Virol
-annual review of vision science	Annu Rev Vis Sci
+aging and disease	Aging Dis.
+aging and health research	Aging Health Res.
+aging and mental health	Aging Ment. Health
+aging and neurodegeneration	Aging Neurodegener.
+aging and society	Aging Soc.
+aging biology	Aging Biol.
+aging clinical and experimental research	Aging Clin. Exp. Res.
+aging medicine milton	Aging Med. (Milton)
+aging pathobiology and therapeutics	Aging Pathobiol. Ther.
+aging research	Aging Res.
+ajnr american journal of neuroradiology	AJNR Am. J. Neuroradiol.
+alzheimer s and dementia	Alzheimers Dement.
+american family physician	Am. Fam. Physician
+american journal of human genetics	Am. J. Hum. Genet.
+american journal of pathology	Am. J. Pathol.
+american journal of physiology lung cellular and molecular physiology	Am. J. Physiol. Lung Cell. Mol. Physiol.
+analytical biochemistry	Anal. Biochem.
+analytical chemistry	Anal. Chem.
+analytical chemistry insights	Anal. Chem. Insights
+analytical chemistry research	Anal. Chem. Res.
+anatomical record	Anat. Rec.
+angewandte chemie novit	Angew. Chem. Novit
+annals of clinical and translational neurology	Ann. Clin. Transl. Neurol.
+annals of neurology	Ann. Neurol.
+annals of the new york academy of sciences	Ann. N. Y. Acad. Sci.
+annual review of analytical chemistry	Annu. Rev. Anal. Chem. (Palo Alto Calif)
+annual review of animal biosciences	Annu. Rev. Anim. Biosci.
+annual review of applied linguistics	Annu. Rev. Appl. Linguist.
+annual review of biochemistry	Annu. Rev. Biochem.
+annual review of biomedical data science	Annu. Rev. Biomed. Data Sci.
+annual review of biomedical engineering	Annu. Rev. Biomed. Eng.
+annual review of biophysics	Annu. Rev. Biophys.
+annual review of biophysics and biomolecular structure	Annu. Rev. Biophys. Biomol. Struct.
+annual review of cancer biology	Annu. Rev. Cancer Biol.
+annual review of cell and developmental biology	Annu. Rev. Cell Dev. Biol.
+annual review of chemical and biomolecular engineering	Annu. Rev. Chem. Biomol. Eng.
+annual review of clinical psychology	Annu. Rev. Clin. Psychol.
+annual review of condensed matter physics	Annu. Rev. Condens. Matter Phys.
+annual review of control robotics and autonomous systems	Annu. Rev. Control Robot. Auton. Syst.
+annual review of criminology	Annu. Rev. Criminol.
+annual review of cybertherapy and telemedicine	Annu. Rev. Cyberther. Telemed.
+annual review of developmental psychology	Annu. Rev. Dev. Psychol.
+annual review of ecology evolution and systematics	Annu. Rev. Ecol. Evol. Syst.
+annual review of economics	Annu. Rev. Econom.
+annual review of entomology	Annu. Rev. Entomol.
+annual review of environment and resources	Annu. Rev. Environ. Resour.
+annual review of fish diseases	Annu. Rev. Fish Dis.
+annual review of fluid mechanics	Annu. Rev. Fluid Mech.
+annual review of food science and technology	Annu. Rev. Food Sci. Technol.
+annual review of genetics	Annu. Rev. Genet.
+annual review of genomics and human genetics	Annu. Rev. Genomics Hum. Genet.
+annual review of immunology	Annu. Rev. Immunol.
+annual review of law and social science	Annu. Rev. Law Soc. Sci.
+annual review of linguistics	Annu. Rev. Linguist.
+annual review of marine science	Ann. Rev. Mar. Sci.
+annual review of materials research	Annu. Rev. Mater. Res.
+annual review of medicine	Annu. Rev. Med.
+annual review of microbiology	Annu. Rev. Microbiol.
+annual review of neuroscience	Annu. Rev. Neurosci.
+annual review of nuclear science	Annu. Rev. Nucl. Sci.
+annual review of nutrition	Annu. Rev. Nutr.
+annual review of pathology	Annu. Rev. Pathol.
+annual review of pharmacology and toxicology	Annu. Rev. Pharmacol. Toxicol.
+annual review of physical chemistry	Annu. Rev. Phys. Chem.
+annual review of physiology	Annu. Rev. Physiol.
+annual review of phytopathology	Annu. Rev. Phytopathol.
+annual review of plant biology	Annu. Rev. Plant Biol.
+annual review of political science	Annu. Rev. Polit. Sci. (Palo Alto)
+annual review of psychology	Annu. Rev. Psychol.
+annual review of public health	Annu. Rev. Public Health
+annual review of resource economics	Annu. Rev. Resour. Economics
+annual review of sociology	Annu. Rev. Sociol.
+annual review of statistics and its application	Annu. Rev. Stat. Appl.
+annual review of virology	Annu. Rev. Virol.
+annual review of vision science	Annu. Rev. Vis. Sci.
 anti cancer drugs	Anticancer Drugs
-antioxidants and redox signaling	Antioxid Redox Signal
-autoimmunity reviews	Autoimmun Rev
-autophagy reports	Autophagy Rep
-biochemical journal	Biochem J
-biochemical society transactions	Biochem Soc Trans
-biochimica et biophysica acta	Biochim Biophys Acta
-biochimica et biophysica acta bioenergetics	Biochim Biophys Acta Bioenerg
-biochimica et biophysica acta biomembranes	Biochim Biophys Acta Biomembr
-biochimica et biophysica acta gene regulatory mechanisms	Biochim Biophys Acta Gene Regul Mech
-biochimica et biophysica acta general subjects	Biochim Biophys Acta Gen Subj
-biochimica et biophysica acta molecular and cell biology of lipids	Biochim Biophys Acta Mol Cell Biol Lipids
-biochimica et biophysica acta molecular basis of disease	Biochim Biophys Acta Mol Basis Dis
-biochimica et biophysica acta molecular cell research	Biochim Biophys Acta Mol Cell Res
-biochimica et biophysica acta proteins and proteomics	Biochim Biophys Acta Proteins Proteom
-biochimica et biophysica acta reviews on cancer	Biochim Biophys Acta Rev Cancer
-bioinformatics advances	Bioinform Adv
-bioinformatics and biology insights	Bioinform Biol Insights
-biological psychiatry	Biol Psychiatry
-biological psychiatry cognitive neuroscience and neuroimaging	Biol Psychiatry Cogn Neurosci Neuroimaging
-biological psychiatry global open science	Biol Psychiatry Glob Open Sci
-biomaterials advances	Biomater Adv
-biomaterials and biosystems	Biomater Biosyst
-biomaterials research	Biomater Res
-biomaterials science	Biomater Sci
-biomaterials translational	Biomater Transl
-biomedicine and pharmacotherapy	Biomed Pharmacother
-biophysical journal	Biophys J
-biotechnic and histochemistry	Biotech Histochem
-biotechnology advances	Biotechnol Adv
-biotechnology and applied biochemistry	Biotechnol Appl Biochem
-biotechnology and bioengineering	Biotechnol Bioeng
-biotechnology and bioprocess engineering	Biotechnol Bioprocess Eng
-biotechnology and genetic engineering reviews	Biotechnol Genet Eng Rev
-biotechnology annual review	Biotechnol Annu Rev
-biotechnology biotechnological equipment	Biotechnol Biotechnol Equip
-biotechnology for biofuels	Biotechnol Biofuels
-biotechnology for biofuels and bioproducts	Biotechnol Biofuels Bioprod
-biotechnology for the environment	Biotechnol Environ
-biotechnology journal	Biotechnol J
-biotechnology law report	Biotechnol Law Rep
-biotechnology letters	Biotechnol Lett
-biotechnology notes	Biotechnol Notes
-biotechnology progress	Biotechnol Prog
-biotechnology reports	Biotechnol Rep (Amst)
-biotechnology research international	Biotechnol Res Int
-blood advances	Blood Adv
-blood and genomics	Blood Genom
-blood and genomics discovery	Blood Genom Discov
-blood and lymphatic cancer	Blood Lymphat Cancer
-blood cancer discovery	Blood Cancer Discov
-blood cancer journal	Blood Cancer J
-blood cell therapy	Blood Cell Ther
-blood cells molecules and diseases	Blood Cells Mol Dis
-blood coagulation and fibrinolysis	Blood Coagul Fibrinolysis
-blood global hematology	Blood Glob Hematol
-blood immunology and cellular therapy	Blood Immunol Cell Ther
-blood pressure	Blood Press
-blood pressure monitoring	Blood Press Monit
-blood pressure supplement	Blood Press Suppl
-blood purification	Blood Purif
+antioxidants and redox signaling	Antioxid. Redox Signal.
+autoimmunity reviews	Autoimmun. Rev.
+autophagy reports	Autophagy Rep.
+biochemical journal	Biochem. J.
+biochemical society transactions	Biochem. Soc. Trans.
+biochimica et biophysica acta	Biochim. Biophys. Acta
+biochimica et biophysica acta bioenergetics	Biochim. Biophys. Acta Bioenerg.
+biochimica et biophysica acta biomembranes	Biochim. Biophys. Acta Biomembr.
+biochimica et biophysica acta gene regulatory mechanisms	Biochim. Biophys. Acta Gene Regul. Mech.
+biochimica et biophysica acta general subjects	Biochim. Biophys. Acta Gen. Subj.
+biochimica et biophysica acta molecular and cell biology of lipids	Biochim. Biophys. Acta Mol. Cell Biol. Lipids
+biochimica et biophysica acta molecular basis of disease	Biochim. Biophys. Acta Mol. Basis Dis.
+biochimica et biophysica acta molecular cell research	Biochim. Biophys. Acta Mol. Cell Res.
+biochimica et biophysica acta proteins and proteomics	Biochim. Biophys. Acta Proteins Proteom.
+biochimica et biophysica acta reviews on cancer	Biochim. Biophys. Acta Rev. Cancer
+bioinformatics advances	Bioinform. Adv.
+bioinformatics and biology insights	Bioinform. Biol. Insights
+biological psychiatry	Biol. Psychiatry
+biological psychiatry cognitive neuroscience and neuroimaging	Biol. Psychiatry Cogn. Neurosci. Neuroimaging
+biological psychiatry global open science	Biol. Psychiatry Glob. Open Sci.
+biomaterials advances	Biomater. Adv.
+biomaterials and biosystems	Biomater. Biosyst.
+biomaterials research	Biomater. Res.
+biomaterials science	Biomater. Sci.
+biomaterials translational	Biomater. Transl.
+biomedicine and pharmacotherapy	Biomed. Pharmacother.
+biophysical journal	Biophys. J.
+biotechnic and histochemistry	Biotech. Histochem.
+biotechnology advances	Biotechnol. Adv.
+biotechnology and applied biochemistry	Biotechnol. Appl. Biochem.
+biotechnology and bioengineering	Biotechnol. Bioeng.
+biotechnology and bioprocess engineering	Biotechnol. Bioprocess Eng.
+biotechnology and genetic engineering reviews	Biotechnol. Genet. Eng. Rev.
+biotechnology annual review	Biotechnol. Annu. Rev.
+biotechnology biotechnological equipment	Biotechnol. Biotechnol. Equip.
+biotechnology for biofuels	Biotechnol. Biofuels
+biotechnology for biofuels and bioproducts	Biotechnol. Biofuels Bioprod.
+biotechnology for the environment	Biotechnol. Environ.
+biotechnology journal	Biotechnol. J.
+biotechnology law report	Biotechnol. Law Rep.
+biotechnology letters	Biotechnol. Lett.
+biotechnology notes	Biotechnol. Notes
+biotechnology progress	Biotechnol. Prog.
+biotechnology reports	Biotechnol. Rep. (Amst)
+biotechnology research international	Biotechnol. Res. Int.
+blood advances	Blood Adv.
+blood and genomics	Blood Genom.
+blood and genomics discovery	Blood Genom. Discov.
+blood and lymphatic cancer	Blood Lymphat. Cancer
+blood cancer discovery	Blood Cancer Discov.
+blood cancer journal	Blood Cancer J.
+blood cell therapy	Blood Cell Ther.
+blood cells molecules and diseases	Blood Cells Mol. Dis.
+blood coagulation and fibrinolysis	Blood Coagul. Fibrinolysis
+blood global hematology	Blood Glob. Hematol.
+blood immunology and cellular therapy	Blood Immunol. Cell. Ther.
+blood pressure	Blood Press.
+blood pressure monitoring	Blood Press. Monit.
+blood pressure supplement	Blood Press. Suppl.
+blood purification	Blood Purif.
 blood red cells and iron	Blood Red Cells Iron
-blood research	Blood Res
-blood reviews	Blood Rev
-blood science	Blood Sci
-blood transfusion	Blood Transfus
-blood vessels thrombosis and hemostasis	Blood Vessel Thromb Hemost
-bmc agriculture	BMC Agric
-bmc anesthesiology	BMC Anesthesiol
-bmc artificial intelligence	BMC Artif Intell
-bmc biochemistry	BMC Biochem
-bmc biology	BMC Biol
-bmc biomedical engineering	BMC Biomed Eng
-bmc biophysics	BMC Biophys
-bmc biotechnology	BMC Biotechnol
-bmc blood disorders	BMC Blood Disord
-bmc cardiovascular disorders	BMC Cardiovasc Disord
-bmc cell biology	BMC Cell Biol
-bmc chemical biology	BMC Chem Biol
-bmc chemistry	BMC Chem
-bmc clinical pathology	BMC Clin Pathol
-bmc clinical pharmacology	BMC Clin Pharmacol
-bmc complementary and alternative medicine	BMC Complement Altern Med
-bmc complementary medicine and therapies	BMC Complement Med Ther
-bmc dermatology	BMC Dermatol
-bmc developmental biology	BMC Dev Biol
-bmc digital health	BMC Digit Health
-bmc ear nose and throat disorders	BMC Ear Nose Throat Disord
-bmc ecology	BMC Ecol
-bmc ecology and evolution	BMC Ecol Evol
-bmc emergency medicine	BMC Emerg Med
-bmc endocrine disorders	BMC Endocr Disord
-bmc environmental science	BMC Environ Sci
-bmc evolutionary biology	BMC Evol Biol
-bmc family practice	BMC Fam Pract
-bmc gastroenterology	BMC Gastroenterol
-bmc genetics	BMC Genet
-bmc genomic data	BMC Genom Data
-bmc geriatrics	BMC Geriatr
-bmc global and public health	BMC Glob Public Health
-bmc health services research	BMC Health Serv Res
-bmc hematology	BMC Hematol
-bmc immunology	BMC Immunol
-bmc infectious diseases	BMC Infect Dis
-bmc international health and human rights	BMC Int Health Hum Rights
-bmc marine science	BMC Mar Sci
-bmc materials	BMC Mater
-bmc medical education	BMC Med Educ
-bmc medical ethics	BMC Med Ethics
-bmc medical genetics	BMC Med Genet
-bmc medical genomics	BMC Med Genomics
-bmc medical imaging	BMC Med Imaging
-bmc medical informatics and decision making	BMC Med Inform Decis Mak
-bmc medical physics	BMC Med Phys
-bmc medical research methodology	BMC Med Res Methodol
-bmc medicine	BMC Med
-bmc microbiology	BMC Microbiol
-bmc molecular and cell biology	BMC Mol Cell Biol
-bmc molecular biology	BMC Mol Biol
-bmc musculoskeletal disorders	BMC Musculoskelet Disord
-bmc nephrology	BMC Nephrol
-bmc neurology	BMC Neurol
-bmc neuroscience	BMC Neurosci
-bmc nuclear medicine	BMC Nucl Med
-bmc nursing	BMC Nurs
-bmc nutrition	BMC Nutr
-bmc obesity	BMC Obes
-bmc ophthalmology	BMC Ophthalmol
-bmc palliative care	BMC Palliat Care
-bmc pediatrics	BMC Pediatr
-bmc pharmacology	BMC Pharmacol
-bmc pharmacology and toxicology	BMC Pharmacol Toxicol
-bmc physiology	BMC Physiol
-bmc plant biology	BMC Plant Biol
-bmc plastic and reconstructive surgery	BMC Plast Reconstr Surg
+blood research	Blood Res.
+blood reviews	Blood Rev.
+blood science	Blood Sci.
+blood transfusion	Blood Transfus.
+blood vessels thrombosis and hemostasis	Blood Vessel. Thromb. Hemost.
+bmc agriculture	BMC Agric.
+bmc anesthesiology	BMC Anesthesiol.
+bmc artificial intelligence	BMC Artif. Intell.
+bmc biochemistry	BMC Biochem.
+bmc biology	BMC Biol.
+bmc biomedical engineering	BMC Biomed. Eng.
+bmc biophysics	BMC Biophys.
+bmc biotechnology	BMC Biotechnol.
+bmc blood disorders	BMC Blood Disord.
+bmc cardiovascular disorders	BMC Cardiovasc. Disord.
+bmc cell biology	BMC Cell Biol.
+bmc chemical biology	BMC Chem. Biol.
+bmc chemistry	BMC Chem.
+bmc clinical pathology	BMC Clin. Pathol.
+bmc clinical pharmacology	BMC Clin. Pharmacol.
+bmc complementary and alternative medicine	BMC Complement. Altern. Med.
+bmc complementary medicine and therapies	BMC Complement. Med. Ther.
+bmc dermatology	BMC Dermatol.
+bmc developmental biology	BMC Dev. Biol.
+bmc digital health	BMC Digit. Health
+bmc ear nose and throat disorders	BMC Ear Nose Throat Disord.
+bmc ecology	BMC Ecol.
+bmc ecology and evolution	BMC Ecol. Evol.
+bmc emergency medicine	BMC Emerg. Med.
+bmc endocrine disorders	BMC Endocr. Disord.
+bmc environmental science	BMC Environ. Sci.
+bmc evolutionary biology	BMC Evol. Biol.
+bmc family practice	BMC Fam. Pract.
+bmc gastroenterology	BMC Gastroenterol.
+bmc genetics	BMC Genet.
+bmc genomic data	BMC Genom. Data
+bmc geriatrics	BMC Geriatr.
+bmc global and public health	BMC Glob. Public Health
+bmc health services research	BMC Health Serv. Res.
+bmc hematology	BMC Hematol.
+bmc immunology	BMC Immunol.
+bmc infectious diseases	BMC Infect. Dis.
+bmc international health and human rights	BMC Int. Health Hum. Rights
+bmc marine science	BMC Mar. Sci.
+bmc materials	BMC Mater.
+bmc medical education	BMC Med. Educ.
+bmc medical ethics	BMC Med. Ethics
+bmc medical genetics	BMC Med. Genet.
+bmc medical genomics	BMC Med. Genomics
+bmc medical imaging	BMC Med. Imaging
+bmc medical informatics and decision making	BMC Med. Inform. Decis. Mak.
+bmc medical physics	BMC Med. Phys.
+bmc medical research methodology	BMC Med. Res. Methodol.
+bmc medicine	BMC Med.
+bmc microbiology	BMC Microbiol.
+bmc molecular and cell biology	BMC Mol. Cell Biol.
+bmc molecular biology	BMC Mol. Biol.
+bmc musculoskeletal disorders	BMC Musculoskelet. Disord.
+bmc nephrology	BMC Nephrol.
+bmc neurology	BMC Neurol.
+bmc neuroscience	BMC Neurosci.
+bmc nuclear medicine	BMC Nucl. Med.
+bmc nursing	BMC Nurs.
+bmc nutrition	BMC Nutr.
+bmc obesity	BMC Obes.
+bmc ophthalmology	BMC Ophthalmol.
+bmc palliative care	BMC Palliat. Care
+bmc pediatrics	BMC Pediatr.
+bmc pharmacology	BMC Pharmacol.
+bmc pharmacology and toxicology	BMC Pharmacol. Toxicol.
+bmc physiology	BMC Physiol.
+bmc plant biology	BMC Plant Biol.
+bmc plastic and reconstructive surgery	BMC Plast. Reconstr. Surg.
 bmc pregnancy and childbirth	BMC Pregnancy Childbirth
-bmc primary care	BMC Prim Care
-bmc proceedings	BMC Proc
-bmc psychology	BMC Psychol
-bmc pulmonary medicine	BMC Pulm Med
-bmc research notes	BMC Res Notes
-bmc rheumatology	BMC Rheumatol
-bmc sports science medicine and rehabilitation	BMC Sports Sci Med Rehabil
-bmc structural biology	BMC Struct Biol
-bmc surgery	BMC Surg
-bmc systems biology	BMC Syst Biol
-bmc urology	BMC Urol
-bmc veterinary research	BMC Vet Res
+bmc primary care	BMC Prim. Care
+bmc proceedings	BMC Proc.
+bmc psychology	BMC Psychol.
+bmc pulmonary medicine	BMC Pulm. Med.
+bmc research notes	BMC Res. Notes
+bmc rheumatology	BMC Rheumatol.
+bmc sports science medicine and rehabilitation	BMC Sports Sci. Med. Rehabil.
+bmc structural biology	BMC Struct. Biol.
+bmc surgery	BMC Surg.
+bmc systems biology	BMC Syst. Biol.
+bmc urology	BMC Urol.
+bmc veterinary research	BMC Vet. Res.
 bmc women s health	BMC Womens Health
-bmc zoology	BMC Zool
-bmj case reports	BMJ Case Rep
-bmj clinical evidence	BMJ Clin Evid
-bmj connections clinical genetics and genomics	BMJ Connect Clin Genet Genom
-bmj connections oncology	BMJ Connect Oncol
-bmj connections surgery	BMJ Connect Surg
-bmj digital health and ai	BMJ Digit Health Ai
-bmj evidence based medicine	BMJ Evid Based Med
-bmj global health	BMJ Glob Health
-bmj health and care informatics	BMJ Health Care Inform
-bmj immunology	BMJ Immunol
-bmj innovations	BMJ Innov
-bmj leader	BMJ Lead
-bmj medicine	BMJ Med
-bmj mental health	BMJ Ment Health
-bmj military health	BMJ Mil Health
-bmj neurology open	BMJ Neurol Open
-bmj nutrition prevention and health	BMJ Nutr Prev Health
-bmj oncology	BMJ Oncol
-bmj open diabetes research and care	BMJ Open Diabetes Res Care
-bmj open gastroenterology	BMJ Open Gastroenterol
-bmj open ophthalmology	BMJ Open Ophthalmol
-bmj open quality	BMJ Open Qual
-bmj open respiratory research	BMJ Open Respir Res
-bmj open science	BMJ Open Sci
-bmj open sport and exercise medicine	BMJ Open Sport Exerc Med
-bmj paediatrics open	BMJ Paediatr Open
-bmj quality and safety	BMJ Qual Saf
-bmj quality improvement reports	BMJ Qual Improv Rep
-bmj sexual and reproductive health	BMJ Sex Reprod Health
-bmj simulation and technology enhanced learning	BMJ Simul Technol Enhanc Learn
-bmj supportive and palliative care	BMJ Support Palliat Care
-bmj surgery interventions and health technologies	BMJ Surg Interv Health Technol
-brain and behavior	Brain Behav
-brain and cognition	Brain Cogn
-brain and development	Brain Dev
-brain and environment	Brain Environ
-brain and language	Brain Lang
+bmc zoology	BMC Zool.
+bmj case reports	BMJ Case Rep.
+bmj clinical evidence	BMJ Clin. Evid.
+bmj connections clinical genetics and genomics	BMJ Connect. Clin. Genet. Genom.
+bmj connections oncology	BMJ Connect. Oncol.
+bmj connections surgery	BMJ Connect. Surg.
+bmj digital health and ai	BMJ Digit. Health Ai
+bmj evidence based medicine	BMJ Evid. Based Med.
+bmj global health	BMJ Glob. Health
+bmj health and care informatics	BMJ Health Care Inform.
+bmj immunology	BMJ Immunol.
+bmj innovations	BMJ Innov.
+bmj leader	BMJ Lead.
+bmj medicine	BMJ Med.
+bmj mental health	BMJ Ment. Health
+bmj military health	BMJ Mil. Health
+bmj neurology open	BMJ Neurol. Open
+bmj nutrition prevention and health	BMJ Nutr. Prev. Health
+bmj oncology	BMJ Oncol.
+bmj open diabetes research and care	BMJ Open Diabetes Res. Care
+bmj open gastroenterology	BMJ Open Gastroenterol.
+bmj open ophthalmology	BMJ Open Ophthalmol.
+bmj open quality	BMJ Open Qual.
+bmj open respiratory research	BMJ Open Respir. Res.
+bmj open science	BMJ Open Sci.
+bmj open sport and exercise medicine	BMJ Open Sport Exerc. Med.
+bmj paediatrics open	BMJ Paediatr. Open
+bmj quality and safety	BMJ Qual. Saf.
+bmj quality improvement reports	BMJ Qual. Improv. Rep.
+bmj sexual and reproductive health	BMJ Sex. Reprod. Health
+bmj simulation and technology enhanced learning	BMJ Simul. Technol. Enhanc. Learn.
+bmj supportive and palliative care	BMJ Support. Palliat. Care
+bmj surgery interventions and health technologies	BMJ Surg. Interv. Health Technol.
+brain and behavior	Brain Behav.
+brain and cognition	Brain Cogn.
+brain and development	Brain Dev.
+brain and environment	Brain Environ.
+brain and language	Brain Lang.
 brain and nerve	Brain Nerve
-brain and neurorehabilitation	Brain Neurorehabil
-brain and neuroscience advances	Brain Neurosci Adv
+brain and neurorehabilitation	Brain Neurorehabil.
+brain and neuroscience advances	Brain Neurosci. Adv.
 brain and spine	Brain Spine
-brain behavior and evolution	Brain Behav Evol
-brain behavior and immunity	Brain Behav Immun
-brain behavior and immunity health	Brain Behav Immun Health
-brain behavior and immunity integrative	Brain Behav Immun Integr
-brain cell biology	Brain Cell Biol
-brain circulation	Brain Circ
-brain communications	Brain Commun
-brain computer interfaces	Brain Comput Interfaces (Abingdon)
-brain connectivity	Brain Connect
-brain disorders	Brain Disord
-brain disorders and therapy	Brain Disord Ther
-brain imaging and behavior	Brain Imaging Behav
-brain impairment	Brain Impair
-brain informatics	Brain Inform
-brain injury	Brain Inj
-brain medicine	Brain Med
-brain multiphysics	Brain Multiphys
-brain network and modulation	Brain Netw Modul
-brain network disorders	Brain Netw Disord
-brain organoid and systems neuroscience journal	Brain Organoid Syst Neurosci J
-brain pathology	Brain Pathol
-brain plasticity	Brain Plast
-brain research	Brain Res
-brain research bulletin	Brain Res Bull
-brain research reviews	Brain Res Rev
-brain sciences	Brain Sci
-brain stimulation	Brain Stimul
-brain structure and function	Brain Struct Funct
-brain topography	Brain Topogr
-brain tumor pathology	Brain Tumor Pathol
-brain tumor research and treatment	Brain Tumor Res Treat
+brain behavior and evolution	Brain Behav. Evol.
+brain behavior and immunity	Brain Behav. Immun.
+brain behavior and immunity health	Brain Behav. Immun. Health
+brain behavior and immunity integrative	Brain Behav. Immun. Integr.
+brain cell biology	Brain Cell Biol.
+brain circulation	Brain Circ.
+brain communications	Brain Commun.
+brain computer interfaces	Brain Comput. Interfaces (Abingdon)
+brain connectivity	Brain Connect.
+brain disorders	Brain Disord.
+brain disorders and therapy	Brain Disord. Ther.
+brain imaging and behavior	Brain Imaging Behav.
+brain impairment	Brain Impair.
+brain informatics	Brain Inform.
+brain injury	Brain Inj.
+brain medicine	Brain Med.
+brain multiphysics	Brain Multiphys.
+brain network and modulation	Brain Netw. Modul.
+brain network disorders	Brain Netw. Disord.
+brain organoid and systems neuroscience journal	Brain Organoid Syst. Neurosci. J.
+brain pathology	Brain Pathol.
+brain plasticity	Brain Plast.
+brain research	Brain Res.
+brain research bulletin	Brain Res. Bull.
+brain research reviews	Brain Res. Rev.
+brain sciences	Brain Sci.
+brain stimulation	Brain Stimul.
+brain structure and function	Brain Struct. Funct.
+brain topography	Brain Topogr.
+brain tumor pathology	Brain Tumor Pathol.
+brain tumor research and treatment	Brain Tumor Res. Treat.
 brains minds and media	Brains Minds Media
-breast cancer research	Breast Cancer Res
-briefings in bioinformatics	Brief Bioinform
-briefings in functional genomics	Brief Funct Genomics
-briefings in functional genomics and proteomics	Brief Funct Genomic Proteomic
-british journal of pharmacology	Br J Pharmacol
-british medical bulletin	Br Med Bull
-cell adhesion and migration	Cell Adh Migr
-cell and bioscience	Cell Biosci
+breast cancer research	Breast Cancer Res.
+briefings in bioinformatics	Brief. Bioinform.
+briefings in functional genomics	Brief. Funct. Genomics
+briefings in functional genomics and proteomics	Brief. Funct. Genomic. Proteomic.
+british journal of pharmacology	Br. J. Pharmacol.
+british medical bulletin	Br. Med. Bull.
+cell adhesion and migration	Cell Adh. Migr.
+cell and bioscience	Cell Biosci.
 cell and chromosome	Cell Chromosome
-cell and developmental biology	Cell Dev Biol
-cell and gene therapy insights	Cell Gene Ther Insights
-cell and tissue banking	Cell Tissue Bank
-cell and tissue biology	Cell tissue biol
-cell and tissue research	Cell Tissue Res
-cell biochemistry and biophysics	Cell Biochem Biophys
-cell biochemistry and function	Cell Biochem Funct
-cell biology	Cell Biol (Henderson, NV)
-cell biology and toxicology	Cell Biol Toxicol
-cell biology education	Cell Biol Educ
-cell biology international	Cell Biol Int
-cell biology international reports	Cell Biol Int Rep (2010)
-cell biomaterials	Cell Biomater
-cell chemical biology	Cell Chem Biol
-cell communication and adhesion	Cell Commun Adhes
-cell communication and signaling	Cell Commun Signal
-cell communication insights	Cell Commun Insights
-cell death and differentiation	Cell Death Differ
-cell death and disease	Cell Death Dis
-cell death discovery	Cell Death Discov
-cell discovery	Cell Discov
-cell division	Cell Div
-cell genomics	Cell Genom
-cell health and cytoskeleton	Cell Health Cytoskelet
+cell and developmental biology	Cell Dev. Biol.
+cell and gene therapy insights	Cell Gene Ther. Insights
+cell and tissue banking	Cell Tissue Bank.
+cell and tissue biology	Cell tissue biol.
+cell and tissue research	Cell Tissue Res.
+cell biochemistry and biophysics	Cell Biochem. Biophys.
+cell biochemistry and function	Cell Biochem. Funct.
+cell biology	Cell Biol. (Henderson, NV)
+cell biology and toxicology	Cell Biol. Toxicol.
+cell biology education	Cell Biol. Educ.
+cell biology international	Cell Biol. Int.
+cell biology international reports	Cell Biol. Int. Rep. (2010)
+cell biomaterials	Cell Biomater.
+cell chemical biology	Cell Chem. Biol.
+cell communication and adhesion	Cell Commun. Adhes.
+cell communication and signaling	Cell Commun. Signal.
+cell communication insights	Cell Commun. Insights
+cell death and differentiation	Cell Death Differ.
+cell death and disease	Cell Death Dis.
+cell death discovery	Cell Death Discov.
+cell discovery	Cell Discov.
+cell division	Cell Div.
+cell genomics	Cell Genom.
+cell health and cytoskeleton	Cell Health Cytoskelet.
 cell host and microbe	Cell Host Microbe
-cell investigation	Cell Investig
-cell journal	Cell J
-cell medicine	Cell Med
-cell metabolism	Cell Metab
-cell motility and the cytoskeleton	Cell Motil Cytoskeleton
-cell proliferation	Cell Prolif
-cell regeneration	Cell Regen
-cell reports	Cell Rep
-cell reports medicine	Cell Rep Med
-cell reports methods	Cell Rep Methods
-cell reports physical science	Cell Rep Phys Sci
-cell reports sustainability	Cell Rep Sustain
-cell research	Cell Res
-cell signaling inflammation and disease	Cell Signal Inflamm Dis
-cell stem cells and regenerative medicine	Cell Stem Cells Regen Med
+cell investigation	Cell Investig.
+cell journal	Cell J.
+cell medicine	Cell Med.
+cell metabolism	Cell Metab.
+cell motility and the cytoskeleton	Cell Motil. Cytoskeleton
+cell proliferation	Cell Prolif.
+cell regeneration	Cell Regen.
+cell reports	Cell Rep.
+cell reports medicine	Cell Rep. Med.
+cell reports methods	Cell Rep. Methods
+cell reports physical science	Cell Rep. Phys. Sci.
+cell reports sustainability	Cell Rep. Sustain.
+cell research	Cell Res.
+cell signaling inflammation and disease	Cell Signal. Inflamm. Dis.
+cell stem cells and regenerative medicine	Cell Stem Cells Regen. Med.
 cell stress and chaperones	Cell Stress Chaperones
-cell structure and function	Cell Struct Funct
-cell surface	Cell Surf
-cell systems	Cell Syst
-cell transplantation	Cell Transplant
-cerebral cortex	Cereb Cortex
-cerebral cortex communications	Cereb Cortex Commun
-chemical and biochemical engineering quarterly	Chem Biochem Eng Q
-chemical and biological technologies in agriculture	Chem Biol Technol Agric
-chemical and biomedical imaging	Chem Biomed Imaging
-chemical and pharmaceutical bulletin	Chem Pharm Bull (Tokyo)
-chemical biology and drug design	Chem Biol Drug Des
-chemical biology letters	Chem Biol Lett
-chemical communications	Chem Commun (Camb)
-chemical educator	Chem Educ
-chemical engineering and technology	Chem Eng Technol
-chemical engineering communications	Chem Eng Commun
-chemical engineering education	Chem Eng Educ
-chemical engineering journal	Chem Eng J
-chemical engineering journal advances	Chem Eng J Adv
-chemical engineering progress	Chem Eng Prog
-chemical engineering research and design	Chem Eng Res Des
-chemical engineering science	Chem Eng Sci
-chemical engineering transactions	Chem Eng Trans
-chemical health and safety	Chem Health Saf
-chemical immunology and allergy	Chem Immunol Allergy
-chemical informatics	Chem Inform
-chemical physics reviews	Chem Phys Rev
-chemical product and process modeling	Chem Prod Process Model
-chemical record	Chem Rec
-chemical research in toxicology	Chem Res Toxicol
-chemical reviews	Chem Rev
-chemical science	Chem Sci
-chemical science transactions	Chem Sci Trans
-chemical sciences journal	Chem Sci J
-chemical senses	Chem Senses
-chemical society reviews	Chem Soc Rev
-clinical epigenetics	Clin Epigenetics
-clinical immunology	Clin Immunol
-cold spring harbor perspectives in biology	Cold Spring Harb Perspect Biol
-cold spring harbor perspectives in medicine	Cold Spring Harb Perspect Med
-communications biology	Commun Biol
+cell structure and function	Cell Struct. Funct.
+cell surface	Cell Surf.
+cell systems	Cell Syst.
+cell transplantation	Cell Transplant.
+cerebral cortex	Cereb. Cortex
+cerebral cortex communications	Cereb. Cortex Commun.
+chemical and biochemical engineering quarterly	Chem. Biochem. Eng. Q.
+chemical and biological technologies in agriculture	Chem. Biol. Technol. Agric.
+chemical and biomedical imaging	Chem. Biomed. Imaging
+chemical and pharmaceutical bulletin	Chem. Pharm. Bull. (Tokyo)
+chemical biology and drug design	Chem. Biol. Drug Des.
+chemical biology letters	Chem. Biol. Lett.
+chemical communications	Chem. Commun. (Camb)
+chemical educator	Chem. Educ.
+chemical engineering and technology	Chem. Eng. Technol.
+chemical engineering communications	Chem. Eng. Commun.
+chemical engineering education	Chem. Eng. Educ.
+chemical engineering journal	Chem. Eng. J.
+chemical engineering journal advances	Chem. Eng. J. Adv.
+chemical engineering progress	Chem. Eng. Prog.
+chemical engineering research and design	Chem. Eng. Res. Des.
+chemical engineering science	Chem. Eng. Sci.
+chemical engineering transactions	Chem. Eng. Trans.
+chemical health and safety	Chem. Health Saf.
+chemical immunology and allergy	Chem. Immunol. Allergy
+chemical informatics	Chem. Inform.
+chemical physics reviews	Chem. Phys. Rev.
+chemical product and process modeling	Chem. Prod. Process Model.
+chemical record	Chem. Rec.
+chemical research in toxicology	Chem. Res. Toxicol.
+chemical reviews	Chem. Rev.
+chemical science	Chem. Sci.
+chemical science transactions	Chem. Sci. Trans.
+chemical sciences journal	Chem. Sci. J.
+chemical senses	Chem. Senses
+chemical society reviews	Chem. Soc. Rev.
+clinical epigenetics	Clin. Epigenetics
+clinical immunology	Clin. Immunol.
+cold spring harbor perspectives in biology	Cold Spring Harb. Perspect. Biol.
+cold spring harbor perspectives in medicine	Cold Spring Harb. Perspect. Med.
+communications biology	Commun. Biol.
 cortex a journal devoted to the study of the nervous system and behavior	Cortex
-current biology	Curr Biol
-current genomics	Curr Genomics
-current neurology and neuroscience reports	Curr Neurol Neurosci Rep
-current opinion in allergy and clinical immunology	Curr Opin Allergy Clin Immunol
-current opinion in anaesthesiology	Curr Opin Anaesthesiol
-current opinion in behavioral sciences	Curr Opin Behav Sci
-current opinion in biomedical engineering	Curr Opin Biomed Eng
-current opinion in biotechnology	Curr Opin Biotechnol
-current opinion in cardiology	Curr Opin Cardiol
-current opinion in cell biology	Curr Opin Cell Biol
-current opinion in chemical biology	Curr Opin Chem Biol
-current opinion in chemical engineering	Curr Opin Chem Eng
-current opinion in clinical nutrition and metabolic care	Curr Opin Clin Nutr Metab Care
-current opinion in critical care	Curr Opin Crit Care
-current opinion in drug discovery and development	Curr Opin Drug Discov Devel
-current opinion in electrochemistry	Curr Opin Electrochem
-current opinion in endocrine and metabolic research	Curr Opin Endocr Metab Res
-current opinion in endocrinology diabetes and obesity	Curr Opin Endocrinol Diabetes Obes
-current opinion in environmental science and health	Curr Opin Environ Sci Health
-current opinion in environmental sustainability	Curr Opin Environ Sustain
-current opinion in epidemiology and public health	Curr Opin Epidemiol Public Health
-current opinion in food science	Curr Opin Food Sci
-current opinion in gastroenterology	Curr Opin Gastroenterol
-current opinion in genetics and development	Curr Opin Genet Dev
-current opinion in green and sustainable chemistry	Curr Opin Green Sustain Chem
-current opinion in hematology	Curr Opin Hematol
-current opinion in hiv and aids	Curr Opin HIV AIDS
-current opinion in immunology	Curr Opin Immunol
-current opinion in infectious diseases	Curr Opin Infect Dis
-current opinion in insect science	Curr Opin Insect Sci
-current opinion in investigational drugs	Curr Opin Investig Drugs
-current opinion in lipidology	Curr Opin Lipidol
-current opinion in microbiology	Curr Opin Microbiol
-current opinion in molecular therapeutics	Curr Opin Mol Ther
-current opinion in nephrology and hypertension	Curr Opin Nephrol Hypertens
-current opinion in neurobiology	Curr Opin Neurobiol
-current opinion in neurology	Curr Opin Neurol
-current opinion in obstetrics and gynecology	Curr Opin Obstet Gynecol
-current opinion in oncology	Curr Opin Oncol
-current opinion in ophthalmology	Curr Opin Ophthalmol
-current opinion in organ transplantation	Curr Opin Organ Transplant
-current opinion in otolaryngology and head and neck surgery	Curr Opin Otolaryngol Head Neck Surg
-current opinion in pediatrics	Curr Opin Pediatr
-current opinion in pharmacology	Curr Opin Pharmacol
-current opinion in physiology	Curr Opin Physiol
-current opinion in plant biology	Curr Opin Plant Biol
-current opinion in psychiatry	Curr Opin Psychiatry
-current opinion in psychology	Curr Opin Psychol
-current opinion in pulmonary medicine	Curr Opin Pulm Med
-current opinion in rheumatology	Curr Opin Rheumatol
-current opinion in solid state and materials science	Curr Opin Solid State Mater Sci
-current opinion in structural biology	Curr Opin Struct Biol
-current opinion in supportive and palliative care	Curr Opin Support Palliat Care
-current opinion in systems biology	Curr Opin Syst Biol
-current opinion in toxicology	Curr Opin Toxicol
-current opinion in urology	Curr Opin Urol
-current opinion in virology	Curr Opin Virol
-current protocols in chemical biology	Curr Protoc Chem Biol
+current biology	Curr. Biol.
+current genomics	Curr. Genomics
+current neurology and neuroscience reports	Curr. Neurol. Neurosci. Rep.
+current opinion in allergy and clinical immunology	Curr. Opin. Allergy Clin. Immunol.
+current opinion in anaesthesiology	Curr. Opin. Anaesthesiol.
+current opinion in behavioral sciences	Curr. Opin. Behav. Sci.
+current opinion in biomedical engineering	Curr. Opin. Biomed. Eng.
+current opinion in biotechnology	Curr. Opin. Biotechnol.
+current opinion in cardiology	Curr. Opin. Cardiol.
+current opinion in cell biology	Curr. Opin. Cell Biol.
+current opinion in chemical biology	Curr. Opin. Chem. Biol.
+current opinion in chemical engineering	Curr. Opin. Chem. Eng.
+current opinion in clinical nutrition and metabolic care	Curr. Opin. Clin. Nutr. Metab. Care
+current opinion in critical care	Curr. Opin. Crit. Care
+current opinion in drug discovery and development	Curr. Opin. Drug Discov. Devel.
+current opinion in electrochemistry	Curr. Opin. Electrochem.
+current opinion in endocrine and metabolic research	Curr. Opin. Endocr. Metab. Res.
+current opinion in endocrinology diabetes and obesity	Curr. Opin. Endocrinol. Diabetes Obes.
+current opinion in environmental science and health	Curr. Opin. Environ. Sci. Health
+current opinion in environmental sustainability	Curr. Opin. Environ. Sustain.
+current opinion in epidemiology and public health	Curr. Opin. Epidemiol. Public Health
+current opinion in food science	Curr. Opin. Food Sci.
+current opinion in gastroenterology	Curr. Opin. Gastroenterol.
+current opinion in genetics and development	Curr. Opin. Genet. Dev.
+current opinion in green and sustainable chemistry	Curr. Opin. Green Sustain. Chem.
+current opinion in hematology	Curr. Opin. Hematol.
+current opinion in hiv and aids	Curr. Opin. HIV AIDS
+current opinion in immunology	Curr. Opin. Immunol.
+current opinion in infectious diseases	Curr. Opin. Infect. Dis.
+current opinion in insect science	Curr. Opin. Insect Sci.
+current opinion in investigational drugs	Curr. Opin. Investig. Drugs
+current opinion in lipidology	Curr. Opin. Lipidol.
+current opinion in microbiology	Curr. Opin. Microbiol.
+current opinion in molecular therapeutics	Curr. Opin. Mol. Ther.
+current opinion in nephrology and hypertension	Curr. Opin. Nephrol. Hypertens.
+current opinion in neurobiology	Curr. Opin. Neurobiol.
+current opinion in neurology	Curr. Opin. Neurol.
+current opinion in obstetrics and gynecology	Curr. Opin. Obstet. Gynecol.
+current opinion in oncology	Curr. Opin. Oncol.
+current opinion in ophthalmology	Curr. Opin. Ophthalmol.
+current opinion in organ transplantation	Curr. Opin. Organ Transplant.
+current opinion in otolaryngology and head and neck surgery	Curr. Opin. Otolaryngol. Head Neck Surg.
+current opinion in pediatrics	Curr. Opin. Pediatr.
+current opinion in pharmacology	Curr. Opin. Pharmacol.
+current opinion in physiology	Curr. Opin. Physiol.
+current opinion in plant biology	Curr. Opin. Plant Biol.
+current opinion in psychiatry	Curr. Opin. Psychiatry
+current opinion in psychology	Curr. Opin. Psychol.
+current opinion in pulmonary medicine	Curr. Opin. Pulm. Med.
+current opinion in rheumatology	Curr. Opin. Rheumatol.
+current opinion in solid state and materials science	Curr. Opin. Solid State Mater. Sci.
+current opinion in structural biology	Curr. Opin. Struct. Biol.
+current opinion in supportive and palliative care	Curr. Opin. Support. Palliat. Care
+current opinion in systems biology	Curr. Opin. Syst. Biol.
+current opinion in toxicology	Curr. Opin. Toxicol.
+current opinion in urology	Curr. Opin. Urol.
+current opinion in virology	Curr. Opin. Virol.
+current protocols in chemical biology	Curr. Protoc. Chem. Biol.
 cytometry part a	Cytometry A
-cytometry part b clinical cytometry	Cytometry B Clin Cytom
-developmental and comparative immunology	Dev Comp Immunol
-developmental biology	Dev Biol
-developmental cell	Dev Cell
-developmental child welfare	Dev Child Welf
-developmental cognitive neuroscience	Dev Cogn Neurosci
-developmental disabilities network journal	Dev Disabil Netw J
-developmental disabilities research reviews	Dev Disabil Res Rev
-developmental dynamics	Dev Dyn
-developmental medicine and child neurology	Dev Med Child Neurol
-developmental medicine and child neurology supplement	Dev Med Child Neurol Suppl
-developmental neurobiology	Dev Neurobiol
-developmental neuropsychology	Dev Neuropsychol
-developmental neurorehabilitation	Dev Neurorehabil
-developmental neuroscience	Dev Neurosci
-developmental period medicine	Dev Period Med
-developmental psychobiology	Dev Psychobiol
-developmental psychology	Dev Psychol
-developmental science	Dev Sci
-elementary school journal	Elem Sch J
-embo journal	EMBO J
-embo molecular medicine	EMBO Mol Med
-embo reports	EMBO Rep
-emerging infectious diseases	Emerg Infect Dis
-endocrine pathology	Endocr Pathol
-european journal of applied physiology and occupational physiology	Eur J Appl Physiol Occup Physiol
-european journal of immunology	Eur J Immunol
-european journal of neurology	Eur J Neurol
-european journal of neuroscience	Eur J Neurosci
-experimental and molecular medicine	Exp Mol Med
-experimental eye research	Exp Eye Res
-experimental gerontology	Exp Gerontol
-experimental neurology	Exp Neurol
-experimental physiology	Exp Physiol
-f1000 biology reports	F1000 Biol Rep
-f1000 medicine reports	F1000 Med Rep
-f1000prime reports	F1000Prime Rep
-f1000research	F1000Res
-febs journal	FEBS J
-free radical biology and medicine	Free Radic Biol Med
-free radical research	Free Radic Res
-frontiers in acoustics	Front Acoust
-frontiers in adolescent medicine	Front Adolesc Med
-frontiers in aging	Front Aging
-frontiers in aging neuroscience	Front Aging Neurosci
-frontiers in agronomy	Front Agron
-frontiers in allergy	Front Allergy
-frontiers in amphibian and reptile science	Front Amphib Reptile Sci
-frontiers in analytical science	Front Anal Sci
-frontiers in anesthesiology	Front Anesthesiol
-frontiers in animal science	Front Anim Sci
-frontiers in antibiotics	Front Antibiot
-frontiers in applied mathematics and statistics	Front Appl Math Stat
-frontiers in aquaculture	Front Aquac
-frontiers in artificial intelligence	Front Artif Intell
-frontiers in astronomy and space sciences	Front Astron Space Sci
-frontiers in audiology and otology	Front Audiol Otol
-frontiers in bacteriology	Front Bacteriol
-frontiers in behavioral neuroscience	Front Behav Neurosci
-frontiers in big data	Front Big Data
-frontiers in bioengineering and biotechnology	Front Bioeng Biotechnol
-frontiers in bioinformatics	Front Bioinform
-frontiers in biology	Front Biol (Beijing)
-frontiers in biomaterials science	Front Biomater Sci
-frontiers in biophysics	Front Biophys
-frontiers in built environment	Front Built Environ
-frontiers in cancer control and society	Front Cancer Control Soc
-frontiers in cardiovascular medicine	Front Cardiovasc Med
-frontiers in catalysis	Front Catal
-frontiers in cell and developmental biology	Front Cell Dev Biol
-frontiers in cell death	Front Cell Death
-frontiers in cellular and infection microbiology	Front Cell Infect Microbiol
-frontiers in cellular neuroscience	Front Cell Neurosci
-frontiers in chemical biology	Front Chem Biol
-frontiers in chemical engineering	Front Chem Eng
-frontiers in chemistry	Front Chem
-frontiers in child and adolescent psychiatry	Front Child Adolesc Psychiatry
-frontiers in climate	Front Clim
-frontiers in clinical diabetes and healthcare	Front Clin Diabetes Healthc
-frontiers in cognition	Front Cognit
-frontiers in communication	Front Commun (Lausanne)
-frontiers in computational neuroscience	Front Comput Neurosci
-frontiers in computer science	Front Comput Sci
-frontiers in conservation science	Front Conserv Sci
-frontiers in control engineering	Front Control Eng
-frontiers in dementia	Front Dement
-frontiers in dental medicine	Front Dent Med
-frontiers in dentistry	Front Dent
-frontiers in developmental psychology	Front Dev Psychol
-frontiers in digital health	Front Digit Health
-frontiers in disaster and emergency medicine	Front Disaster Emerg Med
-frontiers in drug delivery	Front Drug Deliv
-frontiers in drug discovery	Front Drug Discov (Lausanne)
-frontiers in drug safety and regulation	Front Drug Saf Regul
-frontiers in earth science	Front Earth Sci (Lausanne)
-frontiers in ecology and evolution	Front Ecol Evol
-frontiers in ecology and the environment	Front Ecol Environ
-frontiers in education	Front Educ (Lausanne)
-frontiers in education technology	Front Educ Technol
-frontiers in electronics	Front Electron
-frontiers in endocrinology	Front Endocrinol (Lausanne)
-frontiers in energy research	Front Energy Res
-frontiers in environmental chemistry	Front Environ Chem
-frontiers in environmental health	Front Environ Health
-frontiers in environmental science	Front Environ Sci
-frontiers in epidemiology	Front Epidemiol
-frontiers in epigenetics and epigenomics	Front Epigenet Epigenom
-frontiers in evolutionary neuroscience	Front Evol Neurosci
-frontiers in food science and technology	Front Food Sci Technol
-frontiers in forests and global change	Front For Glob Change
-frontiers in freshwater science	Front Freshw Sci
-frontiers in fungal biology	Front Fungal Biol
-frontiers in future transportation	Front Future Transp
-frontiers in gastroenterology	Front Gastroenterol (Lausanne)
-frontiers in genetics	Front Genet
-frontiers in genome editing	Front Genome Ed
-frontiers in global women s health	Front Glob Womens Health
-frontiers in health informatics	Front Health Inform
-frontiers in health policy research	Front Health Policy Res
-frontiers in health services	Front Health Serv
-frontiers in hematology	Front Hematol
-frontiers in high performance computing	Front High Perform Comput
-frontiers in human neuroscience	Front Hum Neurosci
-frontiers in ict	Front ICT
-frontiers in imaging	Front Imaging
-frontiers in immunology	Front Immunol
-frontiers in insect science	Front Insect Sci
-frontiers in integrative neuroscience	Front Integr Neurosci
-frontiers in lab on a chip technologies	Front Lab Chip Technol
-frontiers in language sciences	Front Lang Sci
-frontiers in lupus	Front Lupus
-frontiers in malaria	Front Malar
-frontiers in mammal science	Front Mamm Sci
-frontiers in marine science	Front Mar Sci
-frontiers in materials	Front Mater
-frontiers in mechanical engineering	Front Mech Eng
-frontiers in medical engineering	Front Med Eng
-frontiers in medical technology	Front Med Technol
-frontiers in medicine	Front Med (Lausanne)
-frontiers in microbiology	Front Microbiol
-frontiers in microbiomes	Front Microbiomes
-frontiers in molecular biosciences	Front Mol Biosci
-frontiers in molecular medicine	Front Mol Med
-frontiers in molecular neuroscience	Front Mol Neurosci
-frontiers in musculoskeletal disorders	Front Musculoskelet Disord
-frontiers in nanotechnology	Front Nanotechnol
-frontiers in natural products	Front Nat Prod
-frontiers in nephrology	Front Nephrol
-frontiers in network physiology	Front Netw Physiol
-frontiers in neural circuits	Front Neural Circuits
-frontiers in neuroanatomy	Front Neuroanat
-frontiers in neuroendocrinology	Front Neuroendocrinol
-frontiers in neuroenergetics	Front Neuroenergetics
-frontiers in neuroengineering	Front Neuroeng
-frontiers in neuroergonomics	Front Neuroergon
-frontiers in neuroimaging	Front Neuroimaging
-frontiers in neuroinformatics	Front Neuroinform
-frontiers in neurology	Front Neurol
-frontiers in neurorobotics	Front Neurorobot
-frontiers in neuroscience	Front Neurosci
-frontiers in nuclear medicine	Front Nucl Med
-frontiers in nutrition	Front Nutr
-frontiers in oncology	Front Oncol
-frontiers in ophthalmology	Front Ophthalmol (Lausanne)
-frontiers in oral health	Front Oral Health
-frontiers in pain research	Front Pain Res (Lausanne)
-frontiers in parasitology	Front Parasitol
-frontiers in pediatrics	Front Pediatr
-frontiers in pharmacology	Front Pharmacol
-frontiers in photonics	Front Photon
-frontiers in physics	Front Phys
-frontiers in physiology	Front Physiol
-frontiers in plant science	Front Plant Sci
-frontiers in political science	Front Polit Sci
-frontiers in psychiatry	Front Psychiatry
-frontiers in psychology	Front Psychol
-frontiers in public health	Front Public Health
-frontiers in public health services and systems research	Front Public Health Serv Syst Res
-frontiers in quantum science and technology	Front Quantum Sci Technol
-frontiers in radiology	Front Radiol
-frontiers in rehabilitation sciences	Front Rehabil Sci
-frontiers in reproductive health	Front Reprod Health
-frontiers in research metrics and analytics	Front Res Metr Anal
-frontiers in rna research	Front RNA Res
-frontiers in robotics and ai	Front Robot AI
-frontiers in science	Front Sci
-frontiers in sensors	Front Sens (Lausanne)
-frontiers in signal processing	Front Signal Process (Lausanne)
-frontiers in sleep	Front Sleep
-frontiers in social psychology	Front Soc Psychol
-frontiers in sociology	Front Sociol
-frontiers in soil science	Front Soil Sci
-frontiers in space technologies	Front Space Technol
-frontiers in sports and active living	Front Sports Act Living
-frontiers in stroke	Front Stroke
-frontiers in surgery	Front Surg
-frontiers in sustainability	Front Sustain (Lausanne)
-frontiers in sustainable cities	Front Sustain Cities
-frontiers in sustainable food systems	Front Sustain Food Syst
-frontiers in synaptic neuroscience	Front Synaptic Neurosci
-frontiers in systems biology	Front Syst Biol
-frontiers in systems neuroscience	Front Syst Neurosci
-frontiers in thermal engineering	Front Therm Eng
-frontiers in toxicology	Front Toxicol
-frontiers in transplantation	Front Transplant
-frontiers in tropical diseases	Front Trop Dis
-frontiers in tuberculosis	Front Tuberc
-frontiers in urology	Front Urol
-frontiers in veterinary science	Front Vet Sci
-frontiers in virology	Front Virol
-frontiers in virtual reality	Front Virtual Real
-frontiers in water	Front Water
-frontiers in women s health	Front Womens Health
-frontiers in zoology	Front Zool
-gastroenterology and hepatology from bed to bench	Gastroenterol Hepatol Bed Bench
-gastroenterology clinics of north america	Gastroenterol Clin North Am
-gastroenterology insights	Gastroenterol Insights
-gastroenterology nursing	Gastroenterol Nurs
-gastroenterology report	Gastroenterol Rep (Oxf)
-gastroenterology research	Gastroenterology Res
-gastroenterology research and practice	Gastroenterol Res Pract
+cytometry part b clinical cytometry	Cytometry B Clin. Cytom.
+developmental and comparative immunology	Dev. Comp. Immunol.
+developmental biology	Dev. Biol.
+developmental cell	Dev. Cell
+developmental child welfare	Dev. Child Welf.
+developmental cognitive neuroscience	Dev. Cogn. Neurosci.
+developmental disabilities network journal	Dev. Disabil. Netw. J.
+developmental disabilities research reviews	Dev. Disabil. Res. Rev.
+developmental dynamics	Dev. Dyn.
+developmental medicine and child neurology	Dev. Med. Child Neurol.
+developmental medicine and child neurology supplement	Dev. Med. Child Neurol. Suppl.
+developmental neurobiology	Dev. Neurobiol.
+developmental neuropsychology	Dev. Neuropsychol.
+developmental neurorehabilitation	Dev. Neurorehabil.
+developmental neuroscience	Dev. Neurosci.
+developmental period medicine	Dev. Period Med.
+developmental psychobiology	Dev. Psychobiol.
+developmental psychology	Dev. Psychol.
+developmental science	Dev. Sci.
+elementary school journal	Elem. Sch. J.
+embo journal	EMBO J.
+embo molecular medicine	EMBO Mol. Med.
+embo reports	EMBO Rep.
+emerging infectious diseases	Emerg. Infect. Dis.
+endocrine pathology	Endocr. Pathol.
+european journal of applied physiology and occupational physiology	Eur. J. Appl. Physiol. Occup. Physiol.
+european journal of immunology	Eur. J. Immunol.
+european journal of neurology	Eur. J. Neurol.
+european journal of neuroscience	Eur. J. Neurosci.
+experimental and molecular medicine	Exp. Mol. Med.
+experimental eye research	Exp. Eye Res.
+experimental gerontology	Exp. Gerontol.
+experimental neurology	Exp. Neurol.
+experimental physiology	Exp. Physiol.
+f1000 biology reports	F1000 Biol. Rep.
+f1000 medicine reports	F1000 Med. Rep.
+f1000prime reports	F1000Prime Rep.
+f1000research	F1000Res.
+febs journal	FEBS J.
+free radical biology and medicine	Free Radic. Biol. Med.
+free radical research	Free Radic. Res.
+frontiers in acoustics	Front. Acoust.
+frontiers in adolescent medicine	Front. Adolesc. Med.
+frontiers in aging	Front. Aging
+frontiers in aging neuroscience	Front. Aging Neurosci.
+frontiers in agronomy	Front. Agron.
+frontiers in allergy	Front. Allergy
+frontiers in amphibian and reptile science	Front. Amphib. Reptile Sci.
+frontiers in analytical science	Front. Anal. Sci.
+frontiers in anesthesiology	Front. Anesthesiol.
+frontiers in animal science	Front. Anim. Sci.
+frontiers in antibiotics	Front. Antibiot.
+frontiers in applied mathematics and statistics	Front. Appl. Math. Stat.
+frontiers in aquaculture	Front. Aquac.
+frontiers in artificial intelligence	Front. Artif. Intell.
+frontiers in astronomy and space sciences	Front. Astron. Space Sci.
+frontiers in audiology and otology	Front. Audiol. Otol.
+frontiers in bacteriology	Front. Bacteriol.
+frontiers in behavioral neuroscience	Front. Behav. Neurosci.
+frontiers in big data	Front. Big Data
+frontiers in bioengineering and biotechnology	Front. Bioeng. Biotechnol.
+frontiers in bioinformatics	Front. Bioinform.
+frontiers in biology	Front. Biol. (Beijing)
+frontiers in biomaterials science	Front. Biomater. Sci.
+frontiers in biophysics	Front. Biophys.
+frontiers in built environment	Front. Built Environ.
+frontiers in cancer control and society	Front. Cancer Control Soc.
+frontiers in cardiovascular medicine	Front. Cardiovasc. Med.
+frontiers in catalysis	Front. Catal.
+frontiers in cell and developmental biology	Front. Cell Dev. Biol.
+frontiers in cell death	Front. Cell Death
+frontiers in cellular and infection microbiology	Front. Cell. Infect. Microbiol.
+frontiers in cellular neuroscience	Front. Cell. Neurosci.
+frontiers in chemical biology	Front. Chem. Biol.
+frontiers in chemical engineering	Front. Chem. Eng.
+frontiers in chemistry	Front. Chem.
+frontiers in child and adolescent psychiatry	Front. Child Adolesc. Psychiatry
+frontiers in climate	Front. Clim.
+frontiers in clinical diabetes and healthcare	Front. Clin. Diabetes Healthc.
+frontiers in cognition	Front. Cognit.
+frontiers in communication	Front. Commun. (Lausanne)
+frontiers in computational neuroscience	Front. Comput. Neurosci.
+frontiers in computer science	Front. Comput. Sci.
+frontiers in conservation science	Front. Conserv. Sci.
+frontiers in control engineering	Front. Control Eng.
+frontiers in dementia	Front. Dement.
+frontiers in dental medicine	Front. Dent. Med.
+frontiers in dentistry	Front. Dent.
+frontiers in developmental psychology	Front. Dev. Psychol.
+frontiers in digital health	Front. Digit. Health
+frontiers in disaster and emergency medicine	Front. Disaster Emerg. Med.
+frontiers in drug delivery	Front. Drug Deliv.
+frontiers in drug discovery	Front. Drug Discov. (Lausanne)
+frontiers in drug safety and regulation	Front. Drug Saf. Regul.
+frontiers in earth science	Front. Earth Sci. (Lausanne)
+frontiers in ecology and evolution	Front. Ecol. Evol.
+frontiers in ecology and the environment	Front. Ecol. Environ.
+frontiers in education	Front. Educ. (Lausanne)
+frontiers in education technology	Front. Educ. Technol.
+frontiers in electronics	Front. Electron.
+frontiers in endocrinology	Front. Endocrinol. (Lausanne)
+frontiers in energy research	Front. Energy Res.
+frontiers in environmental chemistry	Front. Environ. Chem.
+frontiers in environmental health	Front. Environ. Health
+frontiers in environmental science	Front. Environ. Sci.
+frontiers in epidemiology	Front. Epidemiol.
+frontiers in epigenetics and epigenomics	Front. Epigenet. Epigenom.
+frontiers in evolutionary neuroscience	Front. Evol. Neurosci.
+frontiers in food science and technology	Front. Food Sci. Technol.
+frontiers in forests and global change	Front. For. Glob. Change
+frontiers in freshwater science	Front. Freshw. Sci.
+frontiers in fungal biology	Front. Fungal Biol.
+frontiers in future transportation	Front. Future Transp.
+frontiers in gastroenterology	Front. Gastroenterol. (Lausanne)
+frontiers in genetics	Front. Genet.
+frontiers in genome editing	Front. Genome Ed.
+frontiers in global women s health	Front. Glob. Womens Health
+frontiers in health informatics	Front. Health Inform.
+frontiers in health policy research	Front. Health Policy Res.
+frontiers in health services	Front. Health Serv.
+frontiers in hematology	Front. Hematol.
+frontiers in high performance computing	Front. High Perform. Comput.
+frontiers in human neuroscience	Front. Hum. Neurosci.
+frontiers in ict	Front. ICT
+frontiers in imaging	Front. Imaging
+frontiers in immunology	Front. Immunol.
+frontiers in insect science	Front. Insect Sci.
+frontiers in integrative neuroscience	Front. Integr. Neurosci.
+frontiers in lab on a chip technologies	Front. Lab Chip Technol.
+frontiers in language sciences	Front. Lang. Sci.
+frontiers in lupus	Front. Lupus
+frontiers in malaria	Front. Malar.
+frontiers in mammal science	Front. Mamm. Sci.
+frontiers in marine science	Front. Mar. Sci.
+frontiers in materials	Front. Mater.
+frontiers in mechanical engineering	Front. Mech. Eng.
+frontiers in medical engineering	Front. Med. Eng.
+frontiers in medical technology	Front. Med. Technol.
+frontiers in medicine	Front. Med. (Lausanne)
+frontiers in microbiology	Front. Microbiol.
+frontiers in microbiomes	Front. Microbiomes
+frontiers in molecular biosciences	Front. Mol. Biosci.
+frontiers in molecular medicine	Front. Mol. Med.
+frontiers in molecular neuroscience	Front. Mol. Neurosci.
+frontiers in musculoskeletal disorders	Front. Musculoskelet. Disord.
+frontiers in nanotechnology	Front. Nanotechnol.
+frontiers in natural products	Front. Nat. Prod.
+frontiers in nephrology	Front. Nephrol.
+frontiers in network physiology	Front. Netw. Physiol.
+frontiers in neural circuits	Front. Neural Circuits
+frontiers in neuroanatomy	Front. Neuroanat.
+frontiers in neuroendocrinology	Front. Neuroendocrinol.
+frontiers in neuroenergetics	Front. Neuroenergetics
+frontiers in neuroengineering	Front. Neuroeng.
+frontiers in neuroergonomics	Front. Neuroergon.
+frontiers in neuroimaging	Front. Neuroimaging
+frontiers in neuroinformatics	Front. Neuroinform.
+frontiers in neurology	Front. Neurol.
+frontiers in neurorobotics	Front. Neurorobot.
+frontiers in neuroscience	Front. Neurosci.
+frontiers in nuclear medicine	Front. Nucl. Med.
+frontiers in nutrition	Front. Nutr.
+frontiers in oncology	Front. Oncol.
+frontiers in ophthalmology	Front. Ophthalmol. (Lausanne)
+frontiers in oral health	Front. Oral Health
+frontiers in pain research	Front. Pain Res. (Lausanne)
+frontiers in parasitology	Front. Parasitol.
+frontiers in pediatrics	Front. Pediatr.
+frontiers in pharmacology	Front. Pharmacol.
+frontiers in photonics	Front. Photon.
+frontiers in physics	Front. Phys.
+frontiers in physiology	Front. Physiol.
+frontiers in plant science	Front. Plant Sci.
+frontiers in political science	Front. Polit. Sci.
+frontiers in psychiatry	Front. Psychiatry
+frontiers in psychology	Front. Psychol.
+frontiers in public health	Front. Public Health
+frontiers in public health services and systems research	Front. Public Health Serv. Syst. Res.
+frontiers in quantum science and technology	Front. Quantum Sci. Technol.
+frontiers in radiology	Front. Radiol.
+frontiers in rehabilitation sciences	Front. Rehabil. Sci.
+frontiers in reproductive health	Front. Reprod. Health
+frontiers in research metrics and analytics	Front. Res. Metr. Anal.
+frontiers in rna research	Front. RNA Res.
+frontiers in robotics and ai	Front. Robot. AI
+frontiers in science	Front. Sci.
+frontiers in sensors	Front. Sens. (Lausanne)
+frontiers in signal processing	Front. Signal Process. (Lausanne)
+frontiers in sleep	Front. Sleep
+frontiers in social psychology	Front. Soc. Psychol.
+frontiers in sociology	Front. Sociol.
+frontiers in soil science	Front. Soil Sci.
+frontiers in space technologies	Front. Space Technol.
+frontiers in sports and active living	Front. Sports Act. Living
+frontiers in stroke	Front. Stroke
+frontiers in surgery	Front. Surg.
+frontiers in sustainability	Front. Sustain. (Lausanne)
+frontiers in sustainable cities	Front. Sustain. Cities
+frontiers in sustainable food systems	Front. Sustain. Food Syst.
+frontiers in synaptic neuroscience	Front. Synaptic Neurosci.
+frontiers in systems biology	Front. Syst. Biol.
+frontiers in systems neuroscience	Front. Syst. Neurosci.
+frontiers in thermal engineering	Front. Therm. Eng.
+frontiers in toxicology	Front. Toxicol.
+frontiers in transplantation	Front. Transplant.
+frontiers in tropical diseases	Front. Trop. Dis.
+frontiers in tuberculosis	Front. Tuberc.
+frontiers in urology	Front. Urol.
+frontiers in veterinary science	Front. Vet. Sci.
+frontiers in virology	Front. Virol.
+frontiers in virtual reality	Front. Virtual Real.
+frontiers in water	Front. Water
+frontiers in women s health	Front. Womens Health
+frontiers in zoology	Front. Zool.
+gastroenterology and hepatology from bed to bench	Gastroenterol. Hepatol. Bed Bench
+gastroenterology clinics of north america	Gastroenterol. Clin. North Am.
+gastroenterology insights	Gastroenterol. Insights
+gastroenterology nursing	Gastroenterol. Nurs.
+gastroenterology report	Gastroenterol. Rep. (Oxf)
+gastroenterology research	Gastroenterology Res.
+gastroenterology research and practice	Gastroenterol. Res. Pract.
 genes and cancer	Genes Cancer
-genes and development	Genes Dev
-genes and diseases	Genes Dis
-genes and environment	Genes Environ
-genes and genetic systems	Genes Genet Syst
+genes and development	Genes Dev.
+genes and diseases	Genes Dis.
+genes and environment	Genes Environ.
+genes and genetic systems	Genes Genet. Syst.
 genes and genomics	Genes Genomics
-genes and immunity	Genes Immun
-genes and nutrition	Genes Nutr
-genes brain and behavior	Genes Brain Behav
+genes and immunity	Genes Immun.
+genes and nutrition	Genes Nutr.
+genes brain and behavior	Genes Brain Behav.
 genes chromosomes and cancer	Genes Chromosomes Cancer
 genes to cells	Genes Cells
-genome announcements	Genome Announc
-genome biology	Genome Biol
-genome biology and evolution	Genome Biol Evol
-genome dynamics	Genome Dyn
-genome dynamics and stability	Genome Dyn Stab
-genome instability and disease	Genome Instab Dis
-genome integrity	Genome Integr
-genome medicine	Genome Med
-genome research	Genome Res
-geriatrics and gerontology international	Geriatr Gerontol Int
+genome announcements	Genome Announc.
+genome biology	Genome Biol.
+genome biology and evolution	Genome Biol. Evol.
+genome dynamics	Genome Dyn.
+genome dynamics and stability	Genome Dyn. Stab.
+genome instability and disease	Genome Instab. Dis.
+genome integrity	Genome Integr.
+genome medicine	Genome Med.
+genome research	Genome Res.
+geriatrics and gerontology international	Geriatr. Gerontol. Int.
 gut and liver	Gut Liver
-gut microbes reports	Gut Microbes Rep
-gut microbiology	Gut Microbiol
-gut microbiota and integrative wellness	Gut Microbiota Integr Wellness
-gut pathogens	Gut Pathog
-hepatology communications	Hepatol Commun
-hepatology forum	Hepatol Forum
-hepatology international	Hepatol Int
-hepatology medicine and policy	Hepatol Med Policy
-hepatology research	Hepatol Res
-human molecular genetics	Hum Mol Genet
-ieee transactions on audio speech and language processing	IEEE Trans Audio Speech Lang Process
-ieee transactions on medical imaging	IEEE Trans Med Imaging
-ieee transactions on medical robotics and bionics	IEEE Trans Med Robot Bionics
-ieee transactions on pattern analysis and machine intelligence	IEEE Trans Pattern Anal Mach Intell
-immunological reviews	Immunol Rev
-international journal of immunopathology and pharmacology	Int J Immunopathol Pharmacol
-international journal of molecular sciences	Int J Mol Sci
-international journal of obesity	Int J Obes (Lond)
-international journal of sports physiology and performance	Int J Sports Physiol Perform
-international journal on document analysis and recognition	Int J Doc Anal Recognit
-international neurourology journal	Int Neurourol J
-iscience notes	Isci Notes
-jama cardiology	JAMA Cardiol
-jama dermatology	JAMA Dermatol
-jama facial plastic surgery	JAMA Facial Plast Surg
-jama internal medicine	JAMA Intern Med
-jama network open	JAMA Netw Open
-jama neurology	JAMA Neurol
-jama oncology	JAMA Oncol
-jama ophthalmology	JAMA Ophthalmol
-jama otolaryngology head and neck surgery	JAMA Otolaryngol Head Neck Surg
-jama pediatrics	JAMA Pediatr
-jama surgery	JAMA Surg
-journal of applied physiology	J Appl Physiol (1985)
-journal of biological chemistry	J Biol Chem
-journal of biological dynamics	J Biol Dyn
-journal of biological engineering	J Biol Eng
-journal of biological inorganic chemistry	J Biol Inorg Chem
-journal of biological methods	J Biol Methods
-journal of biological pharmaceutical and chemical research	J Biol Pharm Chem Res
-journal of biological physics	J Biol Phys
-journal of biological regulators and homeostatic agents	J Biol Regul Homeost Agents
-journal of biological research	J Biol Res (Thessalon)
-journal of biological rhythms	J Biol Rhythms
-journal of biological systems	J Biol Syst
-journal of biotechnology	J Biotechnol
-journal of cancer research	J Cancer Res
-journal of cell biology	J Cell Biol
-journal of cell communication and signaling	J Cell Commun Signal
-journal of cell death	J Cell Death
-journal of cell science	J Cell Sci
-journal of cell science and therapy	J Cell Sci Ther
-journal of cellular and molecular immunology	J Cell Mol Immunol
-journal of cellular and molecular medicine	J Cell Mol Med
-journal of cellular biochemistry	J Cell Biochem
-journal of cellular biochemistry supplement	J Cell Biochem Suppl
-journal of cellular immunology	J Cell Immunol
-journal of cellular neuroscience	J Cell Neurosci
-journal of cellular physiology	J Cell Physiol
-journal of cellular plastics	J Cell Plast
-journal of cellular signaling	J Cell Signal
-journal of cerebral blood flow and metabolism	J Cereb Blood Flow Metab
-journal of chemical information and modeling	J Chem Inf Model
-journal of clinical and aesthetic dermatology	J Clin Aesthet Dermatol
-journal of clinical and anatomic pathology	J Clin Anat Pathol (JCAP)
-journal of clinical and cellular immunology	J Clin Cell Immunol
-journal of clinical and diagnostic research	J Clin Diagn Res
-journal of clinical and experimental cardiology	J Clin Exp Cardiolog
-journal of clinical and experimental dentistry	J Clin Exp Dent
-journal of clinical and experimental dermatology research	J Clin Exp Dermatol Res
-journal of clinical and experimental gastroenterology	J Clin Exp Gastroenterol
-journal of clinical and experimental hematopathology	J Clin Exp Hematop
-journal of clinical and experimental hepatology	J Clin Exp Hepatol
-journal of clinical and experimental nephrology	J Clin Exp Nephrol
-journal of clinical and experimental neuropsychology	J Clin Exp Neuropsychol
-journal of clinical and experimental oncology	J Clin Exp Oncol
-journal of clinical and experimental ophthalmology	J Clin Exp Ophthalmol
-journal of clinical and experimental pathology	J Clin Exp Pathol
-journal of clinical and investigative dermatology	J Clin Investig Dermatol
-journal of clinical and laboratory medicine	J Clin Lab Med
-journal of clinical and medical sciences	J Clin Med Sci
-journal of clinical and molecular endocrinology	J Clin Mol Endocrinol
-journal of clinical and translational endocrinology	J Clin Transl Endocrinol
-journal of clinical and translational endocrinology case reports	J Clin Transl Endocrinol Case Rep
-journal of clinical and translational hepatology	J Clin Transl Hepatol
-journal of clinical and translational pathology	J Clin Transl Pathol
-journal of clinical and translational research	J Clin Transl Res
-journal of clinical and translational science	J Clin Transl Sci
-journal of clinical anesthesia	J Clin Anesth
-journal of clinical anesthesia and intensive care	J Clin Anesth Intensive Care
-journal of clinical anesthesia and management	J Clin Anesth Manag
-journal of clinical apheresis	J Clin Apher
-journal of clinical biochemistry and nutrition	J Clin Biochem Nutr
-journal of clinical bioinformatics	J Clin Bioinforma
-journal of clinical cardiology	J Clin Cardiol
-journal of clinical case reports	J Clin Case Rep
-journal of clinical cases and reports	J Clin Cases Rep
-journal of clinical child and adolescent psychology	J Clin Child Adolesc Psychol
-journal of clinical education in physical therapy	J Clin Educ Phys Ther
-journal of clinical endocrinology and metabolism	J Clin Endocrinol Metab
-journal of clinical epidemiology	J Clin Epidemiol
-journal of clinical ethics	J Clin Ethics
-journal of clinical exercise physiology	J Clin Exerc Physiol
-journal of clinical gastroenterology	J Clin Gastroenterol
-journal of clinical gastroenterology and hepatology	J Clin Gastroenterol Hepatol
-journal of clinical gynecology and obstetrics	J Clin Gynecol Obstet
-journal of clinical haematology	J Clin Haematol
-journal of clinical hypertension	J Clin Hypertens (Greenwich)
-journal of clinical images and medical case reports	J Clin Images Med Case Rep
-journal of clinical imaging science	J Clin Imaging Sci
-journal of clinical immunology	J Clin Immunol
-journal of clinical investigation	J Clin Invest
-journal of clinical laboratory analysis	J Clin Lab Anal
-journal of clinical medicine	J Clin Med
-journal of clinical medicine research	J Clin Med Res
-journal of clinical microbiology	J Clin Microbiol
-journal of clinical monitoring and computing	J Clin Monit Comput
-journal of clinical movement disorders	J Clin Mov Disord
-journal of clinical neonatology	J Clin Neonatol
-journal of clinical nephrology and renal care	J Clin Nephrol Ren Care
-journal of clinical nephrology and research	J Clin Nephrol Res
-journal of clinical neurology	J Clin Neurol
-journal of clinical neuromuscular disease	J Clin Neuromuscul Dis
-journal of clinical neurophysiology	J Clin Neurophysiol
-journal of clinical neuroscience	J Clin Neurosci
-journal of clinical nursing	J Clin Nurs
-journal of clinical nutrition	J Clin Nutr
-journal of clinical nutrition and food science	J Clin Nutr Food Sci
-journal of clinical oncology	J Clin Oncol
-journal of clinical oncology and research	J Clin Oncol Res
-journal of clinical ophthalmology and eye disorders	J Clin Ophthalmol Eye Disord
-journal of clinical orthodontics	J Clin Orthod
-journal of clinical orthopaedics and trauma	J Clin Orthop Trauma
-journal of clinical outcomes management	J Clin Outcomes Manag
-journal of clinical pathology	J Clin Pathol
-journal of clinical pathways	J Clin Pathw
-journal of clinical pediatric dentistry	J Clin Pediatr Dent
-journal of clinical pediatrics and neonatology	J Clin Pediatr Neonatol
-journal of clinical periodontology	J Clin Periodontol
-journal of clinical pharmacology	J Clin Pharmacol
-journal of clinical pharmacy and therapeutics	J Clin Pharm Ther
-journal of clinical practice and research	J Clin Pract Res
-journal of clinical psychiatry	J Clin Psychiatry
-journal of clinical psychology	J Clin Psychol
-journal of clinical psychology in medical settings	J Clin Psychol Med Settings
-journal of clinical psychopharmacology	J Clin Psychopharmacol
-journal of clinical research and bioethics	J Clin Res Bioeth
-journal of clinical research and clinical trials	J Clin Res Clin Trials
-journal of clinical research and reports	J Clin Res Rep
-journal of clinical research best practices	J Clin Res Best Pract
-journal of clinical research in hiv aids and prevention	J Clin Res HIV AIDS Prev
-journal of clinical research in oncology	J Clin Res Oncol
-journal of clinical research in pediatric endocrinology	J Clin Res Pediatr Endocrinol
-journal of clinical rheumatology	J Clin Rheumatol
-journal of clinical rheumatology and musculoskeletal medicine	J Clin Rheumatol Musculoskelet Med
-journal of clinical sciences	J Clin Sci
-journal of clinical sleep medicine	J Clin Sleep Med
-journal of clinical sport psychology	J Clin Sport Psychol
-journal of clinical toxicology	J Clin Toxicol
-journal of clinical trials	J Clin Trials
-journal of clinical tuberculosis and other mycobacterial diseases	J Clin Tuberc Other Mycobact Dis
-journal of clinical ultrasound	J Clin Ultrasound
-journal of clinical urology	J Clin Urol
-journal of clinical virology	J Clin Virol
-journal of clinical virology plus	J Clin Virol Plus
-journal of cognitive neuroscience	J Cogn Neurosci
-journal of comparative neurology	J Comp Neurol
-journal of experimental and applied animal sciences	J Exp Appl Anim Sci
-journal of experimental and clinical assisted reproduction	J Exp Clin Assist Reprod
-journal of experimental and clinical cancer research	J Exp Clin Cancer Res
-journal of experimental and clinical medicine	J Exp Clin Med
-journal of experimental and clinical toxicology	J Exp Clin Toxicol
-journal of experimental and integrative medicine	J Exp Integr Med
-journal of experimental and theoretical analyses	J Exp Theor Anal
-journal of experimental and theoretical artificial intelligence	J Exp Theor Artif Intell
-journal of experimental biology	J Exp Biol
-journal of experimental botany	J Exp Bot
-journal of experimental child psychology	J Exp Child Psychol
-journal of experimental criminology	J Exp Criminol
-journal of experimental education	J Exp Educ
-journal of experimental medicine	J Exp Med
-journal of experimental nanoscience	J Exp Nanosci
-journal of experimental neurology	J Exp Neurol
-journal of experimental neuroscience	J Exp Neurosci
-journal of experimental orthopaedics	J Exp Orthop
-journal of experimental pathology	J Exp Pathol (Wilmington)
-journal of experimental pharmacology	J Exp Pharmacol
-journal of experimental psychology animal behavior processes	J Exp Psychol Anim Behav Process
-journal of experimental psychology animal learning and cognition	J Exp Psychol Anim Learn Cogn
-journal of experimental psychology applied	J Exp Psychol Appl
-journal of experimental psychology general	J Exp Psychol Gen
-journal of experimental psychology human perception and performance	J Exp Psychol Hum Percept Perform
-journal of experimental psychology learning memory and cognition	J Exp Psychol Learn Mem Cogn
-journal of experimental psychopathology	J Exp Psychopathol
-journal of experimental secondary science	J Exp Second Sci
-journal of experimental stroke and translational medicine	J Exp Stroke Transl Med
-journal of experimental therapeutics and oncology	J Exp Ther Oncol
-journal of experimental zoology	J Exp Zool
-journal of experimental zoology part a comparative experimental biology	J Exp Zool A Comp Exp Biol
-journal of experimental zoology part a ecological and integrative physiology	J Exp Zool A Ecol Integr Physiol
-journal of experimental zoology part a ecological genetics and physiology	J Exp Zool A Ecol Genet Physiol
-journal of experimental zoology part b molecular and developmental evolution	J Exp Zool B Mol Dev Evol
-journal of genetics and genomics	J Genet Genomics
-journal of histochemistry and cytochemistry	J Histochem Cytochem
-journal of immunology	J Immunol
-journal of immunology and clinical research	J Immunol Clin Res
-journal of immunology and immuno techniques	J Immunol Immunotech
-journal of immunology and regenerative medicine	J Immunol Regen Med
-journal of immunology research	J Immunol Res
-journal of immunology research and therapy	J Immunol Res Ther
-journal of internal medicine	J Intern Med
-journal of lipid research	J Lipid Res
-journal of machine learning research	J Mach Learn Res
-journal of molecular and cellular cardiology	J Mol Cell Cardiol
-journal of molecular and cellular cardiology plus	J Mol Cell Cardiol Plus
-journal of molecular and clinical medicine	J Mol Clin Med
-journal of molecular and engineering materials	J Mol Eng Mater
-journal of molecular and genetic medicine	J Mol Genet Med
-journal of molecular biochemistry	J Mol Biochem
-journal of molecular biology	J Mol Biol
-journal of molecular biology research	J Mol Biol Res
-journal of molecular biomarkers and diagnosis	J Mol Biomark Diagn
-journal of molecular catalysis b enzymatic	J Mol Catal B Enzym
-journal of molecular cell biology	J Mol Cell Biol
-journal of molecular cloning and genetic recombination	J Mol Cloning Genet Recomb
-journal of molecular diagnostics	J Mol Diagn
-journal of molecular endocrinology	J Mol Endocrinol
-journal of molecular evolution	J Mol Evol
-journal of molecular graphics and modelling	J Mol Graph Model
-journal of molecular histology	J Mol Histol
-journal of molecular imaging and dynamics	J Mol Imaging Dyn
-journal of molecular liquids	J Mol Liq
-journal of molecular medicine	J Mol Med (Berl)
-journal of molecular medicine and clinical applications	J Mol Med Clin Appl
-journal of molecular microbiology and biotechnology	J Mol Microbiol Biotechnol
-journal of molecular modeling	J Mol Model
-journal of molecular neuroscience	J Mol Neurosci
-journal of molecular pathology	J Mol Pathol (Basel)
-journal of molecular pharmaceutics and organic process research	J Mol Pharm Org Process Res
-journal of molecular psychiatry	J Mol Psychiatry
-journal of molecular recognition	J Mol Recognit
-journal of molecular signaling	J Mol Signal
-journal of molecular structure	J Mol Struct
-journal of neural transmission	J Neural Transm (Vienna)
-journal of neuro oncology	J Neurooncol
-journal of neuro ophthalmology	J Neuroophthalmol
-journal of neuroanaesthesiology and critical care	J Neuroanaesth Crit Care
-journal of neurobiology	J Neurobiol
-journal of neurobiology and physiology	J Neurobiol Physiol
-journal of neurochemistry	J Neurochem
-journal of neurocritical care	J Neurocritical Care
-journal of neurocytology	J Neurocytol
-journal of neurodegenerative diseases	J Neurodegener Dis
-journal of neurodevelopmental disorders	J Neurodev Disord
-journal of neuroendocrinology	J Neuroendocrinol
-journal of neuroendovascular therapy	J Neuroendovasc Ther
-journal of neuroengineering and rehabilitation	J Neuroeng Rehabil
-journal of neurogastroenterology and motility	J Neurogastroenterol Motil
-journal of neurogenetics	J Neurogenet
-journal of neuroimaging	J Neuroimaging
-journal of neuroimaging in psychiatry and neurology	J Neuroimaging Psychiatry Neurol
-journal of neuroimmune pharmacology	J Neuroimmune Pharmacol
-journal of neuroimmunology	J Neuroimmunol
-journal of neuroinfectious diseases	J Neuroinfect Dis
-journal of neuroinflammation	J Neuroinflammation
-journal of neurointerventional surgery	J Neurointerv Surg
-journal of neurologic physical therapy	J Neurol Phys Ther
-journal of neurological disorders	J Neurol Disord
-journal of neurological research and therapy	J Neurol Res Ther
-journal of neurological sciences	J Neurol Sci Turk
-journal of neurological surgery part a central european neurosurgery	J Neurol Surg A Cent Eur Neurosurg
-journal of neurological surgery part b skull base	J Neurol Surg B Skull Base
-journal of neurological surgery reports	J Neurol Surg Rep
-journal of neurology	J Neurol
-journal of neurology and experimental neural science	J Neurol Exp Neural Sci
-journal of neurology and experimental neuroscience	J Neurol Exp Neurosci
-journal of neurology and neurobiology	J Neurol Neurobiol
-journal of neurology and neurological disorders	J Neurol Neurol Disord
-journal of neurology and neuromedicine	J Neurol Neuromedicine
-journal of neurology and neurophysiology	J Neurol Neurophysiol
-journal of neurology and neuroscience	J Neurol Neurosci
-journal of neurology and neurosurgery	J Neurol Neurosurg
-journal of neurology and psychology	J Neurol Psychol
-journal of neurology neurosurgery and psychiatry	J Neurol Neurosurg Psychiatry
-journal of neurology research	J Neurol Res
-journal of neuromuscular diseases	J Neuromuscul Dis
-journal of neuroparasitology	J Neuroparasitology
-journal of neuropathic pain and symptom palliation	J Neuropathic Pain Symptom Palliation
-journal of neuropathology and experimental neurology	J Neuropathol Exp Neurol
-journal of neurophysiology	J Neurophysiol
-journal of neurophysiology and neurological disorders	J Neurophysiol Neurol Disord
-journal of neuropsychiatry	J Neuropsychiatry (Foster City)
-journal of neuropsychiatry and clinical neurosciences	J Neuropsychiatry Clin Neurosci
-journal of neuropsychology	J Neuropsychol
-journal of neurorestoratology	J Neurorestoratology
-journal of neuroscience	J Neurosci
-journal of neuroscience and neuroengineering	J Neurosci Neuroeng
-journal of neuroscience and rehabilitation	J Neurosci Rehabil
-journal of neuroscience methods	J Neurosci Methods
-journal of neuroscience nursing	J Neurosci Nurs
-journal of neuroscience psychology and economics	J Neurosci Psychol Econ
-journal of neuroscience research	J Neurosci Res
-journal of neurosciences in rural practice	J Neurosci Rural Pract
-journal of neurosurgery	J Neurosurg
-journal of neurosurgery case lessons	J Neurosurg Case Lessons
-journal of neurosurgery pediatrics	J Neurosurg Pediatr
-journal of neurosurgery spine	J Neurosurg Spine
-journal of neurosurgical anesthesiology	J Neurosurg Anesthesiol
-journal of neurosurgical sciences	J Neurosurg Sci
-journal of neurotherapy	J Neurother
-journal of neurotrauma	J Neurotrauma
-journal of neurovirology	J Neurovirol
-journal of open access to law	J Open Access Law
-journal of open psychology data	J Open Psychol Data
-journal of open research software	J Open Res Softw
-journal of open source education	J Open Source Educ
-journal of open source software	J Open Source Softw
-journal of paediatrics and child health	J Paediatr Child Health
-journal of physiology	J Physiol
-journal of physiology and biochemistry	J Physiol Biochem
-journal of physiology and pharmacology	J Physiol Pharmacol
-journal of physiology paris	J Physiol Paris
-journal of proteome research	J Proteome Res
-journal of proteome science and computational biology	J Proteome Sci Comput Biol
-journal of rehabilitation research and development	J Rehabil Res Dev
-journal of strength and conditioning research	J Strength Cond Res
-journal of the neurological sciences	J Neurol Sci
-journal of the royal society for the promotion of health	J R Soc Promot Health
-journal of the royal society interface	J R Soc Interface
-journal of the royal society of medicine	J R Soc Med
-journal of the royal society of new zealand	J R Soc N Z
-journal of translational medicine	J Transl Med
-journal of virology	J Virol
-journal of virology and antiviral research	J Virol Antivir Res
+gut microbes reports	Gut Microbes Rep.
+gut microbiology	Gut Microbiol.
+gut microbiota and integrative wellness	Gut Microbiota Integr. Wellness
+gut pathogens	Gut Pathog.
+hepatology communications	Hepatol. Commun.
+hepatology forum	Hepatol. Forum
+hepatology international	Hepatol. Int.
+hepatology medicine and policy	Hepatol. Med. Policy
+hepatology research	Hepatol. Res.
+human molecular genetics	Hum. Mol. Genet.
+ieee transactions on audio speech and language processing	IEEE Trans. Audio Speech Lang. Process.
+ieee transactions on medical imaging	IEEE Trans. Med. Imaging
+ieee transactions on medical robotics and bionics	IEEE Trans. Med. Robot. Bionics
+ieee transactions on pattern analysis and machine intelligence	IEEE Trans. Pattern Anal. Mach. Intell.
+immunological reviews	Immunol. Rev.
+international journal of immunopathology and pharmacology	Int. J. Immunopathol. Pharmacol.
+international journal of molecular sciences	Int. J. Mol. Sci.
+international journal of obesity	Int. J. Obes. (Lond)
+international journal of sports physiology and performance	Int. J. Sports Physiol. Perform.
+international journal on document analysis and recognition	Int. J. Doc. Anal. Recognit.
+international neurourology journal	Int. Neurourol. J.
+iscience notes	Isci. Notes
+jama cardiology	JAMA Cardiol.
+jama dermatology	JAMA Dermatol.
+jama facial plastic surgery	JAMA Facial Plast. Surg.
+jama internal medicine	JAMA Intern. Med.
+jama network open	JAMA Netw. Open
+jama neurology	JAMA Neurol.
+jama oncology	JAMA Oncol.
+jama ophthalmology	JAMA Ophthalmol.
+jama otolaryngology head and neck surgery	JAMA Otolaryngol. Head Neck Surg.
+jama pediatrics	JAMA Pediatr.
+jama surgery	JAMA Surg.
+journal of applied physiology	J. Appl. Physiol. (1985)
+journal of biological chemistry	J. Biol. Chem.
+journal of biological dynamics	J. Biol. Dyn.
+journal of biological engineering	J. Biol. Eng.
+journal of biological inorganic chemistry	J. Biol. Inorg. Chem.
+journal of biological methods	J. Biol. Methods
+journal of biological pharmaceutical and chemical research	J. Biol. Pharm. Chem. Res.
+journal of biological physics	J. Biol. Phys.
+journal of biological regulators and homeostatic agents	J. Biol. Regul. Homeost. Agents
+journal of biological research	J. Biol. Res. (Thessalon)
+journal of biological rhythms	J. Biol. Rhythms
+journal of biological systems	J. Biol. Syst.
+journal of biotechnology	J. Biotechnol.
+journal of cancer research	J. Cancer Res.
+journal of cell biology	J. Cell Biol.
+journal of cell communication and signaling	J. Cell Commun. Signal.
+journal of cell death	J. Cell Death
+journal of cell science	J. Cell Sci.
+journal of cell science and therapy	J. Cell Sci. Ther.
+journal of cellular and molecular immunology	J. Cell. Mol. Immunol.
+journal of cellular and molecular medicine	J. Cell. Mol. Med.
+journal of cellular biochemistry	J. Cell. Biochem.
+journal of cellular biochemistry supplement	J. Cell. Biochem. Suppl.
+journal of cellular immunology	J. Cell. Immunol.
+journal of cellular neuroscience	J. Cell. Neurosci.
+journal of cellular physiology	J. Cell. Physiol.
+journal of cellular plastics	J. Cell. Plast.
+journal of cellular signaling	J. Cell. Signal.
+journal of cerebral blood flow and metabolism	J. Cereb. Blood Flow Metab.
+journal of chemical information and modeling	J. Chem. Inf. Model.
+journal of clinical and aesthetic dermatology	J. Clin. Aesthet. Dermatol.
+journal of clinical and anatomic pathology	J. Clin. Anat. Pathol. (JCAP)
+journal of clinical and cellular immunology	J. Clin. Cell. Immunol.
+journal of clinical and diagnostic research	J. Clin. Diagn. Res.
+journal of clinical and experimental cardiology	J. Clin. Exp. Cardiolog.
+journal of clinical and experimental dentistry	J. Clin. Exp. Dent.
+journal of clinical and experimental dermatology research	J. Clin. Exp. Dermatol. Res.
+journal of clinical and experimental gastroenterology	J. Clin. Exp. Gastroenterol.
+journal of clinical and experimental hematopathology	J. Clin. Exp. Hematop.
+journal of clinical and experimental hepatology	J. Clin. Exp. Hepatol.
+journal of clinical and experimental nephrology	J. Clin. Exp. Nephrol.
+journal of clinical and experimental neuropsychology	J. Clin. Exp. Neuropsychol.
+journal of clinical and experimental oncology	J. Clin. Exp. Oncol.
+journal of clinical and experimental ophthalmology	J. Clin. Exp. Ophthalmol.
+journal of clinical and experimental pathology	J. Clin. Exp. Pathol.
+journal of clinical and investigative dermatology	J. Clin. Investig. Dermatol.
+journal of clinical and laboratory medicine	J. Clin. Lab. Med.
+journal of clinical and medical sciences	J. Clin. Med. Sci.
+journal of clinical and molecular endocrinology	J. Clin. Mol. Endocrinol.
+journal of clinical and translational endocrinology	J. Clin. Transl. Endocrinol.
+journal of clinical and translational endocrinology case reports	J. Clin. Transl. Endocrinol. Case Rep.
+journal of clinical and translational hepatology	J. Clin. Transl. Hepatol.
+journal of clinical and translational pathology	J. Clin. Transl. Pathol.
+journal of clinical and translational research	J. Clin. Transl. Res.
+journal of clinical and translational science	J. Clin. Transl. Sci.
+journal of clinical anesthesia	J. Clin. Anesth.
+journal of clinical anesthesia and intensive care	J. Clin. Anesth. Intensive Care
+journal of clinical anesthesia and management	J. Clin. Anesth. Manag.
+journal of clinical apheresis	J. Clin. Apher.
+journal of clinical biochemistry and nutrition	J. Clin. Biochem. Nutr.
+journal of clinical bioinformatics	J. Clin. Bioinforma.
+journal of clinical cardiology	J. Clin. Cardiol.
+journal of clinical case reports	J. Clin. Case Rep.
+journal of clinical cases and reports	J. Clin. Cases Rep.
+journal of clinical child and adolescent psychology	J. Clin. Child Adolesc. Psychol.
+journal of clinical education in physical therapy	J. Clin. Educ. Phys. Ther.
+journal of clinical endocrinology and metabolism	J. Clin. Endocrinol. Metab.
+journal of clinical epidemiology	J. Clin. Epidemiol.
+journal of clinical ethics	J. Clin. Ethics
+journal of clinical exercise physiology	J. Clin. Exerc. Physiol.
+journal of clinical gastroenterology	J. Clin. Gastroenterol.
+journal of clinical gastroenterology and hepatology	J. Clin. Gastroenterol. Hepatol.
+journal of clinical gynecology and obstetrics	J. Clin. Gynecol. Obstet.
+journal of clinical haematology	J. Clin. Haematol.
+journal of clinical hypertension	J. Clin. Hypertens. (Greenwich)
+journal of clinical images and medical case reports	J. Clin. Images Med. Case Rep.
+journal of clinical imaging science	J. Clin. Imaging Sci.
+journal of clinical immunology	J. Clin. Immunol.
+journal of clinical investigation	J. Clin. Invest.
+journal of clinical laboratory analysis	J. Clin. Lab. Anal.
+journal of clinical medicine	J. Clin. Med.
+journal of clinical medicine research	J. Clin. Med. Res.
+journal of clinical microbiology	J. Clin. Microbiol.
+journal of clinical monitoring and computing	J. Clin. Monit. Comput.
+journal of clinical movement disorders	J. Clin. Mov. Disord.
+journal of clinical neonatology	J. Clin. Neonatol.
+journal of clinical nephrology and renal care	J. Clin. Nephrol. Ren. Care
+journal of clinical nephrology and research	J. Clin. Nephrol. Res.
+journal of clinical neurology	J. Clin. Neurol.
+journal of clinical neuromuscular disease	J. Clin. Neuromuscul. Dis.
+journal of clinical neurophysiology	J. Clin. Neurophysiol.
+journal of clinical neuroscience	J. Clin. Neurosci.
+journal of clinical nursing	J. Clin. Nurs.
+journal of clinical nutrition	J. Clin. Nutr.
+journal of clinical nutrition and food science	J. Clin. Nutr. Food Sci.
+journal of clinical oncology	J. Clin. Oncol.
+journal of clinical oncology and research	J. Clin. Oncol. Res.
+journal of clinical ophthalmology and eye disorders	J. Clin. Ophthalmol. Eye Disord.
+journal of clinical orthodontics	J. Clin. Orthod.
+journal of clinical orthopaedics and trauma	J. Clin. Orthop. Trauma
+journal of clinical outcomes management	J. Clin. Outcomes Manag.
+journal of clinical pathology	J. Clin. Pathol.
+journal of clinical pathways	J. Clin. Pathw.
+journal of clinical pediatric dentistry	J. Clin. Pediatr. Dent.
+journal of clinical pediatrics and neonatology	J. Clin. Pediatr. Neonatol.
+journal of clinical periodontology	J. Clin. Periodontol.
+journal of clinical pharmacology	J. Clin. Pharmacol.
+journal of clinical pharmacy and therapeutics	J. Clin. Pharm. Ther.
+journal of clinical practice and research	J. Clin. Pract. Res.
+journal of clinical psychiatry	J. Clin. Psychiatry
+journal of clinical psychology	J. Clin. Psychol.
+journal of clinical psychology in medical settings	J. Clin. Psychol. Med. Settings
+journal of clinical psychopharmacology	J. Clin. Psychopharmacol.
+journal of clinical research and bioethics	J. Clin. Res. Bioeth.
+journal of clinical research and clinical trials	J. Clin. Res. Clin. Trials
+journal of clinical research and reports	J. Clin. Res. Rep.
+journal of clinical research best practices	J. Clin. Res. Best Pract.
+journal of clinical research in hiv aids and prevention	J. Clin. Res. HIV AIDS Prev.
+journal of clinical research in oncology	J. Clin. Res. Oncol.
+journal of clinical research in pediatric endocrinology	J. Clin. Res. Pediatr. Endocrinol.
+journal of clinical rheumatology	J. Clin. Rheumatol.
+journal of clinical rheumatology and musculoskeletal medicine	J. Clin. Rheumatol. Musculoskelet. Med.
+journal of clinical sciences	J. Clin. Sci.
+journal of clinical sleep medicine	J. Clin. Sleep Med.
+journal of clinical sport psychology	J. Clin. Sport Psychol.
+journal of clinical toxicology	J. Clin. Toxicol.
+journal of clinical trials	J. Clin. Trials
+journal of clinical tuberculosis and other mycobacterial diseases	J. Clin. Tuberc. Other Mycobact. Dis.
+journal of clinical ultrasound	J. Clin. Ultrasound
+journal of clinical urology	J. Clin. Urol.
+journal of clinical virology	J. Clin. Virol.
+journal of clinical virology plus	J. Clin. Virol. Plus
+journal of cognitive neuroscience	J. Cogn. Neurosci.
+journal of comparative neurology	J. Comp. Neurol.
+journal of experimental and applied animal sciences	J. Exp. Appl. Anim. Sci.
+journal of experimental and clinical assisted reproduction	J. Exp. Clin. Assist. Reprod.
+journal of experimental and clinical cancer research	J. Exp. Clin. Cancer Res.
+journal of experimental and clinical medicine	J. Exp. Clin. Med.
+journal of experimental and clinical toxicology	J. Exp. Clin. Toxicol.
+journal of experimental and integrative medicine	J. Exp. Integr. Med.
+journal of experimental and theoretical analyses	J. Exp. Theor. Anal.
+journal of experimental and theoretical artificial intelligence	J. Exp. Theor. Artif. Intell.
+journal of experimental biology	J. Exp. Biol.
+journal of experimental botany	J. Exp. Bot.
+journal of experimental child psychology	J. Exp. Child Psychol.
+journal of experimental criminology	J. Exp. Criminol.
+journal of experimental education	J. Exp. Educ.
+journal of experimental medicine	J. Exp. Med.
+journal of experimental nanoscience	J. Exp. Nanosci.
+journal of experimental neurology	J. Exp. Neurol.
+journal of experimental neuroscience	J. Exp. Neurosci.
+journal of experimental orthopaedics	J. Exp. Orthop.
+journal of experimental pathology	J. Exp. Pathol. (Wilmington)
+journal of experimental pharmacology	J. Exp. Pharmacol.
+journal of experimental psychology animal behavior processes	J. Exp. Psychol. Anim. Behav. Process.
+journal of experimental psychology animal learning and cognition	J. Exp. Psychol. Anim. Learn. Cogn.
+journal of experimental psychology applied	J. Exp. Psychol. Appl.
+journal of experimental psychology general	J. Exp. Psychol. Gen.
+journal of experimental psychology human perception and performance	J. Exp. Psychol. Hum. Percept. Perform.
+journal of experimental psychology learning memory and cognition	J. Exp. Psychol. Learn. Mem. Cogn.
+journal of experimental psychopathology	J. Exp. Psychopathol.
+journal of experimental secondary science	J. Exp. Second. Sci.
+journal of experimental stroke and translational medicine	J. Exp. Stroke Transl. Med.
+journal of experimental therapeutics and oncology	J. Exp. Ther. Oncol.
+journal of experimental zoology	J. Exp. Zool.
+journal of experimental zoology part a comparative experimental biology	J. Exp. Zool. A Comp. Exp. Biol.
+journal of experimental zoology part a ecological and integrative physiology	J. Exp. Zool. A Ecol. Integr. Physiol.
+journal of experimental zoology part a ecological genetics and physiology	J. Exp. Zool. A Ecol. Genet. Physiol.
+journal of experimental zoology part b molecular and developmental evolution	J. Exp. Zool. B Mol. Dev. Evol.
+journal of genetics and genomics	J. Genet. Genomics
+journal of histochemistry and cytochemistry	J. Histochem. Cytochem.
+journal of immunology	J. Immunol.
+journal of immunology and clinical research	J. Immunol. Clin. Res.
+journal of immunology and immuno techniques	J. Immunol. Immunotech.
+journal of immunology and regenerative medicine	J. Immunol. Regen. Med.
+journal of immunology research	J. Immunol. Res.
+journal of immunology research and therapy	J. Immunol. Res. Ther.
+journal of internal medicine	J. Intern. Med.
+journal of lipid research	J. Lipid Res.
+journal of machine learning research	J. Mach. Learn. Res.
+journal of molecular and cellular cardiology	J. Mol. Cell. Cardiol.
+journal of molecular and cellular cardiology plus	J. Mol. Cell. Cardiol. Plus
+journal of molecular and clinical medicine	J. Mol. Clin. Med.
+journal of molecular and engineering materials	J. Mol. Eng. Mater.
+journal of molecular and genetic medicine	J. Mol. Genet. Med.
+journal of molecular biochemistry	J. Mol. Biochem.
+journal of molecular biology	J. Mol. Biol.
+journal of molecular biology research	J. Mol. Biol. Res.
+journal of molecular biomarkers and diagnosis	J. Mol. Biomark. Diagn.
+journal of molecular catalysis b enzymatic	J. Mol. Catal. B Enzym.
+journal of molecular cell biology	J. Mol. Cell Biol.
+journal of molecular cloning and genetic recombination	J. Mol. Cloning Genet. Recomb.
+journal of molecular diagnostics	J. Mol. Diagn.
+journal of molecular endocrinology	J. Mol. Endocrinol.
+journal of molecular evolution	J. Mol. Evol.
+journal of molecular graphics and modelling	J. Mol. Graph. Model.
+journal of molecular histology	J. Mol. Histol.
+journal of molecular imaging and dynamics	J. Mol. Imaging Dyn.
+journal of molecular liquids	J. Mol. Liq.
+journal of molecular medicine	J. Mol. Med. (Berl)
+journal of molecular medicine and clinical applications	J. Mol. Med. Clin. Appl.
+journal of molecular microbiology and biotechnology	J. Mol. Microbiol. Biotechnol.
+journal of molecular modeling	J. Mol. Model.
+journal of molecular neuroscience	J. Mol. Neurosci.
+journal of molecular pathology	J. Mol. Pathol. (Basel)
+journal of molecular pharmaceutics and organic process research	J. Mol. Pharm. Org. Process Res.
+journal of molecular psychiatry	J. Mol. Psychiatry
+journal of molecular recognition	J. Mol. Recognit.
+journal of molecular signaling	J. Mol. Signal.
+journal of molecular structure	J. Mol. Struct.
+journal of neural transmission	J. Neural Transm. (Vienna)
+journal of neuro oncology	J. Neurooncol.
+journal of neuro ophthalmology	J. Neuroophthalmol.
+journal of neuroanaesthesiology and critical care	J. Neuroanaesth. Crit. Care
+journal of neurobiology	J. Neurobiol.
+journal of neurobiology and physiology	J. Neurobiol. Physiol.
+journal of neurochemistry	J. Neurochem.
+journal of neurocritical care	J. Neurocritical Care
+journal of neurocytology	J. Neurocytol.
+journal of neurodegenerative diseases	J. Neurodegener. Dis.
+journal of neurodevelopmental disorders	J. Neurodev. Disord.
+journal of neuroendocrinology	J. Neuroendocrinol.
+journal of neuroendovascular therapy	J. Neuroendovasc. Ther.
+journal of neuroengineering and rehabilitation	J. Neuroeng. Rehabil.
+journal of neurogastroenterology and motility	J. Neurogastroenterol. Motil.
+journal of neurogenetics	J. Neurogenet.
+journal of neuroimaging	J. Neuroimaging
+journal of neuroimaging in psychiatry and neurology	J. Neuroimaging Psychiatry Neurol.
+journal of neuroimmune pharmacology	J. Neuroimmune Pharmacol.
+journal of neuroimmunology	J. Neuroimmunol.
+journal of neuroinfectious diseases	J. Neuroinfect. Dis.
+journal of neuroinflammation	J. Neuroinflammation
+journal of neurointerventional surgery	J. Neurointerv. Surg.
+journal of neurologic physical therapy	J. Neurol. Phys. Ther.
+journal of neurological disorders	J. Neurol. Disord.
+journal of neurological research and therapy	J. Neurol. Res. Ther.
+journal of neurological sciences	J. Neurol. Sci. Turk.
+journal of neurological surgery part a central european neurosurgery	J. Neurol. Surg. A Cent. Eur. Neurosurg.
+journal of neurological surgery part b skull base	J. Neurol. Surg. B Skull Base
+journal of neurological surgery reports	J. Neurol. Surg. Rep.
+journal of neurology	J. Neurol.
+journal of neurology and experimental neural science	J. Neurol. Exp. Neural Sci.
+journal of neurology and experimental neuroscience	J. Neurol. Exp. Neurosci.
+journal of neurology and neurobiology	J. Neurol. Neurobiol.
+journal of neurology and neurological disorders	J. Neurol. Neurol. Disord.
+journal of neurology and neuromedicine	J. Neurol. Neuromedicine
+journal of neurology and neurophysiology	J. Neurol. Neurophysiol.
+journal of neurology and neuroscience	J. Neurol. Neurosci.
+journal of neurology and neurosurgery	J. Neurol. Neurosurg.
+journal of neurology and psychology	J. Neurol. Psychol.
+journal of neurology neurosurgery and psychiatry	J. Neurol. Neurosurg. Psychiatry
+journal of neurology research	J. Neurol. Res.
+journal of neuromuscular diseases	J. Neuromuscul. Dis.
+journal of neuroparasitology	J. Neuroparasitology
+journal of neuropathic pain and symptom palliation	J. Neuropathic Pain Symptom Palliation
+journal of neuropathology and experimental neurology	J. Neuropathol. Exp. Neurol.
+journal of neurophysiology	J. Neurophysiol.
+journal of neurophysiology and neurological disorders	J. Neurophysiol. Neurol. Disord.
+journal of neuropsychiatry	J. Neuropsychiatry (Foster City)
+journal of neuropsychiatry and clinical neurosciences	J. Neuropsychiatry Clin. Neurosci.
+journal of neuropsychology	J. Neuropsychol.
+journal of neurorestoratology	J. Neurorestoratology
+journal of neuroscience	J. Neurosci.
+journal of neuroscience and neuroengineering	J. Neurosci. Neuroeng.
+journal of neuroscience and rehabilitation	J. Neurosci. Rehabil.
+journal of neuroscience methods	J. Neurosci. Methods
+journal of neuroscience nursing	J. Neurosci. Nurs.
+journal of neuroscience psychology and economics	J. Neurosci. Psychol. Econ.
+journal of neuroscience research	J. Neurosci. Res.
+journal of neurosciences in rural practice	J. Neurosci. Rural Pract.
+journal of neurosurgery	J. Neurosurg.
+journal of neurosurgery case lessons	J. Neurosurg. Case Lessons
+journal of neurosurgery pediatrics	J. Neurosurg. Pediatr.
+journal of neurosurgery spine	J. Neurosurg. Spine
+journal of neurosurgical anesthesiology	J. Neurosurg. Anesthesiol.
+journal of neurosurgical sciences	J. Neurosurg. Sci.
+journal of neurotherapy	J. Neurother.
+journal of neurotrauma	J. Neurotrauma
+journal of neurovirology	J. Neurovirol.
+journal of open access to law	J. Open Access Law
+journal of open psychology data	J. Open Psychol. Data
+journal of open research software	J. Open Res. Softw.
+journal of open source education	J. Open Source Educ.
+journal of open source software	J. Open Source Softw.
+journal of paediatrics and child health	J. Paediatr. Child Health
+journal of physiology	J. Physiol.
+journal of physiology and biochemistry	J. Physiol. Biochem.
+journal of physiology and pharmacology	J. Physiol. Pharmacol.
+journal of physiology paris	J. Physiol. Paris
+journal of proteome research	J. Proteome Res.
+journal of proteome science and computational biology	J. Proteome Sci. Comput. Biol.
+journal of rehabilitation research and development	J. Rehabil. Res. Dev.
+journal of strength and conditioning research	J. Strength Cond. Res.
+journal of the neurological sciences	J. Neurol. Sci.
+journal of the royal society for the promotion of health	J. R. Soc. Promot. Health
+journal of the royal society interface	J. R. Soc. Interface
+journal of the royal society of medicine	J. R. Soc. Med.
+journal of the royal society of new zealand	J. R. Soc. N. Z.
+journal of translational medicine	J. Transl. Med.
+journal of virology	J. Virol.
+journal of virology and antiviral research	J. Virol. Antivir. Res.
 lab on a chip	Lab Chip
-lancet child and adolescent health	Lancet Child Adolesc Health
-lancet diabetes and endocrinology	Lancet Diabetes Endocrinol
-lancet digital health	Lancet Digit Health
-lancet gastroenterology and hepatology	Lancet Gastroenterol Hepatol
-lancet global health	Lancet Glob Health
-lancet haematology	Lancet Haematol
-lancet healthy longevity	Lancet Healthy Longev
-lancet infectious diseases	Lancet Infect Dis
-lancet medical imaging and theranostics	Lancet Med Imaging Theranostics
-lancet neurology	Lancet Neurol
-lancet obstetrics gynaecology and women s health	Lancet Obstet Gynaecol Womens Health
-lancet oncology	Lancet Oncol
-lancet planetary health	Lancet Planet Health
-lancet primary care	Lancet Prim Care
-lancet regional health africa	Lancet Reg Health Afr
-lancet regional health americas	Lancet Reg Health Am
-lancet regional health europe	Lancet Reg Health Eur
-lancet regional health southeast asia	Lancet Reg Health Southeast Asia
-lancet regional health western pacific	Lancet Reg Health West Pac
-lancet respiratory medicine	Lancet Respir Med
-lancet rheumatology	Lancet Rheumatol
-leukemia and lymphoma	Leuk Lymphoma
-leukemia research	Leuk Res
-leukemia research and treatment	Leuk Res Treatment
-leukemia research reports	Leuk Res Rep
-leukemia supplements	Leuk Suppl
-life science alliance	Life Sci Alliance
-mass spectrometry	Mass Spectrom (Tokyo)
-mass spectrometry and purification techniques	Mass Spectrom Purif Tech
-mass spectrometry reviews	Mass Spectrom Rev
-matters select	Matters Sel
-medical image analysis	Med Image Anal
-medicine and science in sports and exercise	Med Sci Sports Exerc
-methods in molecular biology	Methods Mol Biol
-microbiome research reports	Microbiome Res Rep
-microsystems and nanoengineering	Microsyst Nanoeng
-modern pathology	Mod Pathol
-molecular and cellular proteomics	Mol Cell Proteomics
-molecular cell	Mol Cell
-molecular medicine	Mol Med
-molecular neurobiology	Mol Neurobiol
-molecular neurodegeneration	Mol Neurodegener
-molecular psychiatry	Mol Psychiatry
-molecular systems biology	Mol Syst Biol
-molecular therapy	Mol Ther
-molecular therapy nucleic acids	Mol Ther Nucleic Acids
-multiple sclerosis	Mult Scler
-multiple sclerosis and demyelinating disorders	Mult Scler Demyelinating Disord
-multiple sclerosis and related disorders	Mult Scler Relat Disord
-multiple sclerosis international	Mult Scler Int
-multiple sclerosis journal experimental translational and clinical	Mult Scler J Exp Transl Clin
-nature aging	Nat Aging
-nature and science of sleep	Nat Sci Sleep
-nature astronomy	Nat Astron
-nature biomedical engineering	Nat Biomed Eng
-nature biotechnology	Nat Biotechnol
-nature cancer	Nat Cancer
-nature cardiovascular research	Nat Cardiovasc Res
-nature catalysis	Nat Catal
-nature cell biology	Nat Cell Biol
-nature chemical biology	Nat Chem Biol
-nature chemical engineering	Nat Chem Eng
-nature chemistry	Nat Chem
-nature cities	Nat Cities
-nature climate change	Nat Clim Chang
-nature clinical practice cardiovascular medicine	Nat Clin Pract Cardiovasc Med
-nature clinical practice endocrinology and metabolism	Nat Clin Pract Endocrinol Metab
-nature clinical practice gastroenterology and hepatology	Nat Clin Pract Gastroenterol Hepatol
-nature clinical practice nephrology	Nat Clin Pract Nephrol
-nature clinical practice neurology	Nat Clin Pract Neurol
-nature clinical practice oncology	Nat Clin Pract Oncol
-nature clinical practice rheumatology	Nat Clin Pract Rheumatol
-nature clinical practice urology	Nat Clin Pract Urol
-nature communications	Nat Commun
-nature computational science	Nat Comput Sci
-nature ecology and evolution	Nat Ecol Evol
-nature electronics	Nat Electron
-nature energy	Nat Energy
-nature food	Nat Food
-nature genetics	Nat Genet
-nature geoscience	Nat Geosci
-nature health	Nat Health
-nature human behaviour	Nat Hum Behav
-nature immunology	Nat Immunol
-nature machine intelligence	Nat Mach Intell
-nature materials	Nat Mater
-nature medicine	Nat Med
-nature mental health	Nat Ment Health
-nature metabolism	Nat Metab
-nature methods	Nat Methods
-nature microbiology	Nat Microbiol
-nature nanotechnology	Nat Nanotechnol
-nature neuroscience	Nat Neurosci
-nature photonics	Nat Photonics
-nature plants	Nat Plants
-nature protocols	Nat Protoc
-nature reports stem cells	Nat Rep Stem Cells
-nature reviews biodiversity	Nat Rev Biodivers
-nature reviews bioengineering	Nat Rev Bioeng
-nature reviews cancer	Nat Rev Cancer
-nature reviews cardiology	Nat Rev Cardiol
-nature reviews chemistry	Nat Rev Chem
-nature reviews clinical oncology	Nat Rev Clin Oncol
-nature reviews disease primers	Nat Rev Dis Primers
-nature reviews drug discovery	Nat Rev Drug Discov
-nature reviews earth and environment	Nat Rev Earth Environ
-nature reviews electrical engineering	Nat Rev Electr Eng
-nature reviews endocrinology	Nat Rev Endocrinol
-nature reviews gastroenterology and hepatology	Nat Rev Gastroenterol Hepatol
-nature reviews genetics	Nat Rev Genet
-nature reviews immunology	Nat Rev Immunol
-nature reviews materials	Nat Rev Mater
-nature reviews methods primers	Nat Rev Methods Primers
-nature reviews microbiology	Nat Rev Microbiol
-nature reviews molecular cell biology	Nat Rev Mol Cell Biol
-nature reviews nephrology	Nat Rev Nephrol
-nature reviews neurology	Nat Rev Neurol
-nature reviews neuroscience	Nat Rev Neurosci
-nature reviews physics	Nat Rev Phys
-nature reviews psychology	Nat Rev Psychol
-nature reviews rheumatology	Nat Rev Rheumatol
-nature reviews urology	Nat Rev Urol
-nature sensors	Nat Sens
-nature structural and molecular biology	Nat Struct Mol Biol
-nature sustainability	Nat Sustain
-nature synthesis	Nat Synth
-nature water	Nat Water
-neural regeneration research	Neural Regen Res
+lancet child and adolescent health	Lancet Child Adolesc. Health
+lancet diabetes and endocrinology	Lancet Diabetes Endocrinol.
+lancet digital health	Lancet Digit. Health
+lancet gastroenterology and hepatology	Lancet Gastroenterol. Hepatol.
+lancet global health	Lancet Glob. Health
+lancet haematology	Lancet Haematol.
+lancet healthy longevity	Lancet Healthy Longev.
+lancet infectious diseases	Lancet Infect. Dis.
+lancet medical imaging and theranostics	Lancet Med. Imaging Theranostics
+lancet neurology	Lancet Neurol.
+lancet obstetrics gynaecology and women s health	Lancet Obstet. Gynaecol. Womens Health
+lancet oncology	Lancet Oncol.
+lancet planetary health	Lancet Planet. Health
+lancet primary care	Lancet Prim. Care
+lancet regional health africa	Lancet Reg. Health Afr.
+lancet regional health americas	Lancet Reg. Health Am.
+lancet regional health europe	Lancet Reg. Health Eur.
+lancet regional health southeast asia	Lancet Reg. Health Southeast Asia
+lancet regional health western pacific	Lancet Reg. Health West. Pac.
+lancet respiratory medicine	Lancet Respir. Med.
+lancet rheumatology	Lancet Rheumatol.
+leukemia and lymphoma	Leuk. Lymphoma
+leukemia research	Leuk. Res.
+leukemia research and treatment	Leuk. Res. Treatment
+leukemia research reports	Leuk. Res. Rep.
+leukemia supplements	Leuk. Suppl.
+life science alliance	Life Sci. Alliance
+mass spectrometry	Mass Spectrom. (Tokyo)
+mass spectrometry and purification techniques	Mass Spectrom. Purif. Tech.
+mass spectrometry reviews	Mass Spectrom. Rev.
+matters select	Matters Sel.
+medical image analysis	Med. Image Anal.
+medicine and science in sports and exercise	Med. Sci. Sports Exerc.
+methods in molecular biology	Methods Mol. Biol.
+microbiome research reports	Microbiome Res. Rep.
+microsystems and nanoengineering	Microsyst. Nanoeng.
+modern pathology	Mod. Pathol.
+molecular and cellular proteomics	Mol. Cell. Proteomics
+molecular cell	Mol. Cell
+molecular medicine	Mol. Med.
+molecular neurobiology	Mol. Neurobiol.
+molecular neurodegeneration	Mol. Neurodegener.
+molecular psychiatry	Mol. Psychiatry
+molecular systems biology	Mol. Syst. Biol.
+molecular therapy	Mol. Ther.
+molecular therapy nucleic acids	Mol. Ther. Nucleic Acids
+multiple sclerosis	Mult. Scler.
+multiple sclerosis and demyelinating disorders	Mult. Scler. Demyelinating Disord.
+multiple sclerosis and related disorders	Mult. Scler. Relat. Disord.
+multiple sclerosis international	Mult. Scler. Int.
+multiple sclerosis journal experimental translational and clinical	Mult. Scler. J. Exp. Transl. Clin.
+nature aging	Nat. Aging
+nature and science of sleep	Nat. Sci. Sleep
+nature astronomy	Nat. Astron.
+nature biomedical engineering	Nat. Biomed. Eng.
+nature biotechnology	Nat. Biotechnol.
+nature cancer	Nat. Cancer
+nature cardiovascular research	Nat. Cardiovasc. Res.
+nature catalysis	Nat. Catal.
+nature cell biology	Nat. Cell Biol.
+nature chemical biology	Nat. Chem. Biol.
+nature chemical engineering	Nat. Chem. Eng.
+nature chemistry	Nat. Chem.
+nature cities	Nat. Cities
+nature climate change	Nat. Clim. Chang.
+nature clinical practice cardiovascular medicine	Nat. Clin. Pract. Cardiovasc. Med.
+nature clinical practice endocrinology and metabolism	Nat. Clin. Pract. Endocrinol. Metab.
+nature clinical practice gastroenterology and hepatology	Nat. Clin. Pract. Gastroenterol. Hepatol.
+nature clinical practice nephrology	Nat. Clin. Pract. Nephrol.
+nature clinical practice neurology	Nat. Clin. Pract. Neurol.
+nature clinical practice oncology	Nat. Clin. Pract. Oncol.
+nature clinical practice rheumatology	Nat. Clin. Pract. Rheumatol.
+nature clinical practice urology	Nat. Clin. Pract. Urol.
+nature communications	Nat. Commun.
+nature computational science	Nat. Comput. Sci.
+nature ecology and evolution	Nat. Ecol. Evol.
+nature electronics	Nat. Electron.
+nature energy	Nat. Energy
+nature food	Nat. Food
+nature genetics	Nat. Genet.
+nature geoscience	Nat. Geosci.
+nature health	Nat. Health
+nature human behaviour	Nat. Hum. Behav.
+nature immunology	Nat. Immunol.
+nature machine intelligence	Nat. Mach. Intell.
+nature materials	Nat. Mater.
+nature medicine	Nat. Med.
+nature mental health	Nat. Ment. Health
+nature metabolism	Nat. Metab.
+nature methods	Nat. Methods
+nature microbiology	Nat. Microbiol.
+nature nanotechnology	Nat. Nanotechnol.
+nature neuroscience	Nat. Neurosci.
+nature photonics	Nat. Photonics
+nature plants	Nat. Plants
+nature protocols	Nat. Protoc.
+nature reports stem cells	Nat. Rep. Stem Cells
+nature reviews biodiversity	Nat. Rev. Biodivers.
+nature reviews bioengineering	Nat. Rev. Bioeng.
+nature reviews cancer	Nat. Rev. Cancer
+nature reviews cardiology	Nat. Rev. Cardiol.
+nature reviews chemistry	Nat. Rev. Chem.
+nature reviews clinical oncology	Nat. Rev. Clin. Oncol.
+nature reviews disease primers	Nat. Rev. Dis. Primers
+nature reviews drug discovery	Nat. Rev. Drug Discov.
+nature reviews earth and environment	Nat. Rev. Earth Environ.
+nature reviews electrical engineering	Nat. Rev. Electr. Eng.
+nature reviews endocrinology	Nat. Rev. Endocrinol.
+nature reviews gastroenterology and hepatology	Nat. Rev. Gastroenterol. Hepatol.
+nature reviews genetics	Nat. Rev. Genet.
+nature reviews immunology	Nat. Rev. Immunol.
+nature reviews materials	Nat. Rev. Mater.
+nature reviews methods primers	Nat. Rev. Methods Primers
+nature reviews microbiology	Nat. Rev. Microbiol.
+nature reviews molecular cell biology	Nat. Rev. Mol. Cell Biol.
+nature reviews nephrology	Nat. Rev. Nephrol.
+nature reviews neurology	Nat. Rev. Neurol.
+nature reviews neuroscience	Nat. Rev. Neurosci.
+nature reviews physics	Nat. Rev. Phys.
+nature reviews psychology	Nat. Rev. Psychol.
+nature reviews rheumatology	Nat. Rev. Rheumatol.
+nature reviews urology	Nat. Rev. Urol.
+nature sensors	Nat. Sens.
+nature structural and molecular biology	Nat. Struct. Mol. Biol.
+nature sustainability	Nat. Sustain.
+nature synthesis	Nat. Synth.
+nature water	Nat. Water
+neural regeneration research	Neural Regen. Res.
 neuro chirurgie	Neurochirurgie
-neuro degenerative diseases	Neurodegener Dis
-neuro endocrinology letters	Neuro Endocrinol Lett
-neuro oncology	Neuro Oncol
-neuro oncology advances	Neurooncol Adv
-neuro oncology pediatrics	Neurooncol Pediatr
-neuro oncology practice	Neurooncol Pract
+neuro degenerative diseases	Neurodegener. Dis.
+neuro endocrinology letters	Neuro Endocrinol. Lett.
+neuro oncology	Neuro Oncol.
+neuro oncology advances	Neurooncol. Adv.
+neuro oncology pediatrics	Neurooncol. Pediatr.
+neuro oncology practice	Neurooncol. Pract.
 neuro ophthalmology	Neuroophthalmology
 neuro signals	Neurosignals
-neuroanatomy and behaviour	Neuroanat Behav
-neurobehavioral hiv medicine	Neurobehav HIV Med
-neurobiology of aging	Neurobiol Aging
-neurobiology of disease	Neurobiol Dis
-neurobiology of language	Neurobiol Lang (Camb)
-neurobiology of learning and memory	Neurobiol Learn Mem
-neurobiology of lipids	Neurobiol Lipids
-neurobiology of pain	Neurobiol Pain
-neurobiology of sleep and circadian rhythms	Neurobiol Sleep Circadian Rhythms
-neurobiology of stress	Neurobiol Stress
-neurochemical research	Neurochem Res
-neurochemistry and neuropharmacology	Neurochem Neuropharmacol
-neurochemistry international	Neurochem Int
-neurocritical care	Neurocrit Care
-neurodegenerative disease management	Neurodegener Dis Manag
-neurodiagnostic journal	Neurodiagn J
+neuroanatomy and behaviour	Neuroanat. Behav.
+neurobehavioral hiv medicine	Neurobehav. HIV Med.
+neurobiology of aging	Neurobiol. Aging
+neurobiology of disease	Neurobiol. Dis.
+neurobiology of language	Neurobiol. Lang. (Camb)
+neurobiology of learning and memory	Neurobiol. Learn. Mem.
+neurobiology of lipids	Neurobiol. Lipids
+neurobiology of pain	Neurobiol. Pain
+neurobiology of sleep and circadian rhythms	Neurobiol. Sleep Circadian Rhythms
+neurobiology of stress	Neurobiol. Stress
+neurochemical research	Neurochem. Res.
+neurochemistry and neuropharmacology	Neurochem. Neuropharmacol.
+neurochemistry international	Neurochem. Int.
+neurocritical care	Neurocrit. Care
+neurodegenerative disease management	Neurodegener. Dis. Manag.
+neurodiagnostic journal	Neurodiagn. J.
 neurodiversity thousand oaks	Neurodiversity
 neuroembryology and aging	Neuroembryology Aging
-neurogastroenterology and motility	Neurogastroenterol Motil
-neuroimage clinical	Neuroimage Clin
-neuroimage reports	Neuroimage Rep
-neuroimaging clinics of north america	Neuroimaging Clin N Am
-neuroimmune pharmacology and therapeutics	NeuroImmune Pharm Ther
-neuroimmunology and neuroinflammation	Neuroimmunol Neuroinflamm
-neurologia croatica	Neurol Croat
-neurologia i neurochirurgia polska	Neurol Neurochir Pol
-neurologia medico chirurgica	Neurol Med Chir (Tokyo)
-neurologic clinics	Neurol Clin
-neurological research	Neurol Res
-neurological research and practice	Neurol Res Pract
-neurological sciences	Neurol Sci
-neurological sciences and neurosurgery	Neurol Sci Neurosurg
-neurology and clinical neurophysiology	Neurol Clin Neurophysiol
-neurology and clinical neuroscience	Neurol Clin Neurosci
-neurology and neurobiology	Neurol Neurobiol (Tallinn)
-neurology and therapy	Neurol Ther
-neurology clinical practice	Neurol Clin Pract
-neurology education	Neurol Educ
-neurology genetics	Neurol Genet
-neurology india	Neurol India
-neurology international	Neurol Int
-neurology letters	Neurol Lett
-neurology neuroimmunology and neuroinflammation	Neurol Neuroimmunol Neuroinflamm
-neurology neurophysiology and neuroscience	Neurol Neurophysiol Neurosci
-neurology open access	Neurol Open Access
-neurology perspectives	Neurol Perspect
-neurology psychiatry and brain research	Neurol Psychiatry Brain Res
-neurology research international	Neurol Res Int
-neuromolecular medicine	Neuromolecular Med
-neuromorphic computing and engineering	Neuromorphic Comput Eng
-neuromuscular disorders	Neuromuscul Disord
-neuron glia biology	Neuron Glia Biol
-neuronal signaling	Neuronal Signal
-neurons behavior data analysis and theory	Neuron Behav Data Anal Theory
-neuropathology and applied neurobiology	Neuropathol Appl Neurobiol
-neuropharmacology and therapy	Neuropharmacol Ther
-neurophysiologie clinique	Neurophysiol Clin
-neuropsychiatric disease and treatment	Neuropsychiatr Dis Treat
-neuropsychiatric electrophysiology	Neuropsychiatr Electrophysiol
-neuropsychiatrie	Neuropsychiatr
-neuropsychiatrie de l enfance et de l adolescence	Neuropsychiatr Enfance Adolesc
-neuropsychiatry neuropsychology and behavioral neurology	Neuropsychiatry Neuropsychol Behav Neurol
-neuropsychological rehabilitation	Neuropsychol Rehabil
-neuropsychology development and cognition section b aging neuropsychology and cognition	Neuropsychol Dev Cogn B Aging Neuropsychol Cogn
-neuropsychology review	Neuropsychol Rev
-neuropsychopharmacologia hungarica	Neuropsychopharmacol Hung
-neuropsychopharmacology reports	Neuropsychopharmacol Rep
-neuroradiology journal	Neuroradiol J
-neurorehabilitation and neural repair	Neurorehabil Neural Repair
-neuroscience and behavioral physiology	Neurosci Behav Physiol
-neuroscience and biobehavioral reviews	Neurosci Biobehav Rev
-neuroscience and medicine	Neurosci Med
-neuroscience and neuroeconomics	Neurosci Neuroecon
-neuroscience applied	Neurosci Appl
-neuroscience bulletin	Neurosci Bull
-neuroscience chronicles	Neurosci Chron
-neuroscience communications	Neurosci Commun (Houst)
-neuroscience informatics	Neurosci Inform
-neuroscience insights	Neurosci Insights
-neuroscience journal	Neurosci J
-neuroscience letters	Neurosci Lett
-neuroscience letters supplement	Neurosci Lett Suppl
-neuroscience of consciousness	Neurosci Conscious
-neuroscience research	Neurosci Res
-neuroscience research supplement	Neurosci Res Suppl
-neurosurgery clinics of north america	Neurosurg Clin N Am
-neurosurgery open	Neurosurg Open
-neurosurgery practice	Neurosurg Pract
-neurosurgery quarterly	Neurosurg Q
-neurosurgical focus	Neurosurg Focus
-neurosurgical focus video	Neurosurg Focus Video
-neurosurgical review	Neurosurg Rev
-neurotoxicity research	Neurotox Res
-neurotoxicology and teratology	Neurotoxicol Teratol
-neurotrauma reports	Neurotrauma Rep
-neurourology and urodynamics	Neurourol Urodyn
-neurovascular imaging	Neurovasc Imaging
-new england journal of medicine	N Engl J Med
-new england journal of statistics in data science	N Engl J Stat Data Sci
-npj 2d materials and applications	NPJ 2D Mater Appl
-npj acoustics	NPJ Acoust
-npj advanced manufacturing	NPJ Adv Manuf
-npj aging and mechanisms of disease	NPJ Aging Mech Dis
-npj antimicrobials and resistance	NPJ Antimicrob Resist
-npj artificial intelligence	NPJ Artif Intell
-npj autoimmunity	NPJ Autoimmun
-npj biodiversity	NPJ Biodivers
+neurogastroenterology and motility	Neurogastroenterol. Motil.
+neuroimage clinical	Neuroimage Clin.
+neuroimage reports	Neuroimage Rep.
+neuroimaging clinics of north america	Neuroimaging Clin. N. Am.
+neuroimmune pharmacology and therapeutics	NeuroImmune Pharm. Ther.
+neuroimmunology and neuroinflammation	Neuroimmunol. Neuroinflamm.
+neurologia croatica	Neurol. Croat.
+neurologia i neurochirurgia polska	Neurol. Neurochir. Pol.
+neurologia medico chirurgica	Neurol. Med. Chir. (Tokyo)
+neurologic clinics	Neurol. Clin.
+neurological research	Neurol. Res.
+neurological research and practice	Neurol. Res. Pract.
+neurological sciences	Neurol. Sci.
+neurological sciences and neurosurgery	Neurol. Sci. Neurosurg.
+neurology and clinical neurophysiology	Neurol. Clin. Neurophysiol.
+neurology and clinical neuroscience	Neurol. Clin. Neurosci.
+neurology and neurobiology	Neurol. Neurobiol. (Tallinn)
+neurology and therapy	Neurol. Ther.
+neurology clinical practice	Neurol. Clin. Pract.
+neurology education	Neurol. Educ.
+neurology genetics	Neurol. Genet.
+neurology india	Neurol. India
+neurology international	Neurol. Int.
+neurology letters	Neurol. Lett.
+neurology neuroimmunology and neuroinflammation	Neurol. Neuroimmunol. Neuroinflamm.
+neurology neurophysiology and neuroscience	Neurol. Neurophysiol. Neurosci.
+neurology open access	Neurol. Open Access
+neurology perspectives	Neurol. Perspect.
+neurology psychiatry and brain research	Neurol. Psychiatry Brain Res.
+neurology research international	Neurol. Res. Int.
+neuromolecular medicine	Neuromolecular Med.
+neuromorphic computing and engineering	Neuromorphic Comput. Eng.
+neuromuscular disorders	Neuromuscul. Disord.
+neuron glia biology	Neuron Glia Biol.
+neuronal signaling	Neuronal Signal.
+neurons behavior data analysis and theory	Neuron. Behav. Data Anal. Theory
+neuropathology and applied neurobiology	Neuropathol. Appl. Neurobiol.
+neuropharmacology and therapy	Neuropharmacol. Ther.
+neurophysiologie clinique	Neurophysiol. Clin.
+neuropsychiatric disease and treatment	Neuropsychiatr. Dis. Treat.
+neuropsychiatric electrophysiology	Neuropsychiatr. Electrophysiol.
+neuropsychiatrie	Neuropsychiatr.
+neuropsychiatrie de l enfance et de l adolescence	Neuropsychiatr. Enfance Adolesc.
+neuropsychiatry neuropsychology and behavioral neurology	Neuropsychiatry Neuropsychol. Behav. Neurol.
+neuropsychological rehabilitation	Neuropsychol. Rehabil.
+neuropsychology development and cognition section b aging neuropsychology and cognition	Neuropsychol. Dev. Cogn. B Aging Neuropsychol. Cogn.
+neuropsychology review	Neuropsychol. Rev.
+neuropsychopharmacologia hungarica	Neuropsychopharmacol. Hung.
+neuropsychopharmacology reports	Neuropsychopharmacol. Rep.
+neuroradiology journal	Neuroradiol. J.
+neurorehabilitation and neural repair	Neurorehabil. Neural Repair
+neuroscience and behavioral physiology	Neurosci. Behav. Physiol.
+neuroscience and biobehavioral reviews	Neurosci. Biobehav. Rev.
+neuroscience and medicine	Neurosci. Med.
+neuroscience and neuroeconomics	Neurosci. Neuroecon.
+neuroscience applied	Neurosci. Appl.
+neuroscience bulletin	Neurosci. Bull.
+neuroscience chronicles	Neurosci. Chron.
+neuroscience communications	Neurosci. Commun. (Houst)
+neuroscience informatics	Neurosci. Inform.
+neuroscience insights	Neurosci. Insights
+neuroscience journal	Neurosci. J.
+neuroscience letters	Neurosci. Lett.
+neuroscience letters supplement	Neurosci. Lett. Suppl.
+neuroscience of consciousness	Neurosci. Conscious.
+neuroscience research	Neurosci. Res.
+neuroscience research supplement	Neurosci. Res. Suppl.
+neurosurgery clinics of north america	Neurosurg. Clin. N. Am.
+neurosurgery open	Neurosurg. Open
+neurosurgery practice	Neurosurg. Pract.
+neurosurgery quarterly	Neurosurg. Q.
+neurosurgical focus	Neurosurg. Focus
+neurosurgical focus video	Neurosurg. Focus Video
+neurosurgical review	Neurosurg. Rev.
+neurotoxicity research	Neurotox. Res.
+neurotoxicology and teratology	Neurotoxicol. Teratol.
+neurotrauma reports	Neurotrauma Rep.
+neurourology and urodynamics	Neurourol. Urodyn.
+neurovascular imaging	Neurovasc. Imaging
+new england journal of medicine	N. Engl. J. Med.
+new england journal of statistics in data science	N. Engl. J. Stat. Data Sci.
+npj 2d materials and applications	NPJ 2D Mater. Appl.
+npj acoustics	NPJ Acoust.
+npj advanced manufacturing	NPJ Adv. Manuf.
+npj aging and mechanisms of disease	NPJ Aging Mech. Dis.
+npj antimicrobials and resistance	NPJ Antimicrob. Resist.
+npj artificial intelligence	NPJ Artif. Intell.
+npj autoimmunity	NPJ Autoimmun.
+npj biodiversity	NPJ Biodivers.
 npj biofilms and microbiomes	NPJ Biofilms Microbiomes
-npj biological physics and mechanics	NPJ Biol Phys Mech
-npj biological timing and sleep	NPJ Biol Timing Sleep
-npj biomedical innovations	NPJ Biomed Innov
-npj biosensing	NPJ Biosens
-npj cardiovascular health	NPJ Cardiovasc Health
-npj climate action	NPJ Clim Action
-npj climate and atmospheric science	NPJ Clim Atmos Sci
-npj complexity	Npj Complex
-npj computational materials	NPJ Comput Mater
-npj dementia	NPJ Dement
-npj digital medicine	NPJ Digit Med
-npj digital public health	NPJ Digit Public Health
-npj digital surgery	NPJ Digit Surg
-npj drug discovery	NPJ Drug Discov
-npj emerging contaminants	NPJ Emerg Contam
-npj energy materials	NPJ Energy Mater
-npj entomology	Npj Entomol
-npj environmental social sciences	NPJ Environ Soc Sci
-npj exercise medicine and health	Npj Exerc Med Health
-npj flexible electronics	Npj Flex Electron
-npj fungal science	Npj Fungal Sci
-npj genomic medicine	NPJ Genom Med
+npj biological physics and mechanics	NPJ Biol. Phys. Mech.
+npj biological timing and sleep	NPJ Biol. Timing Sleep
+npj biomedical innovations	NPJ Biomed. Innov.
+npj biosensing	NPJ Biosens.
+npj cardiovascular health	NPJ Cardiovasc. Health
+npj climate action	NPJ Clim. Action
+npj climate and atmospheric science	NPJ Clim. Atmos. Sci.
+npj complexity	Npj Complex.
+npj computational materials	NPJ Comput. Mater.
+npj dementia	NPJ Dement.
+npj digital medicine	NPJ Digit. Med.
+npj digital public health	NPJ Digit. Public Health
+npj digital surgery	NPJ Digit. Surg.
+npj drug discovery	NPJ Drug Discov.
+npj emerging contaminants	NPJ Emerg. Contam.
+npj energy materials	NPJ Energy Mater.
+npj entomology	Npj Entomol.
+npj environmental social sciences	NPJ Environ. Soc. Sci.
+npj exercise medicine and health	Npj Exerc. Med. Health
+npj flexible electronics	Npj Flex. Electron.
+npj fungal science	Npj Fungal Sci.
+npj genomic medicine	NPJ Genom. Med.
 npj gut and liver	NPJ Gut Liver
-npj health systems	Npj Health Syst
-npj heritage science	NPJ Herit Sci
-npj materials degradation	Npj Mater Degrad
-npj materials sustainability	Npj Mater Sustain
-npj mental health research	Npj Ment Health Res
-npj metabolic health and disease	NPJ Metab Health Dis
-npj metamaterials	NPJ Metamater
-npj nanophotonics	Npj Nanophoton
-npj natural hazards	NPJ Nat Hazards
-npj ocean sustainability	NPJ Ocean Sustain
-npj parkinson s disease	NPJ Parkinsons Dis
-npj precision oncology	NPJ Precis Oncol
-npj primary care respiratory medicine	NPJ Prim Care Respir Med
-npj quantum information	npj Quantum Inf
-npj quantum materials	NPJ Quantum Mater
-npj regenerative medicine	NPJ Regen Med
-npj robotics	Npj Robot
-npj schizophrenia	NPJ Schizophr
-npj science of food	NPJ Sci Food
-npj science of learning	NPJ Sci Learn
-npj science of plants	NPJ Sci Plants
-npj soil ecology	Npj Soil Ecol
-npj space exploration	npj Space Explor
-npj spintronics	Npj Spintron
-npj structural biology	Npj Struct Biol
-npj sustainable agriculture	NPJ Sustain Agric
-npj sustainable mobility and transport	NPJ Sustain Mobil Transp
-npj systems biology and applications	NPJ Syst Biol Appl
-npj thermal science and engineering	Npj Therm Sci Eng
-npj unconventional computing	Npj Unconv Comput
-npj urban sustainability	NPJ Urban Sustain
-npj veterinary sciences	npj Vet Sci
-npj wireless technology	NPJ Wirel Technol
+npj health systems	Npj Health Syst.
+npj heritage science	NPJ Herit. Sci.
+npj materials degradation	Npj Mater. Degrad.
+npj materials sustainability	Npj Mater. Sustain.
+npj mental health research	Npj Ment. Health Res.
+npj metabolic health and disease	NPJ Metab. Health Dis.
+npj metamaterials	NPJ Metamater.
+npj nanophotonics	Npj Nanophoton.
+npj natural hazards	NPJ Nat. Hazards
+npj ocean sustainability	NPJ Ocean Sustain.
+npj parkinson s disease	NPJ Parkinsons Dis.
+npj precision oncology	NPJ Precis. Oncol.
+npj primary care respiratory medicine	NPJ Prim. Care Respir. Med.
+npj quantum information	npj Quantum Inf.
+npj quantum materials	NPJ Quantum Mater.
+npj regenerative medicine	NPJ Regen. Med.
+npj robotics	Npj Robot.
+npj schizophrenia	NPJ Schizophr.
+npj science of food	NPJ Sci. Food
+npj science of learning	NPJ Sci. Learn.
+npj science of plants	NPJ Sci. Plants
+npj soil ecology	Npj Soil Ecol.
+npj space exploration	npj Space Explor.
+npj spintronics	Npj Spintron.
+npj structural biology	Npj Struct. Biol.
+npj sustainable agriculture	NPJ Sustain. Agric.
+npj sustainable mobility and transport	NPJ Sustain. Mobil. Transp.
+npj systems biology and applications	NPJ Syst. Biol. Appl.
+npj thermal science and engineering	Npj Therm. Sci. Eng.
+npj unconventional computing	Npj Unconv. Comput.
+npj urban sustainability	NPJ Urban Sustain.
+npj veterinary sciences	npj Vet. Sci.
+npj wireless technology	NPJ Wirel. Technol.
 npj women s health	NPJ Womens Health
-nucleic acids and molecular biology	Nucleic Acids Mol Biol
-nucleic acids research	Nucleic Acids Res
-nucleic acids symposium series	Nucleic Acids Symp Ser (Oxf)
-open biology	Open Biol
-open biology journal	Open Biol J
-peerj analytical chemistry	PeerJ Anal Chem
-peerj computer science	PeerJ Comput Sci
-peerj organic chemistry	PeerJ Org Chem
-peerj physical chemistry	PeerJ Phys Chem
-peerj preprints	PeerJ Prepr
-pharmacological reports	Pharmacol Rep
-pharmacological research	Pharmacol Res
-pharmacological research communications	Pharmacol Res Commun
-pharmacological research natural products	Pharmacol Res Nat Prod
-pharmacological research reports	Pharmacol Res Rep
-pharmacological reviews	Pharmacol Rev
-pharmacology biochemistry and behavior	Pharmacol Biochem Behav
-philosophical transactions of the royal society of london a	Philos Trans R Soc Lond A
-philosophical transactions of the royal society of london series b biological sciences	Philos Trans R Soc Lond B Biol Sci
-philosophical transactions physical sciences and engineering	Philos Trans Phys Sci Eng
-philosophical transactions series a mathematical physical and engineering sciences	Philos Trans A Math Phys Eng Sci
-physical review letters	Phys Rev Lett
-physiological research	Physiol Res
-physiological reviews	Physiol Rev
-plos biology	PLoS Biol
-plos climate	PLOS Clim
-plos clinical trials	PLoS Clin Trials
-plos complex systems	PLOS Complex Syst
-plos computational biology	PLoS Comput Biol
-plos currents	PLoS Curr
-plos digital health	PLOS Digit Health
-plos genetics	PLoS Genet
-plos global public health	PLOS Glob Public Health
-plos medicine	PLoS Med
-plos mental health	PLOS Ment Health
-plos neglected tropical diseases	PLoS Negl Trop Dis
-plos pathogens	PLoS Pathog
-plos sustainability and transformation	PLOS Sustain Transform
-proceedings of the national academy of sciences india section b	Proc Natl Acad Sci India Sect B Biol Sci
-proceedings of the national academy of sciences of the united states of america	Proc Natl Acad Sci U S A
-proceedings of the royal society of london series a mathematical and physical sciences	Proc R Soc Lond A Math Phys Sci
-proceedings of the royal society of london series b biological sciences	Proc R Soc Lond B Biol Sci
-progress in molecular biology and translational science	Prog Mol Biol Transl Sci
-progress in neurobiology	Prog Neurobiol
-proteomics and bioinformatics	Proteom Bioinform
-proteomics clinical applications	Proteomics Clin Appl
-redox biochemistry and chemistry	Redox Biochem Chem
-redox biology	Redox Biol
-redox experimental medicine	Redox Exp Med
-redox report	Redox Rep
-research square	Res Sq
-royal society open science	R Soc Open Sci
-scandinavian journal of medicine and science in sports	Scand J Med Sci Sports
-science academique	Sci Acad
-science advances	Sci Adv
-science and diplomacy	Sci Dipl
-science and education	Sci Educ (Dordr)
-science and engineering ethics	Sci Eng Ethics
-science and engineering journal	Sci Eng J
-science and justice	Sci Justice
-science and medicine in football	Sci Med Footb
-science and practice perspectives	Sci Pract Perspect
-science and public policy	Sci Public Policy
-science and technology for the built environment	Sci Technol Built Environ
-science and technology libraries	Sci Technol Libr (New York, NY)
-science and technology of advanced materials	Sci Technol Adv Mater
-science and technology of archaeological research	Sci Technol Archaeol Res
-science and technology of welding and joining	Sci Technol Weld Join
-science and technology studies	Sci Technol Stud (Tamp)
-science bulletin	Sci Bull (Beijing)
-science china chemistry	Sci China Chem
-science china earth sciences	Sci China Earth Sci
-science china life sciences	Sci China Life Sci
-science china materials	Sci China Mater
-science china mathematics	Sci China Math
-science china physics mechanics and astronomy	Sci China Phys Mech Astron
-science china technological sciences	Sci China Technol Sci
-science communication	Sci Commun
-science education	Sci Educ
-science education and civic engagement	Sci Educ Civ Engagem
-science immunology	Sci Immunol
-science in china series b chemistry	Sci China B Chem
-science in china series c life sciences	Sci China C Life Sci
-science in one health	Sci One Health
-science journal of education	Sci J Edu
-science letters journal	Sci Lett J
-science museum group journal	Sci Mus Group J
-science news	Sci News
-science of advanced materials	Sci Adv Mater
-science of aging knowledge environment	Sci Aging Knowledge Environ
-science of computer programming	Sci Comput Program
-science of diabetes self management and care	Sci Diabetes Self Manag Care
-science of the total environment	Sci Total Environ
-science of traditional chinese medicine	Sci Tradit Chin Med
-science progress	Sci Prog
-science robotics	Sci Robot
-science s stke	Sci STKE
-science scope	Sci Scope (Wash D C)
-science signaling	Sci Signal
-science talks	Sci Talks
-science technology and human values	Sci Technol Human Values
-science translational medicine	Sci Transl Med
-scientific data	Sci Data
-scientific reports	Sci Rep
-seminars in cell and developmental biology	Semin Cell Dev Biol
-seminars in immunology	Semin Immunol
-seminars in immunopathology	Semin Immunopathol
-signal transduction and targeted therapy	Signal Transduct Target Ther
-sports medicine	Sports Med
-star protocols	STAR Protoc
-stem cell and regenerative medicine	Stem Cell Regen Med
-stem cell and translational investigation	Stem Cell Transl Investig
-stem cell epigenetics	Stem Cell Epigenet
-stem cell investigation	Stem Cell Investig
-stem cell research	Stem Cell Res
-stem cell research and therapeutics	Stem Cell Res Ther (Walnut)
-stem cell research and therapy	Stem Cell Res Ther
-stem cell reviews	Stem Cell Rev
-stem cell reviews and reports	Stem Cell Rev Rep
-stem cell studies	Stem Cell Stud
+nucleic acids and molecular biology	Nucleic Acids Mol. Biol.
+nucleic acids research	Nucleic Acids Res.
+nucleic acids symposium series	Nucleic Acids Symp. Ser. (Oxf)
+open biology	Open Biol.
+open biology journal	Open Biol. J.
+peerj analytical chemistry	PeerJ Anal. Chem.
+peerj computer science	PeerJ Comput. Sci.
+peerj organic chemistry	PeerJ Org. Chem.
+peerj physical chemistry	PeerJ Phys. Chem.
+peerj preprints	PeerJ Prepr.
+pharmacological reports	Pharmacol. Rep.
+pharmacological research	Pharmacol. Res.
+pharmacological research communications	Pharmacol. Res. Commun.
+pharmacological research natural products	Pharmacol. Res. Nat. Prod.
+pharmacological research reports	Pharmacol. Res. Rep.
+pharmacological reviews	Pharmacol. Rev.
+pharmacology biochemistry and behavior	Pharmacol. Biochem. Behav.
+philosophical transactions of the royal society of london a	Philos. Trans. R. Soc. Lond. A
+philosophical transactions of the royal society of london series b biological sciences	Philos. Trans. R. Soc. Lond. B Biol. Sci.
+philosophical transactions physical sciences and engineering	Philos. Trans. Phys. Sci. Eng.
+philosophical transactions series a mathematical physical and engineering sciences	Philos. Trans. A Math. Phys. Eng. Sci.
+physical review letters	Phys. Rev. Lett.
+physiological research	Physiol. Res.
+physiological reviews	Physiol. Rev.
+plos biology	PLoS Biol.
+plos climate	PLOS Clim.
+plos clinical trials	PLoS Clin. Trials
+plos complex systems	PLOS Complex Syst.
+plos computational biology	PLoS Comput. Biol.
+plos currents	PLoS Curr.
+plos digital health	PLOS Digit. Health
+plos genetics	PLoS Genet.
+plos global public health	PLOS Glob. Public Health
+plos medicine	PLoS Med.
+plos mental health	PLOS Ment. Health
+plos neglected tropical diseases	PLoS Negl. Trop. Dis.
+plos pathogens	PLoS Pathog.
+plos sustainability and transformation	PLOS Sustain. Transform.
+proceedings of the national academy of sciences india section b	Proc. Natl. Acad. Sci. India Sect. B Biol. Sci.
+proceedings of the national academy of sciences of the united states of america	Proc. Natl. Acad. Sci. USA
+proceedings of the royal society of london series a mathematical and physical sciences	Proc. R. Soc. Lond. A Math. Phys. Sci.
+proceedings of the royal society of london series b biological sciences	Proc. R. Soc. Lond. B Biol. Sci.
+progress in molecular biology and translational science	Prog. Mol. Biol. Transl. Sci.
+progress in neurobiology	Prog. Neurobiol.
+proteomics and bioinformatics	Proteom. Bioinform.
+proteomics clinical applications	Proteomics Clin. Appl.
+redox biochemistry and chemistry	Redox Biochem. Chem.
+redox biology	Redox Biol.
+redox experimental medicine	Redox Exp. Med.
+redox report	Redox Rep.
+research square	Res. Sq.
+royal society open science	R. Soc. Open Sci.
+scandinavian journal of medicine and science in sports	Scand. J. Med. Sci. Sports
+science academique	Sci. Acad.
+science advances	Sci. Adv.
+science and diplomacy	Sci. Dipl.
+science and education	Sci. Educ. (Dordr)
+science and engineering ethics	Sci. Eng. Ethics
+science and engineering journal	Sci. Eng. J.
+science and justice	Sci. Justice
+science and medicine in football	Sci. Med. Footb.
+science and practice perspectives	Sci. Pract. Perspect.
+science and public policy	Sci. Public Policy
+science and technology for the built environment	Sci. Technol. Built Environ.
+science and technology libraries	Sci. Technol. Libr. (New York, NY)
+science and technology of advanced materials	Sci. Technol. Adv. Mater.
+science and technology of archaeological research	Sci. Technol. Archaeol. Res.
+science and technology of welding and joining	Sci. Technol. Weld. Join.
+science and technology studies	Sci. Technol. Stud. (Tamp)
+science bulletin	Sci. Bull. (Beijing)
+science china chemistry	Sci. China Chem.
+science china earth sciences	Sci. China Earth Sci.
+science china life sciences	Sci. China Life Sci.
+science china materials	Sci. China Mater.
+science china mathematics	Sci. China Math.
+science china physics mechanics and astronomy	Sci. China Phys. Mech. Astron.
+science china technological sciences	Sci. China Technol. Sci.
+science communication	Sci. Commun.
+science education	Sci. Educ.
+science education and civic engagement	Sci. Educ. Civ. Engagem.
+science immunology	Sci. Immunol.
+science in china series b chemistry	Sci. China B Chem.
+science in china series c life sciences	Sci. China C Life Sci.
+science in one health	Sci. One Health
+science journal of education	Sci. J. Edu.
+science letters journal	Sci. Lett. J.
+science museum group journal	Sci. Mus. Group J.
+science news	Sci. News
+science of advanced materials	Sci. Adv. Mater.
+science of aging knowledge environment	Sci. Aging Knowledge Environ.
+science of computer programming	Sci. Comput. Program.
+science of diabetes self management and care	Sci. Diabetes Self Manag. Care
+science of the total environment	Sci. Total Environ.
+science of traditional chinese medicine	Sci. Tradit. Chin. Med.
+science progress	Sci. Prog.
+science robotics	Sci. Robot.
+science s stke	Sci. STKE
+science scope	Sci. Scope (Wash D C)
+science signaling	Sci. Signal.
+science talks	Sci. Talks
+science technology and human values	Sci. Technol. Human Values
+science translational medicine	Sci. Transl. Med.
+scientific data	Sci. Data
+scientific reports	Sci. Rep.
+seminars in cell and developmental biology	Semin. Cell Dev. Biol.
+seminars in immunology	Semin. Immunol.
+seminars in immunopathology	Semin. Immunopathol.
+signal transduction and targeted therapy	Signal Transduct. Target. Ther.
+sports medicine	Sports Med.
+star protocols	STAR Protoc.
+stem cell and regenerative medicine	Stem Cell Regen. Med.
+stem cell and translational investigation	Stem Cell Transl. Investig.
+stem cell epigenetics	Stem Cell Epigenet.
+stem cell investigation	Stem Cell Investig.
+stem cell research	Stem Cell Res.
+stem cell research and therapeutics	Stem Cell Res. Ther. (Walnut)
+stem cell research and therapy	Stem Cell Res. Ther.
+stem cell reviews	Stem Cell Rev.
+stem cell reviews and reports	Stem Cell Rev. Rep.
+stem cell studies	Stem Cell Stud.
 stem cells and cloning	Stem Cells Cloning
-stem cells and development	Stem Cells Dev
-stem cells international	Stem Cells Int
-stem cells translational medicine	Stem Cells Transl Med
-strength and conditioning journal	Strength Cond J
-symposia of the society for experimental biology	Symp Soc Exp Biol
-therapeutic advances in chronic disease	Ther Adv Chronic Dis
-therapeutic advances in neurological disorders	Ther Adv Neurol Disord
-translational psychiatry	Transl Psychiatry
-trends in amplification	Trends Amplif
-trends in anaesthesia and critical care	Trends Anaesth Crit Care
-trends in analytical chemistry	Trends Analyt Chem
-trends in biomedical research	Trends Biomed Res
-trends in biotechnology	Trends Biotechnol
+stem cells and development	Stem Cells Dev.
+stem cells international	Stem Cells Int.
+stem cells translational medicine	Stem Cells Transl. Med.
+strength and conditioning journal	Strength Cond. J.
+symposia of the society for experimental biology	Symp. Soc. Exp. Biol.
+therapeutic advances in chronic disease	Ther. Adv. Chronic Dis.
+therapeutic advances in neurological disorders	Ther. Adv. Neurol. Disord.
+translational psychiatry	Transl. Psychiatry
+trends in amplification	Trends Amplif.
+trends in anaesthesia and critical care	Trends Anaesth. Crit. Care
+trends in analytical chemistry	Trends Analyt. Chem.
+trends in biomedical research	Trends Biomed. Res.
+trends in biotechnology	Trends Biotechnol.
 trends in cancer	Trends Cancer
-trends in carbohydrate research	Trends Carbohydr Res
-trends in cardiovascular medicine	Trends Cardiovasc Med
-trends in cell biology	Trends Cell Biol
-trends in chemistry	Trends Chem
-trends in cognitive sciences	Trends Cogn Sci
-trends in ecology and evolution	Trends Ecol Evol
-trends in endocrinology and metabolism tem	Trends Endocrinol Metab
-trends in environmental analytical chemistry	Trends Environ Anal Chem
-trends in evolutionary biology	Trends Evol Biol
-trends in food science and technology	Trends Food Sci Technol
-trends in genetics	Trends Genet
-trends in glycoscience and glycotechnology	Trends Glycosci Glycotechnol
-trends in hearing	Trends Hear
-trends in immunology	Trends Immunol
-trends in medical research	Trends Med Res
-trends in microbiology	Trends Microbiol
-trends in molecular medicine	Trends Mol Med
-trends in neuroscience and education	Trends Neurosci Educ
-trends in neurosciences	Trends Neurosci
-trends in organized crime	Trends Organ Crime
-trends in parasitology	Trends Parasitol
-trends in pharmacological sciences	Trends Pharmacol Sci
-trends in plant science	Trends Plant Sci
-trends in polymer science	Trends Polym Sci
-trends in psychiatry and psychotherapy	Trends Psychiatry Psychother
-trends in psychology	Trends Psychol
-trends in research	Trends Res
-trends in sport sciences	Trends Sport Sci
-virology and immunology journal	Virol Immunol J
-virology and mycology	Virol Mycol
-virology journal	Virol J
-virology reports	Virol Rep
-wellcome open research	Wellcome Open Res
-wiley interdisciplinary reviews systems biology and medicine	Wiley Interdiscip Rev Syst Biol Med
-proceedings of the national academy of sciences	Proc Natl Acad Sci U S A
-pnas	Proc Natl Acad Sci U S A
-multiple sclerosis journal	Mult Scler
-neurology neuroimmunology neuroinflammation	Neurol Neuroimmunol Neuroinflamm
-biological reviews	Biol Rev Camb Philos Soc
+trends in carbohydrate research	Trends Carbohydr. Res.
+trends in cardiovascular medicine	Trends Cardiovasc. Med.
+trends in cell biology	Trends Cell Biol.
+trends in chemistry	Trends Chem.
+trends in cognitive sciences	Trends Cogn. Sci.
+trends in ecology and evolution	Trends Ecol. Evol.
+trends in endocrinology and metabolism tem	Trends Endocrinol. Metab.
+trends in environmental analytical chemistry	Trends Environ. Anal. Chem.
+trends in evolutionary biology	Trends Evol. Biol.
+trends in food science and technology	Trends Food Sci. Technol.
+trends in genetics	Trends Genet.
+trends in glycoscience and glycotechnology	Trends Glycosci. Glycotechnol.
+trends in hearing	Trends Hear.
+trends in immunology	Trends Immunol.
+trends in medical research	Trends Med. Res.
+trends in microbiology	Trends Microbiol.
+trends in molecular medicine	Trends Mol. Med.
+trends in neuroscience and education	Trends Neurosci. Educ.
+trends in neurosciences	Trends Neurosci.
+trends in organized crime	Trends Organ. Crime
+trends in parasitology	Trends Parasitol.
+trends in pharmacological sciences	Trends Pharmacol. Sci.
+trends in plant science	Trends Plant Sci.
+trends in polymer science	Trends Polym. Sci.
+trends in psychiatry and psychotherapy	Trends Psychiatry Psychother.
+trends in psychology	Trends Psychol.
+trends in research	Trends Res.
+trends in sport sciences	Trends Sport Sci.
+virology and immunology journal	Virol. Immunol. J.
+virology and mycology	Virol. Mycol.
+virology journal	Virol. J.
+virology reports	Virol. Rep.
+wellcome open research	Wellcome Open Res.
+wiley interdisciplinary reviews systems biology and medicine	Wiley Interdiscip. Rev. Syst. Biol. Med.
+proceedings of the national academy of sciences	Proc. Natl. Acad. Sci. USA
+pnas	Proc. Natl. Acad. Sci. USA
+multiple sclerosis journal	Mult. Scler.
+neurology neuroimmunology neuroinflammation	Neurol. Neuroimmunol. Neuroinflamm.
+biological reviews	Biol. Rev. Camb. Philos. Soc.
+philosophical transactions of the royal society b biological sciences	Philos. Trans. R. Soc. Lond. B Biol. Sci.
