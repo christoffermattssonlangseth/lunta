@@ -180,9 +180,69 @@ fn citations_and_exports() {
 }
 
 #[test]
+fn search_by_identifier() {
+    let root = tmp().join("lib");
+    let lib = open(&root, "mac");
+    let a = lib
+        .add_paper(
+            PaperMeta { doi: "10.1038/NMETH.2563".into(), pmid: "23793237".into(), pmcid: "PMC3880121".into(), ..sample() },
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    let b = lib
+        .add_paper(
+            PaperMeta {
+                title: "Attention is all you need".into(),
+                doi: "10.48550/arXiv.1706.03762".into(),
+                arxiv: "1706.03762v7".into(),
+                ..sample()
+            },
+            None,
+            None,
+            Some("Earlier work (Ke et al., doi:10.1038/nmeth.2563) mapped sequences in situ.".into()),
+        )
+        .unwrap();
+    let first = |q: &str| lib.search(q.into(), 10).unwrap().first().map(|h| h.paper.id.clone());
+    for q in [
+        "10.1038/nmeth.2563",
+        "10.1038/NMETH.2563",
+        "doi:10.1038/nmeth.2563",
+        "DOI: 10.1038/nmeth.2563",
+        "https://doi.org/10.1038/nmeth.2563",
+        "https://dx.doi.org/10.1038/nmeth.2563.",
+        "(10.1038/nmeth.2563),",
+        "23793237",
+        "pmid:23793237",
+        "https://pubmed.ncbi.nlm.nih.gov/23793237/",
+        "PMC3880121",
+        "pmc3880121",
+    ] {
+        assert_eq!(first(q), Some(a.id.clone()), "{q}");
+    }
+    // the paper itself first, then a paper whose full text cites it
+    let hits = lib.search("10.1038/nmeth.2563".into(), 10).unwrap();
+    assert_eq!(hits.iter().map(|h| h.paper.id.clone()).collect::<Vec<_>>(), vec![a.id.clone(), b.id.clone()]);
+    assert!(hits[0].snippet.contains("[10.1038/nmeth.2563]"), "{}", hits[0].snippet);
+    for q in ["1706.03762", "arXiv:1706.03762", "https://arxiv.org/abs/1706.03762v5", "10.48550/arxiv.1706.03762"] {
+        assert_eq!(first(q), Some(b.id.clone()), "{q}");
+    }
+    // a DOI among other words: the paper first, the words searched as usual
+    let hits = lib.search("attention 10.1038/nmeth.2563".into(), 10).unwrap();
+    assert_eq!(hits.iter().map(|h| h.paper.id.clone()).collect::<Vec<_>>(), vec![a.id.clone(), b.id.clone()]);
+    // an unknown DOI with other words leaves the words' search alone
+    assert_eq!(first("attention 10.9999/nothing"), Some(b.id.clone()));
+    assert!(lib.search("10.9999/nothing".into(), 10).unwrap().is_empty());
+    // a number that is no PubMed ID is searched as text
+    assert!(lib.search("99999999".into(), 10).unwrap().is_empty());
+}
+
+#[test]
 fn query_and_doi_parsing() {
     assert_eq!(index::fts_query("spatial omics"), "\"spatial\"* AND \"omics\"*");
     assert_eq!(index::fts_query("\"cell niches\" moscot"), "\"cell niches\" AND \"moscot\"*");
+    assert_eq!(index::fts_query("10.1038/nmeth.2563, Hebb's (x)"), "\"10.1038/nmeth.2563\"* AND \"Hebb's\"* AND \"x\"");
     assert_eq!(metadata::doi_in("https://doi.org/10.1038/s41588-024-01664-3").unwrap(), "10.1038/s41588-024-01664-3");
     assert_eq!(metadata::doi_in("see doi:10.1016/j.cell.2024.02.030.").unwrap(), "10.1016/j.cell.2024.02.030");
 }

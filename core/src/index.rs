@@ -103,6 +103,7 @@ impl Index {
 const SNIPPETS: usize = 40;
 
 /// Turns free text into an FTS5 query: every word must match, as a prefix; "quoted phrases" stay phrases.
+/// A word with punctuation inside (a DOI, "single-cell") is a phrase of its parts.
 /// A single letter matches only itself (as a prefix it matched nearly every word, and was slow).
 pub fn fts_query(input: &str) -> String {
     let mut parts = Vec::new();
@@ -117,9 +118,11 @@ pub fn fts_query(input: &str) -> String {
             rest = stripped.get(end + 1..).unwrap_or("").trim_start();
         } else {
             let end = rest.find(|c: char| c.is_whitespace() || c == '"').unwrap_or(rest.len());
-            let word: String = rest[..end].chars().filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_').collect();
-            let word = word.trim_matches('-').to_string();
-            if word.chars().count() == 1 {
+            // Punctuation inside a word stays: in a quoted string FTS5 splits the word into its
+            // parts as a phrase, as it did the text ("10.1038/nmeth.2563" → 10 1038 nmeth 2563,
+            // "Hebb's" → hebb s). Taken out, the parts ran together into a word found nowhere.
+            let word = rest[..end].trim_matches(|c: char| !c.is_alphanumeric()).to_string();
+            if word.chars().filter(|c| c.is_alphanumeric()).count() == 1 {
                 parts.push(format!("\"{}\"", word));
             } else if !word.is_empty() {
                 parts.push(format!("\"{}\"*", word));
@@ -128,4 +131,92 @@ pub fn fts_query(input: &str) -> String {
         }
     }
     parts.join(" AND ")
+}
+
+/// A paper's identifier typed into the search field: a DOI (lower case), PubMed ID, PMCID
+/// ("PMC…") or arXiv ID (without its version).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum QueryId {
+    Doi(String),
+    Pmid(String),
+    Pmcid(String),
+    Arxiv(String),
+}
+
+impl QueryId {
+    /// The identifier as text, for searching full texts that mention it.
+    pub fn text(&self) -> &str {
+        match self {
+            QueryId::Doi(s) | QueryId::Pmid(s) | QueryId::Pmcid(s) | QueryId::Arxiv(s) => s,
+        }
+    }
+
+    /// Whether the paper has this identifier.
+    pub fn matches(&self, m: &PaperMeta) -> bool {
+        match self {
+            QueryId::Doi(d) => !m.doi.is_empty() && crate::metadata::normalize_doi(&m.doi) == *d,
+            QueryId::Pmid(n) => m.pmid.trim().trim_start_matches(|c: char| !c.is_ascii_digit()) == n,
+            QueryId::Pmcid(p) => {
+                let own = m.pmcid.trim().to_uppercase();
+                !own.is_empty() && (own == *p || format!("PMC{own}") == *p)
+            }
+            QueryId::Arxiv(a) => {
+                let own = |s: &str| crate::metadata::arxiv_in(&format!("arxiv:{}", s.trim()));
+                (!m.arxiv.trim().is_empty() && own(&m.arxiv).as_deref() == Some(a.as_str()))
+                    || crate::metadata::normalize_doi(&m.doi) == format!("10.48550/arxiv.{a}")
+            }
+        }
+    }
+}
+
+/// The identifiers in a search query — DOIs (bare "10.…/…", "doi:10.…", "https://doi.org/10.…",
+/// case ignored, trailing punctuation dropped), PubMed IDs ("12345678", "pmid:…", a PubMed link),
+/// PMCIDs ("PMC…") and arXiv IDs ("2101.01234", "arXiv:…", an arXiv link) — each with the word it
+/// was, and the query's other words (labels like "doi:" before an identifier left out).
+pub fn query_ids(input: &str) -> (Vec<(QueryId, String)>, Vec<String>) {
+    use regex::Regex;
+    use std::sync::OnceLock;
+    static PMC: OnceLock<Regex> = OnceLock::new();
+    static PMID: OnceLock<Regex> = OnceLock::new();
+    let pmc = PMC.get_or_init(|| Regex::new(r"(?i)^(?:pmcid:|pmc:|https?://\S*/)?(PMC\d{4,})/?$").unwrap());
+    let pmid = PMID.get_or_init(|| Regex::new(r"(?i)^(?:pmid:|https?://pubmed\.ncbi\.nlm\.nih\.gov/)?(\d{5,9})/?$").unwrap());
+    let mut ids = Vec::new();
+    let mut rest = Vec::new();
+    let mut labels = Vec::new();
+    let mut quoted = false;
+    for word in input.split_whitespace() {
+        // words inside a "quoted phrase" stay in the phrase
+        let in_quote = quoted || word.starts_with('"');
+        quoted ^= word.matches('"').count() % 2 == 1;
+        if in_quote {
+            rest.push(word.to_string());
+            continue;
+        }
+        let core = word.trim_matches(|c: char| "()[]{}<>,;'".contains(c)).trim_end_matches(['.', ':']);
+        let lower = core.to_lowercase();
+        if matches!(lower.as_str(), "doi" | "pmid" | "pmcid" | "arxiv") && word.ends_with(':') {
+            labels.push(word.to_string());
+            continue;
+        }
+        let before = ids.len();
+        if lower.contains("10.") {
+            if let Some(d) = crate::metadata::doi_in(core) {
+                ids.push((QueryId::Doi(d.to_lowercase()), word.to_string()));
+            }
+        }
+        if let Some(a) = crate::metadata::arxiv_in(core) {
+            ids.push((QueryId::Arxiv(a), word.to_string()));
+        } else if let Some(c) = pmc.captures(core) {
+            ids.push((QueryId::Pmcid(c[1].to_uppercase()), word.to_string()));
+        } else if let Some(c) = pmid.captures(core) {
+            ids.push((QueryId::Pmid(c[1].to_string()), word.to_string()));
+        }
+        if ids.len() == before {
+            rest.push(word.to_string());
+        }
+    }
+    if ids.is_empty() {
+        rest.extend(labels);
+    }
+    (ids, rest)
 }

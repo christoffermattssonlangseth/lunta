@@ -173,7 +173,7 @@ pub fn normalize_doi(s: &str) -> String {
     doi_in(s).unwrap_or_default().to_lowercase()
 }
 
-fn arxiv_in(s: &str) -> Option<String> {
+pub(crate) fn arxiv_in(s: &str) -> Option<String> {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
         Regex::new(r"(?i)(?:arxiv\.org/(?:abs|pdf|html)/|arxiv:|10\.48550/arxiv\.)?(\d{4}\.\d{4,5})(?:v\d+)?").unwrap()
