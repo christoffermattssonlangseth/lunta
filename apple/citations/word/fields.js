@@ -539,6 +539,11 @@ var LuntaFields = (function () {
   function formattedCitation(text, items, entries) {
     items = items || []; entries = entries || [];
     var nums = citeNumbers(text), keys = nums ? null : citeAuthorYears(text);
+    if (!nums && !keys) {
+      // the writer's words typed into the control after the citation ("28 with GSEApy"): the citation it starts with
+      var lead = /^\s*(\([^()]*\)|\[[^[\]]*\]|\d+(?:\s*[-–—‒,;]\s*\d+)*)(?=[\s.,;:])/.exec(String(text || ''));
+      if (lead) { nums = citeNumbers(lead[1]); keys = nums ? null : citeAuthorYears(lead[1]); }
+    }
     var byNumber = {};
     entries.forEach(function (e) { if (e.n && !byNumber[e.n]) byNumber[e.n] = e; });
     var refs = nums ? nums.map(function (n) { return byNumber[n] || null; })

@@ -134,7 +134,7 @@ var LuntaDocs = (function () {
    */
   function read(doc) {
     var tabs = tabsOf(doc);
-    var items = [], bibPlaceholders = [], bibliography = null, zotero = [], zoteroNames = [];
+    var items = [], bibPlaceholders = [], bibliography = null, zotero = [], zoteroNames = [], luntaNames = [];
     tabs.forEach(function (tab) {
       var dt = tab.documentTab, content = (dt.body && dt.body.content) || [];
       var firstItem = items.length;
@@ -222,6 +222,7 @@ var LuntaDocs = (function () {
       Object.keys(nr).forEach(function (name) {
         (nr[name].namedRanges || []).forEach(function (x) {
           if (name.indexOf(OPTS) === 0) (x.ranges || []).forEach(function (rg) { opts.push({ id: x.namedRangeId, name: name, r: rg }); });
+          if (name.indexOf(OPTS) === 0 || storePart(name)) luntaNames.push(name);
           else if (name.indexOf('Z_F') === 0) zoteroNames.push({ id: x.namedRangeId, name: name, tabId: tab.tabId });
         });
       });
@@ -259,6 +260,7 @@ var LuntaDocs = (function () {
     return {
       revisionId: doc.revisionId, title: doc.title,
       items: items, bibliography: bibliography, bibPlaceholders: bibPlaceholders, storeNames: storeNames, zotero: zotero, zoteroNames: zoteroNames,
+      luntaNames: unique(luntaNames),
       firstTab: { tabId: first ? first.tabId : undefined, bodyEnd: fc.length ? fc[fc.length - 1].endIndex : 1 }
     };
   }
@@ -523,6 +525,29 @@ var LuntaDocs = (function () {
     return { requests: requests, updated: updated, bibliography: bibChanged, placeholders: placeholders };
   }
 
+  /**
+   * Convert Citations to Plain Text: every citation and the bibliography lose their links (their
+   * text and its look stay), and Lunta's named ranges go (the store, the options). Returns
+   * {requests, cites, bib}.
+   */
+  function plainRequests(parsed) {
+    var requests = [];
+    parsed.items.forEach(function (it) {
+      requests.push({ updateTextStyle: { range: range(it.tabId, it.segmentId, it.start, it.end), textStyle: {}, fields: 'link' } });
+    });
+    parsed.bibPlaceholders.forEach(function (ph) {
+      requests.push({ updateTextStyle: { range: range(ph.tabId, ph.segmentId, ph.start, ph.end), textStyle: {}, fields: 'link' } });
+    });
+    var bib = parsed.bibliography;
+    if (bib) {
+      bib.paragraphs.forEach(function (p) {
+        if (p.end - 1 > p.start) requests.push({ updateTextStyle: { range: range(bib.tabId, undefined, p.start, p.end - 1), textStyle: {}, fields: 'link' } });
+      });
+    }
+    (parsed.luntaNames || []).forEach(function (name) { requests.push({ deleteNamedRange: { name: name } }); });
+    return { requests: requests, cites: parsed.items.length, bib: bib ? 1 : 0 };
+  }
+
   /** The requests that set a citation's options (`code`, "" to clear) over its text. */
   function optionRequests(it, code) {
     var out = (it.optRanges || []).map(function (o) { return { deleteNamedRange: { namedRangeId: o.id } }; });
@@ -614,7 +639,8 @@ var LuntaDocs = (function () {
     placeholderHTML: placeholderHTML, newToken: newToken,
     read: read, storePart: storePart, storeGenerations: storeGenerations, storeNames: storeNames, newGeneration: newGeneration,
     sameStore: sameStore, planRequests: planRequests, plainSegments: plainSegments, placeholderRequests: placeholderRequests, claimParagraphs: claimParagraphs,
-    optionsCode: optionsCode, optionNames: optionNames, optionRequests: optionRequests, zoteroRequests: zoteroRequests, ZOTERO: ZOTERO
+    optionsCode: optionsCode, optionNames: optionNames, optionRequests: optionRequests, zoteroRequests: zoteroRequests, ZOTERO: ZOTERO,
+    plainRequests: plainRequests
   };
 })();
 if (typeof module !== 'undefined') module.exports = LuntaDocs;

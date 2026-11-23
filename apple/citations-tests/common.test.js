@@ -372,3 +372,30 @@ test('converting: Zotero’s theses, books, reports and preprints keep their typ
   assert.equal(C.cslMeta({ type: 'article', title: 'A document' }).work_type, undefined, 'CSL’s "article" is a preprint only when it says so');
   assert.equal(C.cslMeta({ type: 'article-journal', title: 'T', 'container-title': 'Cell' }).work_type, undefined);
 });
+
+test('strayText: the writer’s words inside a citation’s control, around the citation as Lunta writes it now', () => {
+  const s = (text, cite) => { const r = C.strayText(text, cite); return r && [r.before, r.after]; };
+  assert.deepEqual(s('28 with GSEApy', '28'), ['', ' with GSEApy']);
+  assert.deepEqual(s('28 with GSEApy', '27'), ['', ' with GSEApy'], 'renumbered');
+  assert.deepEqual(s('1–3 with GSEApy (v1.0)', '1–4'), ['', ' with GSEApy (v1.0)']);
+  assert.deepEqual(s('as in 29, and', '2'), ['as in ', ', and']);
+  assert.deepEqual(s('28.', '28'), ['', '.']);
+  assert.deepEqual(s('(Smith, 2020) and others', '(Smith, 2020a)'), ['', ' and others']);
+  assert.deepEqual(s('28 with GSEApy', '(Smith, 2020)'), ['', ' with GSEApy'], 'a citation in another style');
+  // all citation: the same, another style, a number inside a number, only spaces
+  assert.equal(s('28', '28'), null);
+  assert.equal(s('(Smith, 2020)', '4'), null);
+  assert.equal(s('[29]', '2'), null);
+  assert.equal(s('12', '1'), null);
+  assert.equal(s('28 ', '28'), null);
+  assert.equal(s('4 for a review', '(Smith, 2020, for a review)'), null);
+  assert.equal(s('Smith et al. (2020)', 'Smith et al.4'), null);
+  assert.equal(C.strayNote([{ before: '', after: ' with GSEApy' }]), 'Text typed inside a citation was kept, outside it: “with GSEApy”.');
+  assert.equal(C.strayNote([{ before: 'as in ', after: ', and' }, { before: '', after: '.' }]), 'Text typed inside 2 citations was kept, outside them: “as in … , and”, “.”.');
+});
+
+test('plainDone: what the panels say after Convert Citations to Plain Text', () => {
+  assert.equal(C.plainDone(1, 0), 'Converted 1 citation to plain text. The document has no Lunta citations now.');
+  assert.equal(C.plainDone(12, 1), 'Converted 12 citations and the bibliography to plain text. The document has no Lunta citations now.');
+  assert.equal(C.plainDone(0, 0), 'This document has no Lunta citations or bibliography.');
+});

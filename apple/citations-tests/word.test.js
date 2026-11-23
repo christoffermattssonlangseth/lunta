@@ -33,7 +33,28 @@ function makeWord(doc) {
         set superscript(v) { c.runs.forEach((r) => { r.font.superscript = v; }); }
       },
       contentControls: { items: [], load() {} },
-      delete() { if (doc.nodes) removeNode(c); else doc.ccs.splice(doc.ccs.indexOf(c), 1); },
+      delete(keepContent) {
+        // keepContent: the control goes, its text (with its runs' fonts) stays where it was
+        if (keepContent) {
+          (doc.unwrapped = doc.unwrapped || []).push({ tag: c.tag, text: c.text, runs: c.runs, html: c.html });
+          if (doc.paras) doc.paras.forEach((para) => { const i = para.indexOf(c); if (i >= 0) para.splice(i, 1, c.text); });
+        }
+        if (doc.nodes) removeNode(c); else if (doc.ccs.indexOf(c) >= 0) doc.ccs.splice(doc.ccs.indexOf(c), 1);
+      },
+      // text written outside the control, before and after it (Range "Whole" insertText Before/After)
+      outside: { before: '', after: '', runs: [] },
+      getRange(where) {
+        return {
+          insertText(t, loc) {
+            calls.insertText++;
+            const run = { text: t, font: { superscript: null } };
+            if (loc === 'Before') c.outside.before = t + c.outside.before; else c.outside.after += t;
+            c.outside.runs.push(run);
+            return run;
+          },
+          select(mode) { calls.cursorAfter = where === 'After' ? c : null; calls.selectMode = mode; }
+        };
+      },
       // runs: what was written, each with its own font ("see " not raised, "4" raised)
       insertText(t, where) {
         calls.insertText++;
@@ -169,7 +190,7 @@ function makeOffice(store) {
     context: {
       requirements: { isSetSupported: () => true },
       document: {
-        settings: { get: (k) => (k in store.settings ? store.settings[k] : null), set: (k, v) => { store.settings[k] = v; }, saveAsync: (cb) => cb && cb() },
+        settings: { get: (k) => (k in store.settings ? store.settings[k] : null), set: (k, v) => { store.settings[k] = v; }, remove: (k) => { delete store.settings[k]; }, saveAsync: (cb) => cb && cb() },
         customXmlParts: {
           getByNamespaceAsync: (ns, cb) => ok(cb, store.parts.filter((p) => p.xml.includes(ns))),
           addAsync: (xml, cb) => { store.parts.push(part(xml)); ok(cb); }
@@ -740,3 +761,84 @@ test('Check Citations: each citation’s sentence sent with its paragraph; the d
   const open = p.lunta.requests.find((r) => r.url.endsWith('/api/open'));
   assert.deepEqual(plainJSON(open.body), { id: 'a', find: 'A passage' });
 });
+
+// ---- the writer's words typed into a citation ----
+
+test('Update All keeps words typed into a citation ("²⁸ with GSEApy"), outside it; the cursor goes after a new citation', async () => {
+  const p = await panel({ settings: { luntaStyle: 'nature' }, ccs: [['margins:a', '28 with GSEApy'], ['margins:b', '29'], ['margins-bib', 'x']] });
+  await p.ctx.updateAll();
+  assert.deepEqual(texts(p).slice(0, 2), ['1', '2'], 'the citations renumbered');
+  const c = p.doc.ccs[0];
+  assert.deepEqual(c.runs.map((r) => [r.text, r.font.superscript]), [['1', true]]);
+  assert.deepEqual([c.outside.before, c.outside.after], ['', ' with GSEApy'], 'the words after the control, not deleted');
+  assert.equal(c.outside.runs[0].font.superscript, false, 'on the line, not raised');
+  assert.equal(p.doc.ccs[1].outside.after, '');
+  assert.match(p.status(), /Text typed inside a citation was kept, outside it: “with GSEApy”\./);
+  // the next Update All: nothing to move, nothing rewritten
+  const writes = p.calls.insertText + p.calls.insertHtml;
+  await p.ctx.updateAll();
+  assert.equal(p.calls.insertText + p.calls.insertHtml, writes);
+  // words before and after a citation: the old number goes, the words stay
+  p.doc.ccs[1].text = 'as in 29, and';
+  await p.ctx.updateAll();
+  assert.deepEqual(texts(p).slice(0, 2), ['1', '2']);
+  assert.deepEqual([p.doc.ccs[1].outside.before, p.doc.ccs[1].outside.after], ['as in ', ', and']);
+  // a new citation: the cursor after it, outside its control
+  p.ctx.picked = [LIB.c];
+  await p.ctx.insertCitation();
+  const added = p.doc.ccs[p.doc.ccs.length - 1];
+  assert.equal(added.tag, 'margins:c');
+  assert.equal(p.calls.cursorAfter, added);
+});
+
+test('Convert: a SmartCite citation with the writer’s words inside its control ("28 with GSEApy") converts, and the words stay outside', async () => {
+  const d = X.smartCite([['1 with GSEApy', [1]]], X.SC_BIB_CELL, { withIds: false });
+  const p = await panel({ settings: { luntaStyle: 'vancouver' }, ooxml: d.xml, nodes: d.nodes });
+  p.lunta.lib.k = KE;
+  await p.ctx.convertCitations();
+  const plan = p.ctx.conversion.plan;
+  assert.deepEqual(plainJSON(plan.works.map((w) => [w.meta.title, w.id])), [['In situ sequencing for RNA analysis in preserved tissue and cells', 'k']]);
+  await p.ctx.runConversion([]);
+  assert.equal(p.doc.nodes[0].tag, 'margins:k');
+  assert.equal(p.doc.nodes[0].text, '[1]');
+  assert.equal(p.doc.nodes[0].outside.after, ' with GSEApy');
+  assert.match(p.status(), /Converted 1 citation\./);
+});
+
+// ---- Convert Citations to Plain Text ----
+
+test('Convert Citations to Plain Text: warned first; then every citation and the bibliography are ordinary text and the document keeps no Lunta data', async () => {
+  const p = await panel({ settings: { luntaStyle: 'nature' }, ccs: [['margins:a', '(…)'], ['margins:b,c', '(…)'], ['margins-bib', 'x'], ['other', 'a form field']] });
+  await p.ctx.updateAll();
+  assert.equal(p.store.parts.length, 1);
+  p.ctx.openPlain();
+  assert.equal(p.els.plainBox.hidden, false);
+  assert.equal(p.els.plainText.textContent, 'This can’t be undone. Every Lunta citation and the bibliography become ordinary text, as they look now (superscript and italics kept), ' +
+    'and the copy of the cited papers Lunta keeps in the document is removed: Lunta can’t update them any more. Save a copy of the document first and do this on the copy, for the version you submit.');
+  assert.deepEqual(tagsOfCcs(p), ['margins:a', 'margins:b,c', 'margins-bib', 'other'], 'nothing changed before Convert to Plain Text');
+  p.ctx.closePlain();
+  assert.equal(p.els.plainBox.hidden, true);
+  p.ctx.openPlain();
+  await p.ctx.convertToPlain();
+  assert.deepEqual(tagsOfCcs(p), ['other'], 'only Lunta’s controls removed');
+  // their text and formatting stay: raised numbers, the bibliography's entries
+  const kept = p.doc.unwrapped.slice().reverse();
+  assert.deepEqual(kept.map((u) => [u.tag, u.text]).slice(0, 2), [['margins:a', '1'], ['margins:b,c', '2,3']]);
+  assert.deepEqual(kept[0].runs.map((r) => [r.text, r.font.superscript]), [['1', true]]);
+  assert.match(kept[2].html, /Alpha/);
+  assert.equal(p.store.parts.length, 0, 'the document’s copy of the papers removed');
+  assert.ok(!('luntaStyle' in p.store.settings) && !('luntaState' in p.store.settings));
+  assert.equal(p.status(), 'Converted 2 citations and the bibliography to plain text. The document has no Lunta citations now.');
+  assert.equal(p.els.plainBox.hidden, true);
+  // again: nothing left
+  await p.ctx.convertToPlain();
+  assert.equal(p.status(), 'This document has no Lunta citations or bibliography.');
+});
+
+test('Convert Citations to Plain Text: when Update All can’t run, nothing is converted', async () => {
+  const p = await panel({ ccs: [['margins:a', '(Smith, 2020)'], ['margins:zz', '(Gone, 2001)']] });
+  await p.ctx.convertToPlain();
+  assert.match(p.status(), /Nothing was converted to plain text\./);
+  assert.deepEqual(tagsOfCcs(p), ['margins:a', 'margins:zz']);
+});
+const tagsOfCcs = (p) => p.doc.ccs.map((c) => c.tag);

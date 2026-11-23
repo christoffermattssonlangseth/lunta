@@ -993,6 +993,92 @@ var LuntaCite = (function () {
     return s;
   }
 
+  // ---- the writer's text inside a citation ----
+  // Word puts what is typed right after a citation (at the end of its content control) inside the
+  // control; Update All would then write the citation over it. Such text is found here and kept,
+  // outside the citation: "28 with GSEApy" is the citation "28" and the writer's " with GSEApy".
+
+  var NUMBER_RUN = /\d+(?:\s*[-\u2010-\u2015,;]\s*\d+)*/g;
+  /** The text with each run of numbers as "#" ("1–3, 5" is one run), and where each of its characters came from. */
+  function numberSkeleton(s) {
+    var out = '', at = [], last = 0, m;
+    NUMBER_RUN.lastIndex = 0;
+    while ((m = NUMBER_RUN.exec(s))) {
+      for (var i = last; i < m.index; i++) { out += s.charAt(i); at.push(i); }
+      out += '#'; at.push(m.index);
+      last = m.index + m[0].length;
+    }
+    for (var j = last; j < s.length; j++) { out += s.charAt(j); at.push(j); }
+    at.push(s.length);
+    return { s: out, at: at };
+  }
+  function balanced(s) {
+    var depth = 0;
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charAt(i);
+      if (c === '(' || c === '[') depth++;
+      else if (c === ')' || c === ']') { if (--depth < 0) return false; }
+    }
+    return depth === 0;
+  }
+
+  /**
+   * The writer's text inside a citation's control (`text`, as it is now) around the citation
+   * (`cite`, as Lunta writes it now: renumbered, maybe in another style): {before, after}, or null
+   * when it is all citation. The citation is found as it is, else with other numbers ("28 with
+   * GSEApy" → "27"), else as the citation the text starts with ("(Smith, 2020) and"), and only
+   * where words begin and end, never cutting a bracket in two: a citation in another style
+   * ("(Smith, 2020)" → "4") stays all citation.
+   */
+  function strayText(text, cite) {
+    text = String(text || ''); cite = String(cite || '');
+    if (!text || !cite || text === cite) return null;
+    var word = /[0-9A-Za-z\u00C0-\u024F]/;
+    var split = function (i, n) {
+      var before = text.slice(0, i), after = text.slice(i + n);
+      if (!/\S/.test(before + after) || !balanced(before) || !balanced(after)) return null;
+      if (before && word.test(before.charAt(before.length - 1)) && word.test(text.charAt(i))) return null;
+      if (after && word.test(after.charAt(0)) && word.test(text.charAt(i + n - 1))) return null;
+      return { before: before, after: after };
+    };
+    var i = text.indexOf(cite);
+    var found = i >= 0 ? split(i, cite.length) : null;
+    if (found) return found;
+    var t = numberSkeleton(text), c = numberSkeleton(cite), k = t.s.indexOf(c.s);
+    if (k >= 0) {
+      found = split(t.at[k], t.at[k + c.s.length] - t.at[k]);
+      if (found) return found;
+    }
+    var lead = /^\s*(?:\([^()]*\)|\[[^[\]]*\]|\d+(?:\s*[-\u2010-\u2015,;]\s*\d+)*)/.exec(text);
+    if (lead && lead[0].length < text.length) {
+      var rest = text.slice(lead[0].length).trim();
+      if (/[A-Za-z\u00C0-\u024F]/.test(rest) && cite.indexOf(rest) < 0) return split(0, lead[0].length);
+    }
+    return null;
+  }
+
+  /** What the panel says of the text found inside citations and kept after them. */
+  function strayNote(list) {
+    if (!list.length) return '';
+    var shown = list.slice(0, 3).map(function (s) { return '“' + [s.before.trim(), s.after.trim()].filter(Boolean).join(' … ') + '”'; }).join(', ');
+    return 'Text typed inside ' + (list.length === 1 ? 'a citation' : list.length + ' citations') + ' was kept, outside ' + (list.length === 1 ? 'it' : 'them') + ': ' + shown + (list.length > 3 ? ', …' : '') + '.';
+  }
+
+  // ---- Convert Citations to Plain Text: for the version you submit ----
+
+  var PLAIN_WARNING = 'This can’t be undone. Every Lunta citation and the bibliography become ordinary text, as they look now (superscript and italics kept), ' +
+    'and the copy of the cited papers Lunta keeps in the document is removed: Lunta can’t update them any more. ' +
+    'Save a copy of the document first and do this on the copy, for the version you submit.';
+
+  /** What the panel says after converting to plain text. */
+  function plainDone(cites, bib) {
+    if (!cites && !bib) return 'This document has no Lunta citations or bibliography.';
+    var what = [];
+    if (cites) what.push(cites + ' citation' + (cites === 1 ? '' : 's'));
+    if (bib) what.push('the bibliography');
+    return 'Converted ' + what.join(' and ') + ' to plain text. The document has no Lunta citations now.';
+  }
+
   // ---- Check Citations (Lunta's /claims; core/src/claims) ----
   // For each citation, the sentence it is in and the cited papers' passages that best match it,
   // with (when Lunta has an on-device model) a suggested verdict whose quotes are checked word for
@@ -1369,7 +1455,7 @@ var LuntaCite = (function () {
     rememberJournal: rememberJournal, hitMeta: hitMeta, pickedLabel: pickedLabel, useStorage: useStorage,
     claimSites: claimSites, claimBody: claimBody, claimKey: claimKey, claimDecisions: claimDecisions, rememberClaim: rememberClaim, runClaims: runClaims,
     claimVerdict: claimVerdict, claimCounts: claimCounts, claimSummary: claimSummary, claimsReview: claimsReview, parseOpenLink: parseOpenLink,
-    CLAIM_PRIVACY: CLAIM_PRIVACY
+    CLAIM_PRIVACY: CLAIM_PRIVACY, strayText: strayText, strayNote: strayNote, PLAIN_WARNING: PLAIN_WARNING, plainDone: plainDone
   };
 })();
 if (typeof module !== 'undefined') module.exports = LuntaCite;

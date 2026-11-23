@@ -140,6 +140,12 @@
           <div class="buttons"><button class="btn bib" disabled>Insert Bibliography</button><button class="btn refresh" disabled>Update All</button></div>
           <div class="buttons"><button class="btn edit" disabled>Edit Citation…</button><button class="btn resolve" disabled title="Turn placeholders typed while writing, like (Langseth et al. 2025) or [Smith 2019 cortex], into citations: you confirm each one">Resolve Citations…</button></div>
           <div class="buttons"><button class="btn convert" disabled title="Make citations inserted with Zotero Lunta citations: you review the papers first, nothing changes until you click Convert">Convert Citations from Zotero…</button></div>
+          <div class="buttons"><button class="btn plain" disabled title="For the version you submit: every Lunta citation and the bibliography become ordinary text, as they look now. Do it on a copy of the document.">Convert Citations to Plain Text…</button></div>
+          <div class="plainbox box" hidden>
+            <div class="row"><strong>Convert Citations to Plain Text</strong><button class="link plainclose">Close</button></div>
+            <p class="note plaintext"></p>
+            <div class="buttons"><button class="btn primary plaingo">Convert to Plain Text</button><button class="btn plaincancel">Cancel</button></div>
+          </div>
           <div class="cvbox box" hidden>
             <div class="row"><strong>Convert Citations</strong><button class="link cvclose">Close</button></div>
             <div class="cvlist"></div>
@@ -205,6 +211,7 @@
     $(".edit").disabled = !can || needsStyle;
     $(".resolve").disabled = !can || needsStyle;
     $(".convert").disabled = !can || needsStyle;
+    $(".plain").disabled = $(".plaingo").disabled = !can || needsStyle;
     $(".claims").disabled = !ready || checking;
     $(".cadd").disabled = !can || !current || !picked.length;
   }
@@ -718,6 +725,18 @@
   $(".clstop").onclick = () => { stopChecking = true; };
   $(".clclose").onclick = () => { stopChecking = true; $(".clbox").hidden = true; $(".cllist").innerHTML = ""; claimItems = []; status(""); };
   $(".convert").onclick = openConvert;
+  // Convert Citations to Plain Text: warned first (it can't be undone), then Update All and the links removed
+  const closePlain = () => { $(".plainbox").hidden = true; };
+  $(".plain").onclick = () => { $(".plaintext").textContent = LuntaCite.PLAIN_WARNING; $(".plainbox").hidden = false; status(""); };
+  $(".plainclose").onclick = closePlain;
+  $(".plaincancel").onclick = closePlain;
+  $(".plaingo").onclick = () => exclusive(async () => {
+    closePlain();
+    status("Converting to plain text…");
+    const r = check(await send({ op: "plainText", docId: docId(), ...(styleSaved ? {} : { style, styleTitle }) }));
+    styleSaved = false;
+    status(r.summary || "");
+  });
   $(".cvclose").onclick = closeConvert;
   $(".rclose").onclick = () => { $(".rbox").hidden = true; if (resolver) resolver.load([]); $(".rlist").innerHTML = ""; status(""); };
 

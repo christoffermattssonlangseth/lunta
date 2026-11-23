@@ -31,6 +31,12 @@
   <div class="current-h">Convert Citations <button id="cvclose" class="cite-x" title="Close">✕</button></div>
   <div id="cvlist"></div>
 </div>
+<div class="buttons"><button id="plain" disabled title="For the version you submit: every Lunta citation and the bibliography become ordinary text, as they look now. Do it on a copy of the document.">Convert Citations to Plain Text…</button></div>
+<div id="plainBox" class="resolve" hidden>
+  <div class="current-h">Convert Citations to Plain Text <button id="plainClose" class="cite-x" title="Close">✕</button></div>
+  <p id="plainText" class="hint"></p>
+  <div class="buttons"><button id="plainGo" class="primary">Convert to Plain Text</button><button id="plainCancel">Cancel</button></div>
+</div>
 <div class="buttons"><button id="claims" disabled title="Does each cited paper plausibly support its sentence? Lunta shows the best-matching passages (and, with an on-device model, a suggested verdict). Nothing in the document changes.">Check Citations…</button></div>
 <div id="claimsBox" class="resolve" hidden>
   <div class="current-h">Check Citations <button id="clstop" class="cite-x" title="Stop" hidden>Stop</button><button id="clclose" class="cite-x" title="Close">✕</button></div>
@@ -39,7 +45,7 @@
 <p id="status" class="status"></p>
 <script>
 // Sidebar version: Code.gs must be at least this (both are pasted from Lunta together).
-var SIDEBAR_VERSION = 4;
+var SIDEBAR_VERSION = 6;
 var BASE = 'https://localhost:47481/api', TOKEN = '{{TOKEN}}';
 var picked = [], style = null, styleTitle = '', key = TOKEN, busy = false, ready = false, lastSearch = 0;
 var checking = false, stopChecking = false, claimItems = [];   // Check Citations
@@ -68,7 +74,7 @@ function server(fn) {
 function showError(e) { status(LuntaCite.describe(e, 'gdocs'), true); }
 function setButtons() {
   $('insert').disabled = busy || !ready || !picked.length;
-  $('bib').disabled = $('refresh').disabled = $('edit').disabled = $('convert').disabled = busy || !ready;
+  $('bib').disabled = $('refresh').disabled = $('edit').disabled = $('convert').disabled = $('plain').disabled = $('plainGo').disabled = busy || !ready;
   $('style').disabled = busy || !ready;
   $('claims').disabled = !ready || checking;
 }
@@ -280,6 +286,21 @@ function runConversion(keys) {
   })();
 }
 
+// ---- Convert Citations to Plain Text: warned first (it can't be undone), then Update All and the links removed ----
+function openPlain() { $('plainText').textContent = LuntaCite.PLAIN_WARNING; $('plainBox').hidden = false; status(''); }
+function closePlain() { $('plainBox').hidden = true; }
+var convertToPlain = exclusive(function () {
+  closePlain();
+  return update().catch(function (e) {
+    throw new Error(LuntaCite.describe(e, 'gdocs') + ' Nothing was converted to plain text.');
+  }).then(function () {
+    status('Converting to plain text…');
+    return server('plainText');
+  }).then(function (r) {
+    status(LuntaCite.plainDone(r.cites, r.bib));
+  });
+});
+
 // ---- Check Citations: each citation's sentence against the cited papers (common.js, Lunta's /claims) ----
 function showClaims() {
   LuntaCite.claimsReview(document, $('cllist'), claimItems, {
@@ -350,6 +371,7 @@ function setStyle(s, title) {
   $('insert').onclick = insert; $('bib').onclick = insertBib; $('refresh').onclick = updateAll;
   $('edit').onclick = editCitation; $('cclose').onclick = function () { current = null; showCurrent(); };
   $('convert').onclick = convertZotero; $('cvclose').onclick = closeConvert;
+  $('plain').onclick = openPlain; $('plainGo').onclick = convertToPlain; $('plainCancel').onclick = closePlain; $('plainClose').onclick = closePlain;
   $('claims').onclick = checkCitations; $('clclose').onclick = closeClaims; $('clstop').onclick = function () { stopChecking = true; };
   LuntaCite.fillStyles(sel, 'apa');
   status('Loading…');

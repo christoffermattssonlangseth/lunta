@@ -560,3 +560,35 @@ test('Zotero in Google Docs: read from its links and named ranges, converted aft
   assert.deepEqual(api.paragraphs().slice(2), ['Ek (2018). Delta rivers. Science.', 'Lee (2020). Alpha cells. Cell.']);
   assert.ok(!t.named.some((n) => n.name.startsWith('Z_F')));
 });
+
+test('Convert Citations to Plain Text: Update All first, then the citations and the bibliography are ordinary text and Lunta’s named ranges go', async () => {
+  const api = new FakeDocsAPI({ paragraphs: [
+    P('One ', link('(…)', CITE(['b'])), ' and ', link('(…)', CITE(['a', 'b'])), '.', { footnote: [P('A note ', link('(…)', CITE(['c'])), '.')] }),
+    P(link('References will appear here.', BIB))
+  ] });
+  const g = flow(api);
+  await g.update('doc', { style: 'vancouver' });
+  await g.editCitation('doc', { index: 0, expect: ['b'], ids: ['b'], options: C.encodeOptions({ b: { locator: '4' } }) });
+  const before = api.paragraphs();
+  assert.ok(api.tab('t.0').named.some((n) => n.name.startsWith('lunta-o:')));
+  assert.ok(api.storeNames().length >= 1);
+  // as the panel asks for it
+  const done = await g.op({ op: 'plainText', docId: 'd'.repeat(30) });
+  assert.equal(done.summary, 'Converted 3 citations and the bibliography to plain text. The document has no Lunta citations now.');
+  assert.deepEqual([done.cites, done.bib], [3, 1]);
+  assert.deepEqual(api.paragraphs(), before, 'the text as it was');
+  for (const s of ['[1, p. 4]', '[1,2]', '1. Wu (2021)']) assert.equal(api.linkAt(api.indexOf(s)), null, s);
+  assert.equal(api.styleAt(api.indexOf('Neuron')).italic, true, 'italics kept');
+  assert.deepEqual(api.tab('t.0').named.filter((n) => n.name.startsWith('lunta')).map((n) => n.name), []);
+  const st = await g.state('doc');
+  assert.deepEqual([st.citations.length, st.style, st.hasBibliography], [0, '', false]);
+  // nothing left: says so
+  assert.equal((await g.plainText('doc', {})).summary, 'This document has no Lunta citations or bibliography.');
+});
+
+test('Convert Citations to Plain Text: when Update All can’t run, nothing is converted', async () => {
+  const api = new FakeDocsAPI({ paragraphs: [P('One ', link('(Old, 2001)', CITE(['zz'])), '.')] });
+  const g = flow(api);
+  await assert.rejects(g.plainText('doc', { style: 'apa' }), /Nothing was changed\..*Nothing was converted to plain text\./);
+  assert.equal(api.linkAt(api.indexOf('(Old')), CITE(['zz']));
+});

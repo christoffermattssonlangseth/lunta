@@ -7,7 +7,7 @@
 // A citation's options (each paper's page, prefix, suffix, author left out or in the text) are in
 // named ranges over its text, "lunta-o:<key>:<i>:<n>:<part of the code>" (common.js); scripts from
 // before them don't see them, and drop them when they rewrite that citation's text.
-var CODE_VERSION = 5;
+var CODE_VERSION = 6;
 var OPTS = 'lunta-o:';
 var ZOTERO = 'https://www.zotero.org/google-docs/?';
 var CITE = 'https://margins.local/cite?ids=';
@@ -632,6 +632,41 @@ function selectCitation(id) {
 }
 
 // ---- the bibliography ----
+
+// ---- Convert Citations to Plain Text: for the version you submit ----
+
+/**
+ * Every citation and the bibliography made ordinary text (their links removed; their text and look
+ * stay) and what Lunta keeps in the document removed: the store's and the options' named ranges,
+ * the document properties. The sidebar runs Update All first. Returns {cites, bib}.
+ */
+function plainText() {
+  var lock = LockService.getDocumentLock();
+  if (!lock.tryLock(15000)) throw new Error('Another Update All is running in this document. Try again in a moment.');
+  try {
+    var doc = DocumentApp.getActiveDocument();
+    var runs = citations_(doc);
+    runs.forEach(function (r) { r.el.setLinkUrl(r.start, r.end, null); });
+    var bib = bibParagraphs_(doc);
+    bib.forEach(function (b) {
+      var t = b.el.editAsText(), n = t.getText().length;
+      if (n) t.setLinkUrl(0, n - 1, null);
+    });
+    sections_(doc).forEach(function (sec) {
+      var list = [];
+      try { list = sec.host.getNamedRanges(); } catch (e) { list = []; }
+      (list || []).forEach(function (nr) {
+        var name = String(nr.getName());
+        if (name.indexOf(OPTS) === 0 || storePart_(name)) nr.remove();
+      });
+    });
+    var dp = PropertiesService.getDocumentProperties();
+    Object.keys(dp.getProperties()).forEach(function (k) { if (k.indexOf('lunta') === 0) dp.deleteProperty(k); });
+    return { cites: runs.length, bib: bib.length ? 1 : 0 };
+  } finally {
+    lock.releaseLock();
+  }
+}
 
 function isBibText_(t) {
   var n = t.getText().length;

@@ -80,7 +80,7 @@ final class GoogleDocsSafari {
             await account.disconnect()
             return ["connected": false]
         case "state", "update", "prepareInsert", "finishInsert", "details", "editCitation", "scanPlaceholders", "writePlaceholder",
-             "scanZotero", "convertZotero", "claimSites":
+             "scanZotero", "convertZotero", "claimSites", "plainText":
             guard account.configured else { return ["error": Self.setupMessage, "kind": "setup"] }
             guard account.connected else { return ["error": "Connect your Google account to cite in this document.", "kind": "auth"] }
             do {

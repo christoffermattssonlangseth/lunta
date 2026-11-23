@@ -454,6 +454,34 @@ function makeLuntaGDocs(deps) {
     return out;
   }
 
+  // ---- Convert Citations to Plain Text: for the version you submit ----
+
+  /**
+   * Update All first (the citations as they should read), then every citation and the bibliography
+   * made ordinary text and Lunta's data in the document removed. Returns {cites, bib, summary}.
+   */
+  async function plainText(docId, opts) {
+    try {
+      await update(docId, opts);
+    } catch (e) {
+      e.message += ' Nothing was converted to plain text.';
+      throw e;
+    }
+    for (var attempt = 0; ; attempt++) {
+      var doc = await deps.docs.get(docId), parsed = D.read(doc);
+      var p = D.plainRequests(parsed);
+      if (!p.requests.length) return { cites: 0, bib: 0, summary: C.plainDone(0, 0) };
+      try {
+        await deps.docs.batchUpdate(docId, p.requests, parsed.revisionId);
+        return { cites: p.cites, bib: p.bib, summary: C.plainDone(p.cites, p.bib) };
+      } catch (e) {
+        if (e.kind !== 'revision') throw e;
+        if (attempt < 3) { await sleep(300 * (attempt + 1)); continue; }
+        throw fail('The document kept changing (someone typing?). Nothing was converted to plain text: try again.', 'revision');
+      }
+    }
+  }
+
   // ---- Check Citations: the citations and their paragraphs (Lunta's /claims checks them) ----
 
   /** {sites: LuntaCite.claimSites(…), papers: the details the document keeps of the cited papers}. */
@@ -503,6 +531,8 @@ function makeLuntaGDocs(deps) {
         return scanPlaceholders(msg.docId);
       case 'claimSites':
         return claimSites(msg.docId);
+      case 'plainText':
+        return plainText(msg.docId, style);
       case 'writePlaceholder': {
         var p = msg.placeholder || {};
         return writePlaceholder(msg.docId, Object.assign(style, {
@@ -516,7 +546,7 @@ function makeLuntaGDocs(deps) {
   }
 
   return { claimSites: claimSites, state: state, update: update, finishInsert: finishInsert, details: details, editCitation: editCitation, scanZotero: scanZotero, convertZotero: convertZotero,
-           scanPlaceholders: scanPlaceholders, writePlaceholder: writePlaceholder,
+           plainText: plainText, scanPlaceholders: scanPlaceholders, writePlaceholder: writePlaceholder,
            decodeStore: decodeStore, encodeStore: encodeStore, bareCount: bareCount, op: op };
 }
 

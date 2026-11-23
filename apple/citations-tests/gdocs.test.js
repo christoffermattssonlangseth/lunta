@@ -40,7 +40,7 @@ test('citations in document order, footnotes where their marks are, runs split b
   const body = Body(P(t1, c1), P('More ', note, cite('[2]', ['b'])), P(split));
   const gs = load(makeDocument({ body }));
   assert.deepEqual(gs.call('getState').citations, [['a'], ['n'], ['b'], ['b', 'c']]);
-  assert.equal(gs.call('version'), 5);
+  assert.equal(gs.call('version'), 6);
 });
 
 test('Check Citations: every paragraph’s text and its citations, footnotes after the body; nothing written', () => {
@@ -328,4 +328,33 @@ test('Zotero in Google Docs: with a Lunta bibliography already, Zotero’s goes;
   gs.call('zoteroConvert', [], [ZBIB], false);
   assert.equal(bodyText(body), 'Known (Smith, 2020, p. 3).\nReferences\n\nLunta’s list');
   assert.ok(doc.named.some((x) => x.getName().indexOf('Z_F' + ZKEY) === 0), 'the citation not converted keeps its code');
+});
+
+test('Convert Citations to Plain Text: the citations and the bibliography lose their links, keep their text and look; Lunta’s data goes', () => {
+  const c1 = cite('(…)', ['a']), c2 = cite('(…)', ['b']);
+  const note = new Footnote([P('See ', cite('(…)', ['a']))]);
+  const other = new Text('a web link');
+  other.setLinkUrl(0, 9, 'https://example.org');
+  const body = Body(P('One ', c1, ' ', note), P(new Text('Two '), c2, ' ', other), bibPara('References will appear here.'));
+  const doc = makeDocument({ body });
+  const gs = load(doc);
+  const papers = { a: { m: { title: 'Alpha' }, f: ['Lee'], y: '2020', t: 'Alpha', e: {} }, b: { m: { title: 'Beta' }, f: ['Wu'], y: '2021', t: 'Beta', e: {} } };
+  gs.call('applyPlan', Object.assign(plan(gs, ['1', '1', '2'], { bib: ['1. Alpha *Cell*.', '2. Beta.'], style: 'csl:cell', sup: true }), { papers }));
+  gs.call('setCitationOptions', 2, 'b', C.optionRangeNames(C.encodeOptions({ b: { locator: '3' } }), 'k1'));
+  assert.ok(doc.named.some((n) => n.getName().startsWith('lunta-o:')) && doc.named.some((n) => n.getName().startsWith('lunta:')));
+  assert.ok(Object.keys(gs.docProps.data).some((k) => k.startsWith('lunta')));
+  const text = bodyText(body);
+  assert.deepEqual(gs.call('plainText'), { cites: 3, bib: 1 });
+  assert.equal(bodyText(body), text, 'the text as it was');
+  assert.equal(c1.getLinkUrl(0), null);
+  assert.equal(c1.getTextAlignment(0), TextAlignment.SUPERSCRIPT, 'still raised');
+  assert.equal(other.getLinkUrl(0), 'https://example.org', 'other links stay');
+  const bibText = body.children[2].editAsText();
+  assert.equal(bibText.getLinkUrl(0), null);
+  assert.ok(bibText.isItalic(9), 'italics kept');
+  assert.deepEqual(doc.named.map((n) => n.getName()), []);
+  assert.deepEqual(Object.keys(gs.docProps.data).filter((k) => k.startsWith('lunta')), []);
+  const st = gs.call('getState');
+  assert.deepEqual([st.citations.length, st.style, st.hasBibliography], [0, '', false]);
+  assert.deepEqual(gs.call('plainText'), { cites: 0, bib: 0 });
 });

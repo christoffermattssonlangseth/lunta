@@ -10,7 +10,7 @@
 // Microsoft store listing): either way the library comes from the Lunta app on this computer.
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
-var VERSION = '16';   // bump with the ?v= in index.html, so Word loads the new files
+var VERSION = '18';   // bump with the ?v= in index.html, so Word loads the new files
 var NS = 'https://lunta.app/ns/word-citations/1';
 var picked = [];          // [{id, title, ...}]
 var style = 'apa';
@@ -43,6 +43,8 @@ function setButtons() {
   $('bib').disabled = $('refresh').disabled = busy || !ready;
   $('style').disabled = busy || !ready;
   if ($('convert')) $('convert').disabled = busy || !ready;
+  if ($('plain')) $('plain').disabled = busy || !ready;
+  if ($('plainGo')) $('plainGo').disabled = busy || !ready;
   if ($('claims')) $('claims').disabled = !ready || checking;
 }
 
@@ -167,8 +169,10 @@ var insertCitation = exclusive(function () {
         parent.tag = LuntaCite.makeTag(had.concat(ids));   // its title (the options) stays
         return ctx.sync();
       }
-      // at the end of the selection, so selected text isn't replaced
-      wrapCitation(sel.getRange('End'), ids);
+      // at the end of the selection, so selected text isn't replaced; the cursor after it, outside
+      // the control, so what is typed next isn't part of the citation
+      var cc = wrapCitation(sel.getRange('End'), ids);
+      try { cc.getRange('After').select('End'); } catch (e) {}
       return ctx.sync();
     });
   }).then(function () {
@@ -435,10 +439,18 @@ function update() {
               throw new Error(LuntaCite.unknownMessage(f.unknown.length, f.offline));
             });
           }
-          var changed = 0;
+          var changed = 0, strays = [];
           cites.forEach(function (c, i) {
             var t = f.texts[i], sup = !!f.superscripts[i];
             if (!t) return;
+            // the writer's words typed into the control ("28 with GSEApy"): kept, outside it
+            var stray = c.text === t ? null : LuntaCite.strayText(c.text, t);
+            if (stray) {
+              var whole = c.getRange('Whole');
+              if (stray.before) whole.insertText(stray.before, 'Before').font.superscript = false;
+              if (stray.after) whole.insertText(stray.after, 'After').font.superscript = false;
+              strays.push(stray);
+            }
             // a raised citation's prefix and suffix stay on the line: "see ⁴"
             var before = sup && f.befores ? f.befores[i] || '' : '', after = sup && f.afters ? f.afters[i] || '' : '';
             var mid = t.slice(before.length, t.length - after.length);
@@ -475,7 +487,8 @@ function update() {
             });
           }).then(function (warn) {
             status(LuntaCite.summary(cites.length, f.references, f.name, f.fromDocument, f.offline) +
-                   (empty ? ' · ' + empty + ' empty citation' + (empty === 1 ? '' : 's') + ' left out' : '') + warn);
+                   (empty ? ' · ' + empty + ' empty citation' + (empty === 1 ? '' : 's') + ' left out' : '') + warn +
+                   (strays.length ? ' ' + LuntaCite.strayNote(strays) : ''));
           });
         });
       });
@@ -862,6 +875,58 @@ function replaceForeign(ctx, conv, res, left) {
   });
 }
 
+// ---- Convert Citations to Plain Text: for the version you submit ----
+// Every Lunta citation and the bibliography become ordinary text as they are after Update All
+// (their content controls removed, their text and formatting kept), and the document's copy of
+// the papers (the custom XML part, the add-in settings) goes: what Zotero calls Unlink Citations.
+
+function openPlain() {
+  $('plainBox').hidden = false;
+  $('plainText').textContent = LuntaCite.PLAIN_WARNING;
+  status('');
+}
+function closePlain() { $('plainBox').hidden = true; }
+
+var convertToPlain = exclusive(function () {
+  closePlain();
+  var cites = 0, bib = 0;
+  return update().catch(function (e) {
+    throw new Error(LuntaCite.describe(e, 'word') + ' Nothing was converted to plain text.');
+  }).then(function () {
+    return Word.run(function (ctx) {
+      var all = ctx.document.contentControls;
+      all.load('items/id,items/tag');
+      return ctx.sync().then(function () {
+        var ours = all.items.filter(function (c) { return c.tag === LuntaCite.BIB_TAG || LuntaCite.parseTag(c.tag) !== null; });
+        // the last first: a citation inside the bibliography before the bibliography
+        ours.slice().reverse().forEach(function (c) {
+          if (c.tag === LuntaCite.BIB_TAG) bib++; else cites++;
+          c.delete(true);   // the control goes, its text stays
+        });
+        return ctx.sync();
+      });
+    });
+  }).then(function () {
+    return removeState();
+  }).then(function () {
+    status(LuntaCite.plainDone(cites, bib));
+  });
+});
+
+/** The document's copy of its papers and style removed (custom XML part, settings). */
+function removeState() {
+  state = { papers: {} };
+  try {
+    ['luntaStyle', 'luntaState'].forEach(function (k) { Office.context.document.settings.remove(k); });
+    Office.context.document.settings.saveAsync(function () {});
+  } catch (e) {}
+  var parts = xmlParts();
+  if (!parts) return Promise.resolve();
+  return asyncCall(function (cb) { parts.getByNamespaceAsync(NS, cb); }).then(function (list) {
+    return Promise.all(list.map(function (p) { return asyncCall(function (cb) { p.deleteAsync(cb); }).catch(function () {}); }));
+  }).catch(function () {});
+}
+
 function closeResolve() {
   $('resolveBox').hidden = true;
   if (resolver) resolver.load([]);
@@ -925,6 +990,10 @@ Office.onReady(function () {
   if ($('convert')) $('convert').onclick = convertCitations;
   if ($('cvclose')) $('cvclose').onclick = closeConvert;
   if ($('claims')) $('claims').onclick = checkCitations;
+  if ($('plain')) $('plain').onclick = openPlain;
+  if ($('plainGo')) $('plainGo').onclick = convertToPlain;
+  if ($('plainCancel')) $('plainCancel').onclick = closePlain;
+  if ($('plainClose')) $('plainClose').onclick = closePlain;
   if ($('clclose')) $('clclose').onclick = closeClaims;
   if ($('clstop')) $('clstop').onclick = function () { stopChecking = true; };
   // clicking a citation in the text shows its papers here
