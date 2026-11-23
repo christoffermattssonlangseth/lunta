@@ -7,6 +7,10 @@
 // A citation's options (each paper's page, prefix, suffix, author left out or in the text) are in
 // named ranges over its text, "lunta-o:<key>:<i>:<n>:<part of the code>" (common.js); scripts from
 // before them don't see them, and drop them when they rewrite that citation's text.
+/**
+ * @OnlyCurrentDoc
+ * Apps Script then asks only for documents.currentonly (this document), not every document.
+ */
 var CODE_VERSION = 6;
 var OPTS = 'lunta-o:';
 var ZOTERO = 'https://www.zotero.org/google-docs/?';

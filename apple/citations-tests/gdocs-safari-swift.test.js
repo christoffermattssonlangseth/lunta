@@ -73,8 +73,15 @@ test('Lunta for Mac answers Safariâ€™s Google Docs requests with the extensionâ€
     let s = await app.ask({ op: 'status' });
     assert.deepEqual([s.viaApp, s.configured, s.supported, s.connected, s.lunta.papers], [true, true, true, false, 2]);
     assert.equal((await app.ask({ op: 'state', docId: DOC })).kind, 'auth');
-    assert.deepEqual(await app.ask({ op: 'connect' }), { started: true });
+    // Connect from a document gives Lunta that document in Google's picker (drive.file)
+    assert.deepEqual(await app.ask({ op: 'connect', docId: DOC }), { started: true });
     assert.equal((await app.ask({ op: 'status' })).connected, true);
+    let acct = await app.ask({ _set: {} });
+    assert.deepEqual([acct.picked, acct.granted], [[DOC], [DOC]]);
+    // "Give Lunta access to this document": the picker again, for that document only
+    assert.deepEqual(await app.ask({ op: 'grant', docId: DOC }), { started: true });
+    assert.deepEqual((await app.ask({ _set: { granted: [] } })).picked, [DOC, DOC]);
+    assert.equal((await app.ask({ op: 'grant', docId: '../x' })).kind, 'http');
 
     // a document written in the browser (its store gzipped by CompressionStream) reads in the app
     const g = makeLuntaGDocs({ cite: C, model: D, docs: api, lunta: { bibliography: async (b) => entries(b) }, sleep: async () => {} });
@@ -82,6 +89,8 @@ test('Lunta for Mac answers Safariâ€™s Google Docs requests with the extensionâ€
     const st = await app.ask({ op: 'state', docId: DOC });
     assert.equal(st.error, undefined, st.error);
     assert.equal(st.style, 'harvard');
+    // opened: remembered as given
+    assert.deepEqual((await app.ask({ _set: {} })).granted, [DOC]);
 
     // Insert Citation as Safari does it: the placeholder, the reader's âŒ˜V, then finished
     const prep = await app.ask({ op: 'prepareInsert', docId: DOC, ids: ['a'] });
@@ -108,7 +117,15 @@ test('Lunta for Mac answers Safariâ€™s Google Docs requests with the extensionâ€
     assert.equal(api.paragraphs()[0], 'Some text.');
 
     // errors as the panel expects them
-    assert.equal((await app.ask({ op: 'state', docId: 'nopenopenopenopenopenope' })).kind, 'access');
+    let no = await app.ask({ op: 'state', docId: 'nopenopenopenopenopenope' });
+    assert.equal(no.kind, 'access');
+    assert.match(no.error, /Give Lunta access to this document/);
+    // given before, but Google doesn't open it now: said so, and forgotten
+    await app.ask({ _set: { granted: [DOC, 'nopenopenopenopenopenope'] } });
+    no = await app.ask({ op: 'state', docId: 'nopenopenopenopenopenope' });
+    assert.equal(no.kind, 'access');
+    assert.match(no.error, /had this document before/);
+    assert.deepEqual((await app.ask({ _set: {} })).granted, [DOC]);
     assert.match((await app.ask({ op: 'state', docId: '../x' })).error, /isnâ€™t a Google Docs document/);
     assert.equal((await app.ask({ op: 'nonsense' })).error, 'unknown request');
     await app.ask({ _set: { configured: false } });
