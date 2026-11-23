@@ -78,4 +78,20 @@ final class EquationTests: XCTestCase {
         PDFAnalyzer.attachFragments(&l2)
         XCTAssertTrue(l2[0].spans.contains { $0.text == "ij" && $0.sub }, "\(l2[0].spans)")
     }
+
+    func testAPrimeIsNoScript() async throws {
+        // "the derivative θ′ of it", the prime set small and raised after θ
+        var p = [Piece(text: "A Study of Things", size: 20, x: 72, y: 80), Piece(text: "1 Introduction", size: 12, x: 72, y: 130)]
+        p += FootnoteTests.body("page 0", y: 160, n: 3)
+        let a = "and the derivative θ"
+        p.append(Piece(text: a, x: 72, y: 196))
+        let w = FootnoteTests.width(a, 10)
+        p.append(Piece(text: "′", size: 7, x: 72 + w + 0.3, y: 196, raise: 3))
+        p.append(Piece(text: "of it is what we wanted to show here.", x: 72 + w + 4, y: 196))
+        p += FootnoteTests.body("page 0 on", y: 220, n: 3)
+        let book = try await PDFBook.build(FootnoteTests.pdf([p, FootnoteTests.body("the end", y: 100)]), meta: PaperMeta(), log: { _ in })
+        let h = html(book)
+        XCTAssertTrue(h.contains("θ′"), h)
+        XCTAssertFalse(h.contains("<sup>′</sup>") || h.contains("<sub>′</sub>"), h)
+    }
 }

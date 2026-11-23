@@ -194,6 +194,7 @@ final class PDFAnalyzer {
     private var gluedLines: [CGFloat: Int] = [:]   // by font size
     static let spacingAccents: [String: String] = ["¨": "\u{0308}", "´": "\u{0301}", "ˆ": "\u{0302}", "˜": "\u{0303}",
                                                     "ˇ": "\u{030C}", "¸": "\u{0327}", "˚": "\u{030A}"]
+    static let primes: Set<String> = ["′", "″", "‴"]
     static let noSpaceBefore: Set<String> = [",", ".", ";", ":", "!", "?", ")", "]", "}", "’", "”", "%"]
     static let noSpaceAfter: Set<String> = ["(", "[", "{", "‘", "“"]
     let log: (String) -> Void
@@ -712,8 +713,11 @@ final class PDFAnalyzer {
             }
             // the line's baseline as the content stream sets it: where every character has the full
             // line's box, a smaller one is raised or lowered by its own baseline (TeX's θ₁₀, x²)
+            // (and wherever a smaller character has its own run, it is raised or lowered by the run's
+            // baseline against the line's: a box's middle says little where PDFKit gives a formula's
+            // characters tall boxes, and "citation-like" said every small digit was raised, β₃ as β³)
             var mainBase: CGFloat?
-            if chars.contains(where: { $0.size > 0 && $0.size < 0.8 * dom }), mains.allSatisfy({ $0.box.h > 0.85 * mainHeight }) {
+            if chars.contains(where: { $0.size > 0 && $0.size < 0.8 * dom }) {
                 let bs = mains.compactMap { style($0.box, size: $0.size)?.baseline }.sorted()
                 if !bs.isEmpty { mainBase = bs[bs.count / 2] }
             }
@@ -735,10 +739,12 @@ final class PDFAnalyzer {
                 let citeLike = c.ch.range(of: #"^[0-9,–\-−*†‡§a-e]$"#, options: .regularExpression) != nil
                 var sup = !isSpace && small && (flatBoxes ? citeLike : center < mainCenter - 0.12 * dom)
                 var sub = !isSpace && small && !flatBoxes && center > mainCenter + 0.12 * dom
-                if flatBoxes, !isSpace, small, let mb = mainBase, let b = own?.baseline {
+                if !isSpace, small, let mb = mainBase, let b = own?.baseline, abs(own!.size - c.size) < 0.6 || flatBoxes {
                     sup = b < mb - 0.15 * dom
                     sub = b > mb + 0.08 * dom
                 }
+                // a prime is set raised already: not a script of its own (θ′, f′ᵢ)
+                if Self.primes.contains(c.ch) { sup = false; sub = false }
                 if !isSpace {
                     n += 1
                     if run?.bold == true { nBold += 1 }

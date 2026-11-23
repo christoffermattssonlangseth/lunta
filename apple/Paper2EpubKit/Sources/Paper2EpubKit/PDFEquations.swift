@@ -113,8 +113,8 @@ extension PDFAnalyzer {
             var ins = f.spans.filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
             for i in ins.indices {
                 ins[i].text = ins[i].text.trimmingCharacters(in: .whitespaces)
-                ins[i].sup = up && !mark || t.allSatisfy { "∗*′″‴†‡".contains($0) }
-                ins[i].sub = !ins[i].sup
+                ins[i].sup = up && !mark || t.allSatisfy { "∗*†‡".contains($0) }
+                ins[i].sub = !ins[i].sup && !t.allSatisfy { "′″‴".contains($0) }
             }
             h.text = String(chars[..<k]) + t + String(chars[k...])
             var newSpans: [Span] = []
@@ -439,7 +439,8 @@ extension PDFAnalyzer {
                 if y > maxY { maxY = y }
             }
         }
-        guard maxX >= minX, maxY >= minY, let full = ctx.makeImage() else { return nil }
+        // (nothing, or a sliver: the crop missed the formula; the caller crops its box instead)
+        guard maxX >= minX, maxY >= minY, CGFloat(maxY - minY) >= 0.5 * bodySize * scale, let full = ctx.makeImage() else { return nil }
         let pad = Int((2 * scale).rounded())
         let box = CGRect(x: max(0, minX - pad), y: max(0, minY - pad), width: min(W, maxX + pad + 1) - max(0, minX - pad),
                          height: min(H, maxY + pad + 1) - max(0, minY - pad))
