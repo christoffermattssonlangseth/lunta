@@ -15,7 +15,8 @@ use hayagriva::{
     Formatted, LocatorPayload, SpecificLocator,
 };
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 
 type Result<T> = std::result::Result<T, CoreError>;
@@ -171,7 +172,35 @@ fn style_xml(cache_dir: &str, id: &str) -> Result<String> {
 /// Also whether the style prints locators (Cell, Nature and other superscript styles don't) and,
 /// for those that don't, the style without collapsing numbers into ranges, for citations whose
 /// locators Lunta adds ("1(p1),2,3", not "1(p1)–3").
-fn load_style(cache_dir: &str, id: &str) -> Result<(IndependentStyle, String, Option<String>, Option<IndependentStyle>)> {
+/// Parsed once per style and kept while its files are unchanged (Update All and every journal-style
+/// request asked for it again: reading both files, two regexes and parsing the XML twice).
+fn load_style(cache_dir: &str, id: &str) -> Result<Arc<LoadedStyle>> {
+    type Cache = Mutex<HashMap<PathBuf, (Vec<(PathBuf, Option<SystemTime>)>, Arc<LoadedStyle>)>>;
+    static CACHE: OnceLock<Cache> = OnceLock::new();
+    let stamp = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let key = csl_dir(cache_dir)?.join(format!("{}.csl", clean_id(id)?));
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some((files, loaded)) = cache.lock().unwrap().get(&key) {
+        if files.iter().all(|(p, t)| t.is_some() && stamp(p) == *t) {
+            return Ok(loaded.clone());
+        }
+    }
+    let (loaded, parent) = parse_style(cache_dir, id)?;
+    let loaded = Arc::new(loaded);
+    let mut files = vec![key.clone()];
+    if let Some(parent) = parent {
+        files.push(csl_dir(cache_dir)?.join(format!("{parent}.csl")));
+    }
+    let files = files.into_iter().map(|p| { let t = stamp(&p); (p, t) }).collect();
+    cache.lock().unwrap().insert(key, (files, loaded.clone()));
+    Ok(loaded)
+}
+
+/// A style's independent style, its title, locale and the style without collapsing (`load_style`).
+type LoadedStyle = (IndependentStyle, String, Option<String>, Option<IndependentStyle>);
+
+/// `load_style` without the cache, and the id of the independent parent it read, if any.
+fn parse_style(cache_dir: &str, id: &str) -> Result<(LoadedStyle, Option<String>)> {
     let id = clean_id(id)?;
     let xml = style_xml(cache_dir, &id)?;
     let title = tag_text(&xml, "title").unwrap_or_else(|| id.clone());
@@ -181,8 +210,9 @@ fn load_style(cache_dir: &str, id: &str) -> Result<(IndependentStyle, String, Op
         .skip(1)
         .find(|l| l.contains("independent-parent"))
         .and_then(|l| attr(l, "href"));
-    let independent = match parent {
-        Some(href) => style_xml(cache_dir, &clean_id(&href)?)?,
+    let parent = parent.map(|href| clean_id(&href)).transpose()?;
+    let independent = match &parent {
+        Some(p) => style_xml(cache_dir, p)?,
         None => xml,
     };
     // hayagriva puts the cite-group delimiter between *different* authors when a style collapses
@@ -197,7 +227,7 @@ fn load_style(cache_dir: &str, id: &str) -> Result<(IndependentStyle, String, Op
         let re = regex::Regex::new(r#"\scollapse="[^"]*""#).unwrap();
         IndependentStyle::from_xml(&re.replace_all(&independent, "")).ok()
     };
-    Ok((style, title, locale, uncollapsed))
+    Ok(((style, title, locale, uncollapsed), parent))
 }
 
 fn tag_text(xml: &str, tag: &str) -> Option<String> {
@@ -329,7 +359,8 @@ pub fn render(cache_dir: &str, style_id: &str, papers: &[Paper], citations: &[Ve
 /// that prints no locators (Cell, Nature) gets each one after the paper's number, as the built-in
 /// superscript styles write them ("⁴⁽ᵖ⁵⁾", "[4, p. 5]"), so the page the writer gave isn't lost.
 pub fn render_items(cache_dir: &str, style_id: &str, papers: &[Paper], citations: &[Vec<CslCiteItem>]) -> Result<CslRendered> {
-    let (style, title, locale, uncollapsed) = load_style(cache_dir, style_id)?;
+    let loaded = load_style(cache_dir, style_id)?;
+    let (style, title, locale, uncollapsed) = (&loaded.0, loaded.1.clone(), loaded.2.clone(), &loaded.3);
     let prints_locators = uncollapsed.is_none();
     let locale = locale.map(LocaleCode);
     let items: Vec<Item> = papers.iter().map(item).collect();
@@ -350,11 +381,11 @@ pub fn render_items(cache_dir: &str, style_id: &str, papers: &[Paper], citations
             opts.push(c);
         }
         let adds_locators = !prints_locators && opts.iter().any(|o: &&CslCiteItem| !o.locator.trim().is_empty());
-        let st = if adds_locators { uncollapsed.as_ref().unwrap_or(&style) } else { &style };
+        let st = if adds_locators { uncollapsed.as_ref().unwrap_or(style) } else { style };
         driver.citation(CitationRequest::new(cited, st, locale.clone(), locales(), None));
         asked.push(opts);
     }
-    let out = driver.finish(BibliographyRequest::new(&style, locale, locales()));
+    let out = driver.finish(BibliographyRequest::new(style, locale, locales()));
     let citations = out
         .citations
         .iter()
@@ -804,5 +835,52 @@ mod tests {
             r.bibliography[0].text,
             "Karpathy, A. [blog] A Recipe for Training Neural Networks. Andrej Karpathy blog. Retrieved November 21, 2026 from https://karpathy.github.io/2019/04/25/recipe/"
         );
+    }
+
+    #[test]
+    fn a_style_parsed_once_and_again_when_its_file_changes() {
+        let dir = cache();
+        let papers = [paper("a", "Smith", "2020", "Alpha")];
+        let one = load_style(&dir, "test-superscript").unwrap();
+        assert!(Arc::ptr_eq(&one, &load_style(&dir, "test-superscript").unwrap()), "kept");
+        let path = std::path::Path::new(&dir).join("csl/test-superscript.csl");
+        std::fs::write(&path, SUPERSCRIPT.replace("<title>Test Superscript</title>", "<title>Renamed</title>")).unwrap();
+        let f = std::fs::File::options().write(true).open(&path).unwrap();
+        f.set_modified(SystemTime::now() + Duration::from_secs(5)).unwrap();
+        let out = render(&dir, "test-superscript", &papers, &[vec!["a".into()]]).unwrap();
+        assert_eq!(out.style_title, "Renamed");
+        assert_eq!(out.citations[0].text, "1");
+    }
+
+    /// Cell Systems (an alias of Cell, CC BY-SA 3.0, in testdata/csl), as Word's citation box and
+    /// Update All ask for it: `cargo test -p lunta-core --release csl_render_timing -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn csl_render_timing() {
+        let dir = std::env::temp_dir().join(format!("lunta-csl-timing-{}-{}", std::process::id(), rand_suffix()));
+        std::fs::create_dir_all(dir.join("csl")).unwrap();
+        for f in ["cell.csl", "cell-systems.csl"] {
+            std::fs::copy(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/testdata/csl").join(f), dir.join("csl").join(f)).unwrap();
+        }
+        let dir = dir.to_string_lossy().to_string();
+        let papers: Vec<Paper> = (0..30).map(|i| paper(&format!("p{i}"), &format!("Author{i}"), "2020", &format!("Title {i}"))).collect();
+        let three = vec![vec!["p0".to_string(), "p1".to_string(), "p2".to_string()]];
+        let all: Vec<Vec<String>> = (0..26).map(|i| vec![format!("p{i}"), format!("p{}", i + 4)]).collect();
+        render(&dir, "cell-systems", &papers[..3], &three).unwrap();
+        let t = std::time::Instant::now();
+        for _ in 0..100 {
+            render(&dir, "cell-systems", &papers[..3], &three).unwrap();
+        }
+        println!("3 papers, 1 citation: {:.2} ms per render", t.elapsed().as_secs_f64() * 10.0);
+        let t = std::time::Instant::now();
+        for _ in 0..20 {
+            render(&dir, "cell-systems", &papers, &all).unwrap();
+        }
+        println!("30 papers, 26 citations: {:.2} ms per render", t.elapsed().as_secs_f64() * 50.0);
+        let t = std::time::Instant::now();
+        for _ in 0..100 {
+            load_style(&dir, "cell-systems").unwrap();
+        }
+        println!("load_style: {:.2} ms", t.elapsed().as_secs_f64() * 10.0);
     }
 }

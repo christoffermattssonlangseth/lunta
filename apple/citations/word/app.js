@@ -10,7 +10,7 @@
 // Microsoft store listing): either way the library comes from the Lunta app on this computer.
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
-var VERSION = '13.2';   // bump with the ?v= in index.html, so Word loads the new files
+var VERSION = '13.3';   // bump with the ?v= in index.html, so Word loads the new files
 var NS = 'https://lunta.app/ns/word-citations/1';
 var picked = [];          // [{id, title, ...}]
 var style = 'apa';
@@ -226,37 +226,66 @@ var insertBibliography = exclusive(function () {
 // document (Update All) is looked at when it is done, not dropped. Before, a citation clicked before
 // opening the panel, or while it loaded, showed nothing until Update All rewrote the text under the
 // cursor (and Word said the selection had changed).
-var selTimer = null, lastShown = '', selPending = false, selSeq = 0;
-var seen = {};   // papers' details Lunta gave for the citation box this session: {id: entry}
+// A click is looked at at once, with one round trip to Word (each is slow in Word for Mac): the
+// control the cursor is in, with its tag and title. A control inside a citation (one another add-in
+// left in it, as in documents converted from ReadCube Papers) is found in `inside`, read with the
+// document's citations when the panel opens and at every Update All, not by asking Word for its
+// parents one by one. Clicks while one is looked at are looked at once it is done, the last one only.
+var lastShown = '', selPending = false, selSeq = 0, selRunning = false, selAgain = false;
+var seen = {};      // papers' details Lunta gave for the citation box this session: {id: entry}
+var inside = {};    // a control inside a Lunta citation: {control id: {id, tag, title} of the citation}
+var outside = {};   // controls not in a citation (asked Word once): {control id: true}
 function onSelection() {
-  clearTimeout(selTimer);
-  selTimer = setTimeout(checkSelection, 200);
+  if (busy || !ready) { selPending = true; return; }
+  if (selRunning) { selAgain = true; return; }
+  checkSelection();
 }
 function checkSelection() {
-  if (busy || !ready) { selPending = true; return; }
-  selPending = false;
+  if (busy || !ready) { selPending = true; return Promise.resolve(); }
+  selPending = false; selAgain = false; selRunning = true;
   var mine = ++selSeq;
   return Word.run(function (ctx) {
-    return citationAt(ctx, ctx.document.getSelection().parentContentControlOrNullObject, 0).then(function (cc) {
-      if (mine !== selSeq) return;   // a later click answered first
-      var ids = cc ? LuntaCite.parseTag(cc.tag) : null;
-      current = ids && ids.length ? { id: cc.id, ids: ids, opts: LuntaCite.optionsOfTitle(cc.title) || {} } : null;
-      if (!current) editing = null;
-      showCurrent();
-    });
-  }).catch(function () {});
+    var cc = ctx.document.getSelection().parentContentControlOrNullObject;
+    cc.load('isNullObject,id,tag,title');
+    return ctx.sync().then(function () { return citationAt(ctx, cc, 0); });
+  }).then(function (cc) {
+    if (mine !== selSeq) return;   // a later click answered first
+    var ids = cc ? LuntaCite.parseTag(cc.tag) : null;
+    current = ids && ids.length ? { id: cc.id, ids: ids, opts: LuntaCite.optionsOfTitle(cc.title) || {} } : null;
+    if (!current) editing = null;
+    showCurrent();
+  }).catch(function () {}).then(function () {
+    selRunning = false;
+    if (selAgain) onSelection();
+  });
 }
 
-/** The Lunta citation `cc` is or is inside (a control another add-in left in it, converted
- *  citations), or null. */
+/** The Lunta citation the loaded control `cc` is or is inside, {id, tag, title}, or null.
+ *  Word is asked for its parents only for a control not seen when the citations were read. */
 function citationAt(ctx, cc, depth) {
-  if (!cc) return Promise.resolve(null);
-  cc.load('isNullObject,id,tag,title');
+  if (cc.isNullObject) return null;
+  if (LuntaCite.parseTag(cc.tag)) return { id: cc.id, tag: cc.tag, title: cc.title };
+  if (cc.tag === LuntaCite.BIB_TAG || depth >= 3) return null;
+  if (inside[cc.id]) return inside[cc.id];
+  if (outside[cc.id]) return null;
+  var parent = cc.parentContentControlOrNullObject;
+  parent.load('isNullObject,id,tag,title');
   return ctx.sync().then(function () {
-    if (cc.isNullObject) return null;
-    if (LuntaCite.parseTag(cc.tag)) return cc;
-    if (cc.tag === LuntaCite.BIB_TAG || depth >= 3) return null;
-    return citationAt(ctx, cc.parentContentControlOrNullObject, depth + 1);
+    var found = citationAt(ctx, parent, depth + 1);
+    return Promise.resolve(found).then(function (c) {
+      if (c) inside[cc.id] = c; else outside[cc.id] = true;
+      return c;
+    });
+  });
+}
+
+/** Remembers the document's citations' inner controls (`inside`): `cites` are the loaded Lunta
+ *  citation controls, `inner` their loaded contentControls collections. */
+function rememberInside(cites, inner) {
+  inside = {}; outside = {};
+  cites.forEach(function (c, i) {
+    var entry = { id: c.id, tag: c.tag, title: c.title };
+    (inner[i] && inner[i].items || []).forEach(function (x) { inside[x.id] = entry; });
   });
 }
 
@@ -277,10 +306,10 @@ function showCurrent() {
     row.className = 'cite-row';
     row.innerHTML = '<div class="cite-text"><div class="t"></div><div class="m"></div><div class="o"></div></div>' +
       '<button class="cite-o" title="Page, prefix, suffix, author (for this paper in this citation)">Page…</button><button class="cite-x" title="Remove from this citation">✕</button>';
-    // at once from the document's copy (or what Lunta gave earlier), then fresh from Lunta below
+    // at once: what Lunta gave this session, else the document's copy; fresh from Lunta below
     var rec = state.papers[id], got = seen[id];
-    row.querySelector('.t').textContent = rec ? (rec.t || 'Untitled') : got ? (got.title || 'Untitled') : '…';
-    row.querySelector('.m').textContent = rec ? [(rec.f || []).slice(0, 3).join(', ') + ((rec.f || []).length > 3 ? ' et al.' : ''), rec.y].filter(Boolean).join(' · ') : got ? LuntaCite.hitMeta(got) : '';
+    row.querySelector('.t').textContent = got ? (got.title || 'Untitled') : rec ? (rec.t || 'Untitled') : '…';
+    row.querySelector('.m').textContent = got ? LuntaCite.hitMeta(got) : rec ? [(rec.f || []).slice(0, 3).join(', ') + ((rec.f || []).length > 3 ? ' et al.' : ''), rec.y].filter(Boolean).join(' · ') : '';
     row.querySelector('.o').textContent = LuntaCite.optionsLabel((current.opts || {})[id]);
     row.querySelector('.cite-x').onclick = function () { removeFromCitation(id); };
     row.querySelector('.cite-o').onclick = function () { editing = editing === id ? null : id; lastShown = ''; showCurrent(); };
@@ -293,16 +322,19 @@ function showCurrent() {
       if (form.focusFirst) setTimeout(form.focusFirst, 0);
     }
   });
-  // fresh details from Lunta (also for papers cited before the document kept their copy)
+  // fresh details from Lunta, once a session (also for papers cited before the document kept their copy)
+  var ask = current.ids.filter(function (id) { return !seen[id]; });
+  if (!ask.length) return;
   var st = LuntaCite.isJournal(style) ? 'apa' : style;
-  getJSON('/bibliography', { style: st, ids: current.ids, papers: LuntaCite.detailsFor(state.papers, current.ids) }).then(function (res) {
+  getJSON('/bibliography', { style: st, ids: ask, papers: LuntaCite.detailsFor(state.papers, ask) }).then(function (res) {
     (res.entries || []).forEach(function (e) { if (e && e.id && !e.missing) seen[e.id] = e; });
     if (lastShown !== key) return;
+    var put = function (el, text) { if (el.textContent !== text) el.textContent = text; };   // no flicker
     (res.entries || []).forEach(function (e) {
       var row = rows[e.id]; if (!row) return;
-      if (e.missing) { row.querySelector('.t').textContent = 'Not in your library'; row.querySelector('.m').textContent = 'Remove it, or add the paper to Lunta and click Update All.'; return; }
-      row.querySelector('.t').textContent = e.title || 'Untitled';
-      row.querySelector('.m').textContent = LuntaCite.hitMeta(e);
+      if (e.missing) { put(row.querySelector('.t'), 'Not in your library'); put(row.querySelector('.m'), 'Remove it, or add the paper to Lunta and click Update All.'); return; }
+      put(row.querySelector('.t'), e.title || 'Untitled');
+      put(row.querySelector('.m'), LuntaCite.hitMeta(e));
     });
   }).catch(function () {});
 }
@@ -443,7 +475,9 @@ function update() {
       var inner = bibs.map(function (b) { var cs = b.contentControls; cs.load('items/id'); return cs; });
       var cands = all.items.filter(function (c) { return LuntaCite.parseTag(c.tag) !== null; });
       cands.forEach(function (c) { c.font.load('superscript'); });
+      var within = cands.map(function (c) { var cs = c.contentControls; cs.load('items/id'); return cs; });
       return ctx.sync().then(function () {
+        rememberInside(cands, within);
         var nested = {};
         inner.forEach(function (cs) { cs.items.forEach(function (c) { nested[c.id] = true; }); });
         var cites = [], lists = [], options = [], empty = 0;
@@ -888,11 +922,15 @@ Office.onReady(function () {
     var saved = LuntaCite.isStyle(st.style);
     style = saved ? st.style : lastStyle();
     // the document's citations: is there any without a saved style
+    // and the controls inside them, so a click there is answered without asking Word for parents
     return Word.run(function (ctx) {
       var all = ctx.document.contentControls;
-      all.load('items/tag');
+      all.load('items/id,items/tag,items/title');
       return ctx.sync().then(function () {
-        styleUnknown = !saved && all.items.some(function (c) { return LuntaCite.parseTag(c.tag); });
+        var cites = all.items.filter(function (c) { return LuntaCite.parseTag(c.tag); });
+        styleUnknown = !saved && cites.length > 0;
+        var inner = cites.map(function (c) { var cs = c.contentControls; cs.load('items/id'); return cs; });
+        return (cites.length ? ctx.sync() : Promise.resolve()).then(function () { rememberInside(cites, inner); }, function () {});
       });
     }).catch(function (e) {
       if (!saved) throw e;   // can't tell: never update in a guessed style
