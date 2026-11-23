@@ -92,6 +92,15 @@ final class BookModeTests: XCTestCase {
         XCTAssertEqual(book.meta.authors, ["Jane Q. Writer"])
     }
 
+    func testRunningHeadWithItsPageNumberApart() async throws {
+        // the head's words and its page number in pieces on one baseline: one margin line, left out
+        let book = try await PDFBook.build(Self.bookPDF(outline: true, numberApart: true), meta: PaperMeta(), log: { _ in })
+        let all = book.chapters.map(\.html).joined()
+        XCTAssertNil(all.range(of: #"<(h3|p)[^>]*>\d Foundations of Things<"#, options: .regularExpression), "running head left in")
+        XCTAssertNil(all.range(of: #"<p>\d{1,2}</p>"#, options: .regularExpression), "page number left in")
+        XCTAssertTrue(all.contains("This is sentence 3 of page 20"), "body text lost")
+    }
+
     func testSyntheticBookWithoutOutline() async throws {
         let book = try await PDFBook.build(Self.bookPDF(outline: false), meta: PaperMeta(), log: { _ in })
         XCTAssertEqual(book.kind, .book, "\(book.kindReasons)")
@@ -146,7 +155,7 @@ final class BookModeTests: XCTestCase {
     /// "Chapter N" pages and running heads with page numbers that change with the chapter ("12 1
     /// Foundations of Things" on the left, "1.1 First Part of Chapter One 13" on the right), and a
     /// two-page index.
-    static func bookPDF(outline: Bool) -> Data {
+    static func bookPDF(outline: Bool, numberApart: Bool = false) -> Data {
         let data = NSMutableData()
         var box = CGRect(x: 0, y: 0, width: 612, height: 792)
         let ctx = CGContext(consumer: CGDataConsumer(data: data as CFMutableData)!, mediaBox: &box, nil)!
@@ -201,7 +210,10 @@ final class BookModeTests: XCTestCase {
                         draw(c, big, 72, 140)
                         y = 190
                     } else if printed % 2 == 0 {
-                        draw("\(printed) \(i + 1) \(c)", body, 72, 60)
+                        // (or the page number apart from the head, as a line of its own: "406     20 Why does…")
+                        if numberApart { draw("\(printed)", body, 72, 60); draw("\(i + 1) \(c)", body, 150, 60) } else {
+                            draw("\(printed) \(i + 1) \(c)", body, 72, 60)
+                        }
                     } else {
                         draw("\(i + 1).\(k < 6 ? 1 : 2) \(k < 6 ? "First" : "Second") Part of Chapter \(ordinals[i]) \(printed)", body, 300, 60)
                     }

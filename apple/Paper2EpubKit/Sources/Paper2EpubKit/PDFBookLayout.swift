@@ -32,27 +32,31 @@ extension PDFAnalyzer {
     /// Linear in the pages.
     func findBookRunning() {
         let n = pagesLines.count
-        var cands: [[PLine]] = Array(repeating: [], count: n)
+        // (a page's top or bottom line with the pieces on its baseline: PDFKit may give the page number of
+        // "406 20 Why does deep learning work?" as a line of its own)
+        var cands: [[(lines: [PLine], text: String)]] = Array(repeating: [], count: n)
         for pno in 0..<n {
-            let ls = topDown(pno)
             let h = boxes[pno].height
-            if let top = ls.first, top.bbox.y0 < 0.2 * h { cands[pno].append(top) }
-            if let bottom = ls.last, ls.count > 1, bottom.bbox.y1 > 0.8 * h { cands[pno].append(bottom) }
+            if let top = marginLine(pno, top: true), top.lines[0].bbox.y0 < 0.2 * h { cands[pno].append(top) }
+            if topDown(pno).count > 1, let bottom = marginLine(pno, top: false), bottom.lines[0].bbox.y1 > 0.8 * h,
+               !(cands[pno].first.map { $0.lines.map(ObjectIdentifier.init) == bottom.lines.map(ObjectIdentifier.init) } ?? false) {
+                cands[pno].append(bottom)
+            }
         }
         // the offset between the page index and the printed number
         var offsets: [Int: Int] = [:]
         for pno in 0..<n {
-            for l in cands[pno] { if let k = Self.headNumber(l.text) { offsets[pno + 1 - k, default: 0] += 1 } }
+            for c in cands[pno] { if let k = Self.headNumber(c.text) { offsets[pno + 1 - k, default: 0] += 1 } }
         }
         let best = offsets.max { ($0.value, -$0.key) < ($1.value, -$1.key) }
         let offset = best.flatMap { $0.value >= max(4, n / 10) ? $0.key : nil }
         let keys = cands.map { Set($0.map { headKey($0.text) }.filter { !$0.isEmpty }) }
         var count = 0
         for pno in 0..<n {
-            for l in cands[pno] {
-                let t = l.text.trimmingCharacters(in: .whitespaces)
+            for c in cands[pno] {
+                let t = c.text.trimmingCharacters(in: .whitespaces)
                 // (a chapter's title and its "Chapter 3" label stand there too, in larger type)
-                guard t.count <= 150, l.size <= bodySize + 1, !Self.chapterLabelRE.test(t) else { continue }
+                guard t.count <= 150, c.lines.allSatisfy({ $0.size <= bodySize + 1 }), !Self.chapterLabelRE.test(t) else { continue }
                 var running = false
                 if let offset, let k = Self.headNumber(t), pno + 1 - k == offset { running = true }
                 if !running {
@@ -64,12 +68,24 @@ extension PDFAnalyzer {
                     }
                 }
                 if running {
-                    dropped.insert(ObjectIdentifier(l)); count += 1
+                    for l in c.lines { dropped.insert(ObjectIdentifier(l)) }
+                    count += 1
                     if ProcessInfo.processInfo.environment["P2E_DEBUG"] != nil { print("running p\(pno + 1): \(t)") }
                 }
             }
         }
         log("Book: \(count) running heads and feet\(offset.map { ", printed page = page − \($0)" } ?? "")")
+    }
+
+    /// The top (or bottom) line of a page with the pieces level with it, left to right, and their text.
+    func marginLine(_ pno: Int, top: Bool) -> (lines: [PLine], text: String)? {
+        let ls = topDown(pno)
+        guard let first = top ? ls.first : ls.last else { return nil }
+        let fb = first.bbox
+        let same = ls.filter { l in min(l.bbox.y1, fb.y1) - max(l.bbox.y0, fb.y0) > 0.5 * min(l.bbox.h, fb.h) }
+            .sorted { $0.bbox.x0 < $1.bbox.x0 }
+        // (the top or bottom line first: its position is checked)
+        return ([first] + same.filter { $0 !== first }, same.map { $0.text.trimmingCharacters(in: .whitespaces) }.joined(separator: " "))
     }
 
     /// The printed table of contents (and lists of figures and tables): pages near the front with
