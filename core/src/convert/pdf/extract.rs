@@ -57,6 +57,8 @@ struct Style {
     math: bool,
     /// Computer Modern roman (CMR10, CMBX10): math where the text is set in another font
     cm_roman: bool,
+    /// a monospaced font (LMMono, Courier, Inconsolata): code
+    mono: bool,
 }
 
 fn style_for(name: &str, force_bold: bool, italic_flag: bool) -> Style {
@@ -66,7 +68,8 @@ fn style_for(name: &str, force_bold: bool, italic_flag: bool) -> Style {
     let italic = italic_flag || layout_re::italic().is_match(clean);
     let math = layout_re::math().is_match(clean) && !layout_re::stix_text().is_match(clean);
     let cm_roman = re!(r"^(CMR|CMBX|CMSL|CMB)\d").is_match(clean);
-    Style { bold, italic, math, cm_roman }
+    let mono = re!(r"(?i)mono|courier|^CMTT|^SFTT|consol|menlo|inconsolata|typewriter|SourceCodePro|FiraCode|^LMTT").is_match(clean);
+    Style { bold, italic, math, cm_roman, mono }
 }
 
 pub(crate) mod layout_re {
@@ -629,7 +632,7 @@ fn make_line(chars: Vec<C>, pno: usize) -> Option<PLine> {
     bases.sort_by(|a, b| a.total_cmp(b));
     let main_base = bases.get(bases.len() / 2).copied();
     let mut spans: Vec<Span> = Vec::new();
-    let (mut n_bold, mut n_math, mut n_cmr, mut n) = (0usize, 0usize, 0usize, 0usize);
+    let (mut n_bold, mut n_math, mut n_cmr, mut n_mono, mut n) = (0usize, 0usize, 0usize, 0usize, 0usize);
     let mut last: Option<Style> = None;
     let mut text = String::new();
     for c in chars {
@@ -663,6 +666,7 @@ fn make_line(chars: Vec<C>, pno: usize) -> Option<PLine> {
             n_bold += st.bold as usize;
             n_math += st.math as usize;
             n_cmr += st.cm_roman as usize;
+            n_mono += st.mono as usize;
         }
         let sp = Span { text: ch.to_string(), bold: st.bold, italic: st.italic, sup, sub, note_ref: None };
         match spans.last_mut() {
@@ -692,6 +696,7 @@ fn make_line(chars: Vec<C>, pno: usize) -> Option<PLine> {
         spans,
         page: pno,
         cmr: n_cmr as f64 / nn,
+        mono: n_mono as f64 / nn,
         tag_split: false,
     })
 }

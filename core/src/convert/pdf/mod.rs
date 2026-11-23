@@ -7,6 +7,7 @@
 //! [`layout`] and do not touch PDFium.
 
 pub mod book;
+pub mod code;
 pub mod equations;
 pub mod extract;
 pub mod layout;
@@ -468,7 +469,7 @@ pub fn assemble_book(
         if p.kind == Kind::Text && text.chars().next().is_some_and(|c| c.is_lowercase()) {
             // (past figures, legends, front matter, notes and boxes set between the columns)
             let skip = |q: &Para| {
-                matches!(q.kind, Kind::Figure | Kind::Table | Kind::Caption | Kind::Front | Kind::Footnote | Kind::Sidenote)
+                matches!(q.kind, Kind::Figure | Kind::Table | Kind::Caption | Kind::Front | Kind::Footnote | Kind::Sidenote | Kind::Code)
                     || q.boxed != p.boxed
                     // (and a piece of a line cropped as a formula, a lone "∗")
                     || (q.kind == Kind::Equation && q.eq_label.is_none() && layout::count(layout::trim(&q.text())) <= 3)
@@ -528,7 +529,7 @@ pub fn assemble_book(
     let mut cap_of: Vec<(usize, usize)> = Vec::new();
     let used = |cap_of: &Vec<(usize, usize)>, j: usize| cap_of.iter().any(|x| x.1 == j);
     for (i, p) in merged.iter().enumerate() {
-        if !matches!(p.kind, Kind::Figure | Kind::Table) {
+        if !matches!(p.kind, Kind::Figure | Kind::Table | Kind::Code) {
             continue;
         }
         let mut best: Option<usize> = None;
@@ -538,6 +539,10 @@ pub fn assemble_book(
                 continue;
             }
             if (p.kind == Kind::Table) != is_table_caption(c) {
+                continue;
+            }
+            // (an algorithm's caption heads its box)
+            if c.text().starts_with("Algorithm") && c.bbox().y0 > p.bbox().y0 {
                 continue;
             }
             let (cb, pb) = (c.bbox(), p.bbox());
@@ -736,8 +741,17 @@ pub fn assemble_book(
                         append!(format!("<div class=\"table-wrap\">{c}<img src=\"{src}\" alt=\"Table\"/></div>"));
                     } else {
                         let c = if cap.is_empty() { String::new() } else { format!("<figcaption>{cap}</figcaption>") };
-                        append!(format!("<figure><img src=\"{src}\" alt=\"Figure\"/>{c}</figure>"));
+                        let alt = esc(p.alt.as_deref().unwrap_or("Figure"));
+                        append!(format!("<figure><img src=\"{src}\" alt=\"{alt}\"/>{c}</figure>"));
                     }
+                }
+            }
+            Kind::Code => {
+                // a listing: its lines as they are set, under its caption ("Figure 7.8 Sample code…")
+                let code = format!("<pre><code>{}</code></pre>", esc(&code::code_text(p)));
+                match cap_of.iter().find(|x| x.0 == i) {
+                    Some(x) => append!(format!("<figure class=\"code\">{code}<figcaption>{}</figcaption></figure>", styled(&merged[x.1]))),
+                    None => append!(code),
                 }
             }
             _ if used(&cap_of, i) => {}

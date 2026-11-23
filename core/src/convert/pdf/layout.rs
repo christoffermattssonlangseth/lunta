@@ -97,6 +97,8 @@ pub struct PLine {
     pub page: usize,
     /// fraction in a Computer Modern roman font (math where the text is set in another font)
     pub cmr: f64,
+    /// fraction in a monospaced font (code)
+    pub mono: f64,
     /// an equation's number split off the end of a line (`equations.rs`), until the equations are found
     pub tag_split: bool,
 }
@@ -116,6 +118,8 @@ pub enum Kind {
     Footnote,
     /// a book's margin note, after the paragraph level with it
     Sidenote,
+    /// a book's code listing (`code.rs`)
+    Code,
 }
 
 #[derive(Debug, Clone)]
@@ -137,6 +141,8 @@ pub struct Para {
     pub crop: Option<R>,
     pub blank: Option<R>,
     pub ink_width: Option<f64>,
+    /// A picture's text alternative where it has text (an algorithm's box)
+    pub alt: Option<String>,
 }
 
 impl Para {
@@ -155,6 +161,7 @@ impl Para {
             crop: None,
             blank: None,
             ink_width: None,
+            alt: None,
         }
     }
     pub fn text(&self) -> String {
@@ -406,6 +413,8 @@ pub struct Region {
     pub rect: R,
     pub kind: Kind,
     pub image: Option<BookImage>,
+    /// the text of an algorithm's box, as its picture's alternative
+    pub alt: Option<String>,
 }
 
 /// A block for the reading order: one line or region, or a box of them (`items`: their indices).
@@ -687,12 +696,18 @@ impl<'a> Analyzer<'a> {
             if pno == 0 && running >= 5 && pictures < 0.5 * r.area() {
                 continue;
             }
-            regions.push(Region { rect: r, kind: Kind::Figure, image: None });
+            regions.push(Region { rect: r, kind: Kind::Figure, image: None, alt: None });
         }
 
         // tables: caption + horizontal rules, or a borderless grid of short cells
+        // (and in a book an algorithm's box, between its rules: kept as a picture of it, its text as its alternative)
+        let book = self.book.kind.is_book_like();
         let caps: Vec<usize> = (0..lines.len())
-            .filter(|&i| re!(concat!(r"(?i)^(Supplementary\s+)?Table\s*", label_number!())).is_match(trim(&lines[i].text)))
+            .filter(|&i| {
+                let t = trim(&lines[i].text);
+                re!(concat!(r"(?i)^(Supplementary\s+)?Table\s*", label_number!())).is_match(t)
+                    || (book && re!(concat!(r"^Algorithm\s*", label_number!(), r"\s*[:.]")).is_match(t))
+            })
             .collect();
         let mut segs: Vec<R> = thin.iter().filter(|r| r.w() > 2.5 && r.h() < 2.5).copied().collect();
         segs.sort_by(|a, b| (a.y0, a.x0).partial_cmp(&(b.y0, b.x0)).unwrap_or(std::cmp::Ordering::Equal));
@@ -708,10 +723,24 @@ impl<'a> Analyzer<'a> {
         hrules.sort_by(|a, b| a.y0.partial_cmp(&b.y0).unwrap_or(std::cmp::Ordering::Equal));
         for ci in caps {
             let cap = &lines[ci];
-            if regions.iter().any(|g| cap.bbox.intersects(&g.rect, 30.0)) {
+            let algorithm = trim(&cap.text).starts_with("Algorithm");
+            // (algorithm boxes stand one under the other: only a box it is in already, which then
+            // starts under its caption)
+            if algorithm {
+                if let Some(g) = regions.iter_mut().find(|g| g.rect.contains(&cap.bbox, 2.0)) {
+                    if g.rect.y0 < cap.bbox.y1 {
+                        if let Some(u) = hrules.iter().find(|r| r.y0 >= cap.bbox.y1 - 1.0 && r.y0 < g.rect.y1) {
+                            g.rect.y0 = u.y0;
+                        }
+                    }
+                    continue;
+                }
+            } else if regions.iter().any(|g| cap.bbox.intersects(&g.rect, 30.0)) {
                 continue;
             }
-            let below: Vec<R> = hrules.iter().filter(|r| r.y0 > cap.bbox.y0 - 2.0).copied().collect();
+            // (an algorithm's box: from the rule under its caption)
+            let below: Vec<R> =
+                hrules.iter().filter(|r| if algorithm { r.y0 >= cap.bbox.y1 - 1.0 } else { r.y0 > cap.bbox.y0 - 2.0 }).copied().collect();
             let above: Vec<R> = hrules.iter().filter(|r| r.y1 < cap.bbox.y0 + 2.0).copied().collect();
             // the table's rules are about as wide as the one next to its caption: a rule much wider
             // (the running head's rule over both columns of the page) or narrower (a table in the
@@ -750,9 +779,17 @@ impl<'a> Analyzer<'a> {
             };
             let grp = group(true).filter(|g| g.len() >= 2).or_else(|| group(false));
             if let Some(grp) = grp.filter(|g| g.len() >= 2) {
-                regions.push(Region { rect: R::union_all(&grp), kind: Kind::Table, image: None });
+                let r = R::union_all(&grp);
+                let alt = algorithm.then(|| {
+                    let mut inside: Vec<&PLine> = lines.iter().filter(|l| r.contains(&l.bbox, 2.0)).collect();
+                    inside.sort_by(|a, b| (a.bbox.y0, a.bbox.x0).partial_cmp(&(b.bbox.y0, b.bbox.x0)).unwrap_or(std::cmp::Ordering::Equal));
+                    inside.iter().map(|l| trim(&line_ends_cleaned(&l.text)).to_string()).collect::<Vec<_>>().join(" ")
+                });
+                regions.push(Region { rect: r, kind: if algorithm { Kind::Figure } else { Kind::Table }, image: None, alt });
+            } else if algorithm {
+                continue;
             } else if let Some(tr) = self.text_table_region(ci, lines, page) {
-                regions.push(Region { rect: tr, kind: Kind::Table, image: None });
+                regions.push(Region { rect: tr, kind: Kind::Table, image: None, alt: None });
             }
         }
         // expand regions with nearby short labels (axis labels, panel letters); not a caption, nor the
@@ -972,8 +1009,16 @@ impl<'a> Analyzer<'a> {
             } else {
                 free
             };
-            let (rest, equations) = self.display_equations(pno, free, &regions);
-            all.extend(self.paragraphs_with(pno, rest, regions, equations));
+            let (rest, mut blocks) = self.display_equations(pno, free, &regions);
+            // a book's code listings
+            let rest = if self.book.kind.is_book_like() {
+                let (r2, code) = self.code_blocks(pno, rest);
+                blocks.extend(code);
+                r2
+            } else {
+                rest
+            };
+            all.extend(self.paragraphs_with(pno, rest, regions, blocks));
             if pno % 5 == 4 {
                 (self.log)(&format!("Laying out page {} of {}", pno + 1, n));
             }
@@ -1030,6 +1075,7 @@ impl<'a> Analyzer<'a> {
             let mut p = Para::new(vec![], pno, g.kind);
             p.region = Some(g.rect);
             p.asset = g.image;
+            p.alt = g.alt;
             units.push(p);
         }
         units.extend(equations);

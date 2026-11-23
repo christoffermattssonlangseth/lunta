@@ -16,6 +16,7 @@ fn line(text: &str, page: usize, x0: f64, y0: f64, size: f64) -> PLine {
         spans: vec![Span { text: text.into(), ..Default::default() }],
         page,
         cmr: 0.0,
+        mono: 0.0,
         tag_split: false,
     }
 }
@@ -2000,4 +2001,28 @@ fn a_paragraph_goes_on_past_the_figures_of_the_next_pages() {
     let book = book_of(pages);
     let h: String = book.chapters.iter().map(|c| c.html.as_str()).collect();
     assert!(h.contains("(whether the line is above or below the data) is unimportant"), "{h}");
+}
+
+#[test]
+fn a_books_code_listing_is_preformatted() {
+    let mut pages = Vec::new();
+    for pno in 0..22 {
+        let mut ls = para(LOREM, pno, 72.0, 100.0, 6, 60);
+        if pno == 5 {
+            let code = [("for epoch in range(100):", 0), ("for i, data in enumerate(loader):", 1), ("pred = model(x_batch)", 2), ("loss.backward()", 2), ("scheduler.step()", 1)];
+            for (j, (t, indent)) in code.iter().enumerate() {
+                let mut l = line(t, pno, 90.0 + 16.0 * *indent as f64, 220.0 + 9.5 * j as f64, 8.0);
+                l.mono = 1.0;
+                ls.push(l);
+            }
+            ls.push(line("Figure 5.1 Sample code for training a network.", pno, 90.0, 275.0, 9.0));
+            ls.extend(para(LOREM, pno, 72.0, 300.0, 4, 60));
+        }
+        pages.push(Page { width: 612.0, height: 792.0, lines: ls, graphics: PageGraphics::default() });
+    }
+    let book = notes_book(pages, "book");
+    let h: String = book.chapters.iter().map(|c| c.html.as_str()).collect();
+    // (the test lines are 0.5 em a character: 16 pt is 4 characters at 8 pt)
+    assert!(h.contains("<figure class=\"code\"><pre><code>for epoch in range(100):\n    for i, data in enumerate(loader):\n        pred = model(x_batch)"), "{h}");
+    assert!(h.contains("\n    scheduler.step()</code></pre><figcaption>Figure 5.1 Sample code"), "{h}");
 }
