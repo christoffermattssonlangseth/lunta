@@ -1701,7 +1701,11 @@ final class PDFAnalyzer {
         for p in paras {
             if p.kind == .text, !p.lines.isEmpty, p.boxed == nil {
                 let (mf, n) = mathFrac(p)
-                if mf > 0.3 && n < 400 && !Self.isProse(p.text) { p.kind = .equation }
+                // (not a list item, nor sentences about formulas set in math type: words of running text
+                // in most of its lines)
+                let words = Self.textWords(p.text)
+                let talk = Self.isBullet(p.lines[0]) || words >= 4 && CGFloat(words) > 1.5 * CGFloat(p.lines.count)
+                if mf > 0.3 && n < 400 && !Self.isProse(p.text) && !talk { p.kind = .equation }
                 // a book's display equations: numbered ("y = f[x, ϕ]. (2.2)"), or a short piece in math type
                 if kind.isBookLike, p.kind == .text, n < 200, !Self.isProse(p.text),
                    mf > 0.1 && n < 60 && p.size >= body - 0.6 || mf > 0.05 && p.text.matches(#"\((\d{1,3}|[A-Z])\.\d{1,3}[a-z]?\)$"#) {

@@ -1587,7 +1587,11 @@ impl<'a> Analyzer<'a> {
         for mut p in paras {
             if p.kind == Kind::Text && !p.lines.is_empty() && p.boxed.is_none() {
                 let (mf, n) = math_frac(&p);
-                if mf > 0.3 && n < 400 && !is_prose(&p.text()) {
+                // (not a list item, nor sentences about formulas set in math type: words of running text
+                // in most of its lines)
+                let words = super::equations::prose_words(&p.text());
+                let talk = is_bullet(&p.lines[0].text) || (words >= 4 && words as f64 > 1.5 * p.lines.len() as f64);
+                if mf > 0.3 && n < 400 && !is_prose(&p.text()) && !talk {
                     p.kind = Kind::Equation;
                 }
                 // a book's display equations: numbered ("y = f[x, ϕ]. (2.2)"), or a short piece in math type

@@ -28,8 +28,14 @@ fn v_overlap(a: &R, b: &R) -> f64 {
     a.y1.min(b.y1) - a.y0.max(b.y0)
 }
 
-fn prose_words(t: &str) -> usize {
-    re!(r"\b[a-z]{3,}\b").find_iter(t).count()
+/// Words of running text in `t`: three or more lower-case letters, not a function's name ("log", "exp", "sig").
+pub fn prose_words(t: &str) -> usize {
+    const MATH: &[&str] = &[
+        "log", "exp", "sin", "cos", "tan", "tanh", "sinh", "cosh", "max", "min", "sup", "inf", "sig", "lim", "det", "arg", "argmax",
+        "argmin", "softmax", "softplus", "relu", "var", "cov", "diag", "mod", "sgn", "sign", "erf", "std", "mean", "trace", "rank",
+        "dim", "ker", "atan", "arcsin", "arccos", "arctan",
+    ];
+    re!(r"\b[a-z]{3,}\b").find_iter(t).filter(|m| !MATH.contains(&m.as_str())).count()
 }
 
 /// The text columns' left and right ends among `lines`: the ends shared by their lines of running text.
@@ -147,6 +153,11 @@ impl Analyzer<'_> {
                 return false;
             }
             if words >= 3 && l.math < 0.3 {
+                return false;
+            }
+            // (running text about the formulas, in math type: "where ζ = e…, and", "• IB(0) = 0. • IB(R) = …",
+            // "Q(t) := … is the Gaussian complementary CDF and …")
+            if words >= 4 || (words >= 2 && !indented) || is_bullet(t) {
                 return false;
             }
             if t.ends_with(':') && words >= 2 {

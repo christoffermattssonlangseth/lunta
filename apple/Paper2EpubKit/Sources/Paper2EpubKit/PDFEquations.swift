@@ -195,6 +195,16 @@ extension PDFAnalyzer {
                 own.rights + doc.rights.filter { d in !own.rights.contains { abs($0 - d) <= 2 } })
     }
 
+    /// Words of running text in `t`: three or more lower-case letters, not a function's name ("log", "exp", "sig").
+    static func textWords(_ t: String) -> Int {
+        let ns = t as NSString
+        return proseWordRE.matches(in: t, range: NSRange(location: 0, length: ns.length))
+            .filter { !mathWords.contains(ns.substring(with: $0.range)) }.count
+    }
+    static let mathWords: Set<String> = ["log", "exp", "sin", "cos", "tan", "tanh", "sinh", "cosh", "max", "min", "sup", "inf", "sig", "lim",
+                                         "det", "arg", "argmax", "argmin", "softmax", "softplus", "relu", "var", "cov", "diag", "mod", "sgn",
+                                         "sign", "erf", "std", "mean", "trace", "rank", "dim", "ker", "atan", "arcsin", "arccos", "arctan"]
+
     static let mathChars = CharacterSet(charactersIn: "=<>≤≥≈≡∝∼≃+−×·∑∏∫∂√∞∇∈∉⊂⊆∪∩→←↔⇒⇔∀∃^_|‖⟨⟩⌈⌉⌊⌋±∓∘⊙⊗⊕")
         .union(CharacterSet(charactersIn: UnicodeScalar(0xE000)!...UnicodeScalar(0xF8FF)!))
         .union(CharacterSet(charactersIn: UnicodeScalar(0x0391)!...UnicodeScalar(0x03C9)!))
@@ -230,12 +240,14 @@ extension PDFAnalyzer {
             let t = l.text.trimmingCharacters(in: .whitespaces)
             if t.isEmpty || Self.isProse(t) || Self.captionRE.test(t) { return false }
             if l.bold > 0.6 && l.math < 0.2 && t.count > 3 { return false }   // a heading, a run-in head
-            let ns = t as NSString
-            let words = Self.proseWordRE.numberOfMatches(in: t, range: NSRange(location: 0, length: ns.length))
+            let words = Self.textWords(t)
             let em = max(l.size, body)
             let indented = l.bbox.x0 > colLeft + 1.0 * em
             if !indented && l.math < 0.4 { return false }
             if words >= 3 && l.math < 0.3 { return false }
+            // (running text about the formulas, in math type: "where ζ = e…, and", "• IB(0) = 0. • IB(R) = …",
+            // "Q(t) := … is the Gaussian complementary CDF and …")
+            if words >= 4 || words >= 2 && !indented || Self.bulletRE.test(t) { return false }
             if t.hasSuffix(":") && words >= 2 { return false }
             let mathy = l.math >= 0.3 || t.unicodeScalars.contains { Self.mathChars.contains($0) }
             return mathy || t.count <= 6
