@@ -25,7 +25,7 @@ function element(id) {
 // ---- Word: content controls in document order ----
 function makeWord(doc) {
   let nextId = 1;
-  const calls = { insertText: 0, insertHtml: 0, selected: null };
+  const calls = { insertText: 0, insertHtml: 0, selected: null, syncs: 0 };
   function cc(tag, text) {
     const c = {
       id: nextId++, tag, text, title: '', appearance: '',
@@ -139,7 +139,7 @@ function makeWord(doc) {
   const Word = {
     run(fn) {
       const ctx = {
-        sync: () => Promise.resolve(),
+        sync: () => { calls.syncs++; return Promise.resolve(); },
         document: {
           body,
           contentControls: Object.assign(collection(doc.ccs), {
@@ -431,15 +431,63 @@ test('a document opened again shows the papers of the citation under the cursor 
   const running = p.ctx.updateAll();
   p.ctx.checkSelection();
   await running;
-  await new Promise((r) => setTimeout(r, 260));
+  await new Promise((r) => setTimeout(r, 40));
   assert.deepEqual(rowTexts(p), ['Gamma <&>']);
   // a citation inside a control another add-in left (the cursor in the inner one): the outer citation
   const inner = p.cc('', '3');
   inner.parentContentControlOrNullObject = Object.assign(p.doc.ccs[0], { isNullObject: false, load() {} });
   p.doc.cursorIn = inner;
   p.ctx.onSelection();
-  await new Promise((r) => setTimeout(r, 260));
+  await new Promise((r) => setTimeout(r, 40));
   assert.deepEqual(rowTexts(p), ['Alpha', 'Beta']);
+});
+
+test('a click in a citation: one round trip to Word, the papers from memory; Lunta asked once a session', async () => {
+  const p = await panel({ settings: { luntaStyle: 'vancouver' }, ccs: [['margins:a,b', '(…)'], ['margins:c', '(…)'], ['', 'other'], ['margins-bib', 'x']] });
+  // a control another add-in left inside the first citation, as in documents from ReadCube Papers
+  const inner = p.cc('', '1');
+  inner.parentContentControlOrNullObject = Object.assign(p.doc.ccs[0], { isNullObject: false, load() {} });
+  p.doc.ccs[0].contentControls.items.push(inner);
+  await p.ctx.updateAll();
+  const click = async (c) => {
+    p.doc.cursorIn = c;
+    p.calls.syncs = 0;
+    const asked = p.lunta.requests.length;
+    p.ctx.onSelection();
+    // the papers show before Lunta answers: from the document's copy or this session's
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    const now = p.els.current.hidden ? null : rowTexts(p);
+    await settle();
+    return { syncs: p.calls.syncs, now, rows: p.els.current.hidden ? null : rowTexts(p), asked: p.lunta.requests.slice(asked).map((r) => r.url.replace(/.*\/api/, '')) };
+  };
+  let r = await click(p.doc.ccs[0]);
+  assert.equal(r.syncs, 1, 'one sync');
+  assert.deepEqual(r.now, ['Alpha', 'Beta'], 'at once');
+  assert.deepEqual(r.asked, ['/bibliography'], 'fresh details once');
+  r = await click(inner);
+  assert.equal(r.syncs, 1, 'inside a citation: still one sync');
+  assert.deepEqual(r.rows, ['Alpha', 'Beta']);
+  assert.deepEqual(r.asked, [], 'details already given this session');
+  r = await click(p.doc.ccs[1]);
+  assert.deepEqual([r.syncs, r.rows, r.asked], [1, ['Gamma <&>'], ['/bibliography']]);
+  r = await click(null);
+  assert.deepEqual([r.syncs, r.rows, r.asked], [1, null, []]);
+  // a control outside citations: its parents asked once, then known
+  const other = p.doc.ccs[2];
+  other.parentContentControlOrNullObject = { isNullObject: true, load() {} };
+  r = await click(other);
+  assert.deepEqual([r.syncs, r.rows], [2, null]);
+  r = await click(other);
+  assert.deepEqual([r.syncs, r.rows], [1, null]);
+  // clicks while one is looked at: the last one only, after it
+  p.doc.cursorIn = p.doc.ccs[0];
+  p.calls.syncs = 0;
+  p.ctx.onSelection();
+  p.doc.cursorIn = null; p.ctx.onSelection();
+  p.doc.cursorIn = p.doc.ccs[1]; p.ctx.onSelection();
+  await settle();
+  assert.equal(p.calls.syncs, 2, 'the first and the last');
+  assert.deepEqual(rowTexts(p), ['Gamma <&>']);
 });
 
 test('clicking a citation shows its papers; ✕ removes one; the last one removes the citation', async () => {
@@ -449,7 +497,7 @@ test('clicking a citation shows its papers; ✕ removes one; the last one remove
   // the cursor in the first citation
   p.doc.cursorIn = p.doc.ccs[0];
   p.ctx.onSelection();
-  await new Promise((r) => setTimeout(r, 260));
+  await new Promise((r) => setTimeout(r, 40));
   assert.equal(p.els.current.hidden, false, 'the citation box shows');
   assert.equal(p.els.citelist.children.length, 2, 'one line per paper');
   assert.equal(p.els.insert.textContent, 'Add to This Citation');
@@ -466,7 +514,7 @@ test('clicking a citation shows its papers; ✕ removes one; the last one remove
   // the cursor outside citations: the box goes, the button is Insert Citation again
   p.doc.cursorIn = null;
   p.ctx.onSelection();
-  await new Promise((r) => setTimeout(r, 260));
+  await new Promise((r) => setTimeout(r, 40));
   assert.equal(p.els.insert.textContent, 'Insert Citation');
 });
 
@@ -550,7 +598,7 @@ test('options: page, prefix, suffix, author left out or in the text; kept in the
   // the cursor in the second citation: Page… for Wu, without the author
   p.doc.cursorIn = p.doc.ccs[1];
   p.ctx.onSelection();
-  await new Promise((r) => setTimeout(r, 260));
+  await new Promise((r) => setTimeout(r, 40));
   await p.ctx.setPaperOptions('c', { locator: '3-5', mode: 'suppress' });
   assert.equal(p.doc.ccs[1].text, '(2019, pp. 3–5)');
   assert.match(p.doc.ccs[1].title, /^Citation lunta-o:/);
