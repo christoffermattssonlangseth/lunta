@@ -38,6 +38,15 @@ pub fn prose_words(t: &str) -> usize {
     re!(r"\b[a-z]{3,}\b").find_iter(t).filter(|m| !MATH.contains(&m.as_str())).count()
 }
 
+/// A line in a footnote's type at the foot of the page (well smaller than the body, in its lowest third,
+/// with words or a note's marker): a note's, never part of a display equation.
+pub fn foot_type(l: &PLine, body: f64, height: f64) -> bool {
+    l.size > 0.0
+        && l.size <= body - 1.5
+        && l.bbox.y0 > 0.67 * height
+        && (re!(r"\b[a-z]{3,}\b").find_iter(&l.text).count() >= 2 || super::notes::note_marker(l).is_some())
+}
+
 /// The text columns' left and right ends among `lines`: the ends shared by their lines of running text.
 pub fn edges_of<'a>(lines: impl IntoIterator<Item = &'a PLine>, body: f64) -> (Vec<f64>, Vec<f64>) {
     let mut l: std::collections::HashMap<i64, usize> = Default::default();
@@ -144,6 +153,9 @@ impl Analyzer<'_> {
                 return false;
             }
             if l.bold > 0.6 && l.math < 0.2 && count(t) > 3 {
+                return false;
+            }
+            if foot_type(l, body, self.pages[pno].height) {
                 return false;
             }
             let words = prose_words(t);

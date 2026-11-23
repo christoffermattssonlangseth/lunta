@@ -2108,3 +2108,14 @@ fn a_problems_label_starts_its_paragraph() {
     let h: String = book.chapters.iter().map(|c| c.html.as_str()).collect();
     assert!(h.contains("ends the problem.</p><p><strong>Problem 1.2</strong>"), "{h}");
 }
+
+#[test]
+fn a_footnotes_line_is_never_part_of_an_equation() {
+    let mut l = line("= ϕ0 + Σi ϕizi. Any other type of", 0, 72.0, 660.0, 8.0);
+    l.math = 0.4;
+    assert!(equations::foot_type(&l, 10.0, 792.0));
+    let mut body = line("= ϕ0 + Σi ϕizi. Any other type of", 0, 72.0, 660.0, 10.0);
+    body.math = 0.4;
+    assert!(!equations::foot_type(&body, 10.0, 792.0));
+    assert!(!equations::foot_type(&line("i = 1", 0, 72.0, 660.0, 7.0), 10.0, 792.0));
+}

@@ -1643,7 +1643,8 @@ impl<'a> Analyzer<'a> {
                 let words = super::equations::prose_words(&p.text());
                 let talk = is_bullet(&p.lines[0].text)
                     || re!(r"^\s*(Problem|Exercise)\s+(\d+\.\d+|[A-Z]\.\d+|\d+)\b").is_match(&p.text())
-                    || (words >= 4 && words as f64 > 1.5 * p.lines.len() as f64);
+                    || (words >= 4 && words as f64 > 1.5 * p.lines.len() as f64)
+                    || super::equations::foot_type(&p.lines[0], body, self.pages[p.page].height);
                 if mf > 0.3 && n < 400 && !is_prose(&p.text()) && !talk {
                     p.kind = Kind::Equation;
                 }
