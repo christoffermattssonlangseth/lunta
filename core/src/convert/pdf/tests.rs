@@ -1976,3 +1976,28 @@ fn equation_tags() {
     }
     assert_eq!(equations::tag_number("(C.8)").as_deref(), Some("C.8"));
 }
+
+#[test]
+fn a_paragraph_goes_on_past_the_figures_of_the_next_pages() {
+    // a sentence cut at a page's end, two pages of figure legends (four of them) set in between
+    let mut p1 = vec![bold(line("A Tiny Test Paper About Lines", 0, 150.0, 60.0, 18.0)), bold(line("1 Introduction", 0, 72.0, 100.0, 12.0))];
+    p1.extend(justified(0, 120.0, 5, "first"));
+    let mut cut = line("and so we see that the direction of the deviation (whether the line is", 0, 72.0, 700.0, 10.0);
+    cut.bbox.x1 = 522.0;
+    p1.push(cut);
+    let legends = |k: usize| {
+        vec![
+            line(&format!("Figure {k}.1 A legend for a figure that is not drawn here."), k, 72.0, 300.0, 9.0),
+            line(&format!("Figure {k}.2 Another legend for a figure not drawn."), k, 72.0, 600.0, 9.0),
+        ]
+    };
+    let mut p4 = vec![line("above or below the data) is unimportant, and the rest of it goes on here.", 3, 72.0, 100.0, 10.0)];
+    p4.extend(justified(3, 130.0, 4, "last"));
+    let pages = vec![p1, legends(1), legends(2), p4]
+        .into_iter()
+        .map(|lines| Page { width: 612.0, height: 792.0, lines, graphics: PageGraphics::default() })
+        .collect();
+    let book = book_of(pages);
+    let h: String = book.chapters.iter().map(|c| c.html.as_str()).collect();
+    assert!(h.contains("(whether the line is above or below the data) is unimportant"), "{h}");
+}

@@ -468,14 +468,17 @@ pub fn assemble_book(
         if p.kind == Kind::Text && text.chars().next().is_some_and(|c| c.is_lowercase()) {
             // (past figures, legends, front matter, notes and boxes set between the columns)
             let skip = |q: &Para| {
-                matches!(q.kind, Kind::Figure | Kind::Table | Kind::Caption | Kind::Front | Kind::Footnote | Kind::Sidenote) || q.boxed != p.boxed
+                matches!(q.kind, Kind::Figure | Kind::Table | Kind::Caption | Kind::Front | Kind::Footnote | Kind::Sidenote)
+                    || q.boxed != p.boxed
+                    // (and a piece of a line cropped as a formula, a lone "∗")
+                    || (q.kind == Kind::Equation && q.eq_label.is_none() && layout::count(layout::trim(&q.text())) <= 3)
             };
             if let Some(j) = merged.iter().rposition(|q| !skip(q)) {
                 let between = merged[j + 1..]
                     .iter()
                     .filter(|q| q.boxed == p.boxed && !matches!(q.kind, Kind::Footnote | Kind::Sidenote))
                     .count();
-                if merged[j].kind == Kind::Text && between <= 3 && !ends_sentence(&merged[j].text()) {
+                if merged[j].kind == Kind::Text && between <= 8 && !ends_sentence(&merged[j].text()) {
                     merged[j].lines.extend(p.lines);
                     continue;
                 }
