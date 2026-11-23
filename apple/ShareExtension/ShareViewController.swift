@@ -80,6 +80,7 @@ final class ShareState: ObservableObject {
 
     func done(pdfs: Int, links: Int) {
         finished = true
+        if pdfs + links > 0 { ShareInbox.notifyApp() }
         if pdfs + links == 0 {
             ok = false
             message = "Nothing Lunta can add here. Share a PDF, a paper's web page or a DOI."

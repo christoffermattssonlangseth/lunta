@@ -31,6 +31,7 @@ final class LibraryModel: ObservableObject {
     @Published var tags: [String] = []
     @Published var smartFolders: [SmartFolder] = []
     var importingShared = false
+    var importSharedAgain = false
     @Published var source: SidebarItem = .all { didSet { reloadList() } }
     @Published var query = "" { didSet { scheduleSearch() } }
     private var searchTask: Task<Void, Never>?
@@ -38,6 +39,11 @@ final class LibraryModel: ObservableObject {
     @Published var status: String?
     @Published var progress: Double?
     @Published var errorMessage: String?
+    /// Papers just added whose PDF or reading view is still on its way: what is being done
+    /// ("Finding the PDF…"), shown in the list next to the paper.
+    @Published var preparing: [String: String] = [:]
+    /// What Safari sent: its background step (details, PDF, reading view), in turn (SafariInboxImport).
+    var safariFollowUp: Task<Void, Never>?
     /// A .bib imported with its citation keys: its report (BibImport.swift).
     @Published var bibImport: BibImportResult?
     /// Checks against the published record (Checks.swift): a checked reference list, a check of
@@ -449,12 +455,16 @@ final class LibraryModel: ObservableObject {
 
     // MARK: - Adding papers
 
-    /// Adds a paper from a DOI / link / PMCID: converts it for reading when an open version exists,
-    /// otherwise adds it with metadata only.
-    /// Adds a paper by DOI, link or PMCID and returns its id. `known` fills in what the lookup
-    /// missed (e.g. arXiv DOIs, which Crossref doesn't know, from a search result's metadata).
+    /// Adds a paper by DOI, link or PMCID and returns its id: converted for reading when an open
+    /// XML version exists, else (`findPDF`) with a legal open-access PDF when there is one (its
+    /// reading view made from that). `known` fills in what the lookup missed (e.g. arXiv DOIs,
+    /// which Crossref doesn't know, from a search result's metadata).
+    ///
+    /// The paper is in the list as soon as its details are known (a second or so), marked as
+    /// being prepared (`preparing`); the reading view is made meanwhile (it was started with the
+    /// lookup) and the PDF looked for after it. Returns when all of that is done.
     @discardableResult
-    func add(_ input: String, known: PaperMeta? = nil) async -> String? {
+    func add(_ input: String, known: PaperMeta? = nil, findPDF: Bool = true) async -> String? {
         let input = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !input.isEmpty else { return nil }
         // a plain web page or blog post (a page that declares a DOI is added as that paper);
@@ -469,40 +479,81 @@ final class LibraryModel: ObservableObject {
         status = "Adding \(input)…"
         defer { status = nil }
         let lib = self.lib
-        let meta = await Task.detached { try? resolveMetadata(input: input) }.value
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("lunta-add-\(UUID())")
-        let conv = try? await Paper2Epub.convert(input, into: tmp)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        // the reading view needs none of the details: made while they are looked up
+        let conversion = Task.detached(priority: .userInitiated) { try? await Paper2Epub.convert(input, into: tmp) }
+        let meta = await Task.detached(priority: .userInitiated) { try? resolveMetadata(input: input) }.value
+        // in the list at once, with the details found
+        var shown: String?
+        if var m = meta {
+            Self.fill(&m, from: known)
+            if !m.title.isEmpty {
+                let early = m
+                shown = try? await Task.detached { try lib.addPaper(meta: early, pdf: nil, epub: nil, fulltext: nil) }.value.id
+                if let id = shown {
+                    preparing[id] = "Making the reading view…"
+                    reload()
+                }
+            }
+        }
+        defer { if let id = shown { preparing[id] = nil } }
+        let conv = await conversion.value
         do {
             var m = meta ?? Self.meta(from: conv)
             if m.title.isEmpty, let c = conv { m = Self.meta(from: c) }
-            if let k = known {
-                if m.title.isEmpty { m.title = k.title }
-                if m.authors.isEmpty { m.authors = k.authors }
-                if m.date.isEmpty { m.date = k.date }
-                if m.journal.isEmpty { m.journal = k.journal }
-                if m.doi.isEmpty { m.doi = k.doi }
-                if m.pmid.isEmpty { m.pmid = k.pmid }
-                if m.pmcid.isEmpty { m.pmcid = k.pmcid }
-                if m.arxiv.isEmpty { m.arxiv = k.arxiv }
-                if m.url.isEmpty { m.url = k.url }
-                if m.abstractText.isEmpty { m.abstractText = k.abstractText }
-            }
+            Self.fill(&m, from: known)
             guard !m.title.isEmpty || !m.doi.isEmpty else {
                 errorMessage = "Couldn't find “\(input)”. Try a DOI or a link to the article." + (webError.map { "\n\($0)" } ?? "")
-                try? FileManager.default.removeItem(at: tmp)
                 return nil
             }
             let epub = conv.flatMap { try? Data(contentsOf: $0.file) }
-            let added = try await Task.detached { try lib.addPaper(meta: m, pdf: nil, epub: epub, fulltext: conv?.fulltext) }.value
+            let added: Paper
+            if let id = shown {
+                // (added above with the same details: only the reading view to put in)
+                if let epub {
+                    let text = conv?.fulltext
+                    try await Task.detached {
+                        try lib.attachFile(id: id, kind: .epub, data: epub)
+                        if let text { try lib.attachFile(id: id, kind: .fulltext, data: Data(text.utf8)) }
+                    }.value
+                }
+                guard let p = lib.paper(id: id) else { return nil }
+                added = p
+            } else {
+                let mm = m
+                added = try await Task.detached { try lib.addPaper(meta: mm, pdf: nil, epub: epub, fulltext: conv?.fulltext) }.value
+            }
             reload()
-            if conv == nil { status = "Added “\(added.meta.title)” (no open full text found)" }
-            try? FileManager.default.removeItem(at: tmp)
+            if conv != nil, shown != nil { NotificationCenter.default.post(name: .luntaReadingViewMade, object: added.id) }
+            if conv == nil {
+                // no open XML version: a legal open-access PDF, and the reading view from it
+                if findPDF, !added.hasPdf, !added.meta.doi.isEmpty || !added.meta.arxiv.isEmpty || !added.meta.pmcid.isEmpty {
+                    status = "Finding a free PDF of “\(added.meta.title)”…"
+                    if await self.findPDF(added.id) != nil { return added.id }
+                }
+                status = "Added “\(added.meta.title)” (no open full text found)"
+            }
             return added.id
         } catch {
             errorMessage = error.readable
         }
-        try? FileManager.default.removeItem(at: tmp)
         return nil
+    }
+
+    /// Fills what the lookup missed from what was already known about the paper.
+    static func fill(_ m: inout PaperMeta, from k: PaperMeta?) {
+        guard let k else { return }
+        if m.title.isEmpty { m.title = k.title }
+        if m.authors.isEmpty { m.authors = k.authors }
+        if m.date.isEmpty { m.date = k.date }
+        if m.journal.isEmpty { m.journal = k.journal }
+        if m.doi.isEmpty { m.doi = k.doi }
+        if m.pmid.isEmpty { m.pmid = k.pmid }
+        if m.pmcid.isEmpty { m.pmcid = k.pmcid }
+        if m.arxiv.isEmpty { m.arxiv = k.arxiv }
+        if m.url.isEmpty { m.url = k.url }
+        if m.abstractText.isEmpty { m.abstractText = k.abstractText }
     }
 
     /// Adds a web page or blog post by its address: its details read off the page by the core
@@ -600,8 +651,20 @@ final class LibraryModel: ObservableObject {
         let doi = Paper2Epub.doi(inPDF: data)
         if let doi, let existing = lib.findByDoi(doi: doi) {
             try? await Task.detached { try lib.attachFile(id: existing.id, kind: .pdf, data: data) }.value
-            if !existing.hasEpub { await makeReadingView(existing.id) }
+            if !existing.hasEpub { reload(); await preparingReadingView(existing.id) }
             return lib.paper(id: existing.id)
+        }
+        // a DOI in the PDF that finds the paper's details: in the list (and readable, as its PDF)
+        // at once, the reading view made after (it was made first, which took a while)
+        if let doi, !privately {
+            step("looking up the paper's details…")
+            if let m = await Task.detached(priority: .userInitiated, operation: { try? resolveMetadata(input: doi) }).value, !m.title.isEmpty,
+               let p = try? await Task.detached(operation: { try lib.addPaper(meta: m, pdf: data, epub: nil, fulltext: nil) }).value {
+                reload()
+                step("making the reading view…")
+                await preparingReadingView(p.id)
+                return lib.paper(id: p.id)
+            }
         }
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("lunta-pdf-\(UUID())")
         try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
@@ -864,10 +927,27 @@ final class LibraryModel: ObservableObject {
     @discardableResult
     func findPDF(_ id: String) async -> String? {
         let lib = self.lib
-        let source = await Task.detached { (try? lib.findPdf(id: id)) ?? nil }.value
-        if source != nil, lib.paper(id: id)?.hasEpub == false { await makeReadingView(id) }
+        let had = preparing[id]
+        preparing[id] = "Finding the PDF…"
+        defer { preparing[id] = had }
+        let source = await Task.detached(priority: .userInitiated) { (try? lib.findPdf(id: id)) ?? nil }.value
+        // the paper can be opened (as its PDF) now: the reading view is made after
         reload()
+        if source != nil, lib.paper(id: id)?.hasEpub == false {
+            preparing[id] = "Making the reading view…"
+            await makeReadingView(id)
+            reload()
+        }
         return source
+    }
+
+    /// Makes the reading view of a paper that has just come in, marked as being prepared in the list.
+    func preparingReadingView(_ id: String) async {
+        guard lib.paper(id: id)?.hasEpub == false else { return }
+        preparing[id] = "Making the reading view…"
+        defer { preparing[id] = nil }
+        await makeReadingView(id)
+        reload()
     }
 
     /// Finds PDFs for every paper that has none, a few at a time.

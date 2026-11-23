@@ -380,6 +380,168 @@ fn finds_open_access_pdfs() {
     assert!(pdf.len() > 100_000);
 }
 
+fn cand(url: &str, version: &str) -> metadata::PdfCandidate {
+    metadata::PdfCandidate { url: url.into(), label: url.into(), version: version.into() }
+}
+
+/// A stand-in download: (url, delay, gives a PDF?). Records which were started.
+fn fake_fetch(
+    plan: Vec<(&'static str, u64, bool)>,
+    started: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+) -> metadata::RaceFetch {
+    std::sync::Arc::new(move |c: &metadata::PdfCandidate, sig: &metadata::RaceSignal| {
+        started.lock().unwrap().push(c.url.clone());
+        let (_, ms, ok) = *plan.iter().find(|p| p.0 == c.url).unwrap();
+        let t = std::time::Instant::now();
+        while t.elapsed() < std::time::Duration::from_millis(ms) {
+            if sig.cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err(CoreError::Network("cancelled".into()));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        if ok { Ok(format!("%PDF {}", c.url).into_bytes()) } else { Err(CoreError::Network("not a PDF".into())) }
+    })
+}
+
+#[test]
+fn pdf_race_takes_the_first_real_pdf_without_waiting_for_a_dead_source() {
+    use std::time::{Duration, Instant};
+    let started = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    // the best source hangs (a server that doesn't answer), the second is quick
+    let cands = vec![cand("a", "published"), cand("b", "published"), cand("c", "published")];
+    let f = fake_fetch(vec![("a", 5000, true), ("b", 50, true), ("c", 50, true)], started.clone());
+    let t = Instant::now();
+    let (c, d) = metadata::race_pdfs(&cands, Duration::from_millis(100), f).unwrap();
+    assert_eq!(c.url, "b");
+    assert!(d.starts_with(b"%PDF"));
+    assert!(t.elapsed() < Duration::from_millis(1000), "{:?}", t.elapsed());
+    // "c" never needed
+    assert_eq!(*started.lock().unwrap(), vec!["a", "b"]);
+}
+
+#[test]
+fn pdf_race_moves_on_at_once_when_a_source_fails() {
+    use std::time::{Duration, Instant};
+    let started = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let cands = vec![cand("a", "published"), cand("b", "published")];
+    let f = fake_fetch(vec![("a", 10, false), ("b", 10, true)], started.clone());
+    let t = Instant::now();
+    // a long stagger: the failure itself starts the next one
+    let (c, _) = metadata::race_pdfs(&cands, Duration::from_secs(5), f).unwrap();
+    assert_eq!(c.url, "b");
+    assert!(t.elapsed() < Duration::from_secs(1));
+}
+
+#[test]
+fn pdf_race_keeps_the_best_version_when_it_downloads() {
+    use std::time::Duration;
+    let started = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    // the published PDF is slow (but comes); a quick accepted manuscript and preprint aren't
+    // raced against it: a worse version is only tried when no better one gave a PDF
+    let cands = vec![cand("pub", "published"), cand("acc", "accepted"), cand("pre", "preprint")];
+    let f = fake_fetch(vec![("pub", 400, true), ("acc", 10, true), ("pre", 10, true)], started.clone());
+    let (c, _) = metadata::race_pdfs(&cands, Duration::from_millis(50), f).unwrap();
+    assert_eq!(c.url, "pub");
+    assert_eq!(*started.lock().unwrap(), vec!["pub"]);
+    // the published ones all fail: the accepted manuscript
+    let started = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let f = fake_fetch(vec![("pub", 10, false), ("acc", 10, true), ("pre", 10, true)], started.clone());
+    let (c, _) = metadata::race_pdfs(&cands, Duration::from_millis(50), f).unwrap();
+    assert_eq!(c.url, "acc");
+    // none at all
+    let f = fake_fetch(vec![("pub", 10, false), ("acc", 10, false), ("pre", 10, false)], std::sync::Arc::new(std::sync::Mutex::new(vec![])));
+    assert!(metadata::race_pdfs(&cands, Duration::from_millis(50), f).is_none());
+}
+
+#[test]
+fn pdf_race_stops_the_losers() {
+    use std::time::{Duration, Instant};
+    let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let seen = cancelled.clone();
+    let f: metadata::RaceFetch = std::sync::Arc::new(move |c: &metadata::PdfCandidate, sig: &metadata::RaceSignal| {
+        if c.url == "fast" {
+            std::thread::sleep(Duration::from_millis(30));
+            return Ok(b"%PDF".to_vec());
+        }
+        let t = Instant::now();
+        while t.elapsed() < Duration::from_secs(5) {
+            if sig.cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                seen.store(true, std::sync::atomic::Ordering::Relaxed);
+                return Err(CoreError::Network("cancelled".into()));
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        Ok(b"%PDF".to_vec())
+    });
+    let cands = vec![cand("slow", "published"), cand("fast", "published")];
+    let (c, _) = metadata::race_pdfs(&cands, Duration::from_millis(20), f).unwrap();
+    assert_eq!(c.url, "fast");
+    let t = Instant::now();
+    while !cancelled.load(std::sync::atomic::Ordering::Relaxed) && t.elapsed() < Duration::from_secs(2) {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(cancelled.load(std::sync::atomic::Ordering::Relaxed), "the slow download was told to stop");
+}
+
+#[test]
+fn pdf_candidates_asks_the_sources_at_once() {
+    use std::time::{Duration, Instant};
+    // each source answers after 300 ms: one after the other took 900 ms
+    let get: metadata::Get = std::sync::Arc::new(|url: &str| -> Result<String> {
+        std::thread::sleep(Duration::from_millis(300));
+        if url.contains("europepmc") {
+            // Europe PMC knows nothing (it has bad minutes): the PMCID comes from OpenAlex
+            Ok(r#"{"resultList":{"result":[]}}"#.into())
+        } else if url.contains("openalex") {
+            Ok(r#"{"ids":{"pmcid":"https://www.ncbi.nlm.nih.gov/pmc/articles/7056644"},
+                   "locations":[{"pdf_url":"https://x.org/p.pdf","version":"publishedVersion","source":{"display_name":"X"}},
+                                {"pdf_url":"https://y.org/a.pdf","version":"acceptedVersion","source":{"display_name":"Y"}}]}"#.into())
+        } else if url.contains("pmc-oa-opendata") {
+            Ok("<Key>PMC7056644.1/PMC7056644.1.pdf</Key><Key>PMC7056644.2/PMC7056644.2.pdf</Key>".into())
+        } else {
+            Err(CoreError::Network("unexpected".into()))
+        }
+    });
+    let m = PaperMeta { doi: "10.1038/s41592-019-0686-2".into(), ..Default::default() };
+    let t = Instant::now();
+    let c = metadata::pdf_candidates_with(&m, get.clone());
+    // Europe PMC and OpenAlex together, then the archive
+    assert!(t.elapsed() < Duration::from_millis(800), "{:?}", t.elapsed());
+    let urls: Vec<&str> = c.iter().map(|x| x.url.as_str()).collect();
+    assert_eq!(urls, vec!["https://pmc-oa-opendata.s3.amazonaws.com/PMC7056644.2/PMC7056644.2.pdf", "https://x.org/p.pdf", "https://y.org/a.pdf"]);
+    assert_eq!(c[0].label, "PubMed Central");
+    assert_eq!(c[2].version, "accepted");
+    // with the PMCID known, the archive is asked at the same time as the others
+    let m = PaperMeta { doi: "10.1038/s41592-019-0686-2".into(), pmcid: "PMC7056644".into(), ..Default::default() };
+    let t = Instant::now();
+    let c = metadata::pdf_candidates_with(&m, get.clone());
+    assert!(t.elapsed() < Duration::from_millis(550), "{:?}", t.elapsed());
+    assert_eq!(c[0].label, "PubMed Central");
+}
+
+#[test]
+fn pdf_candidates_dont_wait_long_for_a_hanging_source() {
+    use std::time::{Duration, Instant};
+    // Europe PMC hangs (it has bad minutes); OpenAlex answers: 1.5 s more for Europe PMC, not 8
+    let get: metadata::Get = std::sync::Arc::new(|url: &str| -> Result<String> {
+        if url.contains("europepmc") {
+            std::thread::sleep(Duration::from_secs(20));
+            Err(CoreError::Network("timeout".into()))
+        } else if url.contains("openalex") {
+            std::thread::sleep(Duration::from_millis(100));
+            Ok(r#"{"locations":[{"pdf_url":"https://x.org/p.pdf","version":"publishedVersion"}]}"#.into())
+        } else {
+            Err(CoreError::Network("unexpected".into()))
+        }
+    });
+    let m = PaperMeta { doi: "10.1/x".into(), ..Default::default() };
+    let t = Instant::now();
+    let c = metadata::pdf_candidates_with(&m, get);
+    assert!(t.elapsed() < Duration::from_millis(2500), "{:?}", t.elapsed());
+    assert_eq!(c.len(), 1);
+    assert_eq!(c[0].label, "open-access copy");
+}
+
 #[test]
 fn icloud_placeholders_count_as_present() {
     let root = tmp().join("lib");

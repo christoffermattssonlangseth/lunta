@@ -198,7 +198,7 @@ struct iPadLibrary: View {
         ScrollViewReader { proxy in
             List(selection: $selected) {
                 ForEach(model.papers) { p in
-                    PaperRow(paper: p, snippet: model.snippets[p.id], updates: model.paperUpdates[p.id], inDrive: model.inDrive(p.id))
+                    PaperRow(paper: p, snippet: model.snippets[p.id], updates: model.paperUpdates[p.id], inDrive: model.inDrive(p.id), preparing: model.preparing[p.id])
                         .tag(p.id)
                         .id(p.id)
                         .listRowBackground(reveal == p.id ? Color.luntaTeal.opacity(0.18) : nil)

@@ -1128,7 +1128,12 @@ iPhone and iPad (allow it on all websites).
   then is moved to `SafariInbox/<ms>-<token>/` (`request.json` + the page, its figures, the PDF) in
   one step; "status" is answered from `SafariInbox/index.json`, which the app writes whenever the
   library changes, plus the requests still waiting ("✓ Sent · Open Lunta" in the panel). The app
-  does them when it becomes active or is opened with `lunta://safari`
+  does them when it becomes active, is opened with `lunta://safari`, or (while it runs) hears the
+  Darwin notification `com.cmlangseth.margins.inbox-arrived` the handler and the share extension
+  post. In two steps: first what needs no network (the paper added with the page's details, the
+  PDF attached: in the list and readable within a second), then in the background its details
+  from Crossref, a free PDF if asked for and the reading view, the row saying which
+  (`LibraryModel.preparing`)
   (`apple/Shared/SafariInboxImport.swift`: save → add the paper, pdf → attach it,
   fulltext → `usePageFullText` in `apple/Shared/PageFullText.swift`, the same as on the Mac, with
   the highlight check and the backup in the app's own Application Support/Lunta/backups). Figures

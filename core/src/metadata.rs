@@ -14,27 +14,55 @@ fn agent() -> &'static ureq::Agent {
         ureq::Agent::config_builder()
             .tls_config(crate::tls::config())
             .timeout_global(Some(Duration::from_secs(30)))
+            // a host that doesn't answer at all (a broken route) is given up on soon
+            .timeout_connect(Some(Duration::from_secs(8)))
             .build()
             .into()
     })
 }
 
 pub(crate) fn get_text(url: &str) -> Result<String> {
+    get_text_within(url, None)
+}
+
+/// How long a lookup that only adds to what is already known may take (Europe PMC next to
+/// Crossref, the places a PDF may be): Europe PMC has minutes when it answers in 0.3 s or not
+/// at all, and waiting the full 30 s for it held up adding a paper and finding its PDF.
+pub(crate) const LOOKUP_LIMIT: Duration = Duration::from_secs(8);
+
+/// Of two sources asked at once for the same thing, how much longer the second gets once the
+/// first has answered.
+pub(crate) const GRACE: Duration = Duration::from_millis(1500);
+
+/// Runs `f` on a thread of its own; its answer comes on the channel (none if it panicked).
+pub(crate) fn answer_later<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> std::sync::mpsc::Receiver<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx
+}
+
+/// `get_text`, given up after `limit` (the waits before trying again included; None: the
+/// agent's 30 s for each try).
+pub(crate) fn get_text_within(url: &str, limit: Option<Duration>) -> Result<String> {
     // "too many requests" (OpenAlex's rate limit) or "unavailable": wait a little and try again,
     // unless the service says it won't answer for hours (OpenAlex's daily allowance is used up)
     let url = openalex_url(url);
     let host = url.split('/').nth(2).unwrap_or("the server").to_string();
     let waits = [Duration::from_millis(1500), Duration::from_secs(4)];
     let mut attempt = 0;
+    let t0 = std::time::Instant::now();
     loop {
-        let mut r = agent()
-            .get(&url)
-            .header("User-Agent", UA)
-            .config()
-            .http_status_as_error(false)
-            .build()
-            .call()
-            .map_err(|e| CoreError::Network(e.to_string()))?;
+        let mut cfg = agent().get(&url).header("User-Agent", UA).config().http_status_as_error(false);
+        if let Some(l) = limit {
+            let left = l.saturating_sub(t0.elapsed());
+            if left.is_zero() {
+                return Err(CoreError::Network(format!("{host} didn't answer in time")));
+            }
+            cfg = cfg.timeout_global(Some(left));
+        }
+        let mut r = cfg.build().call().map_err(|e| CoreError::Network(e.to_string()))?;
         let code = r.status().as_u16();
         if (200..300).contains(&code) {
             return r.body_mut().read_to_string().map_err(|e| CoreError::Network(e.to_string()));
@@ -45,7 +73,7 @@ pub(crate) fn get_text(url: &str) -> Result<String> {
             if let Some(why) = refusal(&host, code, retry_after, &body) {
                 return Err(CoreError::Network(why));
             }
-            if let Some(w) = waits.get(attempt) {
+            if let Some(w) = waits.get(attempt).filter(|w| limit.is_none_or(|l| t0.elapsed() + **w < l)) {
                 std::thread::sleep(*w);
                 attempt += 1;
                 continue;
@@ -141,7 +169,15 @@ pub(crate) fn get_page(url: &str) -> Result<(String, String, Vec<u8>)> {
 }
 
 pub(crate) fn get_json(url: &str) -> Result<Value> {
-    serde_json::from_str(&get_text(url)?).map_err(|e| CoreError::Network(format!("bad JSON: {e}")))
+    get_json_within(url, None)
+}
+
+pub(crate) fn get_json_within(url: &str, limit: Option<Duration>) -> Result<Value> {
+    json(&get_text_within(url, limit)?)
+}
+
+fn json(text: &str) -> Result<Value> {
+    serde_json::from_str(text).map_err(|e| CoreError::Network(format!("bad JSON: {e}")))
 }
 
 pub(crate) fn enc(s: &str) -> String {
@@ -205,9 +241,12 @@ pub fn resolve(input: &str) -> Result<PaperMeta> {
         return europe_pmc(&format!("PMCID:{}", pmc[1].to_uppercase()));
     }
     if let Some(d) = doi_in(s) {
+        // Crossref rarely has PubMed IDs or abstracts for biomedical papers; Europe PMC often does.
+        // Asked at the same time as Crossref, and not waited for long: it only adds to Crossref's.
+        let q = format!("DOI:\"{d}\"");
+        let epmc = answer_later(move || europe_pmc_within(&q, Some(LOOKUP_LIMIT)));
         let mut m = crossref(&d)?;
-        // Crossref rarely has PubMed IDs or abstracts for biomedical papers; Europe PMC often does
-        if let Ok(e) = europe_pmc(&format!("DOI:\"{d}\"")) {
+        if let Ok(Ok(e)) = epmc.recv_timeout(GRACE) {
             fill(&mut m, e);
         }
         return Ok(m);
@@ -321,11 +360,15 @@ pub(crate) fn crossref_item(m: &Value) -> PaperMeta {
 }
 
 pub fn europe_pmc(query: &str) -> Result<PaperMeta> {
+    europe_pmc_within(query, None)
+}
+
+fn europe_pmc_within(query: &str, limit: Option<Duration>) -> Result<PaperMeta> {
     let url = format!(
         "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query={}&resultType=core&format=json",
         enc(query).replace('/', "%2F")
     );
-    let j = get_json(&url)?;
+    let j = get_json_within(&url, limit)?;
     let r = &j["resultList"]["result"][0];
     if r.is_null() {
         return Err(CoreError::NotFound(format!("Europe PMC has no record for {query}")));
@@ -442,75 +485,151 @@ pub fn pdf_candidates(m: &PaperMeta) -> Vec<PdfCandidate> {
 }
 
 fn pdf_candidates_all(m: &PaperMeta) -> Vec<PdfCandidate> {
+    pdf_candidates_with(m, std::sync::Arc::new(|u: &str| get_text_within(u, Some(LOOKUP_LIMIT))))
+}
+
+/// What one of the sources said: the PMCID it knows, and PDF links.
+#[derive(Default)]
+struct Found {
+    pmcid: String,
+    published: Vec<(String, String)>,
+    accepted: Vec<(String, String)>,
+    preprints: Vec<(String, String)>,
+}
+
+/// A lookup (a test's stand-in for the network).
+pub(crate) type Get = std::sync::Arc<dyn Fn(&str) -> Result<String> + Send + Sync>;
+
+/// The candidates, with `get` for every lookup. Europe PMC, OpenAlex and (with a PMCID known)
+/// the PMC archive are asked at the same time; once one of Europe PMC and OpenAlex has answered,
+/// the other gets 1.5 s more (both give the PMCID). One after the other, a slow source held up
+/// the rest: Europe PMC alone, when it has bad minutes, took 30 s (the whole time limit).
+pub(crate) fn pdf_candidates_with(m: &PaperMeta, get: Get) -> Vec<PdfCandidate> {
+    use std::sync::mpsc::TryRecvError;
+    use std::time::Instant;
+    let ask = |f: fn(&PaperMeta, &dyn Fn(&str) -> Result<String>) -> Found| {
+        let (m, g) = (m.clone(), get.clone());
+        answer_later(move || f(&m, &*g))
+    };
+    let epmc_rx = (!m.doi.is_empty() || !m.pmcid.is_empty()).then(|| ask(europe_pmc_pdfs));
+    let oa_rx = (!m.doi.is_empty()).then(|| ask(openalex_pdfs));
+    let early = (!m.pmcid.is_empty()).then(|| {
+        let (id, g) = (m.pmcid.clone(), get.clone());
+        answer_later(move || pmc_archive_pdf(&id, &*g))
+    });
+    let t0 = Instant::now();
+    let mut deadline = t0 + LOOKUP_LIMIT + Duration::from_millis(200);
+    let (mut epmc, mut oa) = (None::<Found>, None::<Found>);
+    let (mut epmc_done, mut oa_done) = (epmc_rx.is_none(), oa_rx.is_none());
+    while !(epmc_done && oa_done) && Instant::now() < deadline {
+        let mut answered = false;
+        for (rx, slot, done) in [(&epmc_rx, &mut epmc, &mut epmc_done), (&oa_rx, &mut oa, &mut oa_done)] {
+            if *done {
+                continue;
+            }
+            match rx.as_ref().map(|r| r.try_recv()) {
+                Some(Ok(f)) => {
+                    *slot = Some(f);
+                    *done = true;
+                    answered = true;
+                }
+                Some(Err(TryRecvError::Empty)) => {}
+                _ => *done = true,
+            }
+        }
+        if answered {
+            deadline = deadline.min(Instant::now() + GRACE);
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let (epmc, oa) = (epmc.unwrap_or_default(), oa.unwrap_or_default());
+    let pmc_pdf = match early {
+        Some(rx) => rx.recv_timeout(LOOKUP_LIMIT.saturating_sub(t0.elapsed())).ok().flatten(),
+        None => {
+            // the PMCID from Europe PMC, else from OpenAlex (when Europe PMC didn't answer)
+            let id = if !epmc.pmcid.is_empty() { &epmc.pmcid } else { &oa.pmcid };
+            if id.is_empty() { None } else { pmc_archive_pdf(id, &*get) }
+        }
+    };
     let mut out: Vec<PdfCandidate> = vec![];
     let mut push = |url: String, label: &str, version: &str| {
         if !url.is_empty() && !out.iter().any(|c| c.url == url) {
             out.push(PdfCandidate { url, label: label.into(), version: version.into() });
         }
     };
-    let mut pmcid = m.pmcid.clone();
-    let mut epmc_pdfs: Vec<String> = vec![];
-    if !m.doi.is_empty() || !pmcid.is_empty() {
-        let q = if !pmcid.is_empty() { format!("PMCID:{pmcid}") } else { format!("DOI:\"{}\"", m.doi) };
-        let url = format!(
-            "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query={}&resultType=core&format=json",
-            enc(&q).replace('/', "%2F")
-        );
-        if let Ok(j) = get_json(&url) {
-            let r = &j["resultList"]["result"][0];
-            if pmcid.is_empty() {
-                pmcid = s(&r["pmcid"]);
-            }
-            for f in r["fullTextUrlList"]["fullTextUrl"].as_array().cloned().unwrap_or_default() {
-                let open = matches!(s(&f["availabilityCode"]).as_str(), "OA" | "F");
-                if open && s(&f["documentStyle"]) == "pdf" {
-                    epmc_pdfs.push(s(&f["url"]));
-                }
-            }
-        }
+    if let Some(u) = pmc_pdf {
+        push(u, "PubMed Central", "published");
     }
-    if !pmcid.is_empty() {
-        if let Some(u) = pmc_archive_pdf(&pmcid) {
-            push(u, "PubMed Central", "published");
-        }
+    for (u, l) in epmc.published {
+        push(u, &l, "published");
     }
-    for u in epmc_pdfs {
-        push(u, "Europe PMC", "published");
-    }
-    let mut accepted = vec![];
-    let mut preprints = vec![];
-    if !m.doi.is_empty() {
-        if let Ok(j) = get_json(&format!("https://api.openalex.org/works/doi:{}", enc(&m.doi))) {
-            for l in j["locations"].as_array().cloned().unwrap_or_default() {
-                let u = s(&l["pdf_url"]);
-                if u.is_empty() {
-                    continue;
-                }
-                let src = s(&l["source"]["display_name"]);
-                let label = if src.is_empty() { "open-access copy".to_string() } else { src };
-                match s(&l["version"]).as_str() {
-                    "publishedVersion" => push(u, &label, "published"),
-                    "acceptedVersion" => accepted.push((u, label)),
-                    _ => preprints.push((u, label)),
-                }
-            }
-        }
+    for (u, l) in oa.published {
+        push(u, &l, "published");
     }
     if !m.arxiv.is_empty() {
         push(format!("https://arxiv.org/pdf/{}", m.arxiv), "arXiv", "preprint");
     }
-    for (u, l) in accepted {
+    for (u, l) in oa.accepted {
         push(u, &format!("{l} (accepted manuscript)"), "accepted");
     }
-    for (u, l) in preprints {
+    for (u, l) in oa.preprints {
         push(u, &format!("{l} (preprint)"), "preprint");
     }
     out
 }
 
+/// Europe PMC: the paper's PMCID and its open PDF links.
+fn europe_pmc_pdfs(m: &PaperMeta, get: &dyn Fn(&str) -> Result<String>) -> Found {
+    let mut f = Found { pmcid: m.pmcid.clone(), ..Default::default() };
+    let q = if !m.pmcid.is_empty() { format!("PMCID:{}", m.pmcid) } else { format!("DOI:\"{}\"", m.doi) };
+    let url = format!(
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query={}&resultType=core&format=json",
+        enc(&q).replace('/', "%2F")
+    );
+    if let Ok(j) = get(&url).and_then(|t| json(&t)) {
+        let r = &j["resultList"]["result"][0];
+        if f.pmcid.is_empty() {
+            f.pmcid = s(&r["pmcid"]);
+        }
+        for x in r["fullTextUrlList"]["fullTextUrl"].as_array().cloned().unwrap_or_default() {
+            let open = matches!(s(&x["availabilityCode"]).as_str(), "OA" | "F");
+            if open && s(&x["documentStyle"]) == "pdf" {
+                f.published.push((s(&x["url"]), "Europe PMC".into()));
+            }
+        }
+    }
+    f
+}
+
+/// OpenAlex: the work's PDF locations by version, and its PMCID.
+fn openalex_pdfs(m: &PaperMeta, get: &dyn Fn(&str) -> Result<String>) -> Found {
+    let mut f = Found::default();
+    let Ok(j) = get(&format!("https://api.openalex.org/works/doi:{}", enc(&m.doi))).and_then(|t| json(&t)) else { return f };
+    // "https://www.ncbi.nlm.nih.gov/pmc/articles/7056644" → PMC7056644
+    let pmc = s(&j["ids"]["pmcid"]);
+    let digits: String = pmc.trim_end_matches('/').rsplit('/').next().unwrap_or("").trim_start_matches("PMC").to_string();
+    if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) {
+        f.pmcid = format!("PMC{digits}");
+    }
+    for l in j["locations"].as_array().cloned().unwrap_or_default() {
+        let u = s(&l["pdf_url"]);
+        if u.is_empty() {
+            continue;
+        }
+        let src = s(&l["source"]["display_name"]);
+        let label = if src.is_empty() { "open-access copy".to_string() } else { src };
+        match s(&l["version"]).as_str() {
+            "publishedVersion" => f.published.push((u, label)),
+            "acceptedVersion" => f.accepted.push((u, label)),
+            _ => f.preprints.push((u, label)),
+        }
+    }
+    f
+}
+
 /// The PDF in the PMC open-access archive on AWS (newest article version), if there is one.
-fn pmc_archive_pdf(pmcid: &str) -> Option<String> {
-    let list = get_text(&format!("https://pmc-oa-opendata.s3.amazonaws.com/?list-type=2&prefix={pmcid}.&max-keys=200")).ok()?;
+fn pmc_archive_pdf(pmcid: &str, get: &dyn Fn(&str) -> Result<String>) -> Option<String> {
+    let list = get(&format!("https://pmc-oa-opendata.s3.amazonaws.com/?list-type=2&prefix={pmcid}.&max-keys=200")).ok()?;
     let re = Regex::new(&format!(r"<Key>({pmcid}\.(\d+)/{pmcid}\.\d+\.pdf)</Key>")).ok()?;
     re.captures_iter(&list)
         .max_by_key(|c| c[2].parse::<u32>().unwrap_or(0))
@@ -519,22 +638,140 @@ fn pmc_archive_pdf(pmcid: &str) -> Option<String> {
 
 /// Downloads a PDF; fails unless the response really is a PDF (publishers often return HTML).
 pub fn download_pdf(url: &str) -> Result<Vec<u8>> {
+    download_pdf_racing(url, &RaceSignal::default())
+}
+
+/// How a download in a race hears that another one won (`cancel`), and says that it is
+/// receiving a PDF (`streaming`), so no other source needs to be started next to it.
+#[derive(Default)]
+pub struct RaceSignal {
+    pub cancel: std::sync::atomic::AtomicBool,
+    pub streaming: std::sync::atomic::AtomicBool,
+}
+
+fn download_pdf_racing(url: &str, sig: &RaceSignal) -> Result<Vec<u8>> {
+    use std::io::Read;
+    use std::sync::atomic::Ordering::Relaxed;
+    // a big PDF on a slow phone connection may take minutes: no 30 s limit for the whole
+    // download, but a server that sends nothing for 20 s is given up on
     let mut r = agent()
         .get(url)
         .header("User-Agent", UA)
         .header("Accept", "application/pdf,*/*;q=0.8")
+        .config()
+        .timeout_global(Some(Duration::from_secs(600)))
+        .timeout_recv_response(Some(Duration::from_secs(20)))
+        .timeout_per_read(Some(Duration::from_secs(20)))
+        .build()
         .call()
         .map_err(|e| CoreError::Network(e.to_string()))?;
-    let data = r
-        .body_mut()
-        .with_config()
-        .limit(200 * 1024 * 1024)
-        .read_to_vec()
-        .map_err(|e| CoreError::Network(e.to_string()))?;
+    let mut reader = r.body_mut().with_config().limit(200 * 1024 * 1024).reader();
+    let mut data = Vec::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    let not_pdf = || CoreError::Network("not a PDF (the site may require a login)".into());
+    loop {
+        if sig.cancel.load(Relaxed) {
+            return Err(CoreError::Network("another source was faster".into()));
+        }
+        let n = reader.read(&mut buf).map_err(|e| CoreError::Network(e.to_string()))?;
+        if n == 0 {
+            break;
+        }
+        let before = data.len();
+        data.extend_from_slice(&buf[..n]);
+        // a web page instead of the PDF (a login, a landing page): given up on at its first bytes
+        if before < 4 && data.len() >= 4 {
+            if !data.starts_with(b"%PDF") {
+                return Err(not_pdf());
+            }
+            sig.streaming.store(true, Relaxed);
+        }
+    }
     if !data.starts_with(b"%PDF") {
-        return Err(CoreError::Network("not a PDF (the site may require a login)".into()));
+        return Err(not_pdf());
     }
     Ok(data)
+}
+
+/// How long a source has to start sending its PDF before the next one is tried next to it.
+const RACE_STAGGER: Duration = Duration::from_millis(2500);
+
+/// The first candidate that downloads as a real PDF, best first.
+///
+/// Candidates of one version (published, then accepted, then preprint: the order they come in)
+/// race: the best starts, and the next is started next to it when the one before fails or hasn't
+/// started sending a PDF after 2.5 s (a server that doesn't answer, a landing page that is slow);
+/// the first real PDF wins and the others are stopped. A version is only tried when no candidate
+/// of a better one gave a PDF. One after the other, each with a 30 s limit, a dead link cost 30 s
+/// before the next was tried, and a big PDF on a slow connection was given up after 30 s.
+pub fn find_first_pdf(cands: &[PdfCandidate]) -> Option<(PdfCandidate, Vec<u8>)> {
+    race_pdfs(cands, RACE_STAGGER, std::sync::Arc::new(|c: &PdfCandidate, sig: &RaceSignal| download_pdf_racing(&c.url, sig)))
+}
+
+/// A download in a race: the candidate and the signal it watches.
+pub(crate) type RaceFetch = std::sync::Arc<dyn Fn(&PdfCandidate, &RaceSignal) -> Result<Vec<u8>> + Send + Sync>;
+
+pub(crate) fn race_pdfs(cands: &[PdfCandidate], stagger: Duration, fetch: RaceFetch) -> Option<(PdfCandidate, Vec<u8>)> {
+    let mut i = 0;
+    while i < cands.len() {
+        let j = (i..cands.len()).find(|&k| cands[k].version != cands[i].version).unwrap_or(cands.len());
+        if let Some(won) = race_group(&cands[i..j], stagger, &fetch) {
+            return Some(won);
+        }
+        i = j;
+    }
+    None
+}
+
+fn race_group(group: &[PdfCandidate], stagger: Duration, fetch: &RaceFetch) -> Option<(PdfCandidate, Vec<u8>)> {
+    use std::sync::atomic::Ordering::Relaxed;
+    use std::sync::{mpsc, Arc};
+    let (tx, rx) = mpsc::channel::<(usize, Result<Vec<u8>>)>();
+    let mut signals: Vec<Arc<RaceSignal>> = vec![];
+    let start = |k: usize, signals: &mut Vec<Arc<RaceSignal>>| {
+        let sig = Arc::new(RaceSignal::default());
+        signals.push(sig.clone());
+        let (tx, c, f) = (tx.clone(), group[k].clone(), fetch.clone());
+        // (not scoped: a loser stuck connecting mustn't hold up the winner; it stops on its own)
+        std::thread::spawn(move || {
+            let r = f(&c, &sig);
+            let _ = tx.send((k, r));
+        });
+    };
+    start(0, &mut signals);
+    let mut failed = 0;
+    loop {
+        match rx.recv_timeout(stagger) {
+            Ok((k, Ok(data))) => {
+                for (n, s) in signals.iter().enumerate() {
+                    if n != k {
+                        s.cancel.store(true, Relaxed);
+                    }
+                }
+                return Some((group[k].clone(), data));
+            }
+            Ok((_, Err(_))) => {
+                failed += 1;
+                if signals.len() < group.len() {
+                    start(signals.len(), &mut signals);
+                } else if failed == signals.len() {
+                    return None;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // no source is sending a PDF yet: the next one too
+                if signals.len() < group.len() && !signals.iter().any(|s| s.streaming.load(Relaxed)) {
+                    start(signals.len(), &mut signals);
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return None,
+        }
+    }
+}
+
+/// The paper's open-access PDF: its candidates, then the first that downloads.
+pub fn find_pdf_for(m: &PaperMeta) -> Option<(PdfCandidate, Vec<u8>)> {
+    find_first_pdf(&pdf_candidates(m))
 }
 
 // ---------------------------------------------------------------- discovering new papers

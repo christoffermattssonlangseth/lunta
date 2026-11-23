@@ -143,6 +143,8 @@ final class ModelHolder: ObservableObject {
         // the citation card in a reader: add the cited paper (or say it's already there)
         ExternalLinks.onLunta = { url, web in Task { @MainActor in web.citationDone(await model.paperForCitation(url).label) } }
         Task { await model.importShared() }
+        // the share sheet or Safari's extension left something while the app runs: add it now
+        InboxArrivals.listen { [weak model] in Task { await model?.importShared() } }
         WatchCenter.shared.start(model)
         model.freshenReadingViews()
     }
@@ -198,9 +200,17 @@ extension LibraryModel {
     /// Adds what was shared to Lunta from other apps (PDFs and links waiting in the share inbox).
     /// Also does what was sent from Safari (SafariInbox: save, PDF, "Use this page's full text").
     func importShared() async {
-        guard !importingShared else { return }
+        // (asked again while busy: looked at again when done, so nothing that arrived meanwhile waits)
+        guard !importingShared else { importSharedAgain = true; return }
         importingShared = true
         defer { importingShared = false }
+        repeat {
+            importSharedAgain = false
+            await importSharedOnce()
+        } while importSharedAgain
+    }
+
+    private func importSharedOnce() async {
         let safari = await importSafari()
         if safari.show { errorMessage = safari.lines.joined(separator: "\n\n") }
         let items = ShareInbox.pending()
@@ -210,8 +220,9 @@ extension LibraryModel {
             switch item.kind {
             case .pdf(let u): pdfs.append((u, item))
             case .link(let s):
-                await add(s)
+                // in the list as soon as its details are known (`add`); the next link meanwhile
                 ShareInbox.remove(item)
+                Task { await add(s) }
             }
         }
         if !pdfs.isEmpty {
@@ -227,5 +238,22 @@ extension LibraryModel {
             }
             _ = await addPDFs(urls)
         }
+    }
+}
+
+/// The Darwin notification the share and Safari extensions post when they leave something for
+/// the app (`ShareInbox.arrived`). Heard while the app runs; a suspended app looks when it
+/// becomes active, as before.
+enum InboxArrivals {
+    @MainActor private static var handler: (() -> Void)?
+    @MainActor private static var listening = false
+
+    @MainActor static func listen(_ h: @escaping () -> Void) {
+        handler = h
+        guard !listening else { return }
+        listening = true
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), nil, { _, _, _, _, _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { InboxArrivals.handler?() } }
+        }, ShareInbox.arrived as CFString, nil, .deliverImmediately)
     }
 }

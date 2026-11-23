@@ -820,11 +820,10 @@ impl Library {
         if self.file_status(id.clone(), FileKind::Pdf) != FileStatus::Missing {
             return Err(CoreError::Invalid("the paper already has a PDF (use Replace PDF to change it)".into()));
         }
-        for c in metadata::pdf_candidates(&p.meta) {
-            if let Ok(data) = metadata::download_pdf(&c.url) {
-                self.attach_file(id, FileKind::Pdf, data)?;
-                return Ok(Some(c.label));
-            }
+        // the sources asked at once, the downloads raced (best version first): see `find_first_pdf`
+        if let Some((c, data)) = metadata::find_pdf_for(&p.meta) {
+            self.attach_file(id, FileKind::Pdf, data)?;
+            return Ok(Some(c.label));
         }
         Ok(None)
     }

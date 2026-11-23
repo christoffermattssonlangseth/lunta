@@ -56,4 +56,15 @@ enum ShareInbox {
     }
 
     static func remove(_ item: Item) { try? FileManager.default.removeItem(at: item.file) }
+
+    /// Tells a Lunta app that is running (on screen, or still active in the background) that
+    /// something is waiting in the share inbox or Safari's (a Darwin notification: no data, any
+    /// process may post it), so it adds it at once instead of when it is next brought to the
+    /// front. A suspended app doesn't hear it: it looks when it becomes active.
+    static let arrived = "com.cmlangseth.margins.inbox-arrived"
+
+    static func notifyApp() {
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                             CFNotificationName(arrived as CFString), nil, nil, true)
+    }
 }

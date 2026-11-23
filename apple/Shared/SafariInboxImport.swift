@@ -19,15 +19,24 @@ extension LibraryModel {
 
     /// Does what Safari sent, oldest first. Returns one line per request, and whether any of
     /// them should be shown (a reading view made or kept, something that failed).
+    ///
+    /// In two steps, so a paper saved from Safari is in the list (and readable, when its PDF was
+    /// sent) within a second of opening the app: first what needs no network (the paper added
+    /// with what its page said, the PDF attached), then, in the background (`safariFollowUp`),
+    /// its details from Crossref and Europe PMC, a free PDF if asked for, and the reading view.
+    /// Before, each request was done in full in turn (the details looked up, the reading view
+    /// made) before the paper was added and the next request (its PDF) was looked at.
+    /// `waitForFollowUp`: returns only when the background step is done too (tests).
     @discardableResult
-    func importSafari() async -> (lines: [String], show: Bool) {
+    func importSafari(waitForFollowUp: Bool = false) async -> (lines: [String], show: Bool) {
         guard let root = Self.safariRoot else { return ([], false) }
         SafariInbox.cleanStaging(root: root, olderThan: 24 * 3600)
         let items = SafariInbox.pending(root: root)
         guard !items.isEmpty else { return ([], false) }
         var lines: [String] = [], show = false
+        var follow: [SafariFollowUp] = []
         for (dir, req) in items {
-            let (line, important) = await importSafariRequest(req, in: dir)
+            let (line, important) = await importSafariRequest(req, in: dir, followUp: &follow)
             try? FileManager.default.removeItem(at: dir)
             NSLog("Lunta: from Safari: %@", line)
             lines.append(line)
@@ -35,46 +44,130 @@ extension LibraryModel {
         }
         reload()
         publishSafariIndex()
+        if !follow.isEmpty {
+            for f in follow { preparing[f.id] = f.findPdf ? "Finding the PDF…" : "Finding the details…" }
+            let before = safariFollowUp
+            safariFollowUp = Task {
+                await before?.value
+                await self.runSafariFollowUp(follow)
+            }
+        }
+        if waitForFollowUp { await safariFollowUp?.value }
         return (lines, show)
     }
 
-    private func importSafariRequest(_ req: [String: Any], in dir: URL) async -> (String, Bool) {
+    /// The background step for one paper from Safari.
+    struct SafariFollowUp {
+        var id: String
+        /// the page's details were used: look the paper up by its DOI and take Crossref's
+        var doi = ""
+        /// no PDF link on the page: look for a free one
+        var findPdf = false
+    }
+
+    private func runSafariFollowUp(_ items: [SafariFollowUp]) async {
+        // one entry per paper (its Save and its PDF came as two requests)
+        var seen: [String: SafariFollowUp] = [:], order: [String] = []
+        for f in items {
+            if var x = seen[f.id] {
+                if x.doi.isEmpty { x.doi = f.doi }
+                x.findPdf = x.findPdf || f.findPdf
+                seen[f.id] = x
+            } else { seen[f.id] = f; order.append(f.id) }
+        }
+        let lib = self.lib
+        for id in order {
+            guard let f = seen[id] else { continue }
+            defer { preparing[id] = nil }
+            if !f.doi.isEmpty {
+                preparing[id] = "Finding the details…"
+                let doi = f.doi
+                if var m = await Task.detached(priority: .userInitiated, operation: { try? resolveMetadata(input: doi) }).value,
+                   !m.title.isEmpty, let now = lib.paper(id: id) {
+                    // Crossref's details, with what the page said for what Crossref lacks
+                    Self.fill(&m, from: now.meta)
+                    try? await Task.detached { try lib.updateMeta(id: id, meta: m) }.value
+                    reload()
+                }
+            }
+            guard let p = lib.paper(id: id), !p.hasEpub else { continue }
+            if !p.hasPdf, f.findPdf {
+                let found = await findPDF(id)
+                NSLog("Lunta: from Safari: %@", found != nil ? "found a free PDF of “\(p.meta.title)”" : "no free PDF of “\(p.meta.title)”")
+            } else {
+                await preparingReadingView(id)
+            }
+        }
+        publishSafariIndex()
+    }
+
+    /// The page's details ({doi, title, authors, journal, date, url, abstract, pmid, pmcid}) as a
+    /// paper's: nil without a title.
+    static func pageMeta(_ j: [String: Any]) -> PaperMeta? {
+        var m = PaperMeta.empty
+        m.title = ((j["title"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !m.title.isEmpty else { return nil }
+        m.authors = (j["authors"] as? [String]) ?? []
+        m.journal = (j["journal"] as? String) ?? ""
+        m.date = (j["date"] as? String) ?? ""
+        m.doi = (j["doi"] as? String) ?? ""
+        m.pmid = (j["pmid"] as? String) ?? ""
+        m.pmcid = (j["pmcid"] as? String) ?? ""
+        m.url = (j["url"] as? String) ?? ""
+        m.abstractText = (j["abstract"] as? String) ?? ""
+        return m
+    }
+
+    /// The paper a Save from Safari is about: the one in the library, or added at once with what
+    /// its page said (no network; its details are looked up in the background step). nil when
+    /// the page gave no title: then it is added by its DOI (looked up now), as before.
+    private func safariPaper(_ meta: [String: Any], doi: String, title: String, followUp: inout [SafariFollowUp]) async -> (Paper, new: Bool)? {
+        if let p = findPaper(doi: doi, title: title) { return (p, false) }
+        if let m = Self.pageMeta(meta.isEmpty ? ["doi": doi, "title": title] : meta) {
+            let lib = self.lib
+            guard let p = try? await Task.detached(operation: { try lib.addPaper(meta: m, pdf: nil, epub: nil, fulltext: nil) }).value else { return nil }
+            followUp.append(SafariFollowUp(id: p.id, doi: m.doi))
+            return (p, true)
+        }
+        guard let p = await saveFromPage(meta.isEmpty ? ["doi": doi, "title": title] : meta) else { return nil }
+        return (p, true)
+    }
+
+    private func importSafariRequest(_ req: [String: Any], in dir: URL, followUp: inout [SafariFollowUp]) async -> (String, Bool) {
         let (doi, title) = SafariInbox.identity(req)
         let meta = req["meta"] as? [String: Any] ?? [:]
         switch req["kind"] as? String {
         case "save":
-            let before = findPaper(doi: doi, title: title)
-            guard let p = await saveFromPage(meta) else {
+            guard let (p, new) = await safariPaper(meta, doi: doi, title: title, followUp: &followUp) else {
                 return ("Couldn't add “\(title.isEmpty ? doi : title)” from Safari.", true)
             }
-            var found = ""
-            if !p.hasPdf, meta["findPdf"] as? Bool == true {
-                found = await findPDF(p.id) != nil ? " Found a free PDF." : " No free PDF found."
-            }
-            return ((before == nil ? "Added “\(p.meta.title)”." : "“\(p.meta.title)” is already in your library.") + found, false)
+            if !p.hasPdf, meta["findPdf"] as? Bool == true { followUp.append(SafariFollowUp(id: p.id, findPdf: true)) }
+            else if new { followUp.append(SafariFollowUp(id: p.id)) }   // (the reading view)
+            return (new ? "Added “\(p.meta.title)”." : "“\(p.meta.title)” is already in your library.", false)
 
         case "findpdf":
             guard let p = (req["paperId"] as? String).flatMap({ $0.isEmpty ? nil : self.paper($0) }) ?? findPaper(doi: doi, title: title) else {
                 return ("Couldn't find “\(title.isEmpty ? doi : title)” in your library.", true)
             }
             if p.hasPdf { return ("“\(p.meta.title)” already has its PDF.", false) }
-            return await findPDF(p.id) != nil ? ("Found a free PDF of “\(p.meta.title)”.", false)
-                                              : ("No free PDF of “\(p.meta.title)” found. Open the article at the journal to save it with your access.", false)
+            followUp.append(SafariFollowUp(id: p.id, findPdf: true))
+            return ("Looking for a free PDF of “\(p.meta.title)”.", false)
 
         case "pdf":
             guard let file = SafariInbox.file(req["pdf"], in: dir), let data = try? Data(contentsOf: file),
                   data.starts(with: Array("%PDF".utf8)) else {
                 return ("A PDF sent from Safari couldn't be read.", true)
             }
-            var paper = (req["paperId"] as? String).flatMap { $0.isEmpty ? nil : self.paper($0) } ?? findPaper(doi: doi, title: title)
-            if paper == nil, !doi.isEmpty || !title.isEmpty { paper = await saveFromPage(meta.isEmpty ? ["doi": doi, "title": title] : meta) }
+            var paper = (req["paperId"] as? String).flatMap { $0.isEmpty ? nil : self.paper($0) }
+            if paper == nil, !doi.isEmpty || !title.isEmpty { paper = await safariPaper(meta, doi: doi, title: title, followUp: &followUp)?.0 }
             if let p = paper {
                 let lib = self.lib, id = p.id
                 do { try await Task.detached { try lib.attachFile(id: id, kind: .pdf, data: data) }.value } catch {
                     return ("Couldn't save the PDF of “\(p.meta.title)”: \(error.readable)", true)
                 }
                 reload()
-                if self.paper(id)?.hasEpub == false { await makeReadingView(id) }
+                // readable now (its PDF); the reading view is made in the background step
+                if self.paper(id)?.hasEpub == false { followUp.append(SafariFollowUp(id: id)) }
                 return ("PDF saved to “\(p.meta.title)”.", false)
             }
             let name = (req["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "paper.pdf"
@@ -148,7 +241,7 @@ extension LibraryModel {
             guard var m = try? JSONSerialization.jsonObject(with: Data(l.utf8)) as? [String: Any] else { line(["bad line": String(l.prefix(80))]); continue }
             switch m["debug"] as? String {
             case "process":
-                let r = await importSafari()
+                let r = await importSafari(waitForFollowUp: true)
                 line(["process": r.lines])
             case "index":
                 publishSafariIndex()

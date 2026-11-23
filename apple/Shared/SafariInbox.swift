@@ -26,6 +26,8 @@ import Foundation
 /// Foundation only: compiled into the extension (LuntaSafari) and into both apps.
 enum SafariInbox {
     static let group = "group.com.cmlangseth.margins"
+    /// Posted when a request is ready (the same name as `ShareInbox.arrived`).
+    static let arrivedNotification = "com.cmlangseth.margins.inbox-arrived"
 
     /// The folder in the App Group container (nil if the group isn't available).
     static var groupRoot: URL? {
@@ -84,6 +86,10 @@ enum SafariInbox {
                 let ready = root.appendingPathComponent("\(Int64(Date().timeIntervalSince1970 * 1000))-\(dir.lastPathComponent)", isDirectory: true)
                 try FileManager.default.moveItem(at: dir, to: ready)
                 let (doi, title) = identity(req)
+                // a Lunta app that is running does it at once (ShareInbox.arrived; the name is
+                // repeated here: this file is compiled into the extension without ShareInbox)
+                CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                                     CFNotificationName(arrivedNotification as CFString), nil, nil, true)
                 var out = status(doi: doi, title: title, root: root)
                 out["queued"] = true
                 out["outcome"] = "queued"
