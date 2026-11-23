@@ -120,6 +120,16 @@ extension PDFAnalyzer {
         t.trimmingCharacters(in: .whitespaces).matches(#"(?i)^((table of )?contents( in brief)?|brief contents|contents at a glance)$"#)
     }
 
+    /// A chapter's closing sections that a book prints without a number: "Notes", "Problems", "Exercises".
+    static func isEndSection(_ t: String) -> Bool {
+        t.trimmingCharacters(in: .whitespaces).matches(#"(?i)^(notes|problems|exercises|further reading|bibliographic notes|chapter notes)$"#)
+    }
+
+    /// A date on its own: "February 8, 2026", "8 February 2026", "2026-02-08".
+    static func isDateLine(_ t: String) -> Bool {
+        t.trimmingCharacters(in: .whitespaces).matches(#"^((January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}|\d{1,2}\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}|\d{4}-\d{2}-\d{2})$"#)
+    }
+
     static func isIndexTitle(_ t: String) -> Bool {
         t.trimmingCharacters(in: .whitespaces).matches(#"(?i)^(subject |general |author |name )?index$"#)
     }
@@ -247,6 +257,20 @@ extension PDFBook {
             }
         }
         return BookPlan(entries: outline, titles: titles, consumed: consumed)
+    }
+
+    /// The year a book's first pages give for it: "© 2023", "Copyright 2019 …", "published in 2021",
+    /// "released the final version … in December 2023". The latest such year there (a later edition's).
+    static func copyrightYear(_ paras: [Para]) -> Int? {
+        let re = try! NSRegularExpression(pattern: #"(?i)(?:©|\(c\)|copyright|published|released|first edition|edition)[^.;\n]{0,80}?\b((?:19|20)\d\d)\b"#)
+        var years: [Int] = []
+        for p in paras where p.page < 8 && [.text, .front, .heading, .caption].contains(p.kind) {
+            let t = p.text
+            for m in re.matches(in: t, range: NSRange(t.startIndex..., in: t)) {
+                if let r = Range(m.range(at: 1), in: t), let y = Int(t[r]) { years.append(y) }
+            }
+        }
+        return years.max()
     }
 
     /// The authors of a book from its title page: the short line of a name or two under the title.

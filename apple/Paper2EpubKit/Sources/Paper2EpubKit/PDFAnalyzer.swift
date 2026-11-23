@@ -1981,6 +1981,9 @@ enum PDFBook {
         let isBook = an.kind.isBookLike
         var meta = an.metaGuess(paras)
         if isBook && meta.authors.isEmpty { meta.authors = titlePageAuthors(paras) }
+        // (a book's year is the one its copyright page gives, not the date the PDF was made: a draft's
+        // build date, "February 8, 2026", for a book "released … in December 2023")
+        if isBook, let y = copyrightYear(paras), meta.date.isEmpty || y < (Int(meta.date.prefix(4)) ?? Int.max) { meta.date = String(y) }
         let guessed = meta
         if !extra.title.isEmpty || !extra.authors.isEmpty { meta = extra; meta.merge(guessed) }
         if !meta.doi.isEmpty, let cr = await crossref(meta.doi) {
@@ -2112,6 +2115,23 @@ enum PDFBook {
         // footnotes: each goes to the end of the chapter its marker is in (else the one it was found in)
         var footnotes: [(id: String, label: String, html: String, home: Int)] = []
         var eqIDs = Set<String>()
+        // an index line's level by where it starts in its column: 0 an entry, 1 a sub-entry, 2 set in further
+        var indexLefts: [Int: [CGFloat]] = [:]
+        for p in merged where isBook && an.onIndexPage(p.page) {
+            for l in p.lines { indexLefts[l.page, default: []].append(l.bbox.x0) }
+        }
+        func indexLevel(_ l: PLine) -> Int {
+            let xs = (indexLefts[l.page] ?? []).sorted()
+            // the column's entries' left edge: the leftmost start within 60 pt left of this line
+            guard let left = xs.first(where: { $0 > l.bbox.x0 - 60 && $0 <= l.bbox.x0 + 1 }) else { return 0 }
+            let d = l.bbox.x0 - left
+            if d < 4 { return 0 }
+            // the sub-entries' indent: the most common indent in the column (to the nearest 2 pt)
+            var counts: [Int: Int] = [:]
+            for x in xs where x - left >= 4 && x - left < 60 { counts[Int(((x - left) / 2).rounded()), default: 0] += 1 }
+            let step = counts.max { ($0.value, -$0.key) < ($1.value, -$1.key) }.map { CGFloat($0.key) * 2 } ?? d
+            return d < step + 4 ? 1 : 2
+        }
         for (i, p) in merged.enumerated() {
             if let plan {
                 // the outline's entries that start here
@@ -2137,7 +2157,18 @@ enum PDFBook {
                 for l in p.lines {
                     let t = l.text.replacingOccurrences(of: PDFAnalyzer.glue, with: "").replacingOccurrences(of: PDFAnalyzer.hardHyphen, with: "-")
                         .trimmingCharacters(in: .whitespaces)
-                    if !t.isEmpty { append("<p class=\"index\">\(esc(t))</p>") }
+                    guard !t.isEmpty else { continue }
+                    // (a sub-entry is set in from its column's entries: "activation function, 25, 38" /
+                    // "concatenated ReLU, 38"; a line set in further goes on with the entry before it)
+                    // (and set in further: a sub-entry's sub-entry, or, starting with a page number, the entry's
+                    // numbers going on)
+                    switch indexLevel(l) {
+                    case 1: append("<p class=\"index sub\">\(esc(t))</p>")
+                    case 2 where t.first?.isNumber == true && cur?.html.hasSuffix("</p>") == true:
+                        cur!.html.removeLast(4); cur!.html += " " + esc(t) + "</p>"
+                    case 2: append("<p class=\"index sub sub2\">\(esc(t))</p>")
+                    default: append("<p class=\"index\">\(esc(t))</p>")
+                    }
                 }
                 continue
             }
@@ -2183,7 +2214,14 @@ enum PDFBook {
                 var t = p.text.trimmingCharacters(in: .whitespaces)
                 if plan != nil {
                     // the outline gives the chapters: a heading it doesn't list is a sub-heading
+                    // (and a chapter's Notes, Problems, Exercises: sections of it, in the navigation)
                     let section = !outlineSections && t.matches(#"^(\d{1,3}|[A-Z])\.\d{1,3}\.?\s+\S"#)
+                        || PDFAnalyzer.isEndSection(t)
+                    // (the title page's author and date lines are no headings)
+                    if !section, p.page <= 2, meta.authors.contains(where: { PDFBook.similar($0, t) }) || PDFAnalyzer.isDateLine(t) {
+                        append("<p class=\"titlepage\">\(esc(t))</p>")
+                        break
+                    }
                     let id = nextID(), h = section ? 2 : 3
                     append("<h\(h) id=\"\(id)\">\(esc(t))</h\(h)>")
                     if section { cur!.headings.append(Heading(level: 2, id: id, title: t)) }

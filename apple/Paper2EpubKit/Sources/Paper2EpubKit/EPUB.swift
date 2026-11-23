@@ -258,6 +258,9 @@ enum Style {
     aside.sidenote { font-size: 0.8em; color: #666; margin: 0 0 0.7em 1.2em; padding-left: 0.5em; border-left: 2px solid #ccc; }
     aside.sidenote p { margin: 0; }
     ol.refs li { margin-bottom: 0.45em; }
+    p.index { margin: 0; padding-left: 1.5em; text-indent: -1.5em; }
+    p.index.sub { margin-left: 1.2em; }
+    p.index.sub2 { margin-left: 2.4em; }
     .missing { color: #888; font-style: italic; }
     .smallcaps { font-variant: small-caps; }
     ul.simple { list-style-type: none; }

@@ -101,6 +101,30 @@ final class BookModeTests: XCTestCase {
         XCTAssertTrue(all.contains("This is sentence 3 of page 20"), "body text lost")
     }
 
+    func testNotesIndexAndTitlePage() async throws {
+        let book = try await PDFBook.build(Self.bookPDF(outline: true, extras: true), meta: PaperMeta(), log: { _ in })
+        let all = book.chapters.map(\.html).joined()
+        // a chapter's Notes: a section of it, in the navigation
+        guard let ch1 = book.chapters.first(where: { $0.title.hasPrefix("1 ") }) else { return XCTFail() }
+        XCTAssertTrue(ch1.headings.contains { $0.level == 2 && $0.title == "Notes" }, "\(ch1.headings)")
+        XCTAssertNotNil(all.range(of: #"<h2 id="s\d+">Notes</h2>"#, options: .regularExpression), all)
+        // the index's sub-entries
+        let index = book.chapters.last!.html
+        XCTAssertTrue(index.contains(#"<p class="index">apples, 3, 17</p><p class="index sub">ripe, 40</p><p class="index sub">sour, 50</p>"#), index)
+        // the title page's date is no heading, and the book's year is its copyright's
+        XCTAssertFalse(all.contains(">February 8, 2026</h"), all)
+        XCTAssertEqual(book.meta.date, "2023")
+    }
+
+    func testBookHelpers() {
+        XCTAssertTrue(PDFAnalyzer.isEndSection("Notes"))
+        XCTAssertTrue(PDFAnalyzer.isEndSection("Problems"))
+        XCTAssertFalse(PDFAnalyzer.isEndSection("Notes on the method"))
+        XCTAssertTrue(PDFAnalyzer.isDateLine("February 8, 2026"))
+        XCTAssertTrue(PDFAnalyzer.isDateLine("8 February 2026"))
+        XCTAssertFalse(PDFAnalyzer.isDateLine("In February 2026 we"))
+    }
+
     func testSyntheticBookWithoutOutline() async throws {
         let book = try await PDFBook.build(Self.bookPDF(outline: false), meta: PaperMeta(), log: { _ in })
         XCTAssertEqual(book.kind, .book, "\(book.kindReasons)")
@@ -155,7 +179,7 @@ final class BookModeTests: XCTestCase {
     /// "Chapter N" pages and running heads with page numbers that change with the chapter ("12 1
     /// Foundations of Things" on the left, "1.1 First Part of Chapter One 13" on the right), and a
     /// two-page index.
-    static func bookPDF(outline: Bool, numberApart: Bool = false) -> Data {
+    static func bookPDF(outline: Bool, numberApart: Bool = false, extras: Bool = false) -> Data {
         let data = NSMutableData()
         var box = CGRect(x: 0, y: 0, width: 612, height: 792)
         let ctx = CGContext(consumer: CGDataConsumer(data: data as CFMutableData)!, mediaBox: &box, nil)!
@@ -179,7 +203,11 @@ final class BookModeTests: XCTestCase {
             }
             y += 8
         }
-        page { draw("A Book About Things", big, 150, 200); draw("Jane Q. Writer", bold, 200, 250) }
+        page {
+            draw("A Book About Things", big, 150, 200); draw("Jane Q. Writer", bold, 200, 250)
+            // (a draft's build date under the author, a copyright line at the foot)
+            if extras { draw("February 8, 2026", bold, 200, 280); draw("Copyright 2023 by the author; this version released in December 2023.", body, 72, 700) }
+        }
         // contents
         page {
             draw("Contents", big, 72, 100)
@@ -225,6 +253,8 @@ final class BookModeTests: XCTestCase {
                     }
                     paragraph(&y, "page \(pno)")
                     paragraph(&y, "page \(pno) again")
+                    // (a chapter's Notes at the end of its last page)
+                    if extras && k == 10 { draw("Notes", bold, 72, y + 10); y += 34; paragraph(&y, "the notes of \(pno)", lines: 2) }
                 }
             }
         }
@@ -237,6 +267,8 @@ final class BookModeTests: XCTestCase {
                 for (k, w) in words.enumerated() {
                     draw("\(half == 0 ? w : w.uppercased()), \(3 + k), \(17 + k)", body, 72, y); y += 12
                     draw("\(w) pie, \(30 + k)", body, 300, y - 12)
+                    // (sub-entries set in under an entry)
+                    if extras { draw("ripe, \(40 + k)", body, 84, y); y += 12; draw("sour, \(50 + k)", body, 84, y); y += 12 }
                 }
             }
         }
