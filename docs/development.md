@@ -440,6 +440,25 @@ built by `LuntaCite.optionsForm` (kind of locator, number, prefix, suffix, autho
   manager's bibliography, the theme's font), so the last entry came out in another font. After writing it,
   every entry gets the first entry's paragraph spacing and indents and the font (name, size, colour) of the
   paragraph the first citation is in (`evenBibliography`).
+- **Names and journals in reference lists** (`worktype::for_export`, used by CSL, the built-in styles, BibTeX
+  and RIS; the library keeps the details as they came). A family name's particles go to CSL as
+  `non-dropping-particle` ("van Velthoven, C.T.J."; given as one string hayagriva took "van" for a dropping
+  particle: "Velthoven, C.T.J. van"), also when a source puts it after the given names ("Velthoven, Cindy T.
+  J. van"); a family name with a lower-case word inside ("Santos e Silva") reaches the engine whole. Names
+  are cleaned (`clean_authors`): a stray full stop ("Warren J. Leonard." → "Leonard, W.J."), joined initials
+  split ("F.G." → "F. G.", else styles write "B.F."), a list written family name first without commas
+  ("Lucchinetti Claudia F.") read as such, HTML entities, names without letters dropped. Journal names
+  (`journal::clean_name`): PubMed's and OpenAlex's qualifiers ("(Oxford, England)", "(Cornell
+  University)"), NLM's " : subtitle" and " = translation" dropped, sentence case put in title case
+  ("Nature methods" → "Nature Methods"; "eLife", "bioRxiv", "npj" stay). Abbreviations: the library has no
+  field for them, so `journal::abbreviation` looks the name up in `core/src/journal_abbrev.tsv`, ~1,500
+  life-science journals from NLM's J_Medline.txt (MEDLINE abbreviations, no full stops: "Nat Methods",
+  "Proc Natl Acad Sci U S A"; a few Crossref names added by hand). They go in as `container-title-short`,
+  and since hayagriva reads a CSL-JSON item's short form only for titles, a style's `<text
+  variable="container-title" form="short"/>` is rewritten to `container-title-short` when loaded (every
+  item with a journal has it: the abbreviation, else the full name). The built-in Vancouver, AMA and Cell
+  use them too. Cell's style writes a preprint's DOI in its preprint part and again at the end of every
+  entry; a link written twice in an entry is written once.
 
 ### Converting citations from Zotero, EndNote, Mendeley and ReadCube Papers
 

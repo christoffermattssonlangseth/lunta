@@ -88,17 +88,29 @@ var LuntaCite = (function () {
 
   // ---- names ----
 
-  var PARTICLES = ['van', 'von', 'de', 'der', 'den', 'da', 'di', 'du', 'del', 'della', 'la', 'le', 'ten', 'ter'];
-  /** The family name in an author's name, as the core reads it ("Ludwig van Beethoven" → "van Beethoven"). */
+  var PARTICLES = ['van', 'von', 'de', 'der', 'den', 'da', 'das', 'do', 'dos', 'di', 'du', 'del', 'della', 'des', 'la', 'le', 'ten', 'ter', 'zu', 'vom'];
+  /** The family name in an author's name, as the core reads it ("Ludwig van Beethoven" and
+   *  "Beethoven, Ludwig van" → "van Beethoven"; a stray full stop after it dropped: "Leonard." → "Leonard"). */
   function familyOf(name) {
     name = String(name || '').trim();
+    var family;
     var comma = name.indexOf(',');
-    if (comma >= 0) return name.slice(0, comma).trim();
-    var parts = name.split(/\s+/).filter(Boolean);
-    if (parts.length <= 1) return name;
-    var start = parts.length - 1;
-    while (start > 1 && PARTICLES.indexOf(parts[start - 1].toLowerCase()) >= 0) start--;
-    return parts.slice(start).join(' ');
+    if (comma >= 0) {
+      family = name.slice(0, comma).trim();
+      var given = name.slice(comma + 1).split(/\s+/).filter(Boolean);
+      if (PARTICLES.indexOf(family.split(/\s+/)[0]) < 0) {
+        while (given.length > 1 && PARTICLES.indexOf(given[given.length - 1]) >= 0) family = given.pop() + ' ' + family;
+      }
+    } else {
+      var parts = name.split(/\s+/).filter(Boolean);
+      if (parts.length <= 1) return name;
+      var start = parts.length - 1;
+      while (start > 1 && PARTICLES.indexOf(parts[start - 1].toLowerCase()) >= 0) start--;
+      family = parts.slice(start).join(' ');
+    }
+    var last = family.split(' ').pop();
+    if (/^\S[a-z\u00df-\u024f'-]{3,}\.$/.test(last)) family = family.slice(0, -1);
+    return family;
   }
 
   /** The names part of an author–year citation: "Smith", "Smith & Lee", "Smith et al." */

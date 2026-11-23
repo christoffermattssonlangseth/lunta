@@ -195,6 +195,11 @@ test('family names as the core reads them', () => {
   assert.equal(C.familyOf('Langseth, Christoffer M.'), 'Langseth');
   assert.equal(C.familyOf('WHO'), 'WHO');
   assert.equal(C.familyOf('Gonçalo Castelo-Branco'), 'Castelo-Branco');
+  // as the core reads them: particles after the given names, more particles, a stray full stop
+  assert.equal(C.familyOf('Velthoven, Cindy T. J. van'), 'van Velthoven');
+  assert.equal(C.familyOf('van Velthoven, Cindy T. J.'), 'van Velthoven');
+  assert.equal(C.familyOf('Daniel Moreira dos Santos'), 'dos Santos');
+  assert.equal(C.familyOf('Warren J. Leonard.'), 'Leonard');
   assert.equal(C.pickedLabel([{ title: 'T', authors: ['Ada Lee'], year: '2020' }, { families: ['Wu'], year: '' }]), 'Lee 2020; Wu');
 });
 

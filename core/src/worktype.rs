@@ -331,12 +331,122 @@ pub fn fix_proceedings_title(j: &str) -> String {
 pub fn for_export(m: &PaperMeta) -> PaperMeta {
     let mut o = m.clone();
     o.journal = fix_proceedings_title(&m.journal);
-    o.title = fix_title_case(&m.title);
-    o.authors = m.authors.iter().map(|a| if is_organization(a) { a.clone() } else { fix_name_case(a) }).collect();
+    o.title = fix_title_case(&m.title.split_whitespace().collect::<Vec<_>>().join(" "));
+    o.authors = clean_authors(&m.authors).iter().map(|a| if is_organization(a) { a.clone() } else { fix_name_case(a) }).collect();
     if mostly_upper(&m.journal) && m.journal.split_whitespace().count() > 1 {
         o.journal = fix_title_case(&o.journal);
     }
+    // PubMed's "Nature methods", "Bioinformatics (Oxford, England)" as journals write their names
+    // (a web site's name as it is: "Andrej Karpathy blog")
+    if !matches!(kind(m), Kind::WebPage | Kind::BlogPost) {
+        o.journal = crate::journal::clean_name(&o.journal);
+    }
+    // an article number with a stray dash ("awac016-")
+    o.pages = m.pages.trim().trim_end_matches(['-', '–']).trim().to_string();
     o
+}
+
+/// Initials: "F.", "F.G.", "J.-P.", "FG" (up to three capitals).
+fn is_initials(w: &str) -> bool {
+    let letters: Vec<char> = w.chars().filter(|c| c.is_alphabetic()).collect();
+    !letters.is_empty()
+        && letters.len() <= 3
+        && letters.iter().all(|c| c.is_uppercase())
+        && w.chars().all(|c| c.is_alphabetic() || c == '.' || c == '-')
+        && (w.contains('.') || letters.len() <= 2)
+}
+
+/// Latin-1 letters written as HTML entities, with or without the ";" ("Bergenstr&aringhle").
+fn html_letters(s: &str) -> String {
+    if !s.contains('&') {
+        return s.to_string();
+    }
+    const E: [(&str, &str); 30] = [
+        ("aring", "å"), ("Aring", "Å"), ("auml", "ä"), ("Auml", "Ä"), ("ouml", "ö"), ("Ouml", "Ö"), ("uuml", "ü"), ("Uuml", "Ü"),
+        ("eacute", "é"), ("Eacute", "É"), ("egrave", "è"), ("aacute", "á"), ("Aacute", "Á"), ("agrave", "à"), ("iacute", "í"),
+        ("oacute", "ó"), ("Oacute", "Ó"), ("uacute", "ú"), ("ntilde", "ñ"), ("ccedil", "ç"), ("oslash", "ø"), ("Oslash", "Ø"),
+        ("aelig", "æ"), ("AElig", "Æ"), ("szlig", "ß"), ("euml", "ë"), ("iuml", "ï"), ("ecirc", "ê"), ("ocirc", "ô"), ("atilde", "ã"),
+    ];
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(i) = rest.find('&') {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + 1..];
+        match E.iter().find(|(n, _)| after.starts_with(n)) {
+            Some((n, c)) => {
+                out.push_str(c);
+                rest = &after[n.len()..];
+                rest = rest.strip_prefix(';').unwrap_or(rest);
+            }
+            None => {
+                out.push('&');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Authors' names as the sources sometimes give them, fixed for writing out (the library keeps
+/// them as they are):
+/// - a stray full stop after a name ("Warren J. Leonard." → "Warren J. Leonard", "Eric. T.
+///   Trexler" → "Eric T. Trexler"); initials keep theirs;
+/// - a list written family name first without commas ("Lucchinetti Claudia F.", "Popescu Bogdan
+///   F.G.", "Zhang Y"), told by most names ending in initials and none starting with them →
+///   "Lucchinetti, Claudia F.", which `split_name` reads;
+/// - letters written as HTML entities ("Bergenstr&aringhle" → "Bergenstråhle");
+/// - names without a letter ("238") left out.
+pub fn clean_authors(authors: &[String]) -> Vec<String> {
+    let names: Vec<String> = authors
+        .iter()
+        .map(|a| html_letters(&a.split_whitespace().collect::<Vec<_>>().join(" ")))
+        .filter(|a| a.chars().any(|c| c.is_alphabetic()))
+        .map(|a| {
+            if is_organization(&a) {
+                return a;
+            }
+            a.split(' ')
+                .map(|w| {
+                    let letters = w.chars().filter(|c| c.is_alphabetic()).count();
+                    let core = w.trim_end_matches('.');
+                    // "Leonard." / "Eric." (four letters or more, in lower case after the first: not
+                    // initials, nor "Jr." or "St.")
+                    if w.ends_with('.') && letters >= 4 && !core.contains('.') && core.chars().skip(1).all(|c| c.is_lowercase() || c == '-' || c == '\'') {
+                        core.to_string()
+                    } else if is_initials(w) && !w.contains('-') && letters > 1 && w.contains('.') {
+                        // "F.G." → "F. G.": each initial a name of its own, as styles abbreviate
+                        // them one by one (as one, "Bogdan F.G." came out "B.F.")
+                        w.chars().filter(|c| c.is_alphabetic()).map(|c| format!("{c}.")).collect::<Vec<_>>().join(" ")
+                    } else {
+                        w.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect();
+    let people: Vec<&String> = names.iter().filter(|a| !is_organization(a) && !a.contains(',') && a.contains(' ')).collect();
+    let ends_in_initials = people.iter().filter(|a| a.rsplit(' ').next().is_some_and(is_initials)).count();
+    let starts_with_initials = people.iter().any(|a| a.split(' ').next().is_some_and(is_initials));
+    if people.len() >= 2 && ends_in_initials * 2 > people.len() && !starts_with_initials {
+        return names
+            .into_iter()
+            .map(|a| {
+                if is_organization(&a) || a.contains(',') || !a.contains(' ') {
+                    return a;
+                }
+                // the family name with its particles ("van der Berg Jan")
+                let words: Vec<&str> = a.split(' ').collect();
+                let mut n = 0;
+                while n + 2 < words.len() && crate::export::PARTICLES.contains(&words[n]) {
+                    n += 1;
+                }
+                format!("{}, {}", words[..=n].join(" "), words[n + 1..].join(" "))
+            })
+            .collect();
+    }
+    names
 }
 
 /// Details as they come from Crossref and the other sources, cleaned: capitals, the type.
@@ -352,6 +462,24 @@ mod tests {
 
     fn meta(journal: &str, doi: &str, arxiv: &str) -> PaperMeta {
         PaperMeta { title: "T".into(), journal: journal.into(), doi: doi.into(), arxiv: arxiv.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn authors_as_written_out() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // a stray full stop; initials kept, one by one
+        assert_eq!(clean_authors(&v(&["Warren J. Leonard.", "Eric. T. Trexler", "Simon J.D. Prince", "John Smith Jr."])), v(&["Warren J. Leonard", "Eric T. Trexler", "Simon J. D. Prince", "John Smith Jr."]));
+        // family name first, without commas
+        assert_eq!(
+            clean_authors(&v(&["Lucchinetti Claudia F.", "Popescu Bogdan F.G.", "Lassmann Hans", "van der Berg Jan K."])),
+            v(&["Lucchinetti, Claudia F.", "Popescu, Bogdan F. G.", "Lassmann, Hans", "van der Berg, Jan K."])
+        );
+        assert_eq!(clean_authors(&v(&["Zhang Y", "Li X"])), v(&["Zhang, Y", "Li, X"]));
+        // given names first (some with initials only) stay
+        assert_eq!(clean_authors(&v(&["M E Reff", "K Carner"])), v(&["M E Reff", "K Carner"]));
+        assert_eq!(clean_authors(&v(&["Ann Smith", "Bo Lee", "Fatemeh S. Hashemi G."])), v(&["Ann Smith", "Bo Lee", "Fatemeh S. Hashemi G."]));
+        // HTML entities, names without letters
+        assert_eq!(clean_authors(&v(&["Joseph Bergenstr&aringhle", "238", "Ana M&uuml;ller"])), v(&["Joseph Bergenstråhle", "Ana Müller"]));
     }
 
     #[test]

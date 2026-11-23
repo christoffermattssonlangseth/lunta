@@ -49,6 +49,7 @@ pub mod import;
 #[cfg(feature = "pdf")]
 pub mod import_source;
 pub mod index;
+pub mod journal;
 /// Copying a library into another folder when it moves (the Apple apps' copy rules).
 pub mod librarycopy;
 #[cfg(feature = "llm")]
@@ -1045,10 +1046,11 @@ pub fn format_citation(meta: PaperMeta, style: model::CitationStyle) -> String {
 }
 
 /// The family name in an author's name as the citation styles read it: "Ludwig van Beethoven" →
-/// "van Beethoven", "Langseth, Christoffer M." → "Langseth".
+/// "van Beethoven", "Langseth, Christoffer M." → "Langseth", "Warren J. Leonard." → "Leonard".
 #[uniffi::export]
 pub fn family_name(name: String) -> String {
-    export::split_name(&name).0
+    let clean = worktype::clean_authors(std::slice::from_ref(&name)).pop().unwrap_or(name);
+    export::split_name(&clean).0
 }
 
 /// A paper that exists only as details (cited in a document, not in the library).

@@ -189,7 +189,8 @@ fn load_style(cache_dir: &str, id: &str) -> Result<(IndependentStyle, String, Op
     // by year ("(Kukanja et al., 2024, Lee, 2021)"); without collapsing, each work is cited in full
     let re = regex::Regex::new(r#"\s(collapse="year[a-z-]*"|cite-group-delimiter="[^"]*")"#).unwrap();
     let independent = re.replace_all(&independent, "").into_owned();
-    let style = IndependentStyle::from_xml(&independent).map_err(|e| CoreError::Invalid(format!("citation style {id}: {e}")))?;
+    let independent = short_container_titles(&independent);
+    let style =IndependentStyle::from_xml(&independent).map_err(|e| CoreError::Invalid(format!("citation style {id}: {e}")))?;
     let locators = regex::Regex::new(r#"variable="[^"]*\blocator\b"#).unwrap().is_match(&independent);
     let uncollapsed = if locators {
         None
@@ -198,6 +199,25 @@ fn load_style(cache_dir: &str, id: &str) -> Result<(IndependentStyle, String, Op
         IndependentStyle::from_xml(&re.replace_all(&independent, "")).ok()
     };
     Ok((style, title, locale, uncollapsed))
+}
+
+/// The engine reads a CSL-JSON item's short form only for titles: a journal's abbreviation
+/// (`container-title-short`) asked for as `<text variable="container-title" form="short"/>`
+/// (Cell, Nature, Vancouver) came out as the journal's full name. Such a text asks for the
+/// `container-title-short` variable instead, which every item with a journal has (`item`: the
+/// abbreviation, or else the name, as CSL's short form falls back to the long one).
+fn short_container_titles(xml: &str) -> String {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"<text\b[^>]*>").unwrap());
+    re.replace_all(xml, |c: &regex::Captures| {
+        let t = &c[0];
+        if t.contains(r#"variable="container-title""#) && t.contains(r#"form="short""#) {
+            t.replace(r#"variable="container-title""#, r#"variable="container-title-short""#).replace(r#" form="short""#, "")
+        } else {
+            t.to_string()
+        }
+    })
+    .into_owned()
 }
 
 fn tag_text(xml: &str, tag: &str) -> Option<String> {
@@ -222,13 +242,18 @@ fn locales() -> &'static [Locale] {
 // swapped for private-use stand-ins (case changes leave them alone) and come back out after the
 // markup is read.
 const STAND_INS: [(char, char); 3] = [('<', '\u{E000}'), ('>', '\u{E001}'), ('&', '\u{E002}')];
+/// A space in a family name the engine should not split (`name_json`). Only family names get it;
+/// `unguard` gives the space back.
+const FAMILY_SPACE: char = '\u{E003}';
 
 fn guard(s: &str) -> String {
     s.chars().map(|c| STAND_INS.iter().find(|(a, _)| *a == c).map(|(_, b)| *b).unwrap_or(c)).collect()
 }
 
 fn unguard(s: &str) -> String {
-    s.chars().map(|c| STAND_INS.iter().find(|(_, b)| *b == c).map(|(a, _)| *a).unwrap_or(c)).collect()
+    s.chars()
+        .map(|c| if c == FAMILY_SPACE { ' ' } else { STAND_INS.iter().find(|(_, b)| *b == c).map(|(a, _)| *a).unwrap_or(c) })
+        .collect()
 }
 
 /// A paper as CSL-JSON.
@@ -263,9 +288,12 @@ fn item(p: &Paper) -> Item {
             if crate::worktype::is_organization(a) {
                 return serde_json::json!({ "literal": guard(a) });
             }
-            let a = guard(a);
-            let (family, given) = split_name(&a);
-            if given.is_empty() { serde_json::json!({ "family": family }) } else { serde_json::json!({ "family": family, "given": given }) }
+            let (family, given) = split_name(a);
+            let mut n = name_json(&family);
+            if !given.is_empty() {
+                n["given"] = guard(&given).into();
+            }
+            n
         })
         .collect();
     if !authors.is_empty() {
@@ -274,6 +302,12 @@ fn item(p: &Paper) -> Item {
     let parts: Vec<i64> = m.date.split('-').filter_map(|x| x.parse().ok()).collect();
     if !parts.is_empty() {
         j["issued"] = serde_json::json!({ "date-parts": [parts] });
+    }
+    // the journal's abbreviation, for styles that use it (Cell: "Nat Methods"); otherwise its name,
+    // as CSL's short form falls back to the long one (see `load_style`)
+    if !m.journal.trim().is_empty() {
+        let short = if kind == "article-journal" { crate::journal::abbreviation(&m.journal) } else { None };
+        j["container-title-short"] = guard(short.unwrap_or(m.journal.trim())).into();
     }
     for (k, v) in [
         ("container-title", &m.journal),
@@ -313,6 +347,40 @@ fn item(p: &Paper) -> Item {
         j["number"] = guard(&m.issue).into();
     }
     serde_json::from_value(j).expect("CSL-JSON item")
+}
+
+/// A family name as a CSL name, its particles apart: "van Velthoven" → non-dropping particle
+/// "van", family "Velthoven", so that styles write "van Velthoven, C.T.J." (Cell, APA) or sort it
+/// under V, as each style says. Given as one string, the engine would take "van" for a *dropping*
+/// particle and write "Velthoven, C.T.J. van". A family name with a lower-case word inside ("Santos
+/// e Silva") is kept whole: its spaces go in as stand-ins, so the engine doesn't split it.
+fn name_json(family: &str) -> serde_json::Value {
+    let words: Vec<&str> = family.split_whitespace().collect();
+    let lower = |w: &str| w.chars().next().is_some_and(|c| c.is_lowercase());
+    let n = words.iter().take(words.len().saturating_sub(1)).take_while(|w| lower(w)).count();
+    if n > 0 {
+        return serde_json::json!({ "non-dropping-particle": guard(&words[..n].join(" ")), "family": guard(&words[n..].join(" ")) });
+    }
+    let family = if words.iter().any(|w| lower(w)) { words.join(&FAMILY_SPACE.to_string()) } else { words.join(" ") };
+    serde_json::json!({ "family": guard(&family) })
+}
+
+/// A link written twice in an entry ("Preprint at bioRxiv, https://doi.org/10.1101/x
+/// https://doi.org/10.1101/x."): Cell's style writes a preprint's DOI in its own part for
+/// preprints and again at the end of every entry. The second one goes, with what separates it.
+fn without_repeated_links(entry: &str) -> String {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"https?://[^\s<>]*[^\s<>.,;:)]").unwrap());
+    let mut out = entry.to_string();
+    loop {
+        let links: Vec<(usize, usize, String)> = re.find_iter(&out).map(|m| (m.start(), m.end(), m.as_str().to_lowercase())).collect();
+        let Some((start, end)) = links.iter().enumerate().find_map(|(i, l)| links[..i].iter().any(|e| e.2 == l.2).then_some((l.0, l.1))) else {
+            return out;
+        };
+        // with the separator before it (", " or " ")
+        let before = out[..start].trim_end_matches([' ', ',', ';']).len();
+        out.replace_range(before..end, "");
+    }
 }
 
 /// Formats citations (each a list of paper ids, in document order) and the reference list.
@@ -391,7 +459,7 @@ pub fn render_items(cache_dir: &str, style_id: &str, papers: &[Paper], citations
                         html.push(' ');
                     }
                     let _ = i.content.write_buf(&mut html, BufWriteFormat::Html);
-                    CslEntry { id: i.key.clone(), text: unguard(&tidy(&html_to_markdown(html.trim()))) }
+                    CslEntry { id: i.key.clone(), text: without_repeated_links(&unguard(&tidy(&html_to_markdown(html.trim())))) }
                 })
                 .collect()
         })
@@ -804,5 +872,111 @@ mod tests {
             r.bibliography[0].text,
             "Karpathy, A. [blog] A Recipe for Training Neural Networks. Andrej Karpathy blog. Retrieved November 21, 2026 from https://karpathy.github.io/2019/04/25/recipe/"
         );
+    }
+
+    /// Cell's reference list (the parts of the Zotero style that matter here): names in sort
+    /// order with particles shown, abbreviated journal names, a preprint's DOI in its own part
+    /// and again at the end of every entry.
+    const CELL: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" demote-non-dropping-particle="sort-only" page-range-format="expanded" default-locale="en-US">
+  <info><title>Test Cell</title><id>http://www.zotero.org/styles/test-cell</id><category citation-format="numeric"/><updated>2024-01-01T00:00:00+00:00</updated></info>
+  <macro name="author"><names variable="author"><name name-as-sort-order="all" and="text" sort-separator=", " initialize-with="." delimiter=", " delimiter-precedes-last="always"/></names></macro>
+  <macro name="access"><choose><if match="any" variable="DOI"><text variable="DOI" prefix="https://doi.org/"/></if></choose></macro>
+  <citation collapse="citation-number"><sort><key variable="citation-number"/></sort><layout vertical-align="sup" delimiter=","><text variable="citation-number"/></layout></citation>
+  <bibliography><sort><key variable="citation-number"/></sort>
+    <layout suffix=".">
+      <text macro="author"/>
+      <date variable="issued" prefix=" (" suffix=")."><date-part name="year"/></date>
+      <choose>
+        <if type="chapter paper-conference" match="any">
+          <group delimiter=" " prefix=" "><text variable="title" suffix="."/><text term="in" text-case="capitalize-first"/><text variable="container-title" form="short"/></group>
+        </if>
+        <else-if type="article">
+          <text variable="title" prefix=" "/>
+          <text term="article" text-case="capitalize-first" prefix=". "/>
+          <text variable="publisher" prefix=" at "/>
+          <text macro="access" prefix=", "/>
+        </else-if>
+        <else>
+          <text variable="title" prefix=" " suffix="."/>
+          <group delimiter=", " prefix=" " suffix="."><group delimiter=" "><text variable="container-title" form="short"/><text variable="volume" font-style="italic"/></group><text variable="page"/></group>
+        </else>
+      </choose>
+      <text prefix=" " macro="access"/>
+    </layout>
+  </bibliography>
+</style>"#;
+
+    #[test]
+    fn reference_lists_as_journals_write_them() {
+        let dir = cache();
+        std::fs::write(Path::new(&dir).join("csl/test-cell.csl"), CELL).unwrap();
+        let p = |id: &str, m: PaperMeta| crate::cited_paper(id, m);
+        let papers = [
+            // a preprint: its DOI once
+            p("pre", PaperMeta {
+                title: "Molecular architecture of the developing mouse brain".into(),
+                authors: vec!["Gioele La Manno".into(), "Kimberly Siletti".into()],
+                date: "2020-07-02".into(),
+                journal: "bioRxiv (Cold Spring Harbor Laboratory)".into(),
+                doi: "10.1101/2020.07.02.184051".into(),
+                work_type: "posted-content".into(),
+                ..Default::default()
+            }),
+            // particles in front of the family name; a stray full stop after one; the journal
+            // as PubMed names it, abbreviated
+            p("art", PaperMeta {
+                title: "A title".into(),
+                authors: vec!["Cindy T. J. van Velthoven".into(), "Velthoven, Ann van der".into(), "Daniel Moreira dos Santos".into(), "Warren J. Leonard.".into()],
+                date: "2023".into(),
+                journal: "Nature methods".into(),
+                volume: "10".into(),
+                pages: "857-860".into(),
+                doi: "10.1038/nmeth.2563".into(),
+                work_type: "journal-article".into(),
+                ..Default::default()
+            }),
+            // names family first without commas, as some sources give them; an article number
+            // with a stray dash; a journal whose abbreviation is its name
+            p("fam", PaperMeta {
+                title: "Another title".into(),
+                authors: vec!["Lucchinetti Claudia F.".into(), "Popescu Bogdan F.G.".into(), "Lassmann Hans".into()],
+                date: "2011".into(),
+                journal: "Bioinformatics (Oxford, England)".into(),
+                volume: "145".into(),
+                pages: "awac016-".into(),
+                work_type: "journal-article".into(),
+                ..Default::default()
+            }),
+            // a family name with a lower-case word inside stays whole; a book's title in full
+            p("ch", PaperMeta {
+                title: "A chapter".into(),
+                authors: vec!["Santos e Silva, João".into()],
+                date: "2019".into(),
+                journal: "Methods in molecular biology (Clifton, N.J.)".into(),
+                work_type: "book-chapter".into(),
+                ..Default::default()
+            }),
+        ];
+        let ids: Vec<Vec<String>> = papers.iter().map(|p| vec![p.id.clone()]).collect();
+        let r = render(&dir, "test-cell", &papers, &ids).unwrap();
+        let b: Vec<&str> = r.bibliography.iter().map(|e| e.text.as_str()).collect();
+        assert_eq!(b[0], "La Manno, G., and Siletti, K. (2020). Molecular architecture of the developing mouse brain. Preprint at bioRxiv, https://doi.org/10.1101/2020.07.02.184051.");
+        assert_eq!(
+            b[1],
+            "van Velthoven, C.T.J., van der Velthoven, A., dos Santos, D.M., and Leonard, W.J. (2023). A title. Nat Methods *10*, 857–860. https://doi.org/10.1038/nmeth.2563."
+        );
+        assert_eq!(b[2], "Lucchinetti, C.F., Popescu, B.F.G., and Lassmann, H. (2011). Another title. Bioinformatics *145*, awac016.");
+        assert_eq!(b[3], "Santos e Silva, J. (2019). A chapter. In Methods in Molecular Biology.");
+    }
+
+    #[test]
+    fn a_link_once() {
+        assert_eq!(
+            without_repeated_links("A. Preprint at bioRxiv, https://doi.org/10.1101/x https://doi.org/10.1101/x."),
+            "A. Preprint at bioRxiv, https://doi.org/10.1101/x."
+        );
+        assert_eq!(without_repeated_links("A, https://doi.org/10.1/A. https://doi.org/10.1/a"), "A, https://doi.org/10.1/A.");
+        assert_eq!(without_repeated_links("A https://a.org/x, https://a.org/y."), "A https://a.org/x, https://a.org/y.");
     }
 }

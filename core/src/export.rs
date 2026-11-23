@@ -3,18 +3,32 @@
 use crate::model::*;
 
 /// Splits "Given Middle Family" into (family, given). Handles "Family, Given" and particles.
+/// A family name's particle ("van" in "van Velthoven", "dos" in "dos Santos").
+pub const PARTICLES: [&str; 20] =
+    ["van", "von", "de", "der", "den", "da", "das", "do", "dos", "di", "du", "del", "della", "des", "la", "le", "ten", "ter", "zu", "vom"];
+
+/// Splits "Given Middle Family" into (family, given). Handles "Family, Given" and particles
+/// ("Cindy T. J. van Velthoven" and "Velthoven, Cindy T. J. van" → "van Velthoven").
 pub fn split_name(name: &str) -> (String, String) {
     let n = name.trim();
     if let Some((fam, giv)) = n.split_once(',') {
-        return (fam.trim().to_string(), giv.trim().to_string());
+        // "Velthoven, Cindy T. J. van": the particle after the given names (BibTeX's "Last, First von"
+        // is not a form; some sources write it so)
+        let mut giv: Vec<&str> = giv.split_whitespace().collect();
+        let mut fam = fam.trim().to_string();
+        if !fam.split_whitespace().next().is_some_and(|w| PARTICLES.contains(&w)) {
+            while giv.len() > 1 && PARTICLES.contains(&giv[giv.len() - 1]) {
+                fam = format!("{} {fam}", giv.pop().unwrap());
+            }
+        }
+        return (fam, giv.join(" "));
     }
     let parts: Vec<&str> = n.split_whitespace().collect();
     if parts.len() <= 1 {
         return (n.to_string(), String::new());
     }
-    let particles = ["van", "von", "de", "der", "den", "da", "di", "du", "del", "della", "la", "le", "ten", "ter"];
     let mut start = parts.len() - 1;
-    while start > 1 && particles.contains(&parts[start - 1].to_lowercase().as_str()) {
+    while start > 1 && PARTICLES.contains(&parts[start - 1].to_lowercase().as_str()) {
         start -= 1;
     }
     (parts[start..].join(" "), parts[..start].join(" "))
@@ -530,6 +544,16 @@ pub fn ris(papers: &[Paper]) -> String {
 }
 
 /// A conference paper or chapter: cited "In *Book title*", without volume and issue.
+/// The journal's name as styles that abbreviate it write it (Vancouver, AMA, Cell: NLM's "Nat
+/// Methods"); its name when it has no abbreviation or isn't a journal.
+fn short_journal(m: &PaperMeta) -> String {
+    use crate::worktype::Kind;
+    match crate::worktype::kind(m) {
+        Kind::Article | Kind::Other => crate::journal::abbreviation(&m.journal).map(String::from).unwrap_or_else(|| m.journal.clone()),
+        _ => m.journal.clone(),
+    }
+}
+
 fn in_book(m: &PaperMeta) -> bool {
     matches!(crate::worktype::kind(m), crate::worktype::Kind::Conference | crate::worktype::Kind::Chapter)
 }
@@ -606,7 +630,7 @@ fn styled(p: &Paper, style: CitationStyle) -> String {
                     s += &format!(" p. {}.", m.pages);
                 }
             } else if !m.journal.is_empty() {
-                s += &format!(" {}. {}", m.journal, m.year());
+                s += &format!(" {}. {}", short_journal(m), m.year());
                 if !m.volume.is_empty() {
                     s += &format!(";{}", m.volume);
                     if !m.issue.is_empty() {
@@ -781,7 +805,7 @@ fn more_citation(p: &Paper, style: CitationStyle, book: bool) -> String {
                 s += ".";
                 if !m.publisher.is_empty() { s += &format!(" {}.", m.publisher); }
             } else if !m.journal.is_empty() {
-                s += &format!(" {}", m.journal);
+                s += &format!(" {}", short_journal(m));
                 if !m.volume.is_empty() { s += &format!(" *{}*", m.volume); }
                 if !pages.is_empty() { s += &format!(", {pages}"); }
                 s += ".";
@@ -834,7 +858,7 @@ fn more_citation(p: &Paper, style: CitationStyle, book: bool) -> String {
                 if !m.pages.is_empty() { s += &format!(":{}", m.pages); }
                 s += ".";
             } else if !m.journal.is_empty() {
-                s += &format!(" *{}*. {year}", m.journal);
+                s += &format!(" *{}*. {year}", short_journal(m));
                 if !m.volume.is_empty() {
                     s += &format!(";{}", m.volume);
                     if !m.issue.is_empty() { s += &format!("({})", m.issue); }

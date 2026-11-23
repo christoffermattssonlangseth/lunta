@@ -1440,3 +1440,38 @@ fn a_real_book_reads_chapter_by_chapter() {
         assert_eq!(&combined[x.start as usize..x.start as usize + t.len()], &t[..]);
     }
 }
+
+
+#[test]
+fn built_in_styles_and_bibtex_write_names_and_journals_as_journals_do() {
+    // as Crossref and PubMed give them: a particle, a stray full stop, PubMed's journal name
+    let art = keyed_paper(
+        PaperMeta {
+            title: "A title".into(),
+            authors: vec!["Gioele La Manno".into(), "Velthoven, Cindy T. J. van".into(), "Warren J. Leonard.".into()],
+            date: "2013".into(),
+            journal: "Nature methods".into(),
+            volume: "10".into(),
+            pages: "857-860".into(),
+            doi: "10.1038/nmeth.2563".into(),
+            work_type: "journal-article".into(),
+            ..Default::default()
+        },
+        "art",
+    );
+    for (style, want) in [
+        (CitationStyle::Apa, "La Manno, G., van Velthoven, C. T. J., & Leonard, W. J. (2013). A title. *Nature Methods*, *10*, 857–860. https://doi.org/10.1038/nmeth.2563"),
+        (CitationStyle::Nature, "La Manno, G., van Velthoven, C. T. J. & Leonard, W. J. A title. *Nature Methods* **10**, 857–860 (2013)."),
+        // the styles that abbreviate journals, with NLM's abbreviation
+        (CitationStyle::Vancouver, "La Manno G, van Velthoven CTJ, Leonard WJ. A title. Nat Methods. 2013;10:857-860. doi:10.1038/nmeth.2563"),
+        (CitationStyle::Ama, "La Manno G, van Velthoven CTJ, Leonard WJ. A title. *Nat Methods*. 2013;10:857-860. doi:10.1038/nmeth.2563"),
+        (CitationStyle::Cell, "La Manno, G., van Velthoven, C.T.J., and Leonard, W.J. (2013). A title. Nat Methods *10*, 857–860. https://doi.org/10.1038/nmeth.2563."),
+    ] {
+        assert_eq!(export::citation(&art, style), want, "{}", style.name());
+    }
+    let bib = export::bibtex(&[art]);
+    assert!(bib.contains("author = {La Manno, Gioele and van Velthoven, Cindy T. J. and Leonard, Warren J.}"), "{bib}");
+    assert!(bib.contains("journal = {Nature Methods}"), "{bib}");
+    assert_eq!(family_name("Warren J. Leonard.".into()), "Leonard");
+    assert_eq!(family_name("Velthoven, Cindy T. J. van".into()), "van Velthoven");
+}
