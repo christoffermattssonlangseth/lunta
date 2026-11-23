@@ -102,6 +102,8 @@ struct C {
     ch: char,
     size: f64,
     bx: R,
+    /// the baseline the glyph is set on (its origin), top-left page coordinates; NaN if unknown
+    base: f64,
     style: Option<Style>,
     generated: bool,
 }
@@ -317,7 +319,8 @@ pub fn extract_lines(text: &PdfPageText, mb: &MediaBox, pno: usize, hidden: &Hid
             st.italic |= skewed;
             Some(st)
         };
-        let cc = C { ch, size, bx, style, generated };
+        let base = c.origin_y().map(|y| mb.top - y.value as f64).unwrap_or(f64::NAN);
+        let cc = C { ch, size, bx, base, style, generated };
         // cut where the text moves to another baseline or jumps across a gutter
         if !is_space(ch) && bx.w() > 0.0 {
             let mut cut = pending_break;
@@ -353,7 +356,7 @@ pub fn extract_lines(text: &PdfPageText, mb: &MediaBox, pno: usize, hidden: &Hid
                 raw_lines.push(vec![]);
             } else if space {
                 let prev = raw_lines.last().unwrap().last().unwrap().bx;
-                push_char(&mut raw_lines, C { ch: ' ', size, bx: R::new(prev.x1, bx.y0, bx.x0, bx.y1), style: None, generated: true });
+                push_char(&mut raw_lines, C { ch: ' ', size, bx: R::new(prev.x1, bx.y0, bx.x0, bx.y1), base: f64::NAN, style: None, generated: true });
             }
             pending_break = false;
         }
@@ -491,7 +494,7 @@ fn join_labels(lines: &mut Vec<Vec<C>>) {
             }
             let (prev, next) = (a.last().unwrap().bx, b.iter().find(|c| c.bx.w() > 0.0).map(|c| c.bx).unwrap_or(a.last().unwrap().bx));
             let size = a.last().unwrap().size;
-            a.push(C { ch: ' ', size, bx: R::new(prev.x1, next.y0, next.x0, next.y1), style: None, generated: true });
+            a.push(C { ch: ' ', size, bx: R::new(prev.x1, next.y0, next.x0, next.y1), base: f64::NAN, style: None, generated: true });
             a.extend(b);
         } else {
             i += 1;
@@ -569,7 +572,7 @@ fn c_hyphen(c: &PdfPageTextChar, mb: &MediaBox) -> C {
         .loose_bounds()
         .map(|r| mb.to_top(r.left().value as f64, r.bottom().value as f64, r.right().value as f64, r.top().value as f64))
         .unwrap_or_default();
-    C { ch: '-', size: c.scaled_font_size().value as f64, bx, style: None, generated: false }
+    C { ch: '-', size: c.scaled_font_size().value as f64, bx, base: f64::NAN, style: None, generated: false }
 }
 
 /// A line-end hyphen PDFium found that is a hyphenation (soft) hyphen rather than part of the
@@ -619,6 +622,12 @@ fn make_line(chars: Vec<C>, pno: usize) -> Option<PLine> {
     };
     let main_height =
         if mains.is_empty() { bbox.h() } else { mains.iter().map(|c| c.bx.h()).sum::<f64>() / mains.len() as f64 };
+    // the line's baseline: where its characters in the main size are set (their origins); a smaller
+    // character is raised or lowered by its own baseline against it (a box's middle says little where
+    // the boxes are the whole line's, and "citation-like" said every small digit was raised: β₃ as β³)
+    let mut bases: Vec<f64> = mains.iter().map(|c| c.base).filter(|b| b.is_finite()).collect();
+    bases.sort_by(|a, b| a.total_cmp(b));
+    let main_base = bases.get(bases.len() / 2).copied();
     let mut spans: Vec<Span> = Vec::new();
     let (mut n_bold, mut n_math, mut n_cmr, mut n) = (0usize, 0usize, 0usize, 0usize);
     let mut last: Option<Style> = None;
@@ -636,8 +645,18 @@ fn make_line(chars: Vec<C>, pno: usize) -> Option<PLine> {
         // some PDFs give every character the full line box: then fall back to "small citation-like text"
         let flat_boxes = c.bx.h() > 0.85 * main_height;
         let cite_like = matches!(ch, '0'..='9' | ',' | '–' | '-' | '−' | '*' | '†' | '‡' | '§' | 'a'..='e');
-        let sup = !space && small && if flat_boxes { cite_like } else { center < main_center - 0.12 * dom };
-        let sub = !space && small && !flat_boxes && center > main_center + 0.12 * dom;
+        let (mut sup, mut sub) = match main_base {
+            Some(mb) if !space && small && c.base.is_finite() => (c.base < mb - 0.15 * dom, c.base > mb + 0.08 * dom),
+            _ => (
+                !space && small && if flat_boxes { cite_like } else { center < main_center - 0.12 * dom },
+                !space && small && !flat_boxes && center > main_center + 0.12 * dom,
+            ),
+        };
+        // a prime is set raised already: not a script of its own (θ′, f′ᵢ)
+        if matches!(ch, '′' | '″' | '‴') {
+            sup = false;
+            sub = false;
+        }
         let st = run.unwrap_or_default();
         if !space {
             n += 1;
@@ -961,5 +980,36 @@ impl Renderer for PdfiumRenderer<'_, '_> {
             return None;
         }
         Some(image::imageops::crop_imm(img, x0, y0, w, h).to_image())
+    }
+}
+
+#[cfg(test)]
+mod script_tests {
+    use super::*;
+
+    fn c(ch: char, size: f64, x: f64, bx_h: f64, base: f64) -> C {
+        // every character the full line's box (as some PDFs give them): only the baseline tells
+        C { ch, size, bx: R::new(x, 100.0, x + 0.5 * size, 100.0 + bx_h), base, style: None, generated: false }
+    }
+
+    #[test]
+    fn scripts_go_by_the_glyphs_baselines() {
+        // β₃ + x² and θ′: the 3 set 2 pt lower, the 2 3.5 pt higher, the prime raised but no script
+        let chars = vec![
+            c('β', 10.0, 0.0, 14.0, 110.0),
+            c('3', 7.0, 5.0, 14.0, 112.0),
+            c(' ', 10.0, 9.0, 14.0, f64::NAN),
+            c('+', 10.0, 12.0, 14.0, 110.0),
+            c(' ', 10.0, 17.0, 14.0, f64::NAN),
+            c('x', 10.0, 20.0, 14.0, 110.0),
+            c('2', 7.0, 25.0, 14.0, 106.5),
+            c(' ', 10.0, 29.0, 14.0, f64::NAN),
+            c('θ', 10.0, 32.0, 14.0, 110.0),
+            c('′', 7.0, 37.0, 14.0, 106.0),
+        ];
+        let l = make_line(chars, 0).unwrap();
+        assert!(l.spans.iter().any(|s| s.text == "3" && s.sub && !s.sup), "{:?}", l.spans);
+        assert!(l.spans.iter().any(|s| s.text == "2" && s.sup && !s.sub), "{:?}", l.spans);
+        assert!(l.spans.iter().all(|s| !(s.text.contains('′') && (s.sup || s.sub))), "{:?}", l.spans);
     }
 }
