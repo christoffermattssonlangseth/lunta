@@ -343,6 +343,18 @@ fn item(p: &Paper) -> Item {
             j["accessed"] = serde_json::json!({ "date-parts": [parts] });
         }
     }
+    // a thesis: its kind as styles name it ("[Doctoral dissertation, Stockholm University]" in
+    // APA) and its university as publisher, where styles look for it (not as a container)
+    if kind == "thesis" {
+        j["genre"] = if m.work_type.to_lowercase().contains("master") { "Master’s thesis" } else { "Doctoral dissertation" }.into();
+        if m.publisher.trim().is_empty() && !m.journal.trim().is_empty() {
+            j["publisher"] = guard(m.journal.trim()).into();
+        }
+        if let Some(o) = j.as_object_mut() {
+            o.remove("container-title");
+            o.remove("container-title-short");
+        }
+    }
     if kind == "report" && !m.issue.is_empty() {
         j["number"] = guard(&m.issue).into();
     }
@@ -968,6 +980,46 @@ mod tests {
         );
         assert_eq!(b[2], "Lucchinetti, C.F., Popescu, B.F.G., and Lassmann, H. (2011). Another title. Bioinformatics *145*, awac016.");
         assert_eq!(b[3], "Santos e Silva, J. (2019). A chapter. In Methods in Molecular Biology.");
+    }
+
+    /// APA's rule for theses (as apa.csl has it): the kind and the university in brackets.
+    const THESIS: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
+  <info><title>Test thesis</title><id>test-thesis</id><updated>2026-01-01T00:00:00+00:00</updated></info>
+  <citation><layout><text variable="title"/></layout></citation>
+  <bibliography>
+    <layout suffix=".">
+      <text variable="title" font-style="italic"/>
+      <choose>
+        <if type="thesis">
+          <group delimiter=", " prefix=" [" suffix="]"><text variable="genre"/><text variable="publisher"/></group>
+        </if>
+        <else><text variable="container-title" prefix=". "/></else>
+      </choose>
+      <text variable="container-title" prefix=" in "/>
+    </layout>
+  </bibliography>
+</style>"#;
+
+    #[test]
+    fn a_thesis_is_a_thesis_with_its_university() {
+        let dir = cache();
+        std::fs::write(Path::new(&dir).join("csl/test-thesis.csl"), THESIS).unwrap();
+        let m = PaperMeta {
+            title: "Cells in Time and Space".into(),
+            authors: vec!["Christoffer Mattsson Langseth".into()],
+            date: "2025-03".into(),
+            publisher: "Stockholm University".into(),
+            url: "https://urn.kb.se/resolve?urn=urn:nbn:se:su:diva-237615".into(),
+            work_type: "dissertation".into(),
+            ..Default::default()
+        };
+        // the university as the journal (an older record): the publisher, not a container
+        let old = PaperMeta { publisher: String::new(), journal: "Stockholm University".into(), work_type: "mastersthesis".into(), ..m.clone() };
+        let papers = [crate::cited_paper("t", m), crate::cited_paper("m", old)];
+        let r = render(&dir, "test-thesis", &papers, &[vec!["t".into()], vec!["m".into()]]).unwrap();
+        let b: Vec<&str> = r.bibliography.iter().map(|e| e.text.as_str()).collect();
+        assert_eq!(b, ["*Cells in Time and Space* [Doctoral dissertation, Stockholm University].", "*Cells in Time and Space* [Master’s thesis, Stockholm University]."]);
     }
 
     #[test]

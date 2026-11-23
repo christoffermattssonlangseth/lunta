@@ -1475,3 +1475,88 @@ fn built_in_styles_and_bibtex_write_names_and_journals_as_journals_do() {
     assert_eq!(family_name("Warren J. Leonard.".into()), "Leonard");
     assert_eq!(family_name("Velthoven, Cindy T. J. van".into()), "van Velthoven");
 }
+
+#[test]
+fn theses_books_reports_datasets_standards_and_preprints_in_every_built_in_style() {
+    let base = PaperMeta { authors: vec!["Christoffer Mattsson Langseth".into()], ..Default::default() };
+    let title = "Cells in Time and Space: Beyond comprehensive cellular atlases towards a deeper understanding of disease";
+    let url = "https://urn.kb.se/resolve?urn=urn:nbn:se:su:diva-237615";
+    let thesis = cited_paper("t", PaperMeta {
+        work_type: "dissertation".into(),
+        publisher: "Stockholm University".into(),
+        url: url.into(),
+        date: "2025-03".into(),
+        title: title.into(),
+        ..base.clone()
+    });
+    for (style, want) in [
+        (CitationStyle::Apa, format!("Langseth, C. M. (2025). *{title}* [Doctoral dissertation, Stockholm University]. {url}")),
+        (CitationStyle::Harvard, format!("Langseth, C.M. (2025) *{title}*. PhD thesis. Stockholm University. Available at: {url}.")),
+        (CitationStyle::Chicago, format!("Langseth, Christoffer Mattsson. 2025. “{title}.” PhD diss., Stockholm University. {url}.")),
+        (CitationStyle::Mla, format!("Langseth, Christoffer Mattsson. *{title}*. 2025. Stockholm University, PhD dissertation. urn.kb.se/resolve?urn=urn:nbn:se:su:diva-237615.")),
+        (CitationStyle::Cell, format!("Langseth, C.M. (2025). {title}. PhD thesis (Stockholm University). {url}.")),
+        (CitationStyle::Vancouver, format!("Langseth CM. {title} [dissertation]. Stockholm University; 2025. Available from: {url}")),
+        (CitationStyle::Nature, format!("Langseth, C. M. *{title}*. PhD thesis, Stockholm Univ. (2025).")),
+        (CitationStyle::Ieee, format!("C. M. Langseth, “{title},” Ph.D. dissertation, Stockholm University, 2025. [Online]. Available: {url}")),
+        (CitationStyle::Ama, format!("Langseth CM. *{title}*. Dissertation. Stockholm University; 2025. {url}")),
+        (CitationStyle::Science, "C. M. Langseth, thesis, Stockholm University (2025).".to_string()),
+        (CitationStyle::Pnas, format!("C. M. Langseth, {title}. PhD thesis, Stockholm University (2025).")),
+        (CitationStyle::Acs, format!("Langseth, C. M. {title}. Ph.D. Dissertation, Stockholm University, 2025. {url}.")),
+    ] {
+        assert_eq!(export::citation(&thesis, style), want, "{}", style.name());
+    }
+    // a master's thesis is named so
+    let ms = cited_paper("m", PaperMeta { work_type: "mastersthesis".into(), ..thesis.meta.clone() });
+    assert!(export::citation(&ms, CitationStyle::Apa).contains("[Master’s thesis, Stockholm University]"));
+    assert!(export::citation(&ms, CitationStyle::Ieee).contains("M.S. thesis, Stockholm University"));
+
+    let book = cited_paper("b", PaperMeta { work_type: "book".into(), publisher: "Springer".into(), date: "2020".into(), title: "Spatial Omics".into(), doi: "10.1007/x".into(), ..base.clone() });
+    assert_eq!(export::citation(&book, CitationStyle::Apa), "Langseth, C. M. (2020). *Spatial Omics*. Springer. https://doi.org/10.1007/x");
+    assert_eq!(export::citation(&book, CitationStyle::Cell), "Langseth, C.M. (2020). Spatial Omics (Springer). https://doi.org/10.1007/x.");
+    assert_eq!(export::citation(&book, CitationStyle::Nature), "Langseth, C. M. *Spatial Omics* (Springer, 2020).");
+    assert_eq!(export::citation(&book, CitationStyle::Vancouver), "Langseth CM. Spatial Omics. Springer; 2020. doi:10.1007/x");
+
+    let report = cited_paper("r", PaperMeta {
+        work_type: "report".into(),
+        publisher: "World Health Organization".into(),
+        issue: "WHO/2021.1".into(),
+        date: "2021".into(),
+        title: "A Report on Things".into(),
+        url: "https://example.org/report".into(),
+        ..base.clone()
+    });
+    assert_eq!(export::citation(&report, CitationStyle::Apa), "Langseth, C. M. (2021). *A Report on Things* (Report No. WHO/2021.1). World Health Organization. https://example.org/report");
+    assert_eq!(export::citation(&report, CitationStyle::Ieee), "C. M. Langseth, “A Report on Things,” World Health Organization, Tech. Rep. WHO/2021.1, 2021. [Online]. Available: https://example.org/report");
+
+    let data = cited_paper("d", PaperMeta { work_type: "dataset".into(), publisher: "Zenodo".into(), date: "2023".into(), title: "In situ sequencing data".into(), doi: "10.5281/zenodo.123".into(), ..base.clone() });
+    assert_eq!(export::citation(&data, CitationStyle::Apa), "Langseth, C. M. (2023). *In situ sequencing data* [Data set]. Zenodo. https://doi.org/10.5281/zenodo.123");
+    assert_eq!(export::citation(&data, CitationStyle::Nature), "Langseth, C. M. In situ sequencing data. *Zenodo* https://doi.org/10.5281/zenodo.123 (2023).");
+
+    // an organization as author stays whole
+    let std_ = cited_paper("s", PaperMeta {
+        work_type: "standard".into(),
+        authors: vec!["International Organization for Standardization".into()],
+        publisher: "ISO".into(),
+        issue: "ISO 9001:2015".into(),
+        date: "2015".into(),
+        title: "Quality management systems".into(),
+        ..Default::default()
+    });
+    assert_eq!(export::citation(&std_, CitationStyle::Apa), "International Organization for Standardization. (2015). *Quality management systems* (ISO 9001:2015). ISO.");
+
+    let pre = cited_paper("p", PaperMeta { work_type: "posted-content".into(), journal: "bioRxiv".into(), date: "2020-07-02".into(), title: "A preprint".into(), doi: "10.1101/2020.07.02.184051".into(), ..base.clone() });
+    assert_eq!(export::citation(&pre, CitationStyle::Apa), "Langseth, C. M. (2020). *A preprint* [Preprint]. bioRxiv. https://doi.org/10.1101/2020.07.02.184051");
+    assert_eq!(export::citation(&pre, CitationStyle::Cell), "Langseth, C.M. (2020). A preprint. Preprint at bioRxiv, https://doi.org/10.1101/2020.07.02.184051.");
+    assert_eq!(export::citation(&pre, CitationStyle::Nature), "Langseth, C. M. A preprint. Preprint at https://doi.org/10.1101/2020.07.02.184051 (2020).");
+    assert_eq!(export::citation(&pre, CitationStyle::Ama), "Langseth CM. A preprint. *bioRxiv*. Preprint posted online July 2, 2020. doi:10.1101/2020.07.02.184051");
+    // an arXiv paper without DOI: its abstract page
+    let arxiv = cited_paper("a", PaperMeta { work_type: "posted-content".into(), arxiv: "1706.03762".into(), date: "2017".into(), title: "Attention Is All You Need".into(), ..base.clone() });
+    assert_eq!(export::citation(&arxiv, CitationStyle::Ieee), "C. M. Langseth, “Attention Is All You Need,” 2017, *arXiv:1706.03762*. [Online]. Available: https://arxiv.org/abs/1706.03762");
+    assert_eq!(export::citation(&arxiv, CitationStyle::Harvard), "Langseth, C.M. (2017) ‘Attention Is All You Need’, *arXiv* [Preprint]. Available at: https://arxiv.org/abs/1706.03762.");
+
+    // an article without DOI: its address, where the style gives links
+    let art = cited_paper("x", PaperMeta { journal: "Some Journal".into(), volume: "3".into(), pages: "1-5".into(), date: "2019".into(), title: "An article".into(), url: "https://example.org/a".into(), ..base.clone() });
+    assert_eq!(export::citation(&art, CitationStyle::Apa), "Langseth, C. M. (2019). An article. *Some Journal*, *3*, 1–5. https://example.org/a");
+    assert_eq!(export::citation(&art, CitationStyle::Vancouver), "Langseth CM. An article. Some Journal. 2019;3:1-5. Available from: https://example.org/a");
+    assert_eq!(export::citation(&art, CitationStyle::Nature), "Langseth, C. M. An article. *Some Journal* **3**, 1–5 (2019).");
+}

@@ -568,10 +568,18 @@ fn styled(p: &Paper, style: CitationStyle) -> String {
     if matches!(crate::worktype::kind(&p.meta), crate::worktype::Kind::WebPage | crate::worktype::Kind::BlogPost) {
         return web_citation(p, style);
     }
+    {
+        use crate::worktype::Kind::*;
+        let kind = crate::worktype::kind(&p.meta);
+        if matches!(kind, Book | Thesis | Report | Dataset | Standard | Preprint) {
+            return work_citation(p, style, kind);
+        }
+    }
     let m = &p.meta;
     let book = in_book(m);
     let names: Vec<(String, String)> = m.authors.iter().map(|a| split_name(a)).collect();
-    let doi = if m.doi.is_empty() { String::new() } else { format!("https://doi.org/{}", m.doi) };
+    // the DOI, else the address (a paper without one)
+    let doi = if m.doi.is_empty() { m.url.trim().to_string() } else { format!("https://doi.org/{}", m.doi) };
     let pages = m.pages.replace('-', "–");
     match style {
         CitationStyle::Apa => {
@@ -644,6 +652,8 @@ fn styled(p: &Paper, style: CitationStyle) -> String {
             }
             if !m.doi.is_empty() {
                 s += &format!(" doi:{}", m.doi);
+            } else if !m.url.trim().is_empty() {
+                s += &format!(" Available from: {}", m.url.trim());
             }
             s
         }
@@ -701,7 +711,8 @@ fn more_citation(p: &Paper, style: CitationStyle, book: bool) -> String {
     let year = if m.year().is_empty() { "n.d.".to_string() } else { m.year() };
     let title = m.title.trim().trim_end_matches('.').to_string();
     let pages = m.pages.replace('-', "–");
-    let doi_url = if m.doi.is_empty() { String::new() } else { format!("https://doi.org/{}", m.doi) };
+    // the DOI, else the address (a paper without one)
+    let doi_url = if m.doi.is_empty() { m.url.trim().to_string() } else { format!("https://doi.org/{}", m.doi) };
     // "Langseth, C.M." / "C. M. Langseth" / "Langseth CM" / "Langseth, Christoffer M."
     let fam_init = |(f, g): &(String, String), spaced: bool| {
         let i = initials(g, true, spaced);
@@ -828,6 +839,7 @@ fn more_citation(p: &Paper, style: CitationStyle, book: bool) -> String {
                 if !pages.is_empty() { s += &format!(", pp. {pages}"); }
                 if !m.doi.is_empty() { s += &format!(", doi: {}", m.doi); }
                 s += ".";
+                if m.doi.is_empty() && !m.url.trim().is_empty() { s += &format!(" [Online]. Available: {}", m.url.trim()); }
                 return s;
             }
             if !m.journal.is_empty() {
@@ -840,6 +852,7 @@ fn more_citation(p: &Paper, style: CitationStyle, book: bool) -> String {
             s += &format!(" {year}");
             if !m.doi.is_empty() { s += &format!(", doi: {}", m.doi); }
             s += ".";
+            if m.doi.is_empty() && !m.url.trim().is_empty() { s += &format!(" [Online]. Available: {}", m.url.trim()); }
             s
         }
         // AMA (11th): up to six authors, else the first three and "et al"
@@ -866,7 +879,7 @@ fn more_citation(p: &Paper, style: CitationStyle, book: bool) -> String {
                 if !m.pages.is_empty() { s += &format!(":{}", m.pages); }
                 s += ".";
             }
-            if !m.doi.is_empty() { s += &format!(" doi:{}", m.doi); }
+            if !m.doi.is_empty() { s += &format!(" doi:{}", m.doi); } else if !m.url.trim().is_empty() { s += &format!(" {}", m.url.trim()); }
             s
         }
         // Science and PNAS: up to five authors, else the first and "et al."; volume in bold
@@ -913,10 +926,393 @@ fn more_citation(p: &Paper, style: CitationStyle, book: bool) -> String {
                 if !pages.is_empty() { s += &format!(", {pages}"); }
                 s += ".";
             }
-            if !m.doi.is_empty() { s += &format!(" DOI: {}.", m.doi); }
+            if !m.doi.is_empty() { s += &format!(" DOI: {}.", m.doi); } else if !m.url.trim().is_empty() { s += &format!(" {}.", m.url.trim()); }
             s
         }
         CitationStyle::Apa | CitationStyle::Vancouver | CitationStyle::Nature => styled(p, style),
+    }
+}
+
+/// The authors as a style lists them (an organization's name whole: "International Organization
+/// for Standardization", not "Standardization, I. O. f."). Chicago's and MLA's end with a full stop.
+fn style_authors(authors: &[String], style: CitationStyle) -> String {
+    let names: Vec<(String, String)> =
+        authors.iter().map(|a| if crate::worktype::is_organization(a) { (a.trim().to_string(), String::new()) } else { split_name(a) }).collect();
+    let fam_init = |(f, g): &(String, String), spaced: bool| {
+        let i = initials(g, true, spaced);
+        if i.is_empty() { f.clone() } else { format!("{f}, {i}") }
+    };
+    let init_fam = |(f, g): &(String, String)| {
+        let i = initials(g, true, true);
+        if i.is_empty() { f.clone() } else { format!("{i} {f}") }
+    };
+    let compact = |(f, g): &(String, String)| format!("{f} {}", initials(g, false, false)).trim().to_string();
+    let full_inverted = |(f, g): &(String, String)| if g.is_empty() { f.clone() } else { format!("{f}, {g}") };
+    let full = |(f, g): &(String, String)| if g.is_empty() { f.clone() } else { format!("{g} {f}") };
+    let stop = |s: String| if s.is_empty() || s.ends_with('.') { s } else { s + "." };
+    let n = names.len();
+    match style {
+        CitationStyle::Apa => {
+            let fmt = |x: &(String, String)| fam_init(x, true);
+            match n {
+                0 => String::new(),
+                1 => fmt(&names[0]),
+                n if n <= 20 => format!("{}, & {}", names[..n - 1].iter().map(fmt).collect::<Vec<_>>().join(", "), fmt(&names[n - 1])),
+                n => format!("{}, … {}", names[..19].iter().map(fmt).collect::<Vec<_>>().join(", "), fmt(&names[n - 1])),
+            }
+        }
+        CitationStyle::Nature => {
+            let fmt = |x: &(String, String)| fam_init(x, true);
+            match n {
+                0 => String::new(),
+                1 => fmt(&names[0]),
+                n if n <= 5 => format!("{} & {}", names[..n - 1].iter().map(fmt).collect::<Vec<_>>().join(", "), fmt(&names[n - 1])),
+                _ => format!("{} et al.", fmt(&names[0])),
+            }
+        }
+        CitationStyle::Vancouver => {
+            let list: Vec<String> = names.iter().take(6).map(compact).collect();
+            if n > 6 { format!("{}, et al", list.join(", ")) } else { list.join(", ") }
+        }
+        CitationStyle::Ama => {
+            if n > 6 { format!("{}, et al", names.iter().take(3).map(compact).collect::<Vec<_>>().join(", ")) } else { names.iter().map(compact).collect::<Vec<_>>().join(", ") }
+        }
+        CitationStyle::Harvard => {
+            if n > 3 { format!("{} et al.", fam_init(&names[0], false)) } else { and_list(&names.iter().map(|x| fam_init(x, false)).collect::<Vec<_>>(), "and", false) }
+        }
+        CitationStyle::Chicago => {
+            let list: Vec<String> = names.iter().enumerate().map(|(i, x)| if i == 0 { full_inverted(x) } else { full(x) }).collect();
+            stop(if n > 10 { format!("{}, et al", list[..7].join(", ")) } else { and_list(&list, "and", true) })
+        }
+        CitationStyle::Mla => stop(match n {
+            0 => String::new(),
+            1 => full_inverted(&names[0]),
+            2 => format!("{}, and {}", full_inverted(&names[0]), full(&names[1])),
+            _ => format!("{}, et al", full_inverted(&names[0])),
+        }),
+        CitationStyle::Cell => {
+            let list: Vec<String> = names.iter().take(10).map(|x| fam_init(x, false)).collect();
+            if n > 10 { format!("{}, et al.", list.join(", ")) } else { and_list(&list, "and", true) }
+        }
+        CitationStyle::Ieee => {
+            if n > 6 { format!("{} *et al.*", init_fam(&names[0])) } else { and_list(&names.iter().map(init_fam).collect::<Vec<_>>(), "and", true) }
+        }
+        CitationStyle::Science | CitationStyle::Pnas => {
+            if n > 5 { format!("{} et al.", init_fam(&names[0])) } else { names.iter().map(init_fam).collect::<Vec<_>>().join(", ") }
+        }
+        CitationStyle::Acs => {
+            let list: Vec<String> = names.iter().take(10).map(|x| fam_init(x, true)).collect();
+            if n > 10 { format!("{}; et al.", list.join("; ")) } else { list.join("; ") }
+        }
+    }
+}
+
+/// A full stop after `s`, unless it ends with one, a question or an exclamation mark.
+fn full_stop(s: &str) -> String {
+    let s = s.trim_end();
+    if s.is_empty() || s.ends_with(['.', '?', '!']) { s.to_string() } else { format!("{s}.") }
+}
+
+/// The parts that aren't empty, joined.
+fn joined(parts: &[&str], sep: &str) -> String {
+    parts.iter().map(|x| x.trim()).filter(|x| !x.is_empty()).collect::<Vec<_>>().join(sep)
+}
+
+/// Works that stand on their own: books, theses, reports, datasets, standards and preprints, each
+/// as its style's manual writes it (the work's kind named, its publisher, university or archive,
+/// a report's number, and a link: the DOI, else the address). The thesis in APA 7: "Langseth,
+/// C. M. (2025). *Cells in time and space* [Doctoral dissertation, Stockholm University].
+/// https://urn.kb.se/…"; Harvard "… *Title*. PhD thesis. Stockholm University. Available at: …";
+/// Chicago "… “Title.” PhD diss., Stockholm University. …"; Cell "… Title. PhD thesis (Stockholm
+/// University). …"; Vancouver "… Title [dissertation]. Stockholm University; 2025. …"; Nature
+/// "… *Title*. PhD thesis, Stockholm Univ. (2025).". A master's thesis (work type
+/// "mastersthesis") is named so.
+fn work_citation(p: &Paper, style: CitationStyle, kind: crate::worktype::Kind) -> String {
+    use crate::worktype::Kind::*;
+    let m = &p.meta;
+    let authors = style_authors(&m.authors, style);
+    // "International Organization for Standardization. (2015)." where the names end the part
+    let authors = if matches!(style, CitationStyle::Apa | CitationStyle::Nature | CitationStyle::Acs) { full_stop(&authors) } else { authors };
+    let year = m.year();
+    let year_nd = if year.is_empty() { "n.d.".to_string() } else { year.clone() };
+    let title = m.title.trim().trim_end_matches('.').to_string();
+    let master = m.work_type.to_lowercase().contains("master");
+    // who made it public: a thesis's university, a report's institution, a book's publisher, a
+    // dataset's repository; a preprint's server
+    let by = if m.publisher.trim().is_empty() { m.journal.trim().to_string() } else { m.publisher.trim().to_string() };
+    let server = [m.journal.trim(), m.publisher.trim(), if m.arxiv.is_empty() { "" } else { "arXiv" }]
+        .into_iter()
+        .find(|x| !x.is_empty())
+        .unwrap_or("")
+        .to_string();
+    let by = if kind == Preprint { server.clone() } else { by };
+    let number = m.issue.trim().to_string();
+    let url = if m.url.trim().is_empty() && !m.arxiv.is_empty() { format!("https://arxiv.org/abs/{}", m.arxiv) } else { m.url.trim().to_string() };
+    let doi_url = if m.doi.is_empty() { String::new() } else { format!("https://doi.org/{}", m.doi) };
+    let link = if doi_url.is_empty() { url.clone() } else { doi_url.clone() };
+    let thesis = |phd: &'static str, ms: &'static str| if master { ms } else { phd };
+
+    match style {
+        CitationStyle::Apa => {
+            let what = match kind {
+                Thesis => format!(" [{}]", joined(&[thesis("Doctoral dissertation", "Master’s thesis"), &by], ", ")),
+                Report if !number.is_empty() => format!(" (Report No. {number})"),
+                Standard if !number.is_empty() => format!(" ({number})"),
+                Dataset => " [Data set]".into(),
+                Preprint => " [Preprint]".into(),
+                _ => String::new(),
+            };
+            let t = format!("*{title}*{what}");
+            let mut s = if authors.is_empty() { format!("{} ({year_nd}).", full_stop(&t)) } else { format!("{authors} ({year_nd}). {}", full_stop(&t)) };
+            // the publisher, unless it is the author ("World Health Organization")
+            if kind != Thesis && !by.is_empty() && !m.authors.iter().any(|a| a.trim().eq_ignore_ascii_case(&by)) {
+                s += &format!(" {}", full_stop(&by));
+            }
+            if !link.is_empty() { s += &format!(" {link}"); }
+            s
+        }
+        CitationStyle::Vancouver => {
+            let what = match kind {
+                Thesis => format!(" [{}]", thesis("dissertation", "master’s thesis")),
+                Dataset => " [dataset]".into(),
+                Preprint => " [Preprint]".into(),
+                _ => String::new(),
+            };
+            let mut s = if authors.is_empty() { String::new() } else { format!("{authors}. ") };
+            s += &full_stop(&format!("{title}{what}"));
+            if kind == Preprint {
+                if !by.is_empty() { s += &format!(" {by}."); }
+                if !year.is_empty() { s += &format!(" {year}."); }
+            } else {
+                let place = joined(&[&by, &year], "; ");
+                if !place.is_empty() { s += &format!(" {place}."); }
+                if matches!(kind, Report | Standard) && !number.is_empty() {
+                    s += &format!(" {}", full_stop(&if kind == Report { format!("Report No.: {number}") } else { number.clone() }));
+                }
+            }
+            if !m.doi.is_empty() {
+                s += &format!(" doi:{}", m.doi);
+            } else if !url.is_empty() {
+                s += &format!(" Available from: {url}");
+            }
+            s
+        }
+        CitationStyle::Nature => {
+            let head = |t: String| if authors.is_empty() { full_stop(&t) } else { format!("{authors} {}", full_stop(&t)) };
+            match kind {
+                Book => {
+                    let mut s = head(format!("*{title}*"));
+                    s.pop();
+                    format!("{s} ({}).", joined(&[&by, &year], ", "))
+                }
+                Thesis => {
+                    let univ = by.replace("University", "Univ.");
+                    let mut s = head(format!("*{title}*"));
+                    s += &format!(" {}", joined(&[thesis("PhD thesis", "Master’s thesis"), &univ], ", "));
+                    format!("{s} ({year}).").replace(" ().", ".")
+                }
+                Report | Standard => {
+                    let mut s = head(format!("*{title}*"));
+                    if !number.is_empty() {
+                        s += &format!(" {}", if kind == Report { format!("Report no. {number}") } else { number.clone() });
+                    } else {
+                        s.pop();
+                    }
+                    format!("{s} ({}).", joined(&[&by, &year], ", "))
+                }
+                Dataset => {
+                    let mut s = head(title.clone());
+                    if !by.is_empty() { s += &format!(" *{by}*"); }
+                    if !link.is_empty() { s += &format!(" {link}"); }
+                    format!("{s} ({year}).").replace(" ().", ".")
+                }
+                _ => {
+                    // "Preprint at https://arxiv.org/abs/… (2002)."
+                    let mut s = head(title.clone());
+                    let at = if link.is_empty() { by.clone() } else { link.clone() };
+                    s += &if at.is_empty() { " Preprint".to_string() } else { format!(" Preprint at {at}") };
+                    format!("{s} ({year}).").replace(" ().", ".")
+                }
+            }
+        }
+        // Harvard (Cite Them Right)
+        CitationStyle::Harvard => {
+            let mut s = if kind == Preprint {
+                let mut s = if authors.is_empty() { format!("‘{title}’ ({year_nd})") } else { format!("{authors} ({year_nd}) ‘{title}’") };
+                if !by.is_empty() { s += &format!(", *{by}*"); }
+                s + " [Preprint]."
+            } else {
+                let t = match kind {
+                    Dataset => format!("*{title}* [Dataset]"),
+                    Standard | Report if !number.is_empty() => format!("*{title}* ({number})"),
+                    _ => format!("*{title}*"),
+                };
+                let mut s = if authors.is_empty() { format!("{t} ({year_nd}).") } else { format!("{authors} ({year_nd}) {}", full_stop(&t)) };
+                if kind == Thesis { s += &format!(" {}", thesis("PhD thesis.", "Master’s thesis.")); }
+                if !by.is_empty() { s += &format!(" {}", full_stop(&by)); }
+                s
+            };
+            if !link.is_empty() { s += &format!(" Available at: {link}."); }
+            s
+        }
+        // Chicago author-date (17th)
+        CitationStyle::Chicago => {
+            let mut s = if authors.is_empty() { String::new() } else { format!("{authors} {year_nd}. ") };
+            let body = match kind {
+                Thesis => format!("“{}” {}", full_stop(&title), full_stop(&joined(&[thesis("PhD diss.", "Master’s thesis"), &by], ", "))),
+                Preprint => format!("“{}” {}", full_stop(&title), full_stop(&joined(&["Preprint", &by], ", "))),
+                Dataset => joined(&[&full_stop(&format!("*{title}*")), &full_stop(&by), "Dataset."], " "),
+                Report | Standard => joined(&[&full_stop(&format!("*{title}*")), &full_stop(&number), &full_stop(&by)], " "),
+                _ => joined(&[&full_stop(&format!("*{title}*")), &full_stop(&by)], " "),
+            };
+            s += &body;
+            if authors.is_empty() { s += &format!(" {year_nd}."); }
+            if !link.is_empty() { s += &format!(" {link}."); }
+            s
+        }
+        // MLA 9: "Langseth, Christoffer Mattsson. *Title*. 2025. Stockholm University, PhD dissertation."
+        CitationStyle::Mla => {
+            let mut s = if authors.is_empty() { String::new() } else { format!("{authors} ") };
+            let bare = if doi_url.is_empty() { url.trim_start_matches("https://").trim_start_matches("http://").to_string() } else { doi_url.clone() };
+            match kind {
+                Thesis => {
+                    s += &full_stop(&format!("*{title}*"));
+                    if !year.is_empty() { s += &format!(" {year}."); }
+                    s += &format!(" {}", full_stop(&joined(&[&by, thesis("PhD dissertation", "MA thesis")], ", ")));
+                    if !bare.is_empty() { s += &format!(" {}", full_stop(&bare)); }
+                }
+                Preprint => {
+                    s += &format!("“{}”", full_stop(&title));
+                    let rest = joined(&[&if by.is_empty() { String::new() } else { format!("*{by}*") }, &year, &bare], ", ");
+                    if !rest.is_empty() { s += &format!(" {}", full_stop(&rest)); }
+                }
+                _ => {
+                    s += &full_stop(&format!("*{title}*"));
+                    let rest = joined(&[&by, &year, &bare], ", ");
+                    if !rest.is_empty() { s += &format!(" {}", full_stop(&rest)); }
+                }
+            }
+            s
+        }
+        // Cell Press: "Michaelis, L. (1922). Die Wasserstoffionenkonzentration (Springer)."; a
+        // preprint "… Preprint at bioRxiv, https://doi.org/…."
+        CitationStyle::Cell => {
+            let what = match kind {
+                Thesis => thesis("PhD thesis", "Master’s thesis").to_string(),
+                Report if !number.is_empty() => format!("Report {number}"),
+                Standard => number.clone(),
+                _ => String::new(),
+            };
+            let core = match kind {
+                Preprint => format!("{}. Preprint at {}", title, joined(&[&by, &link], ", ")).trim_end_matches(" Preprint at ").to_string(),
+                Dataset => joined(&[&title, &by], ". "),
+                _ if what.is_empty() => if by.is_empty() { title.clone() } else { format!("{title} ({by})") },
+                _ => format!("{title}. {}", if by.is_empty() { what.clone() } else { format!("{what} ({by})") }),
+            };
+            let mut s = if authors.is_empty() { format!("{} ({year_nd}).", core) } else { format!("{authors} ({year_nd}). {}", full_stop(&core)) };
+            // a preprint's link is in its "Preprint at" part
+            if kind != Preprint && !link.is_empty() { s += &format!(" {link}."); }
+            s
+        }
+        // IEEE: "C. M. Langseth, “Title,” Ph.D. dissertation, Stockholm University, 2025."
+        CitationStyle::Ieee => {
+            let mut s = match kind {
+                Book => format!("{}{}", if authors.is_empty() { String::new() } else { format!("{authors}, ") }, full_stop(&format!("*{title}*"))) + &format!(" {}", full_stop(&joined(&[&by, &year], ", "))),
+                Standard => full_stop(&joined(&[&authors, &format!("*{title}*"), &number, &year], ", ")),
+                _ => {
+                    let rest: Vec<String> = match kind {
+                        Thesis => vec![thesis("Ph.D. dissertation", "M.S. thesis").into(), by.clone(), year.clone()],
+                        Report => vec![by.clone(), joined(&["Tech. Rep.", &number], " "), year.clone()],
+                        Preprint => {
+                            let at = if m.arxiv.is_empty() { if by.is_empty() { String::new() } else { format!("*{by}*") } } else { format!("*arXiv:{}*", m.arxiv) };
+                            if m.arxiv.is_empty() { vec![at, year.clone()] } else { vec![year.clone(), at] }
+                        }
+                        _ => vec![by.clone(), year.clone()],
+                    };
+                    let rest = rest.iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(", ");
+                    let head = if authors.is_empty() { format!("“{title},”") } else { format!("{authors}, “{title},”") };
+                    if rest.is_empty() { format!("{}.”", head.trim_end_matches(",”")) } else { format!("{head} {rest}.") }
+                }
+            };
+            if !m.doi.is_empty() {
+                s.pop();
+                s += &format!(", doi: {}.", m.doi);
+            } else if !url.is_empty() {
+                s += &format!(" [Online]. Available: {url}");
+            }
+            s
+        }
+        // AMA (11th): "Langseth CM. *Title*. Dissertation. Stockholm University; 2025."
+        CitationStyle::Ama => {
+            let mut s = if authors.is_empty() { String::new() } else { format!("{authors}. ") };
+            if kind == Preprint {
+                s += &full_stop(&title);
+                if !by.is_empty() { s += &format!(" *{by}*."); }
+                if !year.is_empty() { s += &format!(" Preprint posted online {}.", long_date(&m.date, true)); }
+            } else {
+                s += &full_stop(&format!("*{title}*"));
+                if kind == Thesis { s += &format!(" {}", thesis("Dissertation.", "Master’s thesis.")); }
+                let place = joined(&[&by, &year], "; ");
+                if !place.is_empty() { s += &format!(" {place}."); }
+                if matches!(kind, Report | Standard) && !number.is_empty() {
+                    s += &format!(" {}", full_stop(&if kind == Report { format!("Report {number}") } else { number.clone() }));
+                }
+            }
+            if !m.doi.is_empty() {
+                s += &format!(" doi:{}", m.doi);
+            } else if !url.is_empty() {
+                s += &format!(" {url}");
+            }
+            s
+        }
+        // Science: "C. M. Langseth, thesis, Stockholm University (2025)."; PNAS names the title
+        CitationStyle::Science | CitationStyle::Pnas => {
+            let a = if authors.is_empty() { String::new() } else { format!("{authors}, ") };
+            match kind {
+                Thesis if style == CitationStyle::Science => format!("{a}{} ({year}).", joined(&["thesis", &by], ", ")).replace(" ().", "."),
+                Thesis => format!("{a}{} {} ({year}).", full_stop(&title), joined(&[thesis("PhD thesis", "Master’s thesis"), &by], ", ")).replace(" ().", "."),
+                Book | Report | Standard => {
+                    let what = if number.is_empty() { String::new() } else if kind == Report { format!("Report {number}") } else { number.clone() };
+                    format!("{a}*{title}* ({}).", joined(&[&what, &by, &year], ", "))
+                }
+                Dataset => {
+                    let mut s = format!("{a}{title}, {by} ({year})").replace(", (", " (").replace(" ()", "");
+                    if !link.is_empty() { s += &format!("; {link}"); }
+                    s + "."
+                }
+                _ => {
+                    let mut s = format!("{a}{}", full_stop(&title));
+                    if !by.is_empty() { s += &format!(" *{by}*"); }
+                    s += " [Preprint]";
+                    if !year.is_empty() { s += &format!(" ({year})"); }
+                    s += ".";
+                    if !link.is_empty() { s += &format!(" {link}"); }
+                    s
+                }
+            }
+        }
+        // ACS: "Langseth, C. M. Title. Ph.D. Dissertation, Stockholm University, 2025."
+        CitationStyle::Acs => {
+            let mut s = if authors.is_empty() { String::new() } else { format!("{authors} ") };
+            s += &match kind {
+                Thesis => format!("{} {}", full_stop(&title), full_stop(&joined(&[thesis("Ph.D. Dissertation", "M.S. Thesis"), &by, &year], ", "))),
+                Preprint => format!("{} {}", full_stop(&title), full_stop(&joined(&[&if by.is_empty() { String::new() } else { format!("*{by}* (Preprint)") }, &year], ", "))),
+                Dataset => format!("{} {}", full_stop(&title), full_stop(&joined(&[&by, &year], ", "))),
+                _ => {
+                    let pub_year = joined(&[&by, &year], ", ");
+                    let mut parts = vec![format!("*{title}*")];
+                    if matches!(kind, Report | Standard) && !number.is_empty() { parts.push(number.clone()); }
+                    if !pub_year.is_empty() { parts.push(pub_year); }
+                    full_stop(&parts.join("; "))
+                }
+            };
+            if !m.doi.is_empty() {
+                s += &format!(" DOI: {}.", m.doi);
+            } else if !url.is_empty() {
+                s += &format!(" {url}.");
+            }
+            s
+        }
     }
 }
 

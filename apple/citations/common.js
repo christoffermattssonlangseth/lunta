@@ -814,6 +814,16 @@ var LuntaCite = (function () {
       m.work_type = type === 'post' ? 'webpage' : type;
       m.accessed = cslDate(d.accessed);
     }
+    // other works keep their type (Crossref's words, as Lunta stores them), so a thesis is cited
+    // as one ("[Doctoral dissertation, Stockholm University]"), and a report or standard its number
+    var types = { thesis: /master/i.test(String(d.genre || '')) ? 'mastersthesis' : 'dissertation', book: 'book', chapter: 'book-chapter',
+      'paper-conference': 'proceedings-article', report: 'report', dataset: 'dataset', standard: 'standard' };
+    // CSL's "article" is Zotero's Preprint, and other documents: a preprint only when it says so
+    if (type === 'article' && /preprint|rxiv|research square|ssrn/i.test([d.genre, d.publisher, d['container-title']].join(' '))) types.article = 'posted-content';
+    if (types.hasOwnProperty(type)) {
+      m.work_type = types[type];
+      if ((type === 'report' || type === 'standard') && !m.issue) m.issue = get('number');
+    }
     if (!m.pmid) { var pm = /PMID:\s*(\d+)/i.exec(String(d.note || '')); if (pm) m.pmid = pm[1]; }
     Object.keys(m).forEach(function (k) { if (!m[k] || (Array.isArray(m[k]) && !m[k].length)) delete m[k]; });
     return m;

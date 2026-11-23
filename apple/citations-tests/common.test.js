@@ -357,3 +357,18 @@ test('web pages and blog posts: cited by author and year, Zotero’s web items k
   assert.deepEqual(m, { title: 'A Recipe for Training Neural Networks', authors: ['Andrej Karpathy'], date: '2019-04-25', journal: 'Andrej Karpathy blog',
     url: 'https://karpathy.github.io/2019/04/25/recipe/', work_type: 'post-weblog', accessed: '2026-11-21' });
 });
+
+test('converting: Zotero’s theses, books, reports and preprints keep their type', () => {
+  const thesis = C.cslMeta({ type: 'thesis', genre: 'Doctoral dissertation', title: 'Cells in Time and Space', author: [{ family: 'Langseth', given: 'Christoffer Mattsson' }],
+    issued: { 'date-parts': [[2025, 3]] }, publisher: 'Stockholm University', URL: 'https://urn.kb.se/resolve?urn=urn:nbn:se:su:diva-237615' });
+  assert.deepEqual(thesis, { title: 'Cells in Time and Space', authors: ['Christoffer Mattsson Langseth'], date: '2025-03', publisher: 'Stockholm University',
+    url: 'https://urn.kb.se/resolve?urn=urn:nbn:se:su:diva-237615', work_type: 'dissertation' });
+  assert.equal(C.cslMeta({ type: 'thesis', genre: 'Master’s thesis', title: 'T' }).work_type, 'mastersthesis');
+  assert.equal(C.cslMeta({ type: 'book', title: 'T', publisher: 'Springer' }).work_type, 'book');
+  assert.equal(C.cslMeta({ type: 'chapter', title: 'T', 'container-title': 'B' }).work_type, 'book-chapter');
+  assert.equal(C.cslMeta({ type: 'paper-conference', title: 'T' }).work_type, 'proceedings-article');
+  assert.deepEqual(C.cslMeta({ type: 'report', title: 'T', number: 'WHO/2021.1' }), { title: 'T', issue: 'WHO/2021.1', work_type: 'report' });
+  assert.equal(C.cslMeta({ type: 'article', title: 'T', publisher: 'bioRxiv' }).work_type, 'posted-content');
+  assert.equal(C.cslMeta({ type: 'article', title: 'A document' }).work_type, undefined, 'CSL’s "article" is a preprint only when it says so');
+  assert.equal(C.cslMeta({ type: 'article-journal', title: 'T', 'container-title': 'Cell' }).work_type, undefined);
+});
