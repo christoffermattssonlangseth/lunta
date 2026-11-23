@@ -1283,6 +1283,14 @@ final class PDFAnalyzer {
                 && min(a.bbox.y1, b.bbox.y1) - max(a.bbox.y0, b.bbox.y0) > 0.6 * min(a.bbox.h, b.bbox.h)
         }
         func join(_ m: PLine, _ l: PLine) {
+            // (the joined line's share of bold and math type: a run-in head "Forward pass:" and the text
+            // after it are one line of mostly regular type, not a bold line that breaks off as a heading)
+            let a = CGFloat(m.text.count), b = CGFloat(l.text.count)
+            if a + b > 0 {
+                m.bold = (m.bold * a + l.bold * b) / (a + b)
+                m.math = (m.math * a + l.math * b) / (a + b)
+                m.cmr = (m.cmr * a + l.cmr * b) / (a + b)
+            }
             if m.text.hasSuffix(Self.glue) {   // the word goes on (PDFKit broke the line at a ligature)
                 m.text.removeLast()
                 m.text += l.text

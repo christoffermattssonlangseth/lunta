@@ -11,7 +11,7 @@ final class FootnoteTests: XCTestCase {
 
     /// A PDF drawn with Core Text: `pages` is a list of pages, each a list of pieces (text, size, x, y
     /// from the top, raised by).
-    struct Piece { var text: String; var size: CGFloat = 10; var x: CGFloat; var y: CGFloat; var raise: CGFloat = 0 }
+    struct Piece { var text: String; var size: CGFloat = 10; var x: CGFloat; var y: CGFloat; var raise: CGFloat = 0; var font = "Times-Roman" }
 
     static func pdf(_ pages: [[Piece]]) -> Data {
         let data = NSMutableData()
@@ -20,7 +20,7 @@ final class FootnoteTests: XCTestCase {
         for page in pages {
             ctx.beginPDFPage(nil)
             for p in page {
-                let font = CTFontCreateWithName("Times-Roman" as CFString, p.size, nil)
+                let font = CTFontCreateWithName(p.font as CFString, p.size, nil)
                 let line = CTLineCreateWithAttributedString(NSAttributedString(string: p.text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]))
                 ctx.textPosition = CGPoint(x: p.x, y: 792 - p.y + p.raise)
                 CTLineDraw(line, ctx)

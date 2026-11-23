@@ -94,4 +94,23 @@ final class EquationTests: XCTestCase {
         XCTAssertTrue(h.contains("θ′"), h)
         XCTAssertFalse(h.contains("<sup>′</sup>") || h.contains("<sub>′</sub>"), h)
     }
+
+    func testARunInHeadStartsItsParagraph() async throws {
+        // "Forward pass: We treat the computation…" with the head in bold on the paragraph's first line
+        var p = [Piece(text: "A Study of Things", size: 20, x: 72, y: 80), Piece(text: "1 Introduction", size: 12, x: 72, y: 130)]
+        p += FootnoteTests.body("page 0", y: 160, n: 3)
+        let head = "Forward pass:"
+        p.append(Piece(text: head, x: 72, y: 210, font: "Times-Bold"))
+        let w = FootnoteTests.width(head, 10) + 4
+        p.append(Piece(text: "We treat the computation of the loss as a series of calcu-", x: 72 + w, y: 210))
+        p.append(Piece(text: "lations that run on and on to the margin of the page, and end.", x: 72, y: 222))
+        p += FootnoteTests.body("page 0 on", y: 250, n: 3)
+        let book = try await PDFBook.build(FootnoteTests.pdf([p, FootnoteTests.body("the end", y: 100)]), meta: PaperMeta(), log: { _ in })
+        let h = html(book)
+        // (one paragraph, the head bold at its start; whether PDFKit's synthetic test PDF keeps the space
+        // after the colon is not the point)
+        XCTAssertNotNil(h.range(of: #"<p><strong>Forward pass:</strong> ?We treat the computation of the loss as a series of calculations that run on"#,
+                                options: .regularExpression), h)
+        XCTAssertFalse(h.contains("<h3"), h)
+    }
 }
