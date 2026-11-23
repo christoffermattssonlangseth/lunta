@@ -26,11 +26,40 @@ function makeWord(doc) {
   function cc(tag, text) {
     const c = {
       id: nextId++, tag, text, title: '', appearance: '',
-      font: { superscript: false, load() {} },
+      // as Word: null for a mix of raised and not
+      font: {
+        load() {},
+        get superscript() { const v = c.runs.map((r) => r.font.superscript); return v.length && v.some((x) => x !== v[0]) ? null : (v.length ? v[0] : false); },
+        set superscript(v) { c.runs.forEach((r) => { r.font.superscript = v; }); }
+      },
       contentControls: { items: [], load() {} },
       delete() { if (doc.nodes) removeNode(c); else doc.ccs.splice(doc.ccs.indexOf(c), 1); },
-      insertText(t) { calls.insertText++; c.text = t; return { font: c.font }; },
-      insertHtml(html) { calls.insertHtml++; c.html = html; c.text = html.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"'); },
+      // runs: what was written, each with its own font ("see " not raised, "4" raised)
+      insertText(t, where) {
+        calls.insertText++;
+        if (where === 'Start' || where === 'End') {
+          const run = { text: t, font: { superscript: false } };
+          if (where === 'Start') { c.text = t + c.text; c.runs.unshift(run); } else { c.text += t; c.runs.push(run); }
+          return run;
+        }
+        const run = { text: t, font: { superscript: false } };
+        c.text = t; c.runs = [run];
+        return run;
+      },
+      runs: [],
+      insertHtml(html) {
+        calls.insertHtml++; c.html = html; c.text = html.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+        // as Word does: the HTML's paragraphs in its own font and spacing, the last one keeping
+        // the control's old paragraph mark (the theme's font, the old spacing)
+        const n = (html.match(/<p[ >]/g) || []).length;
+        c.paras = Array.from({ length: n }, (_, i) => i < n - 1 || n === 1
+          ? { font: { name: 'Times New Roman', size: 12, color: '#000000' }, lineSpacing: 12, spaceAfter: 6, spaceBefore: 0, leftIndent: 0, firstLineIndent: 0, alignment: 'Left' }
+          : { font: { name: 'Aptos', size: 11, color: '#000000' }, lineSpacing: 13, spaceAfter: 8, spaceBefore: 0, leftIndent: 0, firstLineIndent: 0, alignment: 'Left' });
+      },
+      paras: [],
+      get paragraphs() {
+        return { items: c.paras, load() {}, getFirst: () => ({ font: doc.bodyFont || { name: null, size: null, color: null }, load() {} }) };
+      },
       select() { calls.selected = c; }
     };
     return c;
@@ -163,6 +192,7 @@ function makeFetch(lunta) {
     lunta.requests.push({ url, body: init.body && JSON.parse(init.body) });
     let body;
     if (url.endsWith('/api/status')) body = { ok: true, papers: Object.keys(lunta.lib).length, api: 4 };
+    else if (url.endsWith('/api/render') && lunta.render) body = lunta.render(JSON.parse(init.body));
     else if (url.endsWith('/api/match')) {
       // by DOI or title, roughly as the core does (core/src/citeimport.rs, tested there)
       body = { matches: JSON.parse(init.body).items.map((m) => {
@@ -476,6 +506,32 @@ test('options in a journal style go to Lunta with the citations', async () => {
   const r = p.lunta.requests.find((x) => x.url.endsWith('/api/render'));
   assert.ok(r, 'asked Lunta to render');
   assert.deepEqual(r.body.options, [{ a: { locator: '7', label: 'figure' } }, null]);
+});
+
+test('a raised citation’s prefix and suffix stay on the line; the bibliography’s entries all in the text’s font', async () => {
+  const title = 'Citation lunta-o:' + LuntaCiteForTests.encodeOptions({ c: { prefix: 'see', locator: '5' } });
+  const p = await panel({ parts: ['<lunta xmlns="https://lunta.app/ns/word-citations/1">{"style":"csl:cell-systems","papers":{}}</lunta>'],
+    ccs: [['margins:a,b', '(…)'], ['margins:c', '(…)', title], ['margins-bib', 'x']] });
+  p.doc.bodyFont = { name: 'Times New Roman', size: 12, color: '#000000' };
+  // Cell Systems as the core gives it (core/src/csl.rs: the locator added, the prefix not raised)
+  p.lunta.render = () => ({ title: 'Cell Systems', citations: [{ text: '1,2', superscript: true, before: '', after: '' }, { text: 'see 3(p5)', superscript: true, before: 'see ', after: '' }],
+    bibliography: [{ id: 'a', text: '1. Smith, J. Alpha.' }, { id: 'b', text: '2. Smith, J. Beta.' }, { id: 'c', text: '3. Wu, P. Gamma.' }], items: [LIB.a, LIB.b, LIB.c], missing: [] });
+  await p.ctx.updateAll();
+  assert.deepEqual(texts(p).slice(0, 2), ['1,2', 'see 3(p5)']);
+  assert.deepEqual(p.doc.ccs[1].runs.map((r) => [r.text, r.font.superscript]), [['see ', false], ['3(p5)', true]]);
+  assert.deepEqual(p.doc.ccs[0].runs.map((r) => [r.text, r.font.superscript]), [['1,2', true]]);
+  // Word left the last entry in the old paragraph's font and spacing: made like the others
+  const bib = p.doc.ccs[2];
+  assert.equal(bib.paras.length, 3);
+  assert.deepEqual(bib.paras.map((x) => [x.font.name, x.font.size, x.spaceAfter, x.lineSpacing]), [['Times New Roman', 12, 6, 12], ['Times New Roman', 12, 6, 12], ['Times New Roman', 12, 6, 12]]);
+  // the text in another font: the entries follow it
+  p.doc.bodyFont = { name: 'Aptos', size: 11, color: '#000000' };
+  p.lunta.render = (j) => Object.assign({}, p.lunta.render0(j), { bibliography: [{ id: 'a', text: '1. Smith, J. Alpha!' }, { id: 'b', text: '2. Smith, J. Beta.' }, { id: 'c', text: '3. Wu, P. Gamma.' }] });
+  p.lunta.render0 = () => ({ title: 'Cell Systems', citations: [{ text: '1,2', superscript: true }, { text: 'see 3(p5)', superscript: true }], items: [LIB.a, LIB.b, LIB.c], missing: [] });
+  await p.ctx.updateAll();
+  assert.deepEqual(bib.paras.map((x) => x.font.name), ['Aptos', 'Aptos', 'Aptos']);
+  // an older Lunta that doesn't say what isn't raised: all of it raised, as before
+  assert.deepEqual(p.doc.ccs[1].runs.map((r) => [r.text, r.font.superscript]), [['see 3(p5)', true]]);
 });
 
 // ---- Convert Citations from Zotero, EndNote or Mendeley ----

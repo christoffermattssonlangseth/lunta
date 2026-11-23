@@ -41,6 +41,11 @@ pub struct CslStyleHit {
 pub struct CslCitation {
     pub text: String,
     pub superscript: bool,
+    /// In a raised citation, the start of `text` that is not raised: the writer's prefix ("see "
+    /// before a superscript "4"). Empty otherwise.
+    pub before: String,
+    /// The end of `text` that is not raised: the writer's suffix (" for a review"). Empty otherwise.
+    pub after: String,
 }
 
 /// A reference list entry: the paper's id and the entry (Markdown *italic* and **bold**).
@@ -163,7 +168,10 @@ fn style_xml(cache_dir: &str, id: &str) -> Result<String> {
 
 /// The independent style for an id (following a journal's alias to its base style), its title
 /// (the journal's), and the locale the journal asks for, if any.
-fn load_style(cache_dir: &str, id: &str) -> Result<(IndependentStyle, String, Option<String>)> {
+/// Also whether the style prints locators (Cell, Nature and other superscript styles don't) and,
+/// for those that don't, the style without collapsing numbers into ranges, for citations whose
+/// locators Lunta adds ("1(p1),2,3", not "1(p1)–3").
+fn load_style(cache_dir: &str, id: &str) -> Result<(IndependentStyle, String, Option<String>, Option<IndependentStyle>)> {
     let id = clean_id(id)?;
     let xml = style_xml(cache_dir, &id)?;
     let title = tag_text(&xml, "title").unwrap_or_else(|| id.clone());
@@ -182,7 +190,14 @@ fn load_style(cache_dir: &str, id: &str) -> Result<(IndependentStyle, String, Op
     let re = regex::Regex::new(r#"\s(collapse="year[a-z-]*"|cite-group-delimiter="[^"]*")"#).unwrap();
     let independent = re.replace_all(&independent, "").into_owned();
     let style = IndependentStyle::from_xml(&independent).map_err(|e| CoreError::Invalid(format!("citation style {id}: {e}")))?;
-    Ok((style, title, locale))
+    let locators = regex::Regex::new(r#"variable="[^"]*\blocator\b"#).unwrap().is_match(&independent);
+    let uncollapsed = if locators {
+        None
+    } else {
+        let re = regex::Regex::new(r#"\scollapse="[^"]*""#).unwrap();
+        IndependentStyle::from_xml(&re.replace_all(&independent, "")).ok()
+    };
+    Ok((style, title, locale, uncollapsed))
 }
 
 fn tag_text(xml: &str, tag: &str) -> Option<String> {
@@ -309,9 +324,13 @@ pub fn render(cache_dir: &str, style_id: &str, papers: &[Paper], citations: &[Ve
 /// `render`, with each cited paper's locator, prefix, suffix and author mode (`CslCiteItem`).
 /// The locator and the narrative form are the engine's (the style decides "p. 12" and its place);
 /// the prefix and suffix go around the paper's part of the citation, and "suppress" takes the
-/// author's names out of it.
+/// author's names out of it. In a raised (superscript) citation the prefix of its first paper and
+/// the suffix of its last are not raised (`CslCitation::before`, `after`: "see ⁴"), and a style
+/// that prints no locators (Cell, Nature) gets each one after the paper's number, as the built-in
+/// superscript styles write them ("⁴⁽ᵖ⁵⁾", "[4, p. 5]"), so the page the writer gave isn't lost.
 pub fn render_items(cache_dir: &str, style_id: &str, papers: &[Paper], citations: &[Vec<CslCiteItem>]) -> Result<CslRendered> {
-    let (style, title, locale) = load_style(cache_dir, style_id)?;
+    let (style, title, locale, uncollapsed) = load_style(cache_dir, style_id)?;
+    let prints_locators = uncollapsed.is_none();
     let locale = locale.map(LocaleCode);
     let items: Vec<Item> = papers.iter().map(item).collect();
     let find = |id: &str| papers.iter().position(|p| p.id == id).map(|i| &items[i]);
@@ -330,7 +349,9 @@ pub fn render_items(cache_dir: &str, style_id: &str, papers: &[Paper], citations
             cited.push(CitationItem::new(entry, locator, None, false, purpose));
             opts.push(c);
         }
-        driver.citation(CitationRequest::new(cited, &style, locale.clone(), locales(), None));
+        let adds_locators = !prints_locators && opts.iter().any(|o: &&CslCiteItem| !o.locator.trim().is_empty());
+        let st = if adds_locators { uncollapsed.as_ref().unwrap_or(&style) } else { &style };
+        driver.citation(CitationRequest::new(cited, st, locale.clone(), locales(), None));
         asked.push(opts);
     }
     let out = driver.finish(BibliographyRequest::new(&style, locale, locales()));
@@ -340,13 +361,22 @@ pub fn render_items(cache_dir: &str, style_id: &str, papers: &[Paper], citations
         .zip(asked.iter())
         .map(|(c, opts)| {
             let mut tree = c.citation.clone();
-            if opts.iter().any(|o| !o.prefix.is_empty() || !o.suffix.is_empty() || o.mode == "suppress") {
-                tree = with_options(tree, opts);
+            let (mut before, mut after) = (String::new(), String::new());
+            let add_locators = !prints_locators && opts.iter().any(|o| !o.locator.trim().is_empty());
+            if add_locators || opts.iter().any(|o| !o.prefix.is_empty() || !o.suffix.is_empty() || o.mode == "suppress") {
+                (tree, before, after) = with_options(tree, opts, add_locators);
             }
             let mut html = String::new();
             let _ = tree.write_buf(&mut html, BufWriteFormat::Html);
             let t = html.trim();
-            CslCitation { text: unguard(&tidy(&strip_tags(t))), superscript: all_superscript(t) }
+            let text = unguard(&tidy(&strip_tags(t)));
+            let superscript = all_superscript(t);
+            if !superscript || text.is_empty() {
+                // nothing raised: the affixes are plain text with the rest
+                let text = format!("{before}{text}{after}").trim().to_string();
+                return CslCitation { text, superscript, before: String::new(), after: String::new() };
+            }
+            CslCitation { text: format!("{before}{text}{after}"), superscript, before, after }
         })
         .collect();
     let bibliography = out
@@ -380,8 +410,10 @@ fn locator_kind(label: &str) -> Locator {
 
 /// The engine's citation with each paper's prefix and suffix around its part, and the author's
 /// names taken out of a part whose paper is cited without them ("suppress"). The engine marks
-/// each paper's part (`ElemMeta::Entry`, by its place in the request).
-fn with_options(tree: ElemChildren, opts: &[&CslCiteItem]) -> ElemChildren {
+/// each paper's part (`ElemMeta::Entry`, by its place in the request). `add_locators`: the style
+/// prints none, so Lunta adds them. Returns the citation and, for a raised one, the words before
+/// and after it that are not raised.
+fn with_options(tree: ElemChildren, opts: &[&CslCiteItem], add_locators: bool) -> (ElemChildren, String, String) {
     fn first_format(c: &ElemChildren) -> Option<hayagriva::Formatting> {
         c.0.iter().find_map(|x| match x {
             ElemChild::Text(t) => Some(t.formatting),
@@ -421,28 +453,51 @@ fn with_options(tree: ElemChildren, opts: &[&CslCiteItem]) -> ElemChildren {
         }
         false
     }
-    fn walk(c: ElemChildren, opts: &[&CslCiteItem], seen: &mut Vec<bool>) -> ElemChildren {
+    /// The papers' parts in the order the engine wrote them (by their place in the request).
+    fn order(c: &ElemChildren, out: &mut Vec<usize>) {
+        for child in &c.0 {
+            if let ElemChild::Elem(e) = child {
+                match e.meta {
+                    Some(ElemMeta::Entry(i)) => out.push(i),
+                    _ => order(&e.children, out),
+                }
+            }
+        }
+    }
+    struct Walk<'a> {
+        opts: &'a [&'a CslCiteItem],
+        seen: Vec<bool>,
+        /// the part whose prefix / suffix go outside a raised citation
+        outer_prefix: Option<usize>,
+        outer_suffix: Option<usize>,
+        add_locators: bool,
+        raised: bool,
+    }
+    fn walk(c: ElemChildren, w: &mut Walk) -> ElemChildren {
         let mut out = Vec::new();
         for child in c.0 {
             match child {
                 ElemChild::Elem(mut e) => {
                     if let Some(ElemMeta::Entry(i)) = e.meta {
-                        if let Some(o) = opts.get(i) {
-                            seen[i] = true;
+                        if let Some(o) = w.opts.get(i) {
+                            w.seen[i] = true;
                             if o.mode == "suppress" {
                                 drop_names(&mut e.children);
                             }
                             let f = first_format(&e.children).unwrap_or_default();
-                            if !o.prefix.is_empty() {
+                            if !o.prefix.is_empty() && w.outer_prefix != Some(i) {
                                 e.children.0.insert(0, ElemChild::Text(Formatted { text: guard(&affix(&o.prefix, true)), formatting: f }));
                             }
-                            if !o.suffix.is_empty() {
+                            if w.add_locators && !o.locator.trim().is_empty() {
+                                e.children.0.push(ElemChild::Text(Formatted { text: guard(&added_locator(o, w.raised)), formatting: f }));
+                            }
+                            if !o.suffix.is_empty() && w.outer_suffix != Some(i) {
                                 e.children.0.push(ElemChild::Text(Formatted { text: guard(&affix(&o.suffix, false)), formatting: f }));
                             }
                         }
                         out.push(ElemChild::Elem(e));
                     } else {
-                        e.children = walk(e.children, opts, seen);
+                        e.children = walk(e.children, w);
                         out.push(ElemChild::Elem(e));
                     }
                 }
@@ -451,23 +506,73 @@ fn with_options(tree: ElemChildren, opts: &[&CslCiteItem]) -> ElemChildren {
         }
         ElemChildren(out)
     }
-    let mut seen = vec![false; opts.len()];
-    let mut tree = walk(tree, opts, &mut seen);
-    // a part the engine merged into another (a collapsed range "1–3"): its prefix at the start and
-    // its suffix at the end of the citation, so nothing the writer typed is lost
     let f = first_format(&tree).unwrap_or_default();
+    // a raised citation ("⁴"): the writer's words before and after it stay on the line ("see ⁴")
+    let raised = f.vertical_align == hayagriva::citationberg::VerticalAlign::Sup;
+    let mut parts = Vec::new();
+    order(&tree, &mut parts);
+    let mut w = Walk {
+        opts,
+        seen: vec![false; opts.len()],
+        outer_prefix: if raised { parts.first().copied() } else { None },
+        outer_suffix: if raised { parts.last().copied() } else { None },
+        add_locators,
+        raised,
+    };
+    let mut tree = walk(tree, &mut w);
+    let (mut before, mut after) = (String::new(), String::new());
+    if let Some(o) = w.outer_prefix.and_then(|i| opts.get(i)) {
+        before = affix(&o.prefix, true);
+    }
+    if let Some(o) = w.outer_suffix.and_then(|i| opts.get(i)) {
+        after = affix(&o.suffix, false);
+    }
+    // a part the engine merged into another (a collapsed range "1–3"): its prefix at the start and
+    // its suffix (and a locator the style doesn't print) at the end of the citation, so nothing the
+    // writer typed is lost
     for (i, o) in opts.iter().enumerate() {
-        if seen[i] {
+        if w.seen[i] {
             continue;
         }
         if !o.prefix.is_empty() {
-            tree.0.insert(0, ElemChild::Text(Formatted { text: guard(&affix(&o.prefix, true)), formatting: f }));
+            if raised {
+                before = format!("{}{before}", affix(&o.prefix, true));
+            } else {
+                tree.0.insert(0, ElemChild::Text(Formatted { text: guard(&affix(&o.prefix, true)), formatting: f }));
+            }
+        }
+        if add_locators && !o.locator.trim().is_empty() {
+            tree.0.push(ElemChild::Text(Formatted { text: guard(&added_locator(o, raised)), formatting: f }));
         }
         if !o.suffix.is_empty() {
-            tree.0.push(ElemChild::Text(Formatted { text: guard(&affix(&o.suffix, false)), formatting: f }));
+            if raised {
+                after.push_str(&affix(&o.suffix, false));
+            } else {
+                tree.0.push(ElemChild::Text(Formatted { text: guard(&affix(&o.suffix, false)), formatting: f }));
+            }
         }
     }
-    tree
+    (tree, before, after)
+}
+
+/// A locator the style doesn't print, as the built-in styles write it: after a raised number
+/// "(p5)" (AMA's form), else ", p. 5".
+fn added_locator(o: &CslCiteItem, raised: bool) -> String {
+    const SHORT: [(&str, &str, &str); 12] = [
+        ("page", "p.", "pp."), ("chapter", "chap.", "chaps."), ("section", "sec.", "secs."), ("figure", "fig.", "figs."),
+        ("table", "tbl.", "tbls."), ("paragraph", "para.", "paras."), ("line", "l.", "ll."), ("note", "n.", "nn."),
+        ("volume", "vol.", "vols."), ("equation", "eq.", "eqs."), ("supplement", "suppl.", "suppls."), ("appendix", "app.", "apps."),
+    ];
+    let loc = regex::Regex::new(r"(\d)\s*-\s*(\d)").unwrap().replace_all(o.locator.trim(), "$1–$2").into_owned();
+    let kind = o.label.trim().to_lowercase();
+    let (_, one, many) = SHORT.iter().find(|(k, _, _)| *k == kind).copied().unwrap_or(SHORT[0]);
+    let plural = loc.contains(['–', ',', '&']) || loc.contains(" and ");
+    let label = if plural { many } else { one };
+    if raised {
+        format!("({}{loc})", label.replace('.', ""))
+    } else {
+        format!(", {label} {loc}")
+    }
 }
 
 /// A prefix ends with a space and a suffix starts with one, unless the writer gave punctuation
@@ -563,11 +668,32 @@ mod tests {
   <bibliography><layout><text variable="citation-number" suffix=". "/><text variable="title"/></layout></bibliography>
 </style>"#;
 
+    /// Superscript numbers as Cell writes them: no locators, ranges collapsed.
+    const SUPERSCRIPT: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" default-locale="en-US">
+  <info><title>Test Superscript</title><id>http://www.zotero.org/styles/test-superscript</id><category citation-format="numeric"/><updated>2024-01-01T00:00:00+00:00</updated></info>
+  <citation collapse="citation-number"><sort><key variable="citation-number"/></sort>
+    <layout vertical-align="sup" delimiter=","><text variable="citation-number"/></layout>
+  </citation>
+  <bibliography><layout><text variable="citation-number" suffix=". "/><text variable="title"/></layout></bibliography>
+</style>"#;
+    /// Superscript numbers with the locator in brackets, as AMA does: "4(p5)".
+    const SUPERSCRIPT_LOCATORS: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0" default-locale="en-US">
+  <info><title>Test Superscript Locators</title><id>http://www.zotero.org/styles/test-superscript-locators</id><category citation-format="numeric"/><updated>2024-01-01T00:00:00+00:00</updated></info>
+  <citation><sort><key variable="citation-number"/></sort>
+    <layout vertical-align="sup" delimiter=","><group><text variable="citation-number"/><group prefix="(" suffix=")"><label variable="locator" form="short" strip-periods="true"/><text variable="locator"/></group></group></layout>
+  </citation>
+  <bibliography><layout><text variable="citation-number" suffix=". "/><text variable="title"/></layout></bibliography>
+</style>"#;
+
     fn cache() -> String {
         let dir = std::env::temp_dir().join(format!("lunta-csl-items-{}-{}", std::process::id(), rand_suffix()));
         std::fs::create_dir_all(dir.join("csl")).unwrap();
         std::fs::write(dir.join("csl/test-locators.csl"), AUTHOR_DATE).unwrap();
         std::fs::write(dir.join("csl/test-numeric-locators.csl"), NUMERIC).unwrap();
+        std::fs::write(dir.join("csl/test-superscript.csl"), SUPERSCRIPT).unwrap();
+        std::fs::write(dir.join("csl/test-superscript-locators.csl"), SUPERSCRIPT_LOCATORS).unwrap();
         dir.to_string_lossy().into()
     }
 
@@ -612,6 +738,36 @@ mod tests {
         ]).unwrap();
         let t: Vec<&str> = r.citations.iter().map(|c| c.text.as_str()).collect();
         assert_eq!(t, ["[1, p. 12]", "[see 2]"]);
+        assert!(r.citations.iter().all(|c| c.before.is_empty() && c.after.is_empty()));
+    }
+
+    #[test]
+    fn superscript_citations_keep_the_writers_words_on_the_line_and_their_pages() {
+        let dir = cache();
+        let papers = [paper("a", "Smith", "2020", "Alpha"), paper("b", "Lee", "2021", "Beta"), paper("c", "Wu", "2022", "Gamma")];
+        let cites = vec![
+            vec![it("a", |c| c.locator = "1".into()), it("b", |_| {}), it("c", |_| {})],
+            vec![it("c", |c| { c.prefix = "see".into(); c.locator = "5".into(); c.label = "page".into(); })],
+            vec![it("b", |c| { c.prefix = "e.g.".into(); c.suffix = "for a review".into(); }), it("c", |c| c.prefix = "and".into())],
+            vec![it("a", |_| {}), it("b", |_| {}), it("c", |c| c.locator = "3-5".into())],
+            vec![it("c", |c| { c.prefix = "see".into(); c.suffix = "for a review".into(); })],
+        ];
+        // Cell: no locators in the style, so Lunta adds them; the prefix of the first and the
+        // suffix of the last paper aren't raised
+        let r = render_items(&dir, "test-superscript", &papers, &cites).unwrap();
+        let c: Vec<(&str, bool, &str, &str)> = r.citations.iter().map(|c| (c.text.as_str(), c.superscript, c.before.as_str(), c.after.as_str())).collect();
+        assert_eq!(c[0], ("1(p1),2,3", true, "", ""));
+        assert_eq!(c[1], ("see 3(p5)", true, "see ", ""));
+        // a paper's words inside the citation stay with it, raised
+        assert_eq!(c[2], ("e.g. 2 for a review,and 3", true, "e.g. ", ""));
+        assert_eq!(c[3], ("1,2,3(pp3–5)", true, "", ""));
+        assert_eq!(c[4], ("see 3 for a review", true, "see ", " for a review"));
+
+        // a style that prints locators: its own form, nothing added
+        let r = render_items(&dir, "test-superscript-locators", &papers, &cites[..2]).unwrap();
+        let c: Vec<(&str, bool, &str)> = r.citations.iter().map(|c| (c.text.as_str(), c.superscript, c.before.as_str())).collect();
+        assert_eq!(c[0], ("1(p1),2,3", true, ""));
+        assert_eq!(c[1], ("see 3(p5)", true, "see "));
     }
 
     /// A style that writes web pages as APA does (type, site, address, the day it was read).

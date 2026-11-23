@@ -396,6 +396,22 @@ built by `LuntaCite.optionsForm` (kind of locator, number, prefix, suffix, autho
   suffix go around the paper's part of the engine's output (marked `ElemMeta::Entry`), and *suppress* takes the
   first names element out of it (hayagriva has no per-item affixes, and its `CitePurpose::Year` drops the
   citation's brackets and year suffixes).
+- **Superscript citations.** The words the writer adds stay on the line: in a raised citation the first
+  paper's prefix and the last one's suffix aren't raised ("see ⁴", "⁴ for a review"; a prefix or suffix of a
+  paper in the middle stays raised with its number). The core says which start and end of the text aren't
+  raised (`CslCitation::before`, `after`; /render's `citations: [{text, superscript, before, after}]`),
+  `format` does the same for the built-in Nature, AMA and ACS, and the panels get them as `befores` and
+  `afters`; the Word panel writes the raised middle and then the plain start and end (Google Docs still
+  raises the whole citation). Many superscript journal styles (Cell and the Cell Press journals, Nature)
+  print no locators at all, so a page given there was lost: for a style whose XML names no `locator`
+  variable, the core adds each paper's locator after its number as the built-in superscript styles write
+  it ("⁴⁽ᵖ⁵⁾", "[4, p. 5]" when not raised), English labels, and such a citation isn't collapsed into a range
+  ("1(p1),2,3", not "1(p1)–3"). A style with its own locator rule prints it as it says.
+- **The bibliography in Word** is HTML put into its content control; Word gives the HTML's paragraphs its
+  own font and spacing but keeps the control's last paragraph mark with whatever was there (another
+  manager's bibliography, the theme's font), so the last entry came out in another font. After writing it,
+  every entry gets the first entry's paragraph spacing and indents and the font (name, size, colour) of the
+  paragraph the first citation is in (`evenBibliography`).
 
 ### Converting citations from Zotero, EndNote and Mendeley
 

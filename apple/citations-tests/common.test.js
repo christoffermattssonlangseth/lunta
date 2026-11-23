@@ -165,7 +165,12 @@ test('journal styles: empty citations aren’t written, missing papers reported'
   const f = C.formatJournal(res, [['a', 'c'], ['gone']], {});
   assert.deepEqual(f.texts, ['1,2', null]);
   assert.deepEqual(f.superscripts, [true, false]);
+  assert.deepEqual(f.befores, ['', '']);
   assert.deepEqual(f.unknown, ['gone']);
+  // the start and end Lunta says aren't raised, when the text has them there
+  const g = C.formatJournal({ citations: [{ text: 'see 3(p5) for a review', superscript: true, before: 'see ', after: ' for a review' }, { text: '4', superscript: true, before: 'x ', after: '' }],
+    bibliography: [], items: [smithA, lee], missing: [] }, [['a'], ['c']], {});
+  assert.deepEqual([g.befores, g.afters], [['see ', ''], [' for a review', '']]);
   assert.deepEqual(Object.keys(f.store).sort(), ['a', 'c']);
   // an older Lunta: no "missing", an empty citation gives it away
   const old = C.formatJournal({ title: 'X', citations: [{ text: '' }], bibliography: [] }, [['gone']], {});
@@ -252,6 +257,13 @@ test('options: built-in styles write locators, prefixes, suffixes, without the a
   assert.deepEqual(t('vancouver'), ['[1, p. 12]', '[see 1, chaps. 3–5; 2 for a review]', '[2, p. 4]', 'Wu [3, p. 7]', '[1; 2, p. 9; 3]']);
   const nature = C.format('nature', cits, E, {}, op);
   assert.equal(nature.texts[0], '1(p12)');
+  // raised: the first paper's prefix and the last one's suffix stay on the line ("see ¹⁽ᶜʰᵃᵖˢ³⁻⁵⁾; ² for a review")
+  assert.equal(nature.texts[1], 'see 1(chaps3–5); 2 for a review');
+  assert.deepEqual([nature.befores[1], nature.afters[1]], ['see ', ' for a review']);
+  assert.deepEqual([nature.befores[0], nature.afters[0]], ['', '']);
+  const mid = C.format('nature', [['a', 'b', 'c']], E, {}, [{ b: { prefix: 'e.g.', suffix: 'for a review' } }]);
+  assert.deepEqual([mid.texts[0], mid.befores[0], mid.afters[0]], ['1; e.g. 2 for a review; 3', '', ''], 'in the middle: raised with its number');
+  assert.deepEqual(C.format('vancouver', cits, E, {}, op).befores, ['', '', '', '', ''], 'not raised: nothing apart');
   assert.deepEqual(nature.superscripts, [true, true, true, false, true], 'a narrative citation isn’t raised');
   // without options: as before
   assert.equal(C.format('apa', cits, E, {}).texts[1], '(Lee, 2021; Smith, 2020)');

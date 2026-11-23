@@ -12,7 +12,7 @@ import Foundation
 //          ({libraryId}), or else {missing: true}
 //   GET  /api/styles?q=…                     → journal styles in the CSL catalogue [{id, title, format}]
 //   POST /api/render {style, citations, papers?, options?}
-//        → a journal style: {title, citations: [{text, superscript}], bibliography: [{id, text}],
+//        → a journal style: {title, citations: [{text, superscript, before, after}], bibliography: [{id, text}],
 //          items: [item], missing: [id]}; `options` (api 4), one per citation (null: none):
 //          {id: {locator, label, prefix, suffix, mode}} (mode "", "suppress" or "narrative")
 //   Resolve Citations (api 3; core/src/placeholders):
@@ -324,7 +324,7 @@ public final class CitationAPI: @unchecked Sendable {
                 let out = try lib.citeCslItems(cacheDir: cacheDir, styleId: style, citations: mapped, extra: extra)
                 return .json(200, [
                     "title": out.styleTitle,
-                    "citations": out.citations.map { ["text": $0.text, "superscript": $0.superscript] },
+                    "citations": out.citations.map { ["text": $0.text, "superscript": $0.superscript, "before": $0.before, "after": $0.after] },
                     "bibliography": out.bibliography.map { ["id": back[$0.id] ?? $0.id, "text": $0.text] },
                     "items": items,
                     "missing": missing,
