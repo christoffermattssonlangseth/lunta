@@ -20,28 +20,104 @@ fn agent() -> &'static ureq::Agent {
 }
 
 pub(crate) fn get_text(url: &str) -> Result<String> {
-    // "too many requests" (OpenAlex's rate limit) or "unavailable": wait a little and try again
+    // "too many requests" (OpenAlex's rate limit) or "unavailable": wait a little and try again,
+    // unless the service says it won't answer for hours (OpenAlex's daily allowance is used up)
+    let url = openalex_url(url);
+    let host = url.split('/').nth(2).unwrap_or("the server").to_string();
     let waits = [Duration::from_millis(1500), Duration::from_secs(4)];
     let mut attempt = 0;
     loop {
-        match agent().get(url).header("User-Agent", UA).call() {
-            Ok(mut r) => return r.body_mut().read_to_string().map_err(|e| CoreError::Network(e.to_string())),
-            Err(ureq::Error::StatusCode(code @ (429 | 503))) => {
-                if let Some(w) = waits.get(attempt) {
-                    std::thread::sleep(*w);
-                    attempt += 1;
-                    continue;
-                }
-                let host = url.split('/').nth(2).unwrap_or("the server");
-                return Err(CoreError::Network(if code == 429 {
-                    format!("{host} is busy (too many requests right now); try again in a minute")
-                } else {
-                    format!("{host} is unavailable right now; try again in a minute")
-                }));
-            }
-            Err(e) => return Err(CoreError::Network(e.to_string())),
+        let mut r = agent()
+            .get(&url)
+            .header("User-Agent", UA)
+            .config()
+            .http_status_as_error(false)
+            .build()
+            .call()
+            .map_err(|e| CoreError::Network(e.to_string()))?;
+        let code = r.status().as_u16();
+        if (200..300).contains(&code) {
+            return r.body_mut().read_to_string().map_err(|e| CoreError::Network(e.to_string()));
         }
+        if code == 429 || code == 503 {
+            let retry_after = r.headers().get("retry-after").and_then(|v| v.to_str().ok()).and_then(|v| v.trim().parse::<u64>().ok());
+            let body = r.body_mut().with_config().limit(64 * 1024).read_to_string().unwrap_or_default();
+            if let Some(why) = refusal(&host, code, retry_after, &body) {
+                return Err(CoreError::Network(why));
+            }
+            if let Some(w) = waits.get(attempt) {
+                std::thread::sleep(*w);
+                attempt += 1;
+                continue;
+            }
+            return Err(CoreError::Network(if code == 429 {
+                format!("{host} is busy (too many requests right now); try again in a minute")
+            } else {
+                format!("{host} is unavailable right now; try again in a minute")
+            }));
+        }
+        return Err(CoreError::Network(format!("{host} answered HTTP {code}")));
     }
+}
+
+// ---------------------------------------------------------------- OpenAlex's allowance
+
+/// OpenAlex charges each request against a daily allowance: without an API key one allowance
+/// ($0.10 a day) is shared by everyone on the network's address (a university, a phone carrier's
+/// shared address), with a free key the user has their own ($1 a day). A search costs ten times
+/// a filtered list; looking a work up by its id is free.
+static OPENALEX_KEY: std::sync::RwLock<String> = std::sync::RwLock::new(String::new());
+
+/// The start of the message when OpenAlex's daily allowance is used up (the apps show it).
+pub const OPENALEX_ALLOWANCE: &str = "OpenAlex's free daily allowance";
+
+/// Sets the OpenAlex API key every request to OpenAlex carries ("" for none).
+pub fn set_openalex_key(key: &str) {
+    let k: String = key.trim().chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+    *OPENALEX_KEY.write().unwrap() = k;
+}
+
+pub fn openalex_key() -> String {
+    OPENALEX_KEY.read().unwrap().clone()
+}
+
+/// The address with the API key, when it is OpenAlex's and a key is set.
+pub(crate) fn openalex_url(url: &str) -> String {
+    with_key(url, &openalex_key())
+}
+
+pub(crate) fn with_key(url: &str, key: &str) -> String {
+    if key.is_empty() || !url.starts_with("https://api.openalex.org/") || url.contains("api_key=") {
+        return url.to_string();
+    }
+    format!("{url}{}api_key={key}", if url.contains('?') { '&' } else { '?' })
+}
+
+/// Why a service refuses for longer than is worth waiting (OpenAlex's daily allowance used up),
+/// from a 429 or 503 answer; None when waiting a little may help.
+pub(crate) fn refusal(host: &str, code: u16, retry_after: Option<u64>, body: &str) -> Option<String> {
+    refusal_with(host, code, retry_after, body, !openalex_key().is_empty())
+}
+
+pub(crate) fn refusal_with(host: &str, code: u16, retry_after: Option<u64>, body: &str, url_has_key: bool) -> Option<String> {
+    let budget = body.contains("budget") || body.contains("daily_budget");
+    if host == "api.openalex.org" && code == 429 && (budget || retry_after.is_some_and(|s| s > 600)) {
+        let hours = retry_after.map(|s| (s + 1800) / 3600).filter(|h| *h >= 1);
+        let again = match hours {
+            Some(1) => " (it renews in about an hour)".to_string(),
+            Some(h) => format!(" (it renews in about {h} hours, at midnight UTC)"),
+            None => " (it renews at midnight UTC)".to_string(),
+        };
+        return Some(if !url_has_key {
+            format!("{OPENALEX_ALLOWANCE} for your network is used up{again}. A free OpenAlex API key (in New for You's settings) gives Lunta its own.")
+        } else {
+            format!("{OPENALEX_ALLOWANCE} for your API key is used up{again}.")
+        });
+    }
+    if retry_after.is_some_and(|s| s > 600) {
+        return Some(format!("{host} asks to wait {} minutes before asking again", retry_after.unwrap_or(0) / 60));
+    }
+    None
 }
 
 /// A web page, fetched once with the same agent and User-Agent: (address after redirects,
@@ -528,8 +604,10 @@ pub fn watch_new(kind: WatchKind, value: &str, since: &str, limit: u32) -> Resul
                     filter, date, per, WORK_FIELDS
                 ));
             }
-            let a = get_json(&format!("https://api.openalex.org/authors?search={}&per_page=1&select=id", enc(v)))?;
-            let id = s(&a["results"][0]["id"]).rsplit('/').next().unwrap_or("").to_string();
+            let id = resolved("author", v, || {
+                let a = get_json(&format!("https://api.openalex.org/authors?search={}&per_page=1&select=id", enc(v)))?;
+                Ok(s(&a["results"][0]["id"]).rsplit('/').next().unwrap_or("").to_string())
+            })?;
             if id.is_empty() {
                 return Ok(vec![]);
             }
@@ -566,7 +644,27 @@ pub fn watch_new(kind: WatchKind, value: &str, since: &str, limit: u32) -> Resul
 
 /// The OpenAlex id of a journal ("S…"), from an ISSN or its name; the exact name wins over a
 /// closer search match ("Nature" is Nature, not Nature Communications). Empty if none.
+/// Names resolved to OpenAlex ids in this run of the app (a search costs ten list requests of
+/// OpenAlex's daily allowance; New for You looks the same journals and authors up every day).
+fn resolved(kind: &str, v: &str, look: impl FnOnce() -> Result<String>) -> Result<String> {
+    static CACHE: OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    let k = format!("{kind}:{}", v.trim().to_lowercase());
+    if let Some(id) = cache.lock().unwrap().get(&k) {
+        return Ok(id.clone());
+    }
+    let id = look()?;
+    if !id.is_empty() {
+        cache.lock().unwrap().insert(k, id.clone());
+    }
+    Ok(id)
+}
+
 fn journal_id(v: &str) -> Result<String> {
+    resolved("journal", v, || journal_id_uncached(v))
+}
+
+fn journal_id_uncached(v: &str) -> Result<String> {
     let issn = v.len() == 9 && v.as_bytes()[4] == b'-';
     let url = if issn {
         format!("https://api.openalex.org/sources/issn:{}?select=id", enc(v))

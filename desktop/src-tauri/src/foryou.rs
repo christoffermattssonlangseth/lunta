@@ -171,6 +171,13 @@ pub async fn foryou_connect_orcid(app: AppHandle, orcid: String) -> R<()> {
     tauri::async_runtime::spawn_blocking(move || f.connect_orcid(&NetFinder, &orcid, now())).await.map_err(|e| e.to_string())?
 }
 
+/// Your OpenAlex API key ("" for none), kept with New for You's settings; every request to
+/// OpenAlex carries it from now on.
+#[tauri::command]
+pub async fn foryou_set_openalex_key(app: AppHandle, key: String) -> R<()> {
+    handle(&app)?.set_openalex_key(&key).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn foryou_disconnect_orcid(app: AppHandle) -> R<()> {
     handle(&app)?.disconnect_orcid().map_err(|e| e.to_string())
@@ -303,7 +310,7 @@ fn start_run(app: &AppHandle, tz: i32) {
             *app.state::<Feed>().summarized.lock().unwrap() = Some(f.state().digest_key(tz));
         }
         let (found, error) = match r {
-            Ok(Some(r)) => (r.found, None),
+            Ok(Some(r)) => (r.found, r.failed.then_some(r.problem).flatten()),
             Ok(None) => return, // another run is going on
             Err(e) => (0, Some(e.to_string())),
         };

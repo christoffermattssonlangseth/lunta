@@ -467,11 +467,137 @@ fn a_run_without_a_model_trusts_the_ranking() {
     assert_eq!(view.earlier.len(), 4);
 }
 
+/// OpenAlex refusing (its daily allowance used up) for every request, or only for authors; bioRxiv
+/// down too when `biorxiv_down`.
+struct Refusing {
+    fake: Fake,
+    all: bool,
+    biorxiv_down: bool,
+}
+
+const USED_UP: &str = "OpenAlex's free daily allowance for your network is used up (it renews in about 17 hours, at midnight UTC). A free OpenAlex API key (in New for You's settings) gives Lunta its own.";
+
+impl Finder for Refusing {
+    fn watch_new(&self, kind: WatchKind, value: &str, since: &str, limit: u32) -> crate::model::Result<Vec<DiscoverHit>> {
+        if self.all || kind == WatchKind::Author {
+            return Err(CoreError::Network(USED_UP.into()));
+        }
+        self.fake.watch_new(kind, value, since, limit)
+    }
+    fn citing_new(&self, doi: &str, exclude: &str, since: &str, limit: u32) -> crate::model::Result<Vec<DiscoverHit>> {
+        if self.all {
+            return Err(CoreError::Network(USED_UP.into()));
+        }
+        self.fake.citing_new(doi, exclude, since, limit)
+    }
+    fn orcid_profile(&self, orcid: &str) -> crate::model::Result<OrcidProfile> {
+        self.fake.orcid_profile(orcid)
+    }
+    fn get_json(&self, url: &str) -> crate::model::Result<Value> {
+        if self.biorxiv_down {
+            return Err(CoreError::Network("api.biorxiv.org answered HTTP 502".into()));
+        }
+        self.fake.get_json(url)
+    }
+}
+
+#[test]
+fn a_source_that_cant_be_reached_is_said_not_taken_for_a_quiet_day() {
+    let (_root, lib, files) = setup();
+    let yesterday = D0 - DAY_MS;
+    files
+        .change(|s| {
+            s.interests = "I work on spatial transcriptomics: imaging-based cell segmentation and cell-type maps of tissue.".into();
+            s.queries = vec!["spatial transcriptomics cell segmentation".into()];
+            s.keywords = vec!["transcriptom".into()];
+            s.queries_for = s.interests.clone();
+            s.last_run = Some(yesterday);
+        })
+        .unwrap();
+    files.save_watches(&[Watch::new(WatchType::Author, "Jane Doe", "Jane Doe", yesterday)]).unwrap();
+    assert!(run::is_due(&files.state(), &files.watches(), D0, CET, false));
+
+    // OpenAlex refuses everything: no feed, nothing marked as offered, the run still due, and
+    // the feed says why (not "Nothing new today")
+    let down = Refusing { fake: Fake::new(), all: true, biorxiv_down: false };
+    let report = run_with(&lib, &files, &down, None, D0);
+    assert!(report.failed);
+    assert_eq!(report.problem.as_deref(), Some(USED_UP));
+    assert_eq!(report.found, 0);
+    let s = files.state();
+    assert_eq!(s.last_run, Some(yesterday), "a failed run doesn't count as the day's run");
+    assert!(s.shown.is_empty() && s.items.is_empty());
+    assert!(run::is_due(&s, &files.watches(), D0, CET, false));
+    let view = view::feed_view(&s, &files.watches(), &files.local(), D0, CET);
+    assert_eq!(view.problem.as_deref(), Some(USED_UP));
+    assert!(view.fetch_failed);
+
+    // only the author searches fail, and bioRxiv is down: the feed is made, and what failed is said
+    let some = Refusing { fake: Fake::new(), all: false, biorxiv_down: true };
+    let report = run_with(&lib, &files, &some, None, D0 + 60_000);
+    assert!(!report.failed);
+    assert!(report.found > 0);
+    let p = report.problem.clone().unwrap();
+    assert!(p.starts_with("1 of ") && p.contains("OpenAlex requests failed: OpenAlex's free daily allowance"), "{p}");
+    assert!(p.contains("Couldn't reach bioRxiv: api.biorxiv.org answered HTTP 502"), "{p}");
+    let s = files.state();
+    assert_eq!(s.last_run, Some(D0 + 60_000));
+    let view = view::feed_view(&s, &files.watches(), &files.local(), D0 + 60_000, CET);
+    assert_eq!(view.problem, Some(p));
+    assert!(!view.fetch_failed);
+
+    // everything answers again: the problem is gone
+    let report = run_with(&lib, &files, &Fake::new(), None, D0 + 120_000);
+    assert_eq!(report.problem, None);
+    let view = view::feed_view(&files.state(), &files.watches(), &files.local(), D0 + 120_000, CET);
+    assert_eq!(view.problem, None);
+
+    // a failure here hides once another device has made a feed since
+    let local = LocalState { problem: "x".into(), failed: true, problem_at: D0, ..Default::default() };
+    let later = ForYouState { last_run: Some(D0 + 1), ..Default::default() };
+    assert_eq!(local.problem_for(&later), None);
+    assert_eq!(local.problem_for(&ForYouState { last_run: Some(D0 - 1), ..Default::default() }), Some(("x", true)));
+}
+
+#[test]
+fn openalex_allowance_used_up_is_said_and_not_waited_for() {
+    use crate::metadata::{refusal_with, with_key};
+    let body = r#"{"error":"Rate limit exceeded","message":"Insufficient budget. This request has no API key, so it counts against the free daily budget shared by everyone on your network's IP address","reason":"daily_budget","retryAfter":59525}"#;
+    let why = refusal_with("api.openalex.org", 429, Some(59525), body, false).unwrap();
+    assert_eq!(why, USED_UP);
+    let with = refusal_with("api.openalex.org", 429, None, body, true).unwrap();
+    assert_eq!(with, "OpenAlex's free daily allowance for your API key is used up (it renews at midnight UTC).");
+    // a short wait is waited for; other services' long waits are said
+    assert_eq!(refusal_with("api.openalex.org", 429, Some(2), "Too many requests", false), None);
+    assert_eq!(refusal_with("api.crossref.org", 429, Some(3600), "", false).as_deref(), Some("api.crossref.org asks to wait 60 minutes before asking again"));
+    // the key goes on OpenAlex's addresses only
+    assert_eq!(with_key("https://api.openalex.org/works?filter=x", "k1"), "https://api.openalex.org/works?filter=x&api_key=k1");
+    assert_eq!(with_key("https://api.openalex.org/works/W1", "k1"), "https://api.openalex.org/works/W1?api_key=k1");
+    assert_eq!(with_key("https://api.crossref.org/works?x=1", "k1"), "https://api.crossref.org/works?x=1");
+    assert_eq!(with_key("https://api.openalex.org/works?x=1", ""), "https://api.openalex.org/works?x=1");
+}
+
+#[test]
+fn the_openalex_key_is_kept_with_the_settings() {
+    let (root, lib, _files) = setup();
+    let fy = ForYou::new(lib, &root, root.parent().unwrap().join("local2"));
+    assert_eq!(fy.settings().openalex_key, "");
+    let s0 = serde_json::to_value(fy.state()).unwrap();
+    assert!(s0.get("openalexKey").is_none(), "left out when there is none, as Swift does");
+    // set_openalex_key also sets the process-wide key: put it back after
+    fy.set_openalex_key(" abc123 ").unwrap();
+    assert_eq!(fy.settings().openalex_key, "abc123");
+    assert_eq!(serde_json::to_value(fy.state()).unwrap()["openalexKey"], "abc123");
+    assert_eq!(crate::metadata::openalex_key(), "abc123");
+    fy.set_openalex_key("").unwrap();
+    assert_eq!(crate::metadata::openalex_key(), "");
+}
+
 #[test]
 fn preprints_from_biorxiv_by_keyword() {
     let fake = Fake::new();
     let kws = vec!["transcriptom".into(), "neurons".into(), "virus".into(), "ai".into()];
-    let hits = run::preprints(&fake, "biorxiv", "2026-11-16", "2026-11-17", &kws);
+    let hits = run::preprints(&fake, "biorxiv", "2026-11-16", "2026-11-17", &kws).unwrap();
     let dois: Vec<&str> = hits.iter().map(|h| h.meta.doi.as_str()).collect();
     // in the title, or two keywords in the abstract ("ai" is too short to count)
     assert_eq!(dois, vec!["10.64898/2026.11.13.766189", "10.64898/2026.11.11.765928"]);
@@ -479,7 +605,7 @@ fn preprints_from_biorxiv_by_keyword() {
     assert_eq!(h.meta.journal, "bioRxiv");
     assert_eq!(h.meta.authors[0], "E. Stronati");
     assert_eq!(h.meta.url, "https://www.biorxiv.org/content/10.64898/2026.11.13.766189");
-    assert!(run::preprints(&fake, "biorxiv", "a", "b", &["ai".into()]).is_empty());
+    assert!(run::preprints(&fake, "biorxiv", "a", "b", &["ai".into()]).unwrap().is_empty());
 }
 
 #[test]
@@ -757,3 +883,4 @@ fn live_run() {
 fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64
 }
+

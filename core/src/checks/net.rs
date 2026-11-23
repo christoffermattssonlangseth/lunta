@@ -90,8 +90,9 @@ impl Net for LiveNet {
         let mut waited = 0;
         loop {
             pacer().wait(url);
+            let with_key = crate::metadata::openalex_url(url);
             let mut r = agent()
-                .get(url)
+                .get(&with_key)
                 .header("User-Agent", USER_AGENT)
                 .header("Accept", "application/json, application/xml;q=0.9, */*;q=0.5")
                 .call()
@@ -101,8 +102,15 @@ impl Net for LiveNet {
                 200..=299 => return r.body_mut().with_config().limit(20 * 1024 * 1024).read_to_string().map(Some).map_err(|e| CoreError::Network(e.to_string())),
                 404 | 410 => return Ok(None),
                 429 | 502 | 503 | 504 if waited < 3 => {
-                    // as long as the service asks (at most a minute), else 2, 5, 10 seconds
+                    // as long as the service asks (at most a minute), else 2, 5, 10 seconds; not when
+                    // it won't answer for hours (OpenAlex's daily allowance used up)
                     let asked = r.headers().get("retry-after").and_then(|v| v.to_str().ok()).and_then(|v| v.trim().parse::<u64>().ok());
+                    if code == 429 || code == 503 {
+                        let body = r.body_mut().with_config().limit(64 * 1024).read_to_string().unwrap_or_default();
+                        if let Some(why) = crate::metadata::refusal(host(url), code, asked, &body) {
+                            return Err(CoreError::Network(why));
+                        }
+                    }
                     let wait = asked.unwrap_or([2, 5, 10][waited]).min(60);
                     std::thread::sleep(Duration::from_secs(wait));
                     waited += 1;

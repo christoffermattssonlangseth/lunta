@@ -52,7 +52,22 @@ impl ForYou {
     /// `library_dir`: the library folder (where foryou.json and watches.json are);
     /// `local_dir`: this app's own folder (what only this device keeps).
     pub fn new(lib: Arc<Library>, library_dir: impl Into<PathBuf>, local_dir: impl Into<PathBuf>) -> ForYou {
-        ForYou { lib, files: Files::new(library_dir, local_dir), lock: Mutex::new(()), running: AtomicBool::new(false), stage: Mutex::new(None), stop: AtomicBool::new(false) }
+        let f = ForYou { lib, files: Files::new(library_dir, local_dir), lock: Mutex::new(()), running: AtomicBool::new(false), stage: Mutex::new(None), stop: AtomicBool::new(false) };
+        f.use_openalex_key();
+        f
+    }
+
+    /// Every request to OpenAlex (here and in the rest of the app) carries your key, if you gave one.
+    fn use_openalex_key(&self) {
+        crate::metadata::set_openalex_key(self.state().openalex_key.as_deref().unwrap_or(""));
+    }
+
+    /// Your OpenAlex API key ("" for none), kept with New for You's settings (so every device has it).
+    pub fn set_openalex_key(&self, key: &str) -> Result<()> {
+        let k = key.trim().to_string();
+        self.change(|s| s.openalex_key = (!k.is_empty()).then(|| k.clone()))?;
+        self.use_openalex_key();
+        Ok(())
     }
 
     pub fn files(&self) -> &Files {
@@ -199,6 +214,7 @@ impl ForYou {
             *self.stage.lock().unwrap() = Some(s.to_string());
             progress(s);
         };
+        self.use_openalex_key();
         let r = run::Run { lib: &self.lib, files: &self.files, finder, writer, now, tz_min, progress: &say, stop: Some(&self.stop) };
         let out = run::run(&r);
         *self.stage.lock().unwrap() = None;

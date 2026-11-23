@@ -179,11 +179,14 @@ class ForYouModel(private val model: AppModel) {
     // ---- settings ----
 
     /** Saves the settings; a changed paragraph (or a newly connected ORCID iD) starts a run. */
-    fun save(interests: String, perDay: Int, morning: Int, preprints: String, runAnyway: Boolean) {
+    fun save(interests: String, perDay: Int, morning: Int, preprints: String, runAnyway: Boolean, openalexKey: String? = null) {
         val fy = core() ?: return
         model.scope.launch {
             val changed = try {
-                withContext(Dispatchers.IO) { fy.setSettings(interests, perDay.toUInt(), morning.toUInt(), preprints) }
+                withContext(Dispatchers.IO) {
+                    if (openalexKey != null) fy.setOpenalexKey(openalexKey.trim())
+                    fy.setSettings(interests, perDay.toUInt(), morning.toUInt(), preprints)
+                }
             } catch (e: Exception) { model.error = e.message; false }
             reload()
             if (changed || runAnyway) runNow()

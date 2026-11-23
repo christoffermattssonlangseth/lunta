@@ -319,6 +319,9 @@ pub struct ForYouState {
     pub preprints: Preprints,
     #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "lenient_orcid")]
     pub orcid: Option<OrcidLink>,
+    /// your OpenAlex API key (free), so Lunta has its own daily allowance on OpenAlex
+    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "lenient_opt_string")]
+    pub openalex_key: Option<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -342,6 +345,7 @@ impl Default for ForYouState {
             morning: 7 * 60,
             preprints: Preprints::Any,
             orcid: None,
+            openalex_key: None,
             extra: Map::new(),
         }
     }
@@ -426,6 +430,20 @@ pub struct LocalState {
     pub opened: i64,
     /// the run the last notification was for (ms)
     pub notified: i64,
+    /// what went wrong in this device's latest run, "" if nothing
+    pub problem: String,
+    /// nothing could be fetched (no feed was made)
+    pub failed: bool,
+    /// when (ms)
+    pub problem_at: i64,
+}
+
+impl LocalState {
+    /// The problem to show with this feed: this device's latest run's, unless a run since (here or
+    /// on another device) made the feed.
+    pub fn problem_for(&self, s: &ForYouState) -> Option<(&str, bool)> {
+        (!self.problem.is_empty() && self.problem_at >= s.last_run.unwrap_or(0)).then_some((self.problem.as_str(), self.failed))
+    }
 }
 
 // ---- files ----

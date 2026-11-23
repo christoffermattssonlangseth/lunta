@@ -67,6 +67,10 @@ pub struct RunReport {
     pub candidates: u32,
     /// what each source brought and what was screened (for testing by hand)
     pub stats: String,
+    /// what went wrong fetching ("OpenAlex's free daily allowance … is used up"), if anything
+    pub problem: Option<String>,
+    /// nothing could be fetched from OpenAlex: no feed was made, the run is still due
+    pub failed: bool,
 }
 
 /// Everything a run needs.
@@ -337,19 +341,21 @@ fn parallel<T: Sync, R: Send>(items: &[T], threads: usize, f: impl Fn(&T) -> R +
 }
 
 /// The last days of bioRxiv or medRxiv, keeping papers that use your keywords. The API serves a
-/// page per request, so after the first page the rest are fetched six at a time.
-pub fn preprints(finder: &dyn Finder, server: &str, from: &str, to: &str, keywords: &[String]) -> Vec<DiscoverHit> {
+/// page per request, so after the first page the rest are fetched six at a time. An error when
+/// the first page couldn't be fetched.
+pub fn preprints(finder: &dyn Finder, server: &str, from: &str, to: &str, keywords: &[String]) -> std::result::Result<Vec<DiscoverHit>, String> {
     let kws: Vec<String> = keywords.iter().map(|k| k.to_lowercase()).filter(|k| k.chars().count() > 3).collect();
     if kws.is_empty() {
-        return vec![];
+        return Ok(vec![]);
     }
-    let page = |cursor: usize| -> (Vec<Value>, usize) {
-        let Ok(j) = finder.get_json(&format!("https://api.biorxiv.org/details/{server}/{from}/{to}/{cursor}/json")) else { return (vec![], 0) };
+    let fetch = |cursor: usize| -> std::result::Result<(Vec<Value>, usize), String> {
+        let j = finder.get_json(&format!("https://api.biorxiv.org/details/{server}/{from}/{to}/{cursor}/json")).map_err(said)?;
         let msg = &j["messages"][0];
         let total = msg["total"].as_u64().map(|x| x as usize).or_else(|| msg["total"].as_str().and_then(|s| s.parse().ok())).unwrap_or(0);
-        (j["collection"].as_array().cloned().unwrap_or_default(), total)
+        Ok((j["collection"].as_array().cloned().unwrap_or_default(), total))
     };
-    let (mut all, total) = page(0);
+    let page = |cursor: usize| fetch(cursor).unwrap_or_default();
+    let (mut all, total) = fetch(0)?;
     let size = all.len().max(1);
     let cursors: Vec<usize> = (size..total.min(3000)).step_by(size).collect();
     for chunk in cursors.chunks(6) {
@@ -404,7 +410,7 @@ pub fn preprints(finder: &dyn Finder, server: &str, from: &str, to: &str, keywor
         }
         out.insert(doi, hit);
     }
-    order.into_iter().filter_map(|d| out.remove(&d)).collect()
+    Ok(order.into_iter().filter_map(|d| out.remove(&d)).collect())
 }
 
 /// Papers only: no data or code deposits, theses servers or book series.
@@ -471,25 +477,40 @@ pub fn run(r: &Run) -> Result<RunReport> {
         let title: String = p.meta.title.chars().take(80).collect();
         jobs.push(job(WatchKind::Citing, &p.meta.doi, format!("Cites “{title}” in your library."), false, 10));
     }
-    let mut pool: Vec<Found> = parallel(&jobs, 4, |j| {
+    let fetched: Vec<std::result::Result<Vec<Found>, String>> = parallel(&jobs, 4, |j| {
         let hits = match &j.not_by {
             Some(a) => r.finder.citing_new(&j.value, a, &since, j.limit),
             None => r.finder.watch_new(j.kind, &j.value, &since, j.limit),
         };
-        hits.unwrap_or_default().into_iter().map(|hit| Found { hit, source: j.source.clone(), explicit: j.explicit }).collect::<Vec<_>>()
-    })
-    .into_iter()
-    .flatten()
-    .collect();
+        hits.map(|h| h.into_iter().map(|hit| Found { hit, source: j.source.clone(), explicit: j.explicit }).collect::<Vec<_>>()).map_err(said)
+    });
+    // a source that can't be reached is said, not taken for a day without new papers
+    let errors: Vec<String> = fetched.iter().filter_map(|f| f.as_ref().err().cloned()).collect();
+    if !jobs.is_empty() && errors.len() == jobs.len() {
+        let why = errors[0].clone();
+        note_problem(r.files, &why, true, r.now)?;
+        report.problem = Some(why);
+        report.failed = true;
+        return Ok(report);
+    }
+    let mut problems: Vec<String> = vec![];
+    if let Some(e) = errors.first() {
+        problems.push(format!("{} of {} OpenAlex requests failed: {e}", errors.len(), jobs.len()));
+    }
+    let mut pool: Vec<Found> = fetched.into_iter().filter_map(std::result::Result::ok).flatten().collect();
     if !state.keywords.is_empty() && state.preprints != Preprints::None {
         let from = time::utc_date(r.now - if first { 4 } else { 2 } * time::DAY_MS);
         let to = time::utc_date(r.now);
         for (server, label) in [("biorxiv", "bioRxiv"), ("medrxiv", "medRxiv")] {
-            for hit in preprints(r.finder, server, &from, &to, &state.keywords) {
-                pool.push(Found { hit, source: label.to_string(), explicit: false });
+            match preprints(r.finder, server, &from, &to, &state.keywords) {
+                Ok(hits) => pool.extend(hits.into_iter().map(|hit| Found { hit, source: label.to_string(), explicit: false })),
+                Err(e) => problems.push(format!("Couldn't reach {label}: {e}")),
             }
         }
     }
+    let problem = problems.join(" ");
+    note_problem(r.files, &problem, false, r.now)?;
+    report.problem = (!problem.is_empty()).then_some(problem);
     // jobs finish in any order: keep the order they were asked in, as the Swift does
     let job_order: HashMap<&str, usize> = jobs.iter().enumerate().map(|(i, j)| (j.source.as_str(), i)).collect();
     pool.sort_by_key(|f| *job_order.get(f.source.as_str()).unwrap_or(&usize::MAX));
@@ -567,6 +588,27 @@ pub fn run(r: &Run) -> Result<RunReport> {
         summarize(r.files, w, r.tz_min, r.stop);
     }
     Ok(report)
+}
+
+/// An error as the apps say it (a network error's message without "network error: ").
+fn said(e: crate::model::CoreError) -> String {
+    match e {
+        crate::model::CoreError::Network(m) => m,
+        e => e.to_string(),
+    }
+}
+
+/// What went wrong in this device's latest run ("" when nothing did), kept on this device: another
+/// device may well reach the sources.
+fn note_problem(files: &Files, problem: &str, failed: bool, now: i64) -> Result<()> {
+    let mut l = files.local();
+    if l.problem.is_empty() && problem.is_empty() {
+        return Ok(());
+    }
+    l.problem = problem.to_string();
+    l.failed = failed && !problem.is_empty();
+    l.problem_at = now;
+    files.save_local(&l)
 }
 
 /// Step 3: the papers new to you, a paper found twice keeping its strongest reason (citing your

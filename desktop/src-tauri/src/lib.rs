@@ -1029,6 +1029,7 @@ pub fn run() {
             foryou::foryou_follow,
             foryou::foryou_connect_orcid,
             foryou::foryou_disconnect_orcid,
+            foryou::foryou_set_openalex_key,
             foryou::foryou_dismiss,
             foryou::foryou_boost,
             foryou::foryou_mark_opened,

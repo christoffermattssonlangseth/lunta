@@ -28,6 +28,10 @@ pub struct ForYouRunReport {
     pub found: u32,
     pub candidates: u32,
     pub stats: String,
+    /// what went wrong fetching, if anything (also in the feed: FeedView.problem)
+    pub problem: Option<String>,
+    /// nothing could be fetched from OpenAlex: no feed was made
+    pub failed: bool,
 }
 
 /// The morning notification: "New for You · 6 papers" and a sentence.
@@ -103,6 +107,11 @@ impl NewForYou {
         self.inner.disconnect_orcid()
     }
 
+    /// Your OpenAlex API key ("" for none): every request to OpenAlex carries it from now on.
+    pub fn set_openalex_key(&self, key: String) -> Result<()> {
+        self.inner.set_openalex_key(&key)
+    }
+
     pub fn dismiss(&self, key: String) -> Result<()> {
         self.inner.dismiss(&key)
     }
@@ -135,8 +144,8 @@ impl NewForYou {
             }
         };
         Ok(match self.inner.run(&NetFinder, writer, now_ms, tz_min, &say)? {
-            Some(r) => ForYouRunReport { ran: true, found: r.found, candidates: r.candidates, stats: r.stats },
-            None => ForYouRunReport { ran: false, found: 0, candidates: 0, stats: String::new() },
+            Some(r) => ForYouRunReport { ran: true, found: r.found, candidates: r.candidates, stats: r.stats, problem: r.problem, failed: r.failed },
+            None => ForYouRunReport { ran: false, found: 0, candidates: 0, stats: String::new(), problem: None, failed: false },
         })
     }
 

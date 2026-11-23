@@ -39,3 +39,6 @@ button.icon.fy-on { background: var(--sel); }
 .fy-seg { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
 .fy-seg button { flex: 1; border: none; border-radius: 0; }
 .fy-seg button.on { background: var(--accent); color: #fff; }
+.fy-problem { margin: 10px 12px; padding: 10px 12px; border-radius: 10px; background: var(--paper); border: 1px solid #e0a040; }
+.fy-problem-head { font-weight: 600; color: #b86e00; }
+.fy-problem p { margin: 4px 0 8px; }

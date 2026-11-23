@@ -71,6 +71,11 @@ pub struct FeedView {
     pub next_morning: i64,
     /// papers not added and found after the feed was last opened here: the sidebar's badge
     pub new_count: u32,
+    /// what went wrong in this device's latest run ("OpenAlex's free daily allowance … is used up"),
+    /// shown instead of "Nothing new today" with Retry
+    pub problem: Option<String>,
+    /// nothing could be fetched: "Couldn't reach OpenAlex" (else some sources failed)
+    pub fetch_failed: bool,
 }
 
 /// A watch, as the settings list it.
@@ -120,6 +125,8 @@ pub struct SettingsView {
     pub preprints: String,
     pub orcid: Option<OrcidView>,
     pub watches: Vec<WatchView>,
+    /// your OpenAlex API key, "" for none
+    pub openalex_key: String,
 }
 
 pub fn find_view(r: &FeedRecord, opened: i64, now: i64, tz_min: i32) -> FindView {
@@ -173,6 +180,8 @@ pub fn feed_view(s: &ForYouState, watches: &[Watch], local: &LocalState, now: i6
         last_run: s.last_run,
         next_morning: s.next_morning(now, tz_min),
         new_count: new_count(s, local),
+        problem: local.problem_for(s).map(|p| p.0.to_string()),
+        fetch_failed: local.problem_for(s).is_some_and(|p| p.1),
     }
 }
 
@@ -209,5 +218,6 @@ pub fn settings_view(s: &ForYouState, watches: &[Watch]) -> SettingsView {
             .iter()
             .map(|w| WatchView { id: w.id.clone(), kind: w.kind.name().into(), value: w.value.clone(), label: w.label.clone(), describe: w.describe() })
             .collect(),
+        openalex_key: s.openalex_key.clone().unwrap_or_default(),
     }
 }

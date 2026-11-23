@@ -82,12 +82,14 @@ fun ForYouScreen(model: AppModel) {
                 return@LazyColumn
             }
             if (!feed.hasInterests) item { Intro { settingsOpen = true } } else item { Status(fy, feed.lastRun, feed.nextMorning, feed.interests) }
+            val problem = feed.problem
+            if (problem != null && !fy.running) item { Problem(problem, feed.fetchFailed, { fy.runNow() }) { settingsOpen = true } }
             if (feed.hasInterests && feed.latest.isNotEmpty() && (feed.digest.isNotEmpty() || fy.summarizing)) {
                 item { Digest(model, feed.digest, feed.digestShare, fy.summarizing) }
             }
             if (feed.latest.isNotEmpty()) {
                 items(feed.latest, key = { "l" + it.key }) { f -> FindCard(model, f) }
-            } else if (feed.hasSetup && !fy.running) {
+            } else if (feed.hasSetup && !fy.running && feed.problem == null) {
                 item {
                     Text(
                         if (feed.earlier.isEmpty()) "Nothing yet. New papers are picked once a day; refresh to look now."
@@ -124,6 +126,26 @@ private fun notificationAsker(ctx: Context): (Boolean) -> Unit {
                     prefs.edit { putInt("notificationAsks", asked + 1) }
                     launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
+            }
+        }
+    }
+}
+
+/** Fetching failed (or partly): said, with Retry, instead of "Nothing new today". */
+@Composable
+private fun Problem(text: String, failed: Boolean, onRetry: () -> Unit, onSettings: () -> Unit) {
+    Card(Modifier.fillMaxWidth().padding(vertical = 6.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.WarningAmber, null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                Spacer(Modifier.width(8.dp))
+                Text(if (failed) "Couldn’t reach OpenAlex" else "Some sources couldn’t be reached", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer)
+            Row {
+                TextButton(onRetry) { Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Retry") }
+                if (text.contains("API key")) TextButton(onSettings) { Text("Add an API Key…") }
             }
         }
     }
@@ -373,6 +395,7 @@ fun ForYouSettingsSheet(model: AppModel, onDismiss: () -> Unit, onSaved: () -> U
     var pickingTime by remember { mutableStateOf(false) }
     var following by remember { mutableStateOf(false) }
     var preprintMenu by remember { mutableStateOf(false) }
+    var openalexKey by remember { mutableStateOf(s.openalexKey) }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(onDismiss, sheetState = sheet) {
@@ -381,7 +404,10 @@ fun ForYouSettingsSheet(model: AppModel, onDismiss: () -> Unit, onSaved: () -> U
                 Text("New for You", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
                 TextButton(onDismiss) { Text("Cancel") }
                 Button({
-                    fy.save(text, perDay, morning, preprints, connected)
+                    // a key after a failed run: look again with it
+                    val newKey = openalexKey.trim() != s.openalexKey
+                    fy.save(text, perDay, morning, preprints, connected || (newKey && openalexKey.isNotBlank() && fy.feed?.fetchFailed == true),
+                            openalexKey = if (newKey) openalexKey else null)
                     onSaved()
                     onDismiss()
                 }) { Text("Save") }
@@ -480,6 +506,13 @@ fun ForYouSettingsSheet(model: AppModel, onDismiss: () -> Unit, onSaved: () -> U
             }
             TextButton({ following = true }) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(6.dp)); Text("Follow a Journal, Author, Paper or Topic…") }
             Hint("New papers by authors you follow, and papers citing ones you watch, always show up. Papers in journals you follow come first and pass at a lower bar.")
+
+            Spacer(Modifier.height(16.dp))
+            Text("OpenAlex", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(openalexKey, { openalexKey = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("API key (optional)") })
+            val ctx = LocalContext.current
+            TextButton({ ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://openalex.org/settings/api"))) }) { Text("Get a Free Key") }
+            Hint("New for You searches OpenAlex. Without a key, OpenAlex gives everyone on your network one small daily allowance, which a university or mobile network can use up by morning. A free key gives Lunta its own.")
         }
     }
 
