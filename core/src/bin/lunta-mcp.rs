@@ -402,7 +402,11 @@ fn tools() -> Value {
         t("update_paper", "Correct a paper's details. Only the fields given are changed.",
           json!({"id": {"type": "string"}, "title": {"type": "string"}, "authors": {"type": "array", "items": {"type": "string"}},
                  "date": {"type": "string"}, "journal": {"type": "string"}, "doi": {"type": "string"}, "abstract": {"type": "string"},
-                 "keywords": {"type": "array", "items": {"type": "string"}}}), &["id"], false),
+                 "keywords": {"type": "array", "items": {"type": "string"}},
+                 "work_type": {"type": "string", "description": "Crossref's words: journal-article, proceedings-article, book-chapter, book, posted-content (preprint), report, dissertation, dataset, standard, webpage, post-weblog"},
+                 "publisher": {"type": "string", "description": "Publisher; for a dissertation or report, the university or institution"},
+                 "url": {"type": "string"}, "volume": {"type": "string"}, "issue": {"type": "string"}, "pages": {"type": "string"},
+                 "series": {"type": "string"}}), &["id"], false),
         t("check_references", "Check a reference list (a manuscript's, or one being reviewed) against the published record: each reference looked up by DOI (Crossref, DataCite), else by its details (Crossref, OpenAlex, PubMed), and its title, first author, number of authors, year, venue, volume, pages and DOI compared. Results per reference: verified, minor differences (which fields), not found (\"could not be found in Crossref, OpenAlex or PubMed\": report it as that, not as invented), DOI points to a different work, or not a paper. Retracted or corrected works are flagged. Pass `text` (a pasted list, numbered or author-year, or RIS) or `bibtex`. Read-only; about a second per reference.",
           json!({"text": {"type": "string", "description": "The references: a pasted list (one per line or numbered) or RIS"},
                  "bibtex": {"type": "string", "description": "A .bib file's contents"},
@@ -656,6 +660,13 @@ fn call(lib: &Library, name: &str, a: &Value) -> Result<Value, String> {
             if let Some(v) = arg_str(a, "doi") { m.doi = v; }
             if let Some(v) = arg_str(a, "abstract") { m.abstract_text = v; }
             if let Some(v) = a.get("keywords").and_then(|v| v.as_array()) { m.keywords = v.iter().filter_map(|x| x.as_str().map(String::from)).collect(); }
+            if let Some(v) = arg_str(a, "work_type") { m.work_type = v; }
+            if let Some(v) = arg_str(a, "publisher") { m.publisher = v; }
+            if let Some(v) = arg_str(a, "url") { m.url = v; }
+            if let Some(v) = arg_str(a, "volume") { m.volume = v; }
+            if let Some(v) = arg_str(a, "issue") { m.issue = v; }
+            if let Some(v) = arg_str(a, "pages") { m.pages = v; }
+            if let Some(v) = arg_str(a, "series") { m.series = v; }
             lib.update_meta(id.clone(), m).map_err(|e| e.to_string())?;
             Ok(summary(&need(&id)?))
         }
