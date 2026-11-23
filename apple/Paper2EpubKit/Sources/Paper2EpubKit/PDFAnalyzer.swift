@@ -203,6 +203,8 @@ final class PDFAnalyzer {
     static let spacingAccents: [String: String] = ["¨": "\u{0308}", "´": "\u{0301}", "ˆ": "\u{0302}", "˜": "\u{0303}",
                                                     "ˇ": "\u{030C}", "¸": "\u{0327}", "˚": "\u{030A}"]
     static let primes: Set<String> = ["′", "″", "‴"]
+    /// A problem's or exercise's label at the start of a line: "Problem 5.3", "Exercise 2.1".
+    static let problemLabelRE = re(#"^\s*(Problem|Exercise)\s+(\d+\.\d+|[A-Z]\.\d+|\d+)\b"#)
     static let noSpaceBefore: Set<String> = [",", ".", ";", ":", "!", "?", ")", "]", "}", "’", "”", "%"]
     static let noSpaceAfter: Set<String> = ["(", "[", "{", "‘", "“"]
     let log: (String) -> Void
@@ -1436,9 +1438,12 @@ final class PDFAnalyzer {
             let sizeChange = abs(l.size - a.size) >= 1.0
             let styleBreak = (a.bold > 0.9) != (l.bold > 0.9) && (at.count < 120 || l.text.count < 120)
             let cap = Self.captionRE.test(l.text.trimmingCharacters(in: .whitespaces))
+            // (a problem's or exercise's bold label after a sentence's end starts its paragraph: "Problem 5.3∗
+            // Suppose…" set right under the last problem's last line)
+            let problem = endsSentence && l.spans.first?.bold == true && Self.problemLabelRE.test(l.text)
             // a bullet starts a list item; the item's next lines are indented to its text
             let bullet = Self.isBullet(l), inItem = Self.isBullet(cur[0])
-            if jumped || gap > 0.75 * max(l.size, a.size) || shortA || indent || hanging || sizeChange || styleBreak || cap || bullet
+            if jumped || gap > 0.75 * max(l.size, a.size) || shortA || indent || hanging || sizeChange || styleBreak || cap || bullet || problem
                 || (cur.count == 1 && l.bbox.x0 > a.bbox.x0 + 8 && gap > 0.3 * l.size && !numberedItem && !inItem) {
                 if jumped && !(gap > 0.75 * l.size) && !shortA && !sizeChange && !cap
                     && l.text.trimmingCharacters(in: .whitespaces).first?.isLowercase == true && !Self.isDOILine(l.text) {
@@ -1758,7 +1763,7 @@ final class PDFAnalyzer {
                 // (not a list item, nor sentences about formulas set in math type: words of running text
                 // in most of its lines)
                 let words = Self.textWords(p.text)
-                let talk = Self.isBullet(p.lines[0]) || words >= 4 && CGFloat(words) > 1.5 * CGFloat(p.lines.count)
+                let talk = Self.isBullet(p.lines[0]) || Self.problemLabelRE.test(p.text) || words >= 4 && CGFloat(words) > 1.5 * CGFloat(p.lines.count)
                 if mf > 0.3 && n < 400 && !Self.isProse(p.text) && !talk { p.kind = .equation }
                 // a book's display equations: numbered ("y = f[x, ϕ]. (2.2)"), or a short piece in math type
                 if kind.isBookLike, p.kind == .text, n < 200, !Self.isProse(p.text),

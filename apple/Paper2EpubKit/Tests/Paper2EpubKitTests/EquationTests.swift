@@ -162,4 +162,21 @@ final class EquationTests: XCTestCase {
         XCTAssertTrue(h.contains("an efficient way to find the flow of things"), h)
         XCTAssertNil(h.range(of: "[\u{FB00}-\u{FB06}]", options: .regularExpression), h)
     }
+
+    func testAProblemsLabelStartsItsParagraph() async throws {
+        // "Problem 1.2" in bold right under the last line of problem 1.1, which ends a sentence
+        var p = [Piece(text: "A Study of Things", size: 20, x: 72, y: 80), Piece(text: "1 Introduction", size: 12, x: 72, y: 130)]
+        p += FootnoteTests.body("page 0", y: 160, n: 3)
+        let w1 = FootnoteTests.width("Problem 1.1", 9) + 4, w2 = FootnoteTests.width("Problem 1.2", 9) + 4
+        p += [Piece(text: "Problem 1.1", size: 9, x: 72, y: 220, font: "Times-Bold"),
+              Piece(text: "Show that the model is linear in its parameters and that its loss", size: 9, x: 72 + w1, y: 220),
+              Piece(text: "function is convex in all of them, which ends the problem.", size: 9, x: 72, y: 230),
+              Piece(text: "Problem 1.2", size: 9, x: 72, y: 240, font: "Times-Bold"),
+              Piece(text: "Suppose that the data are drawn from a normal distribution with", size: 9, x: 72 + w2, y: 240),
+              Piece(text: "an unknown mean and variance, and estimate both of them here.", size: 9, x: 72, y: 250)]
+        p += FootnoteTests.body("page 0 on", y: 280, n: 3)
+        let book = try await PDFBook.build(FootnoteTests.pdf([p, FootnoteTests.body("the end", y: 100)]), meta: PaperMeta(), log: { _ in })
+        let h = html(book)
+        XCTAssertNotNil(h.range(of: #"ends the problem\.</p><p><strong>Problem 1\.2</strong>"#, options: .regularExpression), h)
+    }
 }

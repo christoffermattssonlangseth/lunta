@@ -238,7 +238,7 @@ extension PDFAnalyzer {
         /// from the column's left edge or in math type
         func mathLike(_ l: PLine, colLeft: CGFloat) -> Bool {
             let t = l.text.trimmingCharacters(in: .whitespaces)
-            if t.isEmpty || Self.isProse(t) || Self.captionRE.test(t) { return false }
+            if t.isEmpty || Self.isProse(t) || Self.captionRE.test(t) || Self.problemLabelRE.test(t) { return false }
             if l.bold > 0.6 && l.math < 0.2 && t.count > 3 { return false }   // a heading, a run-in head
             let words = Self.textWords(t)
             let em = max(l.size, body)
