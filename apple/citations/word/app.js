@@ -10,7 +10,7 @@
 // Microsoft store listing): either way the library comes from the Lunta app on this computer.
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
-var VERSION = '20';   // bump with the ?v= in index.html, so Word loads the new files
+var VERSION = '21';   // bump with the ?v= in index.html, so Word loads the new files
 var NS = 'https://lunta.app/ns/word-citations/1';
 var picked = [];          // [{id, title, ...}]
 var style = 'apa';
@@ -20,16 +20,71 @@ var busy = false, ready = false, lastSearch = 0;
 var checking = false, stopChecking = false, claimItems = [];   // Check Citations
 var current = null;           // the citation the cursor is in: {id (content control), ids, opts}
 var editing = null;           // the paper of the current citation whose options are open
+// Word for Mac may not answer at all while it saves the document: every round trip to Word has a
+// time limit, so the panel never waits for ever (busy, the buttons grey, a click never looked at)
+var WORD_WAIT = 30000;        // ms for one round trip to Word (Lunta's requests have their own)
+var RETRY_WAIT = 500;         // ms before Word is asked again after an error
+var POLL_MS = 1000;           // the cursor looked at this often while the panel shows ...
+var QUIET_MS = 3000;          // ... and Word hasn't said the selection changed for this long
+var STALLED = 'Lunta’s update stopped (Word didn’t answer). Try again.';
 
 function $(id) { return document.getElementById(id); }
 function status(msg, err) { var s = $('status'); s.textContent = msg || ''; s.className = 'status' + (err ? ' err' : ''); }
 // Word's errors say little ("Check the OfficeExtension.Error.debugInfo"): show where and what
 function fail(e) {
   if (e && e.kind) { status(LuntaCite.describe(e, 'word'), true); return; }
+  if (window.console) console.error(e, e && e.debugInfo);
+  status(isWordError(e) ? 'Word stopped Lunta: ' + wordText(e) + '. Try again.' : (e && e.message || String(e)), true);
+}
+/** An error from Word (not Lunta's, not the panel's own message). */
+function isWordError(e) { return !!e && !e.kind && !e.stalled && (e.name === 'OfficeExtension.Error' || !!e.code); }
+/** Word's error in words: its message, code and where ("The action isn't supported · GeneralException · ContentControl.getById"). */
+function wordText(e) {
   var d = e && e.debugInfo, more = '';
-  try { more = d && d.errorLocation ? d.errorLocation : (d ? JSON.stringify(d) : ''); } catch (x) {}
-  if (window.console) console.error(e, d);
-  status((e && e.message || String(e)) + (more && e.name === 'OfficeExtension.Error' ? ' · ' + more : ''), true);
+  try { more = d && d.errorLocation ? d.errorLocation : ''; } catch (x) {}
+  return [e && e.message || String(e), e && e.code && e.code !== e.message ? e.code : '', more].filter(Boolean).join(' · ');
+}
+
+/** setTimeout that doesn't keep a test's process alive. */
+function later(fn, ms) { var t = setTimeout(fn, ms); if (t && t.unref) t.unref(); return t; }
+function stalled() { var e = new Error(STALLED); e.stalled = true; return e; }
+
+/**
+ * Word.run with a time limit on every wait for Word (the start, each sync, the end; not Lunta's
+ * requests in between, which have their own) and, if `retry`, Word's errors (GeneralException or
+ * ItemNotFound after a save, "The action isn't supported" in Word for Mac) asked once more after a
+ * moment: only for what can be done twice (reading, Update All), never for an insertion.
+ */
+function wordRun(fn, retry) {
+  var once = function () {
+    return new Promise(function (ok, no) {
+      var over = false, timer = null;
+      var stop = function () { if (timer) clearTimeout(timer); timer = null; };
+      var wait = function () { stop(); timer = later(function () { over = true; no(stalled()); }, WORD_WAIT); };
+      wait();
+      var run;
+      try {
+        run = Word.run(function (ctx) {
+          stop();
+          if (over) throw stalled();
+          var sync = ctx.sync;
+          ctx.sync = function () {
+            wait();
+            return sync.apply(ctx, arguments).then(function (v) { stop(); return v; }, function (e) { stop(); throw e; });
+          };
+          var out = fn(ctx);
+          // Word's last round trip, once the batch is done
+          return Promise.resolve(out).then(function (v) { wait(); return v; }, function (e) { wait(); throw e; });
+        });
+      } catch (e) { stop(); no(e); return; }
+      Promise.resolve(run).then(function (v) { stop(); if (!over) ok(v); }, function (e) { stop(); if (!over) no(e); });
+    });
+  };
+  return once().catch(function (e) {
+    if (!retry || !isWordError(e)) throw e;
+    if (window.console) console.error('Word: ' + wordText(e) + ' (asking again)', e);
+    return new Promise(function (r) { later(r, RETRY_WAIT); }).then(once);
+  });
 }
 
 function getJSON(path, body, timeout) {
@@ -51,16 +106,18 @@ function setButtons() {
 /** One change to the document at a time (a second click while updating does nothing). */
 function exclusive(fn) {
   return function () {
-    if (busy || !ready) return;
+    if (!ready) { status('Lunta is still loading this document. Wait a moment, or close and reopen the Lunta panel.', true); return; }
+    if (busy) { status('Lunta is still changing the document. Wait a moment.'); return; }
     busy = true; setButtons();
-    return Promise.resolve().then(fn).catch(fail).then(idle);
+    // the buttons back whatever happens (every wait for Word or Lunta has a time limit)
+    return Promise.resolve().then(fn).catch(fail).then(idle, idle);
   };
 }
 
 /** Done changing the document: the buttons back, and a click in the text meanwhile looked at now. */
 function idle() {
   busy = false; setButtons();
-  if (selPending) onSelection();
+  if (selPending) lookAtSelection();
 }
 
 function renderPicked() {
@@ -99,7 +156,9 @@ function search(q) {
 
 function asyncCall(fn) {
   return new Promise(function (ok, no) {
-    fn(function (r) { if (r.status === Office.AsyncResultStatus.Succeeded) ok(r.value); else no(r.error); });
+    // Word may not call back while it saves: never wait for ever
+    var t = later(function () { no(stalled()); }, WORD_WAIT);
+    fn(function (r) { clearTimeout(t); if (r.status === Office.AsyncResultStatus.Succeeded) ok(r.value); else no(r.error); });
   });
 }
 function xmlParts() {
@@ -161,7 +220,7 @@ function saveState() {
 
 var insertCitation = exclusive(function () {
   var ids = picked.map(function (p) { return p.id; });
-  return Word.run(function (ctx) {
+  return wordRun(function (ctx) {
     var sel = ctx.document.getSelection();
     var parent = sel.parentContentControlOrNullObject;
     parent.load('isNullObject,tag');
@@ -183,7 +242,7 @@ var insertCitation = exclusive(function () {
     });
   }).then(function () {
     picked = []; renderPicked();
-    if (current) { current.ids = LuntaCite.unique(current.ids.concat(ids)); lastShown = ''; showCurrent(); }
+    if (current) { current.ids = LuntaCite.unique(current.ids.concat(ids)); current.tag = LuntaCite.makeTag(current.ids); lastShown = ''; showCurrent(); }
     return update().catch(function (e) {
       var err = new Error(LuntaCite.describe(e, 'word') + ' The citation is in the document as “(…)”; Update All fills it in.');
       throw err;
@@ -209,7 +268,7 @@ function dressCitation(cc, ids, options) {
 
 var insertBibliography = exclusive(function () {
   var existed = false;
-  return Word.run(function (ctx) {
+  return wordRun(function (ctx) {
     var existing = ctx.document.contentControls.getByTag(LuntaCite.BIB_TAG);
     existing.load('items');
     return ctx.sync().then(function () {
@@ -237,62 +296,137 @@ var insertBibliography = exclusive(function () {
 // left in it, as in documents converted from ReadCube Papers) is found in `inside`, read with the
 // document's citations when the panel opens and at every Update All, not by asking Word for its
 // parents one by one. Clicks while one is looked at are looked at once it is done, the last one only.
+// After a save, Word for Mac may stop saying when the selection changes (the card kept the citation
+// clicked before the save), may not answer a round trip at all, and may give the controls new ids.
+// So: every wait for Word has a time limit (wordRun) and the card says when it couldn't read the
+// citation; the cursor is also looked at every second while the panel shows and Word has said
+// nothing for a while (when the cursor moved without Word saying so, its handler is registered
+// again), and the handler is registered again when the panel shows or gets the focus; a control
+// remembered in `inside` or `outside` is used only if its tag, title and text are still the same,
+// else Word is asked for its parents as for one not seen.
 var lastShown = '', selPending = false, selSeq = 0, selRunning = false, selAgain = false;
+var lastEvent = 0;  // when Word last said the selection changed
 var seen = {};      // papers' details Lunta gave for the citation box this session: {id: entry}
-var inside = {};    // a control inside a Lunta citation: {control id: {id, tag, title} of the citation}
-var outside = {};   // controls not in a citation (asked Word once): {control id: true}
+var inside = {};    // a control inside a Lunta citation: {control id: {cite: {id, tag, title} of the citation, key}}
+var outside = {};   // controls not in a citation (asked Word once): {control id: key}
+var watching = null;   // the selection handler registered: null while Word hasn't answered
+/** What a remembered control must still be: its tag, title and text. */
+function controlKey(c) { return [c.tag || '', c.title || '', c.text || ''].join('\u0001'); }
+/** Word said the selection changed. */
 function onSelection() {
+  lastEvent = Date.now();
+  lookAtSelection();
+}
+function lookAtSelection() {
   if (busy || !ready) { selPending = true; return; }
   if (selRunning) { selAgain = true; return; }
   checkSelection();
 }
-function checkSelection() {
-  if (busy || !ready) { selPending = true; return Promise.resolve(); }
+/** Looks at the citation under the cursor; resolves true if the card changed. `quiet`: not a click
+ *  (the poll), so a failure isn't shown in the card. */
+function checkSelection(quiet) {
+  if (busy || !ready) { selPending = true; return Promise.resolve(false); }
   selPending = false; selAgain = false; selRunning = true;
   var mine = ++selSeq;
-  return Word.run(function (ctx) {
+  var before = current ? current.id + ':' + current.tag + ':' + current.title : '';
+  return wordRun(function (ctx) {
     var cc = ctx.document.getSelection().parentContentControlOrNullObject;
-    cc.load('isNullObject,id,tag,title');
+    cc.load('isNullObject,id,tag,title,text');
     return ctx.sync().then(function () { return citationAt(ctx, cc, 0); });
-  }).then(function (cc) {
-    if (mine !== selSeq) return;   // a later click answered first
+  }, true).then(function (cc) {
+    if (mine !== selSeq) return false;   // a later click answered first
     var ids = cc ? LuntaCite.parseTag(cc.tag) : null;
-    current = ids && ids.length ? { id: cc.id, ids: ids, opts: LuntaCite.optionsOfTitle(cc.title) || {} } : null;
+    current = ids && ids.length ? { id: cc.id, ids: ids, opts: LuntaCite.optionsOfTitle(cc.title) || {}, tag: cc.tag, title: cc.title } : null;
     if (!current) editing = null;
     showCurrent();
-  }).catch(function () {}).then(function () {
+    return before !== (current ? current.id + ':' + current.tag + ':' + current.title : '');
+  }).catch(function (e) {
+    if (window.console) console.error('reading the citation under the cursor', e);
+    if (mine === selSeq && !quiet) cardError(e);
+    return false;
+  }).then(function (changed) {
     selRunning = false;
-    if (selAgain) onSelection();
+    if (selAgain || selPending) lookAtSelection();
+    return changed;
   });
 }
 
+/** The card says it couldn't read the citation under the cursor, rather than showing the last one. */
+function cardError(e) {
+  current = null; editing = null; lastShown = '';
+  var list = $('citelist');
+  list.innerHTML = '';
+  var row = document.createElement('div');
+  row.className = 'status err';
+  row.textContent = 'Couldn’t read the citation here (' + (e && e.stalled ? 'Word didn’t answer' : 'Word: ' + wordText(e)) + '). Click it again.';
+  list.appendChild(row);
+  $('current').hidden = false;
+  setButtons();
+}
+
 /** The Lunta citation the loaded control `cc` is or is inside, {id, tag, title}, or null.
- *  Word is asked for its parents only for a control not seen when the citations were read. */
+ *  Word is asked for its parents only for a control not seen (or changed since) when the citations were read. */
 function citationAt(ctx, cc, depth) {
   if (cc.isNullObject) return null;
   if (LuntaCite.parseTag(cc.tag)) return { id: cc.id, tag: cc.tag, title: cc.title };
   if (cc.tag === LuntaCite.BIB_TAG || depth >= 3) return null;
-  if (inside[cc.id]) return inside[cc.id];
-  if (outside[cc.id]) return null;
+  var key = controlKey(cc);
+  if (inside[cc.id] && inside[cc.id].key === key) return inside[cc.id].cite;
+  if (outside[cc.id] === key) return null;
   var parent = cc.parentContentControlOrNullObject;
-  parent.load('isNullObject,id,tag,title');
+  parent.load('isNullObject,id,tag,title,text');
   return ctx.sync().then(function () {
     var found = citationAt(ctx, parent, depth + 1);
     return Promise.resolve(found).then(function (c) {
-      if (c) inside[cc.id] = c; else outside[cc.id] = true;
+      delete inside[cc.id]; delete outside[cc.id];
+      if (c) inside[cc.id] = { cite: c, key: key }; else outside[cc.id] = key;
       return c;
     });
   });
 }
 
 /** Remembers the document's citations' inner controls (`inside`): `cites` are the loaded Lunta
- *  citation controls, `inner` their loaded contentControls collections. */
+ *  citation controls, `inner` their loaded contentControls collections (items/id,tag,title,text). */
 function rememberInside(cites, inner) {
   inside = {}; outside = {};
   cites.forEach(function (c, i) {
-    var entry = { id: c.id, tag: c.tag, title: c.title };
-    (inner[i] && inner[i].items || []).forEach(function (x) { inside[x.id] = entry; });
+    var cite = { id: c.id, tag: c.tag, title: c.title };
+    (inner[i] && inner[i].items || []).forEach(function (x) { inside[x.id] = { cite: cite, key: controlKey(x) }; });
   });
+}
+
+/** The selection handler registered (`again`: removed first, as Word for Mac may lose it on a save). */
+function watch(again) {
+  try {
+    var d = Office.context.document, type = Office.EventType.DocumentSelectionChanged;
+    var added = false;
+    var add = function () {
+      if (added) return;
+      added = true;
+      d.addHandlerAsync(type, onSelection, function (r) {
+        watching = !r || r.status === Office.AsyncResultStatus.Succeeded;
+        if (!watching && window.console) console.error('Word refused the selection handler', r && r.error);
+      });
+    };
+    if (again && d.removeHandlerAsync) {
+      d.removeHandlerAsync(type, { handler: onSelection }, add);
+      later(add, 2000);   // Word may not call back
+    } else add();
+  } catch (e) { watching = false; }
+}
+
+/** Looks at the cursor every POLL_MS while the panel shows, when Word hasn't said for QUIET_MS. */
+function poll() {
+  if (!POLL_MS) return;
+  later(function () {
+    var shown = !document.visibilityState || document.visibilityState === 'visible';
+    if (!POLL_MS) return;
+    if (!ready || busy || selRunning || !shown || Date.now() - lastEvent < QUIET_MS) { poll(); return; }
+    checkSelection(true).then(function (changed) {
+      // the cursor moved and Word didn't say: its handler is lost
+      if (changed && Date.now() - lastEvent >= QUIET_MS) watch(true);
+    }).then(poll, poll);
+  }, POLL_MS);
 }
 
 /** One line per paper of the current citation: from Lunta, or from the document's copy. */
@@ -342,7 +476,29 @@ function showCurrent() {
       put(row.querySelector('.t'), e.title || 'Untitled');
       put(row.querySelector('.m'), LuntaCite.hitMeta(e));
     });
-  }).catch(function () {});
+  }).catch(function (e) {
+    // rows with nothing from the document's copy say why
+    if (lastShown !== key) return;
+    Object.keys(rows).forEach(function (id) {
+      var t = rows[id].querySelector('.t');
+      if (t.textContent === '…') { t.textContent = 'Details not available'; rows[id].querySelector('.m').textContent = LuntaCite.describe(e, 'word'); }
+    });
+  });
+}
+
+/** The current citation's control in the document: by its id, or (Word gave the controls new ids,
+ *  after a save) the one citation with the same tag and title. */
+function findCitation(ctx, target) {
+  var all = ctx.document.contentControls;
+  all.load('items/id,items/tag,items/title');
+  return ctx.sync().then(function () {
+    var cites = all.items.filter(function (c) { return LuntaCite.parseTag(c.tag); });
+    var byId = cites.filter(function (c) { return c.id === target.id; })[0];
+    if (byId) return byId;
+    var same = cites.filter(function (c) { return c.tag === target.tag && c.title === target.title; });
+    if (same.length === 1) return same[0];
+    throw new Error('That citation isn’t where Lunta saw it (the document changed or was saved meanwhile). Click it again, then try again.');
+  });
 }
 
 var removeFromCitation = function (id) {
@@ -351,13 +507,16 @@ var removeFromCitation = function (id) {
   return exclusive(function () {
     var left = target.ids.filter(function (x) { return x !== id; });
     var opts = LuntaCite.cleanOptions(target.opts, left);
-    return Word.run(function (ctx) {
-      var cc = ctx.document.contentControls.getById(target.id);
-      if (left.length) { cc.tag = LuntaCite.makeTag(left); cc.title = LuntaCite.optionsTitle(opts); }
-      else cc.delete(false);   // its last paper: the citation goes, text and all
-      return ctx.sync();
-    }).then(function () {
-      current = left.length ? { id: target.id, ids: left, opts: opts || {} } : null;
+    var id2 = target.id;
+    return wordRun(function (ctx) {
+      return findCitation(ctx, target).then(function (cc) {
+        id2 = cc.id;
+        if (left.length) { cc.tag = LuntaCite.makeTag(left); cc.title = LuntaCite.optionsTitle(opts); }
+        else cc.delete(false);   // its last paper: the citation goes, text and all
+        return ctx.sync();
+      });
+    }, true).then(function () {
+      current = left.length ? { id: id2, ids: left, opts: opts || {}, tag: LuntaCite.makeTag(left), title: LuntaCite.optionsTitle(opts) } : null;
       editing = null;
       lastShown = '';
       showCurrent();
@@ -374,12 +533,15 @@ var setPaperOptions = function (id, o) {
     var map = Object.assign({}, target.opts || {});
     map[id] = o;
     map = LuntaCite.cleanOptions(map, target.ids);
-    return Word.run(function (ctx) {
-      var cc = ctx.document.contentControls.getById(target.id);
-      cc.title = LuntaCite.optionsTitle(map);
-      return ctx.sync();
-    }).then(function () {
-      current = { id: target.id, ids: target.ids, opts: map || {} };
+    var id2 = target.id;
+    return wordRun(function (ctx) {
+      return findCitation(ctx, target).then(function (cc) {
+        id2 = cc.id;
+        cc.title = LuntaCite.optionsTitle(map);
+        return ctx.sync();
+      });
+    }, true).then(function () {
+      current = { id: id2, ids: target.ids, opts: map || {}, tag: target.tag, title: LuntaCite.optionsTitle(map) };
       editing = null; lastShown = '';
       showCurrent();
       return update();
@@ -472,7 +634,7 @@ function update() {
     return Promise.reject(new Error('This document’s citation style wasn’t saved with it. Choose its style in the menu above first (Update All would otherwise rewrite every citation in ' + LuntaCite.styleName(style) + ').'));
   }
   status('Updating…');
-  return Word.run(function (ctx) {
+  return wordRun(function (ctx) {
     var all = ctx.document.contentControls;
     all.load('items/id,items/tag,items/text,items/title');
     return ctx.sync().then(function () {
@@ -481,7 +643,7 @@ function update() {
       var inner = bibs.map(function (b) { var cs = b.contentControls; cs.load('items/id'); return cs; });
       var cands = all.items.filter(function (c) { return LuntaCite.parseTag(c.tag) !== null; });
       cands.forEach(function (c) { c.font.load('superscript'); });
-      var within = cands.map(function (c) { var cs = c.contentControls; cs.load('items/id'); return cs; });
+      var within = cands.map(function (c) { var cs = c.contentControls; cs.load('items/id,items/tag,items/title,items/text'); return cs; });
       return ctx.sync().then(function () {
         rememberInside(cands, within);
         var nested = {};
@@ -556,7 +718,7 @@ function update() {
         });
       });
     });
-  });
+  }, true);
 }
 
 var updateAll = exclusive(function () { return update(); });
@@ -570,7 +732,7 @@ var resolved = [];   // placeholders written: {text, occurrence}, so the next of
 
 /** The placeholders in the document's text, in order: {text, cites, occurrence (among the same text, outside citations)}. */
 function scanPlaceholders() {
-  return Word.run(function (ctx) {
+  return wordRun(function (ctx) {
     var paras = ctx.document.body.paragraphs;
     paras.load('items/text');
     return ctx.sync().then(function () {
@@ -605,7 +767,7 @@ function scanPlaceholders() {
         });
       });
     });
-  });
+  }, true);
 }
 
 /** Writes the citation of `ids` where the placeholder is (and the parts left as written after it), then Update All. */
@@ -613,7 +775,7 @@ function writePlaceholder(ph, ids, leftover) {
   if (busy) return Promise.reject(new Error('Lunta is updating the document. Try again in a moment.'));
   busy = true; setButtons();
   var before = resolved.filter(function (r) { return r.text === ph.text && r.occurrence < ph.occurrence; }).length;
-  return Word.run(function (ctx) {
+  return wordRun(function (ctx) {
     var hits = ctx.document.body.search(ph.text, { matchCase: true });
     hits.load('items/text');
     return ctx.sync().then(function () {
@@ -664,7 +826,7 @@ var resolveCitations = exclusive(function () {
 // The document is only read: the body's paragraphs and the Lunta citations in each.
 
 function claimParagraphs() {
-  return Word.run(function (ctx) {
+  return wordRun(function (ctx) {
     var paras = ctx.document.body.paragraphs;
     paras.load('items/text');
     return ctx.sync().then(function () {
@@ -678,7 +840,7 @@ function claimParagraphs() {
         });
       });
     });
-  });
+  }, true);
 }
 
 /** Shows the paper at the passage in Lunta (the API asks the app; the lunta:// link is the way back). */
@@ -808,7 +970,7 @@ var convertCitations = exclusive(function () {
   status('Looking for citations from Zotero, EndNote, Mendeley and ReadCube Papers…');
   return getJSON('/status').then(function (s) {
     if ((s.api || 0) < 4) throw new Error('This version of Lunta can’t convert citations. Update Lunta and try again.');
-    return Word.run(readForeign);
+    return wordRun(readForeign, true);
   }).then(function (found) {
     var box = $('convertBox');
     if (!found.cites.length) {
@@ -853,7 +1015,7 @@ var runConversion = function (keys) {
       var res = LuntaCite.convertResolve(conv.plan, added);
       status('Converting ' + res.convert.length + ' citations…');
       var left = res.left.map(function (l) { return { text: conv.found.cites[l.index].text, reason: l.reason, source: conv.found.cites[l.index].source }; });
-      return Word.run(function (ctx) {
+      return wordRun(function (ctx) {
         return replaceForeign(ctx, conv, res, left);
       }).then(function (done) {
         closeConvert();
@@ -956,7 +1118,7 @@ var convertToPlain = exclusive(function () {
   return update().catch(function (e) {
     throw new Error(LuntaCite.describe(e, 'word') + ' Nothing was converted to plain text.');
   }).then(function () {
-    return Word.run(function (ctx) {
+    return wordRun(function (ctx) {
       var all = ctx.document.contentControls;
       all.load('items/id,items/tag');
       return ctx.sync().then(function () {
@@ -1060,15 +1222,12 @@ Office.onReady(function () {
   if ($('clclose')) $('clclose').onclick = closeClaims;
   if ($('clstop')) $('clstop').onclick = function () { stopChecking = true; };
   // clicking a citation in the text shows its papers here
-  var watching = null;   // null: Word hasn't answered yet
-  var watch = function () {
-    try {
-      Office.context.document.addHandlerAsync(Office.EventType.DocumentSelectionChanged, onSelection, function (r) {
-        watching = !r || r.status === Office.AsyncResultStatus.Succeeded;
-      });
-    } catch (e) { watching = false; }
-  };
   watch();
+  // Word for Mac may lose the handler on a save: registered again when the panel shows or gets the focus
+  if (document.addEventListener) document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && ready) { watch(true); lookAtSelection(); }
+  });
+  if (window.addEventListener) window.addEventListener('focus', function () { if (ready) watch(true); });
   status('Loading…');
   // the document's style before anything may be updated
   loadState().then(function (st) {
@@ -1077,16 +1236,18 @@ Office.onReady(function () {
     style = saved ? st.style : lastStyle();
     // the document's citations: is there any without a saved style
     // and the controls inside them, so a click there is answered without asking Word for parents
-    return Word.run(function (ctx) {
+    return wordRun(function (ctx) {
       var all = ctx.document.contentControls;
       all.load('items/id,items/tag,items/title');
       return ctx.sync().then(function () {
         var cites = all.items.filter(function (c) { return LuntaCite.parseTag(c.tag); });
         styleUnknown = !saved && cites.length > 0;
-        var inner = cites.map(function (c) { var cs = c.contentControls; cs.load('items/id'); return cs; });
-        return (cites.length ? ctx.sync() : Promise.resolve()).then(function () { rememberInside(cites, inner); }, function () {});
+        var inner = cites.map(function (c) { var cs = c.contentControls; cs.load('items/id,items/tag,items/title,items/text'); return cs; });
+        return (cites.length ? ctx.sync() : Promise.resolve()).then(function () { rememberInside(cites, inner); }, function (e) {
+          if (window.console) console.error('reading the controls inside citations', e);   // Word is asked for parents instead
+        });
       });
-    }).catch(function (e) {
+    }, true).catch(function (e) {
       if (!saved) throw e;   // can't tell: never update in a guessed style
       if (window.console) console.error('reading the citations', e);
     });
@@ -1096,6 +1257,7 @@ Office.onReady(function () {
     if (watching === false) watch();   // Word wasn't ready for it at first
     // the citation the cursor is in already, without waiting for a click or Update All
     checkSelection();
+    poll();
     if (styleUnknown) {
       status('This document has citations but its style wasn’t saved with it (it was made with another copy of the add-in). Choose its style in the menu above.', true);
       return;
@@ -1104,6 +1266,11 @@ Office.onReady(function () {
       if (e.kind === 'offline' && Object.keys(state.papers).length) status('Lunta isn’t running. Update All still works from the copy of the cited papers saved in this document; to search and cite, open Lunta.', true);
       else fail(e);
     });
-  }).catch(fail);
+  }).catch(function (e) {
+    if (ready) { fail(e); return; }
+    if (window.console) console.error('loading', e);
+    var why = e && e.stalled ? 'Word didn’t answer' : isWordError(e) ? 'Word: ' + wordText(e) : e && e.kind ? LuntaCite.describe(e, 'word') : (e && e.message || String(e));
+    status('Lunta couldn’t read this document (' + why + '). Close and reopen the Lunta panel.', true);
+  });
   $('q').focus();
 });
