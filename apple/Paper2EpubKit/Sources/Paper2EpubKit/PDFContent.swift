@@ -510,6 +510,9 @@ final class PDFContentScanner {
             out.ligatures.append(Ligature(x0: min(p0, p1), x1: max(p0, p1), baseline: a.y, size: effSize, text: lig, lowCode: low,
                                           symbol: reads != nil, reads: reads ?? [], byRead: byRead))
         }
+        if Self.debugGaps {
+            FileHandle.standardError.write("SHOW x \(String(format: "%.2f-%.2f", a.x, b.x)) y \(String(format: "%.1f", a.y)) sz \(String(format: "%.2f", effSize)) n \(len) last \(lastEnd.map { String(format: "%.2f", $0.x) } ?? "-") tc \(ts.tc) tw \(ts.tw) th \(ts.th)\n".data(using: .utf8)!)
+        }
         // a jump to the right on the same baseline since the last text = a word space nobody drew;
         // in text squeezed by horizontal scaling (OCR layers: "48.53 Tz") the spaces shrink with it
         if let e = lastEnd, abs(e.y - a.y) < 0.3 * max(effSize, 2), a.x - e.x > 0.15 * effSize * min(1, abs(ts.th), lastScale),
@@ -529,6 +532,7 @@ final class PDFContentScanner {
         lastScale = abs(ts.th)
     }
 
+    static var debugGaps = false
     private var lastEnd: CGPoint?
     private var lastEndedWithSpace = false
     private var lastScale: CGFloat = 1

@@ -134,6 +134,10 @@ final class PDFAnalyzer {
     }
     /// P2E_DEBUG_SYMBOLS: each symbol font glyph (see SymbolFonts) and the characters PDFKit read around it.
     static let debugSymbols = ProcessInfo.processInfo.environment["P2E_DEBUG_SYMBOLS"] != nil
+    /// P2E_DEBUG_CHARS=<text>: the characters of lines with that text, and the gaps near them;
+    /// P2E_DEBUG_GAPS=<page>: the text the content stream shows on that page (PDFContentScanner)
+    static let debugChars = ProcessInfo.processInfo.environment["P2E_DEBUG_CHARS"]
+    static let debugGapsPage = ProcessInfo.processInfo.environment["P2E_DEBUG_GAPS"].flatMap { Int($0) }
 
     /// A list item's bullet at the start of a line ("• ISS elucidates…"), with a space after it: LaTeX's
     /// degree sign (\circ, "◦C") and other marks used as symbols ("•OH") are text, and so is "◦ C".
@@ -229,6 +233,7 @@ final class PDFAnalyzer {
                 if Self.isCoverSheet(page) {
                     pagesLines.append([]); graphics.append(PageGraphics()); return
                 }
+                PDFContentScanner.debugGaps = Self.debugGapsPage == pno + 1
                 let g = page.pageRef.map { PDFContentScanner(box: mb).scan($0) } ?? PageGraphics()
                 graphics.append(g)
                 let lines = extractLines(page, pno: pno, mb: mb, runs: g.runs, gaps: g.gaps, joints: g.joints, ligatures: g.ligatures)
@@ -281,13 +286,21 @@ final class PDFAnalyzer {
         /// cannot map (a Greek letter in a symbol font: "hepatitis δ antigen") is left out of its text
         /// but widens the box of the letter before or after it, whose middle then lies past the word
         /// gap: no further in than 0.3 em from the letter's edge.
-        func between(_ buckets: [Int: [CGPoint]], _ p: R, _ c: R) -> Bool {
-            let em = max(p.h, c.h, 4)
+        func between(_ buckets: [Int: [CGPoint]], _ p: R, _ c: R, size: CGFloat = 0) -> Bool {
+            // (a box much taller than its type, a line's with sub- and superscripts in it: the em is the
+            // type's, and the point must sit on the baseline of the text there, not the next line's)
+            let tall = size > 0 && c.h > 1.6 * max(size, 4)
+            let em = tall ? max(size, 4) : max(p.h, c.h, 4)
             let lo = max((p.x0 + p.x1) / 2, p.x1 - 0.3 * em), hi = min((c.x0 + c.x1) / 2, c.x0 + 0.3 * em)
+            let base = tall ? style(c, size: size)?.baseline : nil
             let key = Int(c.y1 / 4)
             // the point must sit on this line's baseline (lower part of the glyph box), not the line above
             return ((key - 2)...(key + 2)).contains { k in
-                (buckets[k] ?? []).contains { g in g.x > lo && g.x < hi && g.y >= c.y0 + 0.4 * c.h && g.y <= c.y1 + 1.5 }
+                (buckets[k] ?? []).contains { g in
+                    guard g.x > lo && g.x < hi else { return false }
+                    if let base { return abs(g.y - base) < 0.3 * em }
+                    return g.y >= c.y0 + 0.4 * c.h && g.y <= c.y1 + 1.5
+                }
             }
         }
 
@@ -626,7 +639,7 @@ final class PDFAnalyzer {
                 guard k > 0, k + 1 < chars.count, chars[k].ch == " " else { return chars[k] }
                 let p = chars[k - 1], n = chars[k + 1]
                 return Self.isSpuriousSpace(chars[k].ch, chars[k].box, added: chars[k].added, prev: (p.ch, p.box, p.size),
-                                            next: (n.ch, n.box, n.size), joint: between(jointBuckets, p.box, n.box))
+                                            next: (n.ch, n.box, n.size), joint: between(jointBuckets, p.box, n.box, size: n.size))
                     ? nil : chars[k]
             }
             var sizeCount: [CGFloat: Int] = [:]
@@ -644,12 +657,16 @@ final class PDFAnalyzer {
             // Some PDFs place words by position and never encode a space: put one back wherever the
             // content stream jumped right between two characters (see PageGraphics.gaps) — but never
             // before closing or after opening punctuation.
+            if let want = Self.debugChars, chars.map(\.ch).joined().contains(want) {
+                for c in chars { print(String(format: "CH %@ %.2f-%.2f sz %.1f", c.ch, c.box.x0, c.box.x1, c.size)) }
+                for g in gaps where abs(g.y - bbox.y1) < 6 { print(String(format: "GAP %.2f %.1f", g.x, g.y)) }
+            }
             var spaced: [C] = []
             for c in chars {
                 if let p = spaced.last, !p.ch.trimmingCharacters(in: .whitespaces).isEmpty,
                    !c.ch.trimmingCharacters(in: .whitespaces).isEmpty, p.box.w > 0, c.box.w > 0, c.box.x0 >= p.box.x0,
                    !Self.noSpaceBefore.contains(c.ch), !Self.noSpaceAfter.contains(p.ch) {
-                    if between(gapBuckets, p.box, c.box) { spaced.append(C(ch: " ", size: c.size, box: R(x0: p.box.x1, y0: c.box.y0, x1: c.box.x0, y1: c.box.y1), run: nil)) }
+                    if between(gapBuckets, p.box, c.box, size: c.size) { spaced.append(C(ch: " ", size: c.size, box: R(x0: p.box.x1, y0: c.box.y0, x1: c.box.x0, y1: c.box.y1), run: nil)) }
                 }
                 spaced.append(c)
             }
