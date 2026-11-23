@@ -436,6 +436,8 @@ pub struct LocalState {
     pub failed: bool,
     /// when (ms)
     pub problem_at: i64,
+    /// what went wrong in this device's latest journal highlights run, "" if nothing
+    pub highlights_problem: String,
 }
 
 impl LocalState {

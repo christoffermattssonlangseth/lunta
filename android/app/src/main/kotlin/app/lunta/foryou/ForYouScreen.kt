@@ -49,6 +49,7 @@ fun ForYouScreen(model: AppModel) {
     val ctx = LocalContext.current
     var settingsOpen by remember { mutableStateOf(false) }
     var earlierOpen by remember { mutableStateOf(false) }
+    var highlightsAll by remember { mutableStateOf(false) }
     val askNotifications = notificationAsker(ctx)
     LaunchedEffect(Unit) {
         fy.reload()
@@ -98,6 +99,7 @@ fun ForYouScreen(model: AppModel) {
                     )
                 }
             }
+            if (feed.hasSetup) journalHighlights(model, highlightsAll, { highlightsAll = !highlightsAll }) { settingsOpen = true }
             if (feed.earlier.isNotEmpty()) {
                 item {
                     Row(Modifier.fillMaxWidth().clickable { earlierOpen = !earlierOpen }.padding(horizontal = 8.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -301,6 +303,7 @@ private fun shareText(ctx: Context, subject: String, text: String) {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ForYouFindScreen(model: AppModel, key: String) {
+    if (key.startsWith("hl:")) { HighlightFindScreen(model, key.removePrefix("hl:")); return }
     val fy = model.forYou
     val ctx = LocalContext.current
     val feed = fy.feed
@@ -506,6 +509,8 @@ fun ForYouSettingsSheet(model: AppModel, onDismiss: () -> Unit, onSaved: () -> U
             }
             TextButton({ following = true }) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(6.dp)); Text("Follow a Journal, Author, Paper or Topic…") }
             Hint("New papers by authors you follow, and papers citing ones you watch, always show up. Papers in journals you follow come first and pass at a lower bar.")
+
+            JournalHighlightsSettings(fy)
 
             Spacer(Modifier.height(16.dp))
             Text("OpenAlex", style = MaterialTheme.typography.titleMedium)

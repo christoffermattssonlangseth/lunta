@@ -296,6 +296,7 @@ final class WatchCenter: ObservableObject {
     func start(_ model: LibraryModel) {
         self.model = model
         load()
+        HighlightsCenter.shared.start(model)
         // the morning notification (asked once; a no-op after the first answer)
         if !state.interests.isEmpty || !watches.isEmpty { requestNotifications() }
         Task { await runIfDue() }
@@ -1282,6 +1283,9 @@ struct WatchInbox: View {
                                           : "Nothing new today. New papers are picked once a day; refresh to look now.")
                     .font(.callout).foregroundStyle(.secondary)
             }
+            if !center.interests.isEmpty || !center.watches.isEmpty || center.state.orcid != nil {
+                JournalHighlightsSection(selection: $selection, push: { pushed = FeedKey(id: $0.id) }, openSettings: { settings = true })
+            }
             if !center.earlierFinds.isEmpty {
                 Section {
                     if showEarlier {
@@ -1305,13 +1309,14 @@ struct WatchInbox: View {
         #if os(iOS)
         .navigationDestination(item: $pushed) { k in
             if let f = center.finds.first(where: { $0.id == k.id }) { DiscoverDetail(hit: f.hit) }
+            else if k.id.hasPrefix("hl:"), let p = HighlightsCenter.shared.paper(String(k.id.dropFirst(3))) { DiscoverDetail(hit: p.hit) }
         }
         #endif
-        .onAppear { center.load(); center.markOpened() }
+        .onAppear { center.load(); center.markOpened(); HighlightsCenter.shared.reload() }
         #if os(macOS)
         // the detail pane always shows a paper: the first one, or the next after one is turned down
         .onChange(of: center.finds.map(\.id), initial: true) { _, ids in
-            if selection == nil || !ids.contains(selection!) { selection = center.latestFinds.first?.id }
+            if selection == nil || (!ids.contains(selection!) && !selection!.hasPrefix("hl:")) { selection = center.latestFinds.first?.id }
         }
         #endif
         .onDisappear { center.markOpened() }
@@ -1533,6 +1538,7 @@ struct ForYouSettings: View {
     @State private var connecting = false
     @State private var orcidProblem: String?
     @State private var openalexKey = ""
+    @ObservedObject private var highlights = HighlightsCenter.shared
 
     var body: some View {
         NavigationStack {
@@ -1584,14 +1590,25 @@ struct ForYouSettings: View {
                 }
                 Section {
                     ForEach(center.watches) { w in
-                        Label(w.describe, systemImage: w.icon)
-                            .swipeActions { Button("Remove", role: .destructive) { center.remove(w.id) } }
-                            .contextMenu { Button("Remove", role: .destructive) { center.remove(w.id) } }
+                        HStack {
+                            Label(w.describe, systemImage: w.icon)
+                            if w.kind == .journal {
+                                Spacer()
+                                // the journal's latest research papers in "From the journals you follow"
+                                Toggle("Highlights", isOn: Binding(get: { highlights.isOn(w.label) },
+                                                                   set: { on in Task { _ = await highlights.setJournal(w.label, on: on) } }))
+                                    .toggleStyle(.switch).controlSize(.small).fixedSize()
+                                    .help("Its latest research papers, whatever the topic, in From the journals you follow")
+                            }
+                        }
+                        .swipeActions { Button("Remove", role: .destructive) { center.remove(w.id) } }
+                        .contextMenu { Button("Remove", role: .destructive) { center.remove(w.id) } }
                     }
                     Button { addingWatch = true } label: { Label("Follow a Journal, Author, Paper or Topic…", systemImage: "plus") }
                 } header: { Text("Also follow") } footer: {
                     Text("New papers by authors you follow, and papers citing ones you watch, always show up. Papers in journals you follow come first and pass at a lower bar, so the ones near your research make it in.")
                 }
+                JournalHighlightsSettings()
                 Section {
                     TextField("API key (optional)", text: $openalexKey)
                         .autocorrectionDisabled()

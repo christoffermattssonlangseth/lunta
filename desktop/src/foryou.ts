@@ -23,6 +23,16 @@ interface Feed {
   new_count: number; running: boolean; stage: string | null; ai: boolean;
   problem: string | null; fetch_failed: boolean;
 }
+interface HPaper {
+  key: string; number: number; title: string; authors: string[]; byline: string; journal: string; date: string;
+  published: string | null; doi: string; link: string; abstract_text: string; line: string; in_library: string | null;
+}
+interface Highlights {
+  on: boolean; journals: string[]; cadence: 'weekly' | 'daily'; subtitle: string; papers: HPaper[];
+  digest: { text: string; cites: { number: number; key: string }[] }[]; digest_markdown: string; digest_share: string;
+  last_run: number | null; next_run: number; problem: string | null;
+}
+interface JournalChoice { name: string; on: boolean; followed: boolean; }
 interface WatchView { id: string; kind: string; value: string; label: string; describe: string; }
 interface Coauthor { name: string; author: string; orcid: string; shared: number; following: boolean; }
 interface Settings {
@@ -51,12 +61,22 @@ const fy = {
   run: () => invoke<void>('foryou_run', { tz: tz() }),
   setKey: (key: string) => invoke<void>('foryou_set_openalex_key', { key }),
   tick: () => invoke<[string, string] | null>('foryou_tick', { tz: tz() }),
+  highlights: () => invoke<Highlights>('foryou_highlights', { tz: tz() }),
+  choices: () => invoke<JournalChoice[]>('foryou_highlight_choices'),
+  setJournal: (name: string, on: boolean) => invoke<void>('foryou_set_highlight_journal', { name, on, tz: tz() }),
+  defaults: () => invoke<void>('foryou_highlights_defaults', { tz: tz() }),
+  cadence: (cadence: string) => invoke<void>('foryou_set_highlight_cadence', { cadence, tz: tz() }),
+  runHighlights: () => invoke<void>('foryou_highlights_run', { tz: tz() }),
+  hDismiss: (key: string) => invoke<void>('foryou_highlight_dismiss', { key }),
+  hAdd: (key: string, mustRead: boolean) => invoke<string>('foryou_highlight_add', { key, mustRead }),
 };
 
 // ---- the app around it (set by main.ts) ----
 
 let showing = false;                  // the New for You place is selected
 let feed: Feed | null = null;
+let hl: Highlights | null = null;
+let showAllHighlights = false;
 let selected: string | null = null;
 let showEarlier = false;
 let stage: string | null = null;
@@ -121,6 +141,7 @@ export function forYouShowing() { return showing; }
 
 async function reloadFeed() {
   const f = await fy.feed().catch((e) => { status(String(e), 'error'); return null; });
+  hl = await fy.highlights().catch(() => null);
   if (!f || !showing) return;
   feed = f;
   // a run that is still loading the model isn't running in the core yet: keep the event's word
@@ -128,7 +149,8 @@ async function reloadFeed() {
   stage = f.stage ?? (running ? stage : null);
   const all = [...f.latest, ...f.earlier];
   // the detail pane always shows a paper: the first one, or the next after one is turned down
-  if (!selected || !all.some((x) => x.key === selected)) selected = f.latest[0]?.key ?? (showEarlier ? f.earlier[0]?.key : null) ?? null;
+  const inHighlights = selected?.startsWith('hl:') && hl?.papers.some((p) => 'hl:' + p.key === selected);
+  if (!selected || (!inHighlights && !all.some((x) => x.key === selected))) selected = f.latest[0]?.key ?? (showEarlier ? f.earlier[0]?.key : null) ?? null;
   paintList();
   paintDetail();
 }
@@ -181,6 +203,7 @@ function paintList() {
   else if (f.has_interests && !running && !f.problem) {
     kids.push(h('p.fy-empty', { text: (f.earlier.length ? 'Nothing new today.' : 'Nothing yet.') + ' New papers are picked once a day; ↻ looks now.' }));
   }
+  if (f.has_setup) kids.push(...highlightsSection());
   if (f.earlier.length) {
     kids.push(h('button.fy-earlier', { onclick: () => { showEarlier = !showEarlier; paintList(); } },
       `${showEarlier ? '▾' : '▸'} Earlier (${f.earlier.length})`));
@@ -211,6 +234,114 @@ function digestBox(f: Feed): HTMLElement {
     h('div.fy-digest-head', {}, h('span', { text: 'IN SHORT' }), h('div.spacer'),
       h('button.icon', { text: '⧉', title: 'Copy the summary and its papers', onclick: () => copy(f.digest_share, 'summary') })),
     text);
+}
+
+// ---- "From the journals you follow" (journal highlights) ----
+
+function highlightsSection(): HTMLElement[] {
+  const j = hl;
+  if (!j) return [];
+  if (!j.on) {
+    return [h('div.fy-hl-intro', {},
+      h('div.fy-hl-head', { text: 'FROM THE JOURNALS YOU FOLLOW' }),
+      h('p', { text: 'Every Monday, the week’s research papers in journals you choose, whatever their topic, with a few sentences on the notable ones.' }),
+      h('div.row', {},
+        h('button.primary', { text: 'Nature, Science and Cell', onclick: async () => {
+          status('Looking for the week’s papers…', 'busy');
+          try { await fy.defaults(); } catch (e) { status(String(e), 'error'); }
+          reloadFeed();
+        } }),
+        h('button', { text: 'Choose Journals…', onclick: settingsDialog })))];
+  }
+  const out: HTMLElement[] = [h('div.fy-hl-title', {},
+    h('div', {}, h('div.fy-hl-head', { text: 'FROM THE JOURNALS YOU FOLLOW' }), h('div.fy-dim', { text: j.subtitle || j.journals.join(', ') })),
+    h('div.spacer'),
+    h('button.icon', { text: '↻', title: 'Look for the latest papers now', onclick: () => fy.runHighlights().then(() => status('Looking for the latest papers in your journals…', 'busy')).catch((e) => status(String(e), 'error')) }))];
+  if (j.problem) {
+    out.push(h('div.fy-problem', {}, h('div.fy-problem-head', { text: '⚠ Couldn’t get the journals’ papers' }), h('p', { text: j.problem }),
+      h('div.row', {}, h('button', { text: '↻ Retry', onclick: () => fy.runHighlights().catch((e) => status(String(e), 'error')) }))));
+  }
+  if (j.digest.length) {
+    const text = h('p.fy-digest-text');
+    for (const d of j.digest) {
+      text.append(d.text.replace(/[.\s]+$/, '') + ' (');
+      d.cites.forEach((c, i) => {
+        if (i) text.append(', ');
+        text.append(h('a', { href: '#', text: String(c.number), title: j.papers.find((p) => p.key === c.key)?.title ?? '', onclick: (e: Event) => { e.preventDefault(); select('hl:' + c.key); } }));
+      });
+      text.append('). ');
+    }
+    out.push(h('div.fy-digest', {},
+      h('div.fy-digest-head', {}, h('span', { text: j.cadence === 'daily' ? 'SINCE YESTERDAY' : 'THIS WEEK' }), h('div.spacer'),
+        h('button.icon', { text: '⧉', title: 'Copy the summary and its papers', onclick: () => copy(j.digest_share, 'summary') })),
+      text));
+  }
+  if (!j.papers.length && !j.problem) {
+    out.push(h('p.fy-empty', { text: j.last_run ? 'No research papers in these journals since the last look.' : 'Looking for the latest papers…' }));
+  }
+  const shown = showAllHighlights ? j.papers : j.papers.slice(0, 10);
+  out.push(...shown.map(hRow));
+  if (j.papers.length > 10) {
+    out.push(h('button.fy-earlier', { onclick: () => { showAllHighlights = !showAllHighlights; paintList(); } },
+      showAllHighlights ? '▾ Fewer' : `▸ All ${j.papers.length} papers`));
+  }
+  return out;
+}
+
+function hRow(p: HPaper): HTMLElement {
+  const id = 'hl:' + p.key;
+  return h('div.fy-row' + (id === selected ? '.on' : ''), { 'data-key': id, onclick: () => select(id) },
+    h('div.fy-title', { text: `${p.number}. ${p.title}` }),
+    h('div.fy-byline', { text: p.byline }),
+    p.line ? h('div.fy-abstract', { text: p.line }) : null,
+    h('div.fy-actions', { onclick: (e: Event) => e.stopPropagation() },
+      p.in_library ? h('button', { text: 'Open', onclick: () => onOpenPaper(p.in_library!) })
+        : h('button.primary', { text: adding.has(id) ? 'Adding…' : '＋ Add', disabled: adding.has(id), onclick: () => hAdd(p, false) }),
+      h('div.spacer'),
+      h('button.icon', { text: '👎', title: 'Not for me: hides it', onclick: () => hDismiss(p) })));
+}
+
+function hDetail(p: HPaper): HTMLElement {
+  const busy = adding.has('hl:' + p.key);
+  return h('div.detail.fy-detail', {},
+    h('div.fy-beyond', { text: `📰 From ${p.journal}, a journal you follow: a new research paper, whatever its topic.` }),
+    h('div.actions', {},
+      p.in_library ? h('button.primary', { text: 'Show in Library', onclick: () => onOpenPaper(p.in_library!) })
+        : h('button.primary', { text: busy ? 'Adding…' : 'Add to Library', disabled: busy, onclick: () => hAdd(p, false) }),
+      p.in_library ? null : h('button', { text: '🔖 Add as Must Read', disabled: busy, onclick: () => hAdd(p, true) }),
+      h('div.spacer'),
+      h('button.icon', { text: '👎', title: 'Not for Me', onclick: () => hDismiss(p) })),
+    h('h2', { text: p.title }),
+    h('p.authors', { text: p.authors.join(', ') }),
+    h('p.venue', { text: [p.journal, p.date].filter(Boolean).join(' · ') }),
+    p.link ? h('p.ids', {}, h('a', { href: '#', text: p.doi ? `DOI ${p.doi}` : p.link, onclick: (e: Event) => { e.preventDefault(); openUrl(p.link); } })) : null,
+    p.abstract_text ? h('h4', { text: 'Abstract' }) : null,
+    p.abstract_text ? h('p.abstract', { text: p.abstract_text }) : h('p.hint', { text: 'No abstract yet.' }));
+}
+
+async function hAdd(p: HPaper, mustRead: boolean) {
+  const id = 'hl:' + p.key;
+  if (adding.has(id)) return;
+  adding.add(id);
+  paintList(); paintDetail();
+  status(`Adding “${p.title}”…`, 'busy');
+  try {
+    await fy.hAdd(p.key, mustRead);
+    status(mustRead ? `Added “${p.title}” to Must Read` : `Added “${p.title}”`);
+    onLibraryChanged();
+  } catch (e) { status(String(e), 'error'); }
+  adding.delete(id);
+  await reloadFeed();
+}
+
+async function hDismiss(p: HPaper) {
+  try { await fy.hDismiss(p.key); status('Not for you: hidden'); } catch (e) { status(String(e), 'error'); }
+  if (selected === 'hl:' + p.key) {
+    const i = hl?.papers.findIndex((x) => x.key === p.key) ?? -1;
+    const next = hl?.papers[i + 1] ?? hl?.papers[i - 1];
+    selected = next ? 'hl:' + next.key : null;
+  }
+  await reloadFeed();
 }
 
 function select(key: string) {
@@ -264,6 +395,8 @@ function addButton(f: Find): HTMLElement {
 
 function paintDetail() {
   const box = $('#detail');
+  const hp = selected?.startsWith('hl:') ? hl?.papers.find((p) => 'hl:' + p.key === selected) : undefined;
+  if (hp) { box.replaceChildren(hDetail(hp)); return; }
   const f = feed && [...feed.latest, ...feed.earlier].find((x) => x.key === selected);
   if (!f) {
     box.replaceChildren(h('div.empty', {}, h('p', { text: feed && (feed.latest.length || feed.earlier.length) ? 'Select a paper' : '' })));
@@ -345,6 +478,7 @@ export async function settingsDialog() {
   const orcidBox = h('div');
   const key = h('input', { type: 'text', spellcheck: 'false', placeholder: 'API key (optional)', value: s.openalex_key }) as HTMLInputElement;
   const watchBox = h('div');
+  const hlBox = h('div');
   let changedFollows = false;
 
   const draftBtn = h('button', {
@@ -401,7 +535,33 @@ export async function settingsDialog() {
       h('p.hint', { text: 'New papers by authors you follow, and papers citing ones you watch, always show up. Papers in journals you follow come first and pass at a lower bar.' }));
   }
 
-  paintOrcid(); paintWatches();
+  async function paintHighlights() {
+    const [choices, j] = await Promise.all([fy.choices().catch(() => [] as JournalChoice[]), fy.highlights().catch(() => null)]);
+    const cadence = h('select', { onchange: async (e: Event) => { await fy.cadence((e.target as HTMLSelectElement).value).catch((err) => status(String(err), 'error')); } },
+      h('option', { value: 'weekly', text: 'Every week, on Monday morning', selected: j?.cadence !== 'daily' }),
+      h('option', { value: 'daily', text: 'Every morning', selected: j?.cadence === 'daily' })) as HTMLSelectElement;
+    const other = h('input', { type: 'text', spellcheck: 'false', placeholder: 'Another journal, e.g. Cell Systems' }) as HTMLInputElement;
+    const problem = h('p.error', { hidden: true });
+    const addOther: HTMLElement = h('button', { text: 'Add', onclick: async () => {
+      if (!other.value.trim()) return;
+      addOther.textContent = 'Looking…'; (addOther as HTMLButtonElement).disabled = true; problem.hidden = true;
+      try { await fy.setJournal(other.value, true); other.value = ''; await paintHighlights(); }
+      catch (e) { problem.textContent = String(e); problem.hidden = false; addOther.textContent = 'Add'; (addOther as HTMLButtonElement).disabled = false; }
+    } });
+    fill(hlBox,
+      h('div.fy-grid', {}, h('label', { text: 'Papers come' }), cadence),
+      h('div.fy-hl-choices', {}, ...choices.map((c) => h('label.fy-hl-choice', {},
+        h('input', { type: 'checkbox', checked: c.on, onchange: async (e: Event) => {
+          const on = (e.target as HTMLInputElement).checked;
+          try { await fy.setJournal(c.name, on); } catch (err) { status(String(err), 'error'); }
+          paintHighlights();
+        } }),
+        h('span', { text: c.name }), c.followed ? h('span.fy-dim', { text: ' · you follow it' }) : null))),
+      h('div.row', {}, other, addOther), problem,
+      h('p.hint', { text: 'The latest research papers in these journals, whatever their topic (no news, editorials or corrections), with a few sentences on the notable ones when the on-device model is downloaded. Each sentence cites the papers it is about, and says only what their titles and abstracts say.' }));
+  }
+
+  paintOrcid(); paintWatches(); paintHighlights();
   const done = () => back.remove();
   const save = async () => {
     const [hh, mm] = (morning.value || '07:00').split(':').map(Number);
@@ -430,6 +590,7 @@ export async function settingsDialog() {
         h('label', { text: 'Papers from' }), preprints),
       h('p.hint', { text: 'The day’s papers are picked at this time on whichever device runs Lunta first (or as soon as Lunta opens after it). “Mostly journals” allows about one preprint in four.' }),
       h('h4', { text: 'Also follow' }), watchBox,
+      h('h4', { text: 'From the journals you follow' }), hlBox,
       h('h4', { text: 'OpenAlex' }),
       h('div.row', {}, key, h('button', { text: 'Get a Free Key', onclick: () => openUrl('https://openalex.org/settings/api') })),
       h('p.hint', { text: 'New for You searches OpenAlex. Without a key, OpenAlex gives everyone on your network one small daily allowance, which a university network can use up by morning. A free key gives Lunta its own.' }),

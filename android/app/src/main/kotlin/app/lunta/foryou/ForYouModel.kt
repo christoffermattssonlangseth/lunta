@@ -40,6 +40,30 @@ class ForYouModel(private val model: AppModel) {
     private var core: NewForYou? = null
     private var coreLib: Library? = null
 
+    // "From the journals you follow" (the core's JournalHighlights, journal-highlights.json)
+    var highlights by mutableStateOf<HighlightsView?>(null)
+        private set
+    var journalChoices by mutableStateOf<List<JournalChoice>>(emptyList())
+        private set
+    var highlightsRunning by mutableStateOf(false)
+        private set
+    var highlightsWriting by mutableStateOf(false)
+        private set
+    private var hl: JournalHighlights? = null
+    private var hlLib: Library? = null
+    /** the digest last asked for (once per set of papers and run of the app) */
+    private var digestTried: String? = null
+
+    @Synchronized
+    fun highlightsCore(): JournalHighlights? {
+        val lib = model.library ?: return null
+        if (hl == null || hlLib !== lib) {
+            hl = JournalHighlights(lib, model.libraryDir().absolutePath, File(model.app.filesDir, "foryou").also { it.mkdirs() }.absolutePath)
+            hlLib = lib
+        }
+        return hl
+    }
+
     /** The core's New for You on the open library (made again when another library opens). */
     @Synchronized
     fun core(): NewForYou? {
@@ -63,6 +87,10 @@ class ForYouModel(private val model: AppModel) {
         val now = System.currentTimeMillis()
         val (f, s) = withContext(Dispatchers.IO) { fy.feed(now, tz(now)) to fy.settings() }
         feed = f; settings = s
+        highlightsCore()?.let { h ->
+            val (v, c) = withContext(Dispatchers.IO) { h.view(now, tz(now)) to h.choices() }
+            highlights = v; journalChoices = c
+        }
     }
 
     /** The feed was looked at: the badge counts from now. */
@@ -78,6 +106,117 @@ class ForYouModel(private val model: AppModel) {
             reload()
             val now = System.currentTimeMillis()
             if (withContext(Dispatchers.IO) { fy.isDue(now, tz(now), true) }) runNow() else summarizeIfNeeded()
+            val h = highlightsCore()
+            if (h != null && withContext(Dispatchers.IO) { h.isDue(now, tz(now), true) }) runHighlights() else writeHighlightsDigest()
+        }
+    }
+
+    // ---- journal highlights ----
+
+    /** Looks for the period's papers in the chosen journals now (Crossref, Europe PMC: seconds). */
+    fun runHighlights() {
+        val h = highlightsCore() ?: return
+        if (highlightsRunning) return
+        highlightsRunning = true
+        model.scope.launch {
+            try {
+                val now = System.currentTimeMillis()
+                withContext(Dispatchers.IO) { h.run(now, tz(now)) }
+                reload()
+                model.syncNow()
+            } catch (e: Exception) {
+                model.error = "Couldn't look in your journals: ${e.message ?: e}"
+            } finally {
+                highlightsRunning = false
+            }
+            writeHighlightsDigest()
+        }
+    }
+
+    /** The digest by the on-device model, when it may run here; the core keeps only checked sentences. */
+    fun writeHighlightsDigest() {
+        val h = highlightsCore() ?: return
+        OnDeviceAi.init(model.app)
+        if (highlightsWriting || !OnDeviceAi.usable) return
+        model.scope.launch {
+            val key = withContext(Dispatchers.IO) { h.digestRequest()?.key } ?: return@launch
+            if (key == digestTried) return@launch
+            digestTried = key
+            highlightsWriting = true
+            try {
+                val engine = OnDeviceAi.engine() ?: return@launch
+                withContext(Dispatchers.IO) { h.writeDigest(engine) }
+            } finally {
+                highlightsWriting = false
+            }
+            reload()
+        }
+    }
+
+    /** A journal in the highlights or out; the problem to show, or null. */
+    suspend fun setHighlightJournal(name: String, on: Boolean): String? {
+        val h = highlightsCore() ?: return "The library isn't open yet."
+        return try {
+            withContext(Dispatchers.IO) { h.setJournal(name, on) }
+            reload()
+            runHighlights()
+            null
+        } catch (e: Exception) {
+            (e.message ?: e.toString()).removePrefix("Invalid: ").removePrefix("invalid: ")
+        }
+    }
+
+    fun highlightsDefaults() {
+        val h = highlightsCore() ?: return
+        model.scope.launch {
+            try { withContext(Dispatchers.IO) { h.turnOnDefaults() } } catch (e: Exception) { model.error = e.message ?: e.toString() }
+            reload()
+            runHighlights()
+        }
+    }
+
+    fun setHighlightCadence(cadence: String) {
+        val h = highlightsCore() ?: return
+        model.scope.launch {
+            withContext(Dispatchers.IO) { runCatching { h.setCadence(cadence) } }
+            reload()
+            runHighlights()
+        }
+    }
+
+    fun dismissHighlight(key: String) {
+        val h = highlightsCore() ?: return
+        model.scope.launch { withContext(Dispatchers.IO) { runCatching { h.dismiss(key) } }; reload() }
+    }
+
+    /** Add to Library, as for a find. */
+    fun addHighlight(p: HighlightPaper, mustRead: Boolean) {
+        val h = highlightsCore() ?: return
+        val lib = model.library ?: return
+        val busy = "hl:" + p.key
+        if (busy in adding) return
+        adding = adding + busy
+        model.scope.launch {
+            try {
+                val id = withContext(Dispatchers.IO) {
+                    p.inLibrary
+                        ?: p.doi.takeIf { it.isNotBlank() }?.let { lib.findByDoi(it)?.id }
+                        ?: p.doi.takeIf { it.isNotBlank() }?.let { runCatching { lib.addFromInput(it, model.progress).paper.id }.getOrNull() }
+                        ?: h.findMeta(p.key)?.let { lib.addPaper(it, null, null, null).id }
+                } ?: throw IllegalStateException("Couldn't add “${p.title}”.")
+                withContext(Dispatchers.IO) {
+                    h.added(p.key, id)
+                    if (mustRead) lib.setMustRead(id, true)
+                }
+                model.status = null
+                model.reload()
+                reload()
+            } catch (e: Exception) {
+                model.status = null
+                model.error = e.message ?: e.toString()
+            } finally {
+                adding = adding - busy
+            }
         }
     }
 

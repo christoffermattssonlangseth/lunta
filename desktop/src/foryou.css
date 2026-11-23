@@ -42,3 +42,10 @@ button.icon.fy-on { background: var(--sel); }
 .fy-problem { margin: 10px 12px; padding: 10px 12px; border-radius: 10px; background: var(--paper); border: 1px solid #e0a040; }
 .fy-problem-head { font-weight: 600; color: #b86e00; }
 .fy-problem p { margin: 4px 0 8px; }
+.fy-hl-intro, .fy-hl-title { margin: 14px 12px 4px; }
+.fy-hl-intro { padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--line); }
+.fy-hl-intro p { margin: 4px 0 8px; }
+.fy-hl-title { display: flex; align-items: center; }
+.fy-hl-head { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--accent); }
+.fy-hl-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 2px 12px; margin: 6px 0; }
+.fy-hl-choice { display: flex; align-items: center; gap: 6px; }

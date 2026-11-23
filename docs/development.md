@@ -1773,6 +1773,30 @@ desktop and Android apps have it too, on **the same files**:
   OpenAlex request in the app carries it. Journal and author names are resolved to OpenAlex ids once per app run
   (a search each). `cargo run --example foryou_diag -- <copy of a library folder>` runs the stages on a copy and
   logs every request, what each filter dropped, and the candidates.
+- **From the journals you follow** (`journals.rs`, `JournalHighlights` through UniFFI on every platform; Apple:
+  `apple/Shared/JournalHighlights.swift`): the latest research papers in journals the user chooses (Nature,
+  Science, Cell offered first; Nature Neuroscience, Neuron, Nature Methods, NEJM, PNAS, eLife, … in a table with
+  their ISSNs; any other journal by name through Crossref's journal search), whatever their topic, every Monday at
+  the morning time (or every morning). Crossref by ISSN, works registered since the period began
+  (`from-created-date`: Cell's Crossref dates are only a month), Europe PMC for the abstracts Crossref lacks
+  (Elsevier deposits none): neither costs OpenAlex allowance. Research papers only (`is_research`): journal
+  articles without Nature's `d41586` news/comment, Science's `science.z` news, corrections, retractions,
+  editorials, "In Science Journals"/"This week" and the like (title list), one- or two-page pieces, a teaser
+  instead of an abstract (1–299 characters), or no abstract and fewer than three authors. Ranked by the feed's
+  ranking (paragraph, library, feedback), at most 30 a journal and 90 in all, never offered twice. Rows: number,
+  title, journal, one line (the abstract's "Here we show…" sentence, else its first), Add / Not for Me. The digest:
+  the first twelve (at most four a journal) numbered with their titles and abstracts (`digest_request`); the
+  model's 3–6 sentences end in the numbers they are about and are checked as Summarize Highlights checks
+  (`outline::summary::validate`: no citation, a number not given, or more than the cited titles and abstracts say
+  → left out; at most six); the apps show each sentence with its numbers as links to the papers
+  (`foryou://highlight?key=`). Apple writes it with Apple's model (`digest_request` → `plainAnswer` →
+  `set_digest`), desktop and Android with the core's (`write_digest`); without a model, just the list. Shared
+  state: `<library>/journal-highlights.json` (journals with ISSNs, cadence, the period's papers, offered keys,
+  the digest), its own file so an older app writing foryou.json can't drop it; a failed fetch is said with
+  Retry ("Couldn't get the journals' papers") and the period stays due. Settings: "From the journals you
+  follow" (weekly/daily, a toggle per journal, the ones you follow marked, another journal by name), and on the
+  Mac/iPhone a Highlights switch on each followed journal. Tests: `cargo test foryou::tests::journal_highlights`
+  (recorded Crossref and Europe PMC answers for 16–23 Nov 2026 in `testdata/journals/`).
 - **Ranking** (`rank.rs`): the Swift formula (0.55 × paragraph + 0.35 × the three closest library papers, ± 0.25 for
   papers you added or turned down, + 0.3 for More Like This; + 0.15 for what you follow, + 0.06 for journals you
   follow, up to + 0.04 for new papers), on TF-IDF vectors of words and word pairs: Apple's sentence embeddings

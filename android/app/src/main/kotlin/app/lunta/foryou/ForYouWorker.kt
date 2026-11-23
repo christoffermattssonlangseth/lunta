@@ -43,6 +43,13 @@ class ForYouWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                     model.syncNow()
                 }
             }
+            // the journals' latest papers (the digest is written in the app, with the model)
+            val h = model.forYou.highlightsCore()
+            val t2 = System.currentTimeMillis()
+            if (h != null && withContext(Dispatchers.IO) { h.isDue(t2, ForYouModel.tz(t2), true) }) {
+                withContext(Dispatchers.IO) { runCatching { h.run(t2, ForYouModel.tz(t2)) } }
+                model.syncNow()
+            }
             notify(applicationContext, model.forYou)
             model.forYou.refresh()
             Result.success()

@@ -884,3 +884,322 @@ fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64
 }
 
+// ---- journal highlights (journals.rs), on recorded Crossref and Europe PMC answers ----
+
+mod journal_highlights {
+    use super::super::journals::{self, *};
+    use super::*;
+
+    const CR_NATURE: &str = include_str!("testdata/journals/crossref-nature.json");
+    const CR_SCIENCE: &str = include_str!("testdata/journals/crossref-science.json");
+    const CR_CELL: &str = include_str!("testdata/journals/crossref-cell.json");
+    const EPMC: &str = include_str!("testdata/journals/europepmc.json");
+
+    /// Crossref and Europe PMC as recorded on 23 Nov 2026 (the week from 16 Nov); `down`: Crossref
+    /// doesn't answer.
+    struct Recorded {
+        calls: Mutex<Vec<String>>,
+        down: bool,
+    }
+
+    impl Recorded {
+        fn new() -> Recorded {
+            Recorded { calls: Mutex::new(vec![]), down: false }
+        }
+    }
+
+    impl Finder for Recorded {
+        fn watch_new(&self, _: WatchKind, _: &str, _: &str, _: u32) -> crate::model::Result<Vec<DiscoverHit>> {
+            Ok(vec![])
+        }
+        fn citing_new(&self, _: &str, _: &str, _: &str, _: u32) -> crate::model::Result<Vec<DiscoverHit>> {
+            Ok(vec![])
+        }
+        fn orcid_profile(&self, o: &str) -> crate::model::Result<OrcidProfile> {
+            Err(CoreError::NotFound(o.into()))
+        }
+        fn get_json(&self, url: &str) -> crate::model::Result<Value> {
+            self.calls.lock().unwrap().push(url.to_string());
+            if self.down && url.contains("api.crossref.org") {
+                return Err(CoreError::Network("api.crossref.org answered HTTP 503".into()));
+            }
+            let text = if url.contains("/journals/0028-0836/works") {
+                CR_NATURE
+            } else if url.contains("/journals/0036-8075/works") {
+                CR_SCIENCE
+            } else if url.contains("/journals/0092-8674/works") {
+                CR_CELL
+            } else if url.contains("europepmc") {
+                EPMC
+            } else if url.contains("api.crossref.org/journals?query=") {
+                r#"{"message":{"items":[{"title":"Cell Reports Methods","ISSN":["2667-2375"]},{"title":"Cell Systems","ISSN":["2405-4712","2405-4720"]}]}}"#
+            } else {
+                return Err(CoreError::NotFound(url.into()));
+            };
+            Ok(serde_json::from_str(text).unwrap())
+        }
+    }
+
+    fn handle() -> (Arc<JournalHighlights>, Files) {
+        let (root, lib, files) = setup();
+        files
+            .change(|s| s.interests = "I map the brain's circuits and cell types with spatial transcriptomics (MERFISH, in situ sequencing) and study neurons and glia in neuroinflammation.".into())
+            .unwrap();
+        let h = JournalHighlights::new(lib, root.to_string_lossy().into(), files.local.to_string_lossy().into());
+        (h, files)
+    }
+
+    fn meta(title: &str, doi: &str, authors: usize, abs: usize, pages: &str) -> PaperMeta {
+        PaperMeta {
+            title: title.into(),
+            doi: doi.into(),
+            authors: (0..authors).map(|i| format!("A{i}")).collect(),
+            abstract_text: "word ".repeat(abs / 5),
+            pages: pages.into(),
+            work_type: "journal-article".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn research_papers_only() {
+        assert!(is_research(&meta("Bogong moths navigate with a light-dependent geomagnetic inclination compass", "10.1038/s41586-026-11322-9", 7, 1800, "")));
+        // no abstract on Crossref (Cell, some of Nature's), enough authors
+        assert!(is_research(&meta("Myelin pathology is a key feature of X-linked dystonia-parkinsonism", "10.1016/j.cell.2026.10.046", 23, 0, "5012-5030.e21")));
+        for (m, why) in [
+            (meta("Author Correction: SARS-CoV-2 mRNA vaccines sensitize tumours", "10.1038/s41586-026-10974-x", 140, 0, ""), "correction"),
+            (meta("Retraction Note: Detection of anisotropic cosmic structures", "10.1038/s41586-026-11388-5", 2, 0, ""), "retraction"),
+            (meta("How measuring the state of nature can reverse biodiversity loss", "10.1038/d41586-026-03714-8", 13, 0, "594-597"), "Nature's news and comment"),
+            (meta("In Science Journals", "10.1126/science.aeo2218", 11, 183, "850-852"), "In this issue"),
+            (meta("Measles comeback in U.S. adds to global resurgence", "10.1126/science.aeo2672", 1, 121, "822-823"), "a teaser for an abstract"),
+            (meta("Rising risk of deforestation in Indonesia’s pulp sector", "10.1126/science.aeb9995", 11, 73, "847-849"), "a teaser for an abstract"),
+            (meta("The scientific record is never finished", "10.1126/science.aen9176", 3, 1135, "817-817"), "one page"),
+            (meta("Making ecological programs work at scale", "10.1126/science.aen0206", 1, 0, ""), "no abstract, one author"),
+            (meta("SnapShot: Microglia", "10.1016/j.cell.2026.10.001", 2, 0, "1-1.e1"), "SnapShot"),
+        ] {
+            assert!(!is_research(&m), "{} should be left out ({why})", m.title);
+        }
+        let mut posted = meta("A preprint", "10.1101/x", 5, 1000, "");
+        posted.work_type = "posted-content".into();
+        assert!(!is_research(&posted));
+    }
+
+    #[test]
+    fn a_week_of_nature_science_and_cell() {
+        let (h, files) = handle();
+        let rec = Recorded::new();
+        for j in ["Nature", "Science", "Cell"] {
+            h.set_journal_with(&rec, j, true).unwrap();
+        }
+        assert!(h.is_due(D0, CET, false), "due the first time");
+        let report = h.run_with(&rec, D0, CET).unwrap();
+        assert!(report.ran && !report.failed, "{report:?}");
+        assert_eq!(report.problem, None);
+        let s = h.state();
+        assert_eq!(report.found as usize, s.items.len());
+        let calls = rec.calls.lock().unwrap().clone();
+        assert!(calls.iter().any(|c| c.starts_with("https://api.crossref.org/journals/0028-0836/works?filter=from-created-date:2026-11-16,type:journal-article&sort=created")), "{calls:?}");
+        assert!(calls.iter().any(|c| c.contains("europepmc") && c.contains("DOI:%2210.1016%2Fj.cell.2026.10.046%22")), "{calls:?}");
+        assert!(!calls.iter().any(|c| c.contains("openalex")), "no OpenAlex allowance used");
+        assert_eq!(s.since, "2026-11-16");
+        assert_eq!(s.last_run, Some(D0));
+
+        let keys: Vec<&str> = s.items.iter().map(|r| r.key.as_str()).collect();
+        let by = |j: &str| s.items.iter().filter(|r| r.journal == j).count();
+        assert!(by("Nature") >= 15 && by("Nature") <= 30, "{}", by("Nature"));
+        assert!(by("Science") >= 8, "{}", by("Science"));
+        assert_eq!(by("Cell"), 8);
+        for k in &keys {
+            assert!(!k.starts_with("10.1038/d41586"), "Nature's news: {k}");
+        }
+        for gone in ["10.1038/s41586-026-10974-x", "10.1038/s41586-026-11388-5", "10.1126/science.aeo2218", "10.1126/science.aeo2672", "10.1126/science.aen9176"] {
+            assert!(!keys.contains(&gone), "{gone} isn't a research paper");
+        }
+        for kept in ["10.1038/s41586-026-11235-7", "10.1126/science.aej3009", "10.1016/j.cell.2026.10.046", "10.1038/s41586-026-11322-9"] {
+            assert!(keys.contains(&kept), "{kept} should be in: {keys:?}");
+        }
+        // Europe PMC filled in what Crossref lacks (Cell has no abstracts there)
+        let myelin = s.items.iter().find(|r| r.key == "10.1016/j.cell.2026.10.046").unwrap();
+        assert!(myelin.r#abstract.len() > 300, "{myelin:?}");
+        assert_eq!(myelin.date, "2026-11-19", "the day it went online, not the issue's month");
+        // closest to the paragraph first
+        let pos = |k: &str| keys.iter().position(|x| *x == k).unwrap();
+        assert!(pos("10.1038/s41586-026-11235-7") < pos("10.1038/s41586-026-11299-5"), "MERFISH circuits before perovskite circuits");
+
+        // the list as the apps show it
+        let v = h.view(D0, CET);
+        assert!(v.on);
+        assert_eq!(v.subtitle, "Nature, Science and Cell · 16–23 Nov");
+        assert_eq!(v.papers.len(), s.items.len());
+        assert_eq!(v.papers[0].number, 1);
+        assert!(v.papers.iter().all(|p| !p.line.is_empty() || p.abstract_text.is_empty()));
+        let merfish = v.papers.iter().find(|p| p.key == "10.1038/s41586-026-11235-7").unwrap();
+        assert!(merfish.byline.ends_with("· Nature"), "{}", merfish.byline);
+        assert_eq!(merfish.link, "https://doi.org/10.1038/s41586-026-11235-7");
+        assert!(v.digest.is_empty() && v.problem.is_none());
+        assert_eq!(v.next_run, D0 - 2 * HOUR_MS + 7 * DAY_MS, "next Monday at 07:00 CET");
+
+        // done for the week; due next Monday at the morning time (a phone leaves two hours)
+        assert!(!h.is_due(D0 + 3 * DAY_MS, CET, false));
+        let next_monday = D0 - 2 * HOUR_MS + 7 * DAY_MS;
+        assert!(!h.is_due(next_monday - 60_000, CET, false));
+        assert!(h.is_due(next_monday + 60_000, CET, false));
+        assert!(!h.is_due(next_monday + 60_000, CET, true));
+        assert!(h.is_due(next_monday + 2 * HOUR_MS + 60_000, CET, true));
+        // every day: due each morning
+        h.set_cadence("daily".into()).unwrap();
+        assert!(h.is_due(D0, CET, false), "a new cadence starts a new period");
+
+        // the next run offers nothing twice
+        let again = h.run_with(&rec, D0 + DAY_MS, CET).unwrap();
+        assert_eq!(again.found, 0, "{:?}", h.state().items.iter().map(|r| &r.key).collect::<Vec<_>>());
+        assert!(files.state().items.is_empty(), "the feed itself is untouched");
+
+        // Not for Me, Add
+        h.set_cadence("weekly".into()).unwrap();
+        let fresh = handle().0;
+        for j in ["Nature", "Cell"] {
+            fresh.set_journal_with(&rec, j, true).unwrap();
+        }
+        fresh.run_with(&rec, D0, CET).unwrap();
+        let first = fresh.state().items[0].key.clone();
+        fresh.dismiss(first.clone()).unwrap();
+        assert!(!fresh.state().items.iter().any(|r| r.key == first));
+        let second = fresh.state().items[0].key.clone();
+        assert_eq!(fresh.find_meta(second.clone()).unwrap().doi, second);
+        fresh.added(second.clone(), "paper-1".into()).unwrap();
+        assert_eq!(fresh.view(D0, CET).papers[0].in_library.as_deref(), Some("paper-1"));
+    }
+
+    #[test]
+    fn the_digest_cites_its_papers_and_says_only_what_they_say() {
+        let (h, _files) = handle();
+        let rec = Recorded::new();
+        for j in ["Nature", "Science", "Cell"] {
+            h.set_journal_with(&rec, j, true).unwrap();
+        }
+        h.run_with(&rec, D0, CET).unwrap();
+        let s = h.state();
+        let batch = s.digest_batch();
+        assert_eq!(batch.len(), 12);
+        assert!(["Nature", "Science", "Cell"].iter().all(|j| batch.iter().filter(|r| r.journal == *j).count() <= 4));
+        let req = h.digest_request().unwrap();
+        assert_eq!(req.instructions, journals::DIGEST_INSTRUCTIONS);
+        assert!(req.prompt.contains(&format!("[1] {} ({})", batch[0].title, batch[0].journal)), "{}", req.prompt);
+        assert!(req.prompt.contains("New research papers this week in Nature, Science and Cell:"));
+        assert!(req.prompt.contains("The scientist's interests"));
+        let t = |i: usize| batch[i].title.clone();
+        let answer = format!(
+            "Here is the digest:\n\
+             {} [1]. {} and {} [2, 3]. \
+             Everything in biology changed this week. \
+             {} in 97% of zebrafish [4]. \
+             {} [42].",
+            t(0), t(1), t(2), t(3), t(4)
+        );
+        let kept = h.set_digest(req.key.clone(), answer).unwrap();
+        assert_eq!(kept, 2, "{:?}", h.state().digest);
+        let s = h.state();
+        assert_eq!(s.digest[0].keys, vec![batch[0].key.clone()]);
+        assert_eq!(s.digest[1].keys, vec![batch[1].key.clone(), batch[2].key.clone()]);
+        assert!(h.digest_request().is_none(), "written for these papers");
+        let v = h.view(D0, CET);
+        assert_eq!(v.digest.len(), 2);
+        assert_eq!(v.digest[1].cites.iter().map(|c| c.number).collect::<Vec<_>>(), vec![2, 3]);
+        let link = highlight_link(&batch[0].key);
+        assert!(v.digest_markdown.contains(&format!("[1]({link})")), "{}", v.digest_markdown);
+        assert_eq!(highlight_key(&link).as_deref(), Some(batch[0].key.as_str()));
+        assert!(v.digest_share.starts_with("From Nature, Science and Cell (16–23 Nov), Lunta"));
+        // an answer for papers since replaced is dropped
+        assert_eq!(h.set_digest("v1|other".into(), "Anything [1].".into()).unwrap(), 0);
+
+        // turning a cited paper down drops the sentence citing it
+        h.dismiss(batch[0].key.clone()).unwrap();
+        let v = h.view(D0, CET);
+        assert_eq!(v.digest.len(), 1);
+
+        // the core's model (desktop, Android)
+        struct Model;
+        impl Writer for Model {
+            fn answer(&self, instructions: &str, prompt: &str, _: u32) -> Option<String> {
+                assert_eq!(instructions, journals::DIGEST_INSTRUCTIONS);
+                let first = prompt.split("\n[1] ").nth(1)?.split(" (").next()?.to_string();
+                Some(format!("{first} [1]."))
+            }
+        }
+        assert_eq!(write_digest(h.files(), &Model), 1);
+    }
+
+    #[test]
+    fn choosing_journals() {
+        let (h, files) = handle();
+        let rec = Recorded::new();
+        // journals you follow come with a Highlights toggle (OpenAlex's name for PNAS too)
+        files
+            .save_watches(&[
+                Watch::new(WatchType::Journal, "Nature", "Nature", D0),
+                Watch::new(WatchType::Journal, "Proceedings of the National Academy of Sciences", "Proceedings of the National Academy of Sciences", D0),
+                Watch::new(WatchType::Author, "Jane Doe", "Jane Doe", D0),
+            ])
+            .unwrap();
+        let c = h.choices();
+        assert_eq!(c[0], JournalChoice { name: "Nature".into(), on: false, followed: true });
+        assert_eq!(c[1], JournalChoice { name: "PNAS".into(), on: false, followed: true });
+        assert!(c.iter().any(|x| x.name == "Cell" && !x.followed && !x.on));
+        assert_eq!(c.iter().filter(|x| x.name == "Nature").count(), 1);
+        h.set_journal_with(&rec, "PNAS", true).unwrap();
+        h.set_journal_with(&rec, "nature neuroscience", true).unwrap();
+        let s = h.state();
+        assert_eq!(s.journals[0].issn, vec!["0027-8424", "1091-6490"]);
+        assert_eq!(s.journals[1].name, "Nature Neuroscience");
+        assert_eq!(h.choices()[0], JournalChoice { name: "PNAS".into(), on: true, followed: true });
+        // a journal not in the table: its ISSN from Crossref (an exact name, else the first)
+        h.set_journal_with(&rec, "Cell Systems", true).unwrap();
+        assert_eq!(h.state().journals[2].issn, vec!["2405-4712", "2405-4720"]);
+        h.set_journal_with(&rec, "PNAS", false).unwrap();
+        assert_eq!(h.state().journals.len(), 2);
+        assert!(suggested("The New England Journal of Medicine").is_some() && suggested("NEJM").is_some());
+        // the file keeps what a newer app adds
+        let mut v: Value = serde_json::from_str(&std::fs::read_to_string(files.library.join(journals::FILE)).unwrap()).unwrap();
+        v["futureKey"] = Value::from(1);
+        std::fs::write(files.library.join(journals::FILE), v.to_string()).unwrap();
+        h.set_cadence("daily".into()).unwrap();
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(files.library.join(journals::FILE)).unwrap()).unwrap();
+        assert_eq!(v["futureKey"], 1);
+        assert_eq!(v["cadence"], "daily");
+    }
+
+    #[test]
+    fn crossref_down_is_said_and_the_week_stays_due() {
+        let (h, _files) = handle();
+        let rec = Recorded { calls: Mutex::new(vec![]), down: true };
+        h.set_journal_with(&rec, "Nature", true).unwrap();
+        let r = h.run_with(&rec, D0, CET).unwrap();
+        assert!(r.failed);
+        assert_eq!(r.problem.as_deref(), Some("Couldn't reach Crossref. Nature: api.crossref.org answered HTTP 503"));
+        assert_eq!(h.state().last_run, None);
+        assert!(h.is_due(D0, CET, false));
+        assert_eq!(h.view(D0, CET).problem, r.problem);
+        // and gone once it answers
+        h.run_with(&Recorded::new(), D0, CET).unwrap();
+        assert_eq!(h.view(D0, CET).problem, None);
+    }
+
+    #[test]
+    fn one_line_and_periods() {
+        assert_eq!(
+            key_sentence("Direction selectivity is a classic computation. Here we develop TransA-MERFISH to map circuits. It works."),
+            "We develop TransA-MERFISH to map circuits."
+        );
+        assert_eq!(key_sentence("Only one sentence here"), "Only one sentence here");
+        assert_eq!(key_sentence(""), "");
+        let s = HighlightsState::default();
+        // Wednesday 25 Nov 2026, 10:00 CET: the week's papers were due Monday 07:00
+        let wed = D0 + 2 * DAY_MS + HOUR_MS;
+        assert_eq!(iso8601(s.last_due(7 * 60, wed, CET)), "2026-11-23T06:00:00Z");
+        // Monday before 07:00: last Monday's
+        assert_eq!(iso8601(s.last_due(7 * 60, D0 - 3 * HOUR_MS, CET)), "2026-11-16T06:00:00Z");
+        let daily = HighlightsState { cadence: "daily".into(), ..Default::default() };
+        assert_eq!(iso8601(daily.last_due(7 * 60, wed, CET)), "2026-11-25T06:00:00Z");
+    }
+}

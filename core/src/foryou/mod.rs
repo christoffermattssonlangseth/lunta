@@ -14,6 +14,7 @@
 //! [`ForYou`] is the handle the apps use (directly from the desktop app's Rust; through UniFFI as
 //! `NewForYou` on Android, see `ffi.rs`).
 
+pub mod journals;
 pub mod rank;
 pub mod run;
 pub mod state;

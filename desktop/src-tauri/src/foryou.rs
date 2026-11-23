@@ -11,6 +11,7 @@
 //!
 //! Events: `foryou` {running, stage, finished, found, error}.
 
+use lunta_core::foryou::journals::{HighlightsView, JournalChoice, JournalHighlights};
 use lunta_core::foryou::run::{NetFinder, Writer};
 use lunta_core::foryou::view::{FeedView, SettingsView};
 use lunta_core::foryou::ForYou;
@@ -30,6 +31,10 @@ pub struct Feed {
     /// the digest key summaries were last tried for (once per feed and session: a paper the
     /// model can't summarize isn't asked again every ten minutes)
     summarized: Mutex<Option<String>>,
+    /// journal highlights for the open library
+    journals: Mutex<Option<(PathBuf, Arc<JournalHighlights>)>>,
+    /// the highlights digest last tried (once per set of papers and session)
+    digested: Mutex<Option<String>>,
 }
 
 fn now() -> i64 {
@@ -51,6 +56,23 @@ fn handle(app: &AppHandle) -> R<Arc<ForYou>> {
     let f = Arc::new(ForYou::new(lib, root.clone(), local));
     *open = Some((root, f.clone()));
     Ok(f)
+}
+
+/// Journal highlights for the open library (made when the library changes).
+fn highlights(app: &AppHandle) -> R<Arc<JournalHighlights>> {
+    let state = app.state::<AppState>();
+    let (lib, root) = (state.lib()?, state.root()?);
+    let feed = app.state::<Feed>();
+    let mut open = feed.journals.lock().unwrap();
+    if let Some((r, j)) = open.as_ref() {
+        if *r == root {
+            return Ok(j.clone());
+        }
+    }
+    let local = app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("foryou").join(folder_name(&root));
+    let j = JournalHighlights::new(lib, root.to_string_lossy().into(), local.to_string_lossy().into());
+    *open = Some((root, j.clone()));
+    Ok(j)
 }
 
 /// A stable folder name for a library path (FNV-1a, as the search index's cache folder).
@@ -254,12 +276,139 @@ pub async fn foryou_stop(app: AppHandle) -> R<()> {
     Ok(())
 }
 
+// ---- journal highlights ("From the journals you follow") ----
+
+#[tauri::command]
+pub async fn foryou_highlights(app: AppHandle, tz: i32) -> R<HighlightsView> {
+    let j = highlights(&app)?;
+    tauri::async_runtime::spawn_blocking(move || j.view(now(), tz)).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn foryou_highlight_choices(app: AppHandle) -> R<Vec<JournalChoice>> {
+    Ok(highlights(&app)?.choices())
+}
+
+/// A journal in the highlights or out (its ISSN from Crossref when it isn't a known one); the
+/// papers are looked for again.
+#[tauri::command]
+pub async fn foryou_set_highlight_journal(app: AppHandle, name: String, on: bool, tz: i32) -> R<()> {
+    let j = highlights(&app)?;
+    tauri::async_runtime::spawn_blocking(move || j.set_journal(name, on)).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+    start_highlights(&app, tz);
+    Ok(())
+}
+
+/// Nature, Science and Cell.
+#[tauri::command]
+pub async fn foryou_highlights_defaults(app: AppHandle, tz: i32) -> R<()> {
+    let j = highlights(&app)?;
+    tauri::async_runtime::spawn_blocking(move || j.turn_on_defaults()).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+    start_highlights(&app, tz);
+    Ok(())
+}
+
+/// "weekly" or "daily".
+#[tauri::command]
+pub async fn foryou_set_highlight_cadence(app: AppHandle, cadence: String, tz: i32) -> R<()> {
+    highlights(&app)?.set_cadence(cadence).map_err(|e| e.to_string())?;
+    start_highlights(&app, tz);
+    Ok(())
+}
+
+/// Looks for the period's papers now (Retry).
+#[tauri::command]
+pub async fn foryou_highlights_run(app: AppHandle, tz: i32) -> R<()> {
+    highlights(&app)?;
+    start_highlights(&app, tz);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn foryou_highlight_dismiss(app: AppHandle, key: String) -> R<()> {
+    highlights(&app)?.dismiss(key).map_err(|e| e.to_string())
+}
+
+/// Adds a paper from the highlights (as foryou_add does). The library's id.
+#[tauri::command]
+pub async fn foryou_highlight_add(app: AppHandle, state: State<'_, AppState>, key: String, must_read: bool) -> R<String> {
+    let j = highlights(&app)?;
+    let lib = state.lib()?;
+    let log = crate::logger(&app);
+    tauri::async_runtime::spawn_blocking(move || -> R<String> {
+        let meta: PaperMeta = j.find_meta(key.clone()).ok_or("That paper is no longer in the highlights.")?;
+        let existing = (!meta.doi.is_empty()).then(|| lib.find_by_doi(meta.doi.clone())).flatten();
+        let id = match existing {
+            Some(p) => p.id,
+            None => {
+                let by_doi = if meta.doi.is_empty() { None } else { crate::add::add(&lib, &meta.doi, &log).ok().map(|a| a.paper.id) };
+                match by_doi {
+                    Some(id) => id,
+                    None => lib.add_paper(meta, None, None, None).map_err(|e| e.to_string())?.id,
+                }
+            }
+        };
+        if must_read {
+            lib.set_must_read(id.clone(), true).map_err(|e| e.to_string())?;
+        }
+        j.added(key, id.clone()).map_err(|e| e.to_string())?;
+        Ok(id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The period's papers in the background, then the digest when the model is downloaded.
+fn start_highlights(app: &AppHandle, tz: i32) {
+    let Ok(j) = highlights(app) else { return };
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let r = j.run(now(), tz);
+        let error = match &r {
+            Ok(r) if r.failed => r.problem.clone(),
+            Err(e) => Some(e.to_string()),
+            _ => None,
+        };
+        let _ = app.emit("foryou", Event { running: false, stage: None, finished: true, found: 0, error });
+        digest_highlights(&app, &j);
+    });
+}
+
+/// The highlights' digest by the on-device model, once per set of papers and session.
+fn digest_highlights(app: &AppHandle, j: &Arc<JournalHighlights>) {
+    if !crate::ai::model_installed(app) {
+        return;
+    }
+    let Some(req) = j.digest_request() else { return };
+    {
+        let feed = app.state::<Feed>();
+        let mut last = feed.digested.lock().unwrap();
+        if last.as_deref() == Some(req.key.as_str()) {
+            return;
+        }
+        *last = Some(req.key.clone());
+    }
+    if let Ok(Some(e)) = crate::ai::engine(app) {
+        if lunta_core::foryou::journals::write_digest(j.files(), e.as_ref()) > 0 {
+            let _ = app.emit("foryou", Event { running: false, stage: None, finished: true, found: 0, error: None });
+        }
+    }
+}
+
 /// Every ten minutes and at start: the day's run when it is due; otherwise summaries for a feed
 /// another device made without them (once per feed). The notice for a new feed, once (the
 /// frontend shows it in the status bar: there is no system notification here).
 #[tauri::command]
 pub async fn foryou_tick(app: AppHandle, tz: i32) -> R<Option<(String, String)>> {
     let f = handle(&app)?;
+    if let Ok(j) = highlights(&app) {
+        if j.is_due(now(), tz, false) {
+            start_highlights(&app, tz);
+        } else if j.digest_request().is_some() {
+            let app2 = app.clone();
+            std::thread::spawn(move || digest_highlights(&app2, &j));
+        }
+    }
     if f.running().0 {
         return Ok(None);
     }
