@@ -9,12 +9,21 @@ on:
   pull_request:
     paths: ['desktop/**', 'core/**', 'apple/Shared/**', 'apple/citations/**', 'scripts/extract-reader-assets.mjs', 'scripts/reader-tests/**', '.github/workflows/desktop.yml']
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Rebuild and attach to this release (e.g. v1.2.0); empty for a plain build'
+        type: string
+        default: ''
   # release.yml runs this for a version tag and attaches the result to the release
   workflow_call:
     inputs:
       release_tag:
         type: string
         default: ''
+
+# attaching to a release (inputs.release_tag)
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -40,11 +49,12 @@ jobs:
           sudo apt-get install -y cmake libclang-dev
 
       # our own CMake for llama.cpp: the Windows runner image's CMake was once caught half-updated
-      # (cmake 4.5 looking for 4.4's modules), which broke the build
+      # (cmake 4.5 looking for 4.4's modules), which broke the build. Windows needs CMake 4.2 or
+      # newer since the runner has Visual Studio 2026 ("Visual Studio 18 2026" is unknown to 3.x).
       - name: CMake
         uses: lukka/get-cmake@latest
         with:
-          cmakeVersion: "~3.31.0"
+          cmakeVersion: ${{ runner.os == 'Windows' && '~4.2.0' || '~3.31.0' }}
 
       - uses: dtolnay/rust-toolchain@stable
 
