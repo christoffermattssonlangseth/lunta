@@ -1147,6 +1147,10 @@ impl<'a> Analyzer<'a> {
             let size_change = (l.size - a.size).abs() >= 1.0;
             let style_break = (a.bold > 0.9) != (l.bold > 0.9) && (count(at) < 120 || count(&l.text) < 120);
             let cap = caption_re().is_match(trim(&l.text));
+            // (a problem's or exercise's bold label after a sentence's end starts its paragraph)
+            let problem = ends_sentence
+                && l.spans.first().is_some_and(|s| s.bold)
+                && re!(r"^\s*(Problem|Exercise)\s+(\d+\.\d+|[A-Z]\.\d+|\d+)\b").is_match(&l.text);
             // a bullet starts a list item; the item's next lines are indented to its text
             let bullet = is_bullet(&l.text);
             let in_item = is_bullet(&cur[0].text);
@@ -1159,6 +1163,7 @@ impl<'a> Analyzer<'a> {
                 || style_break
                 || cap
                 || bullet
+                || problem
                 || (cur.len() == 1 && l.bbox.x0 > a.bbox.x0 + 8.0 && gap > 0.3 * l.size && !numbered_item && !in_item)
             {
                 if jumped
@@ -1636,7 +1641,9 @@ impl<'a> Analyzer<'a> {
                 // (not a list item, nor sentences about formulas set in math type: words of running text
                 // in most of its lines)
                 let words = super::equations::prose_words(&p.text());
-                let talk = is_bullet(&p.lines[0].text) || (words >= 4 && words as f64 > 1.5 * p.lines.len() as f64);
+                let talk = is_bullet(&p.lines[0].text)
+                    || re!(r"^\s*(Problem|Exercise)\s+(\d+\.\d+|[A-Z]\.\d+|\d+)\b").is_match(&p.text())
+                    || (words >= 4 && words as f64 > 1.5 * p.lines.len() as f64);
                 if mf > 0.3 && n < 400 && !is_prose(&p.text()) && !talk {
                     p.kind = Kind::Equation;
                 }

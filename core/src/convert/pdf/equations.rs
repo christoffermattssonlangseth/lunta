@@ -140,7 +140,7 @@ impl Analyzer<'_> {
         // from the column's left edge or in math type
         let math_like = |l: &PLine, col_left: f64| -> bool {
             let t = trim(&l.text);
-            if t.is_empty() || is_prose(t) || caption_re().is_match(t) {
+            if t.is_empty() || is_prose(t) || caption_re().is_match(t) || re!(r"^(Problem|Exercise)\s+(\d+\.\d+|[A-Z]\.\d+|\d+)\b").is_match(t) {
                 return false;
             }
             if l.bold > 0.6 && l.math < 0.2 && count(t) > 3 {

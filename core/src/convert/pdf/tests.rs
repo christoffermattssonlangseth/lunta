@@ -2083,3 +2083,28 @@ fn index_sub_entries_and_end_sections_in_a_book() {
     assert!(h.contains("<p class=\"index\">entry 200, 3</p><p class=\"index sub\">sub 200, 40</p>"), "{h}");
     assert!(book.chapters.iter().any(|c| c.headings.iter().any(|x| x.level == 2 && x.title == "Notes")), "{h}");
 }
+
+#[test]
+fn a_problems_label_starts_its_paragraph() {
+    let problem = |label: &str, rest: &str, y: f64| {
+        let mut l = line(&format!("{label} {rest}"), 0, 72.0, y, 9.0);
+        l.bbox.x1 = 522.0;
+        l.spans = vec![Span { text: label.into(), bold: true, ..Default::default() }, Span { text: format!(" {rest}"), ..Default::default() }];
+        l
+    };
+    let mut p1 = vec![bold(line("A Tiny Test Paper About Problems", 0, 150.0, 60.0, 18.0)), bold(line("1 Introduction", 0, 72.0, 100.0, 12.0))];
+    p1.extend(justified(0, 120.0, 4, "first"));
+    p1.push(problem("Problem 1.1", "Show that the model is linear in its parameters and that its loss is", 200.0));
+    let mut end = line("convex in all of them, which ends the problem.", 0, 72.0, 210.0, 9.0);
+    end.bbox.x1 = 522.0;
+    p1.push(end);
+    p1.push(problem("Problem 1.2", "Suppose that the data are drawn from a normal distribution with an", 220.0));
+    p1.extend(justified(0, 260.0, 4, "last"));
+    let pages = vec![
+        Page { width: 612.0, height: 792.0, lines: p1, graphics: PageGraphics::default() },
+        Page { width: 612.0, height: 792.0, lines: justified(1, 80.0, 6, "next"), graphics: PageGraphics::default() },
+    ];
+    let book = book_of(pages);
+    let h: String = book.chapters.iter().map(|c| c.html.as_str()).collect();
+    assert!(h.contains("ends the problem.</p><p><strong>Problem 1.2</strong>"), "{h}");
+}
