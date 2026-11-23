@@ -147,12 +147,20 @@ protected, and how long it is kept.</p>
 
 <h3 id="google-data-ai">AI and machine learning</h3>
 <ul>
-  <li>Lunta does not send Google user data to any AI or machine-learning service, and uses no third-party AI
-      service. Google Docs content is never given to any AI model.</li>
+  <li>Lunta itself does not send Google user data to any AI or machine-learning service, and uses no
+      third-party AI service. Google Docs content is never given to any AI model.</li>
   <li>Ask, Lunta's assistant, runs entirely on your device: with Apple Intelligence (on the device) or with an
       open model that Lunta downloads once from Hugging Face and runs offline. It reads papers in your library,
       which may be stored in your Google Drive, only on your device; nothing is sent to the model's provider or
       anyone else.</li>
+  <li><strong>Connecting your own AI assistant (optional).</strong> Lunta includes a local tool (an MCP server)
+      that you can choose to connect to an AI app of your own, such as Claude or ChatGPT on your computer. It runs
+      only when that app starts it, only on your computer, and reads only your Lunta library (paper details,
+      the text of your papers, highlights and notes) to answer what you ask in that app. If your library is kept in
+      Google Drive, what it reads may include those files. It has no access to Google Docs, your Google account or
+      Lunta's Google sign-in. Lunta never connects it to any AI service by itself; that app's own terms and
+      privacy policy apply to what you send it, so choose one that does not train on your data (or turn training
+      off in its settings).</li>
   <li>Google user data (raw, aggregated, anonymized or derived) is never used to create, train or improve any
       AI or machine-learning model, Lunta's or anyone else's.</li>
 </ul>
