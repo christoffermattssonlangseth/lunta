@@ -150,4 +150,16 @@ final class EquationTests: XCTestCase {
         XCTAssertTrue(h.contains("<figure class=\"code\"><pre><code>for epoch in range(100):\n    for i, data in enumerate(loader):\n        pred = model(x_batch)"), h)
         XCTAssertTrue(h.contains("\n    scheduler.step()</code></pre><figcaption>Figure 5.1 Sample code"), h)
     }
+
+    func testLigatureCharactersAreLetters() async throws {
+        // a font whose text gives the ligature's character ("eﬀicient", "ﬁnd", "ﬂow"): plain letters
+        var p = [Piece(text: "A Study of Things", size: 20, x: 72, y: 80), Piece(text: "1 Introduction", size: 12, x: 72, y: 130)]
+        p += FootnoteTests.body("page 0", y: 160, n: 3)
+        p.append(Piece(text: "an e\u{FB00}icient way to \u{FB01}nd the \u{FB02}ow of things here.", x: 72, y: 200))
+        p += FootnoteTests.body("page 0 on", y: 230, n: 3)
+        let book = try await PDFBook.build(FootnoteTests.pdf([p, FootnoteTests.body("the end", y: 100)]), meta: PaperMeta(), log: { _ in })
+        let h = html(book)
+        XCTAssertTrue(h.contains("an efficient way to find the flow of things"), h)
+        XCTAssertNil(h.range(of: "[\u{FB00}-\u{FB06}]", options: .regularExpression), h)
+    }
 }

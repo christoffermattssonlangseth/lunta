@@ -732,6 +732,23 @@ final class PDFAnalyzer {
                 }
                 chars = kept
             }
+            // ligature characters (U+FB00–FB06, "eﬀicient" where a font's ToUnicode gives them) as their
+            // letters, so that search, quotes and reading aloud find the word; each takes its share of the box
+            if chars.contains(where: { $0.ch.unicodeScalars.count == 1 && (0xFB00...0xFB06).contains($0.ch.unicodeScalars.first!.value) }) {
+                var plain: [C] = []
+                for c in chars {
+                    guard c.ch.unicodeScalars.count == 1, let u = c.ch.unicodeScalars.first, (0xFB00...0xFB06).contains(u.value) else { plain.append(c); continue }
+                    let letters = Array(c.ch.precomposedStringWithCompatibilityMapping)
+                    let w = c.box.w / CGFloat(max(1, letters.count))
+                    for (k, ch) in letters.enumerated() {
+                        var d = c
+                        d.ch = String(ch)
+                        d.box = R(x0: c.box.x0 + w * CGFloat(k), y0: c.box.y0, x1: c.box.x0 + w * CGFloat(k + 1), y1: c.box.y1)
+                        plain.append(d)
+                    }
+                }
+                chars = plain
+            }
             // the line's baseline as the content stream sets it: where every character has the full
             // line's box, a smaller one is raised or lowered by its own baseline (TeX's θ₁₀, x²)
             // (and wherever a smaller character has its own run, it is raised or lowered by the run's
