@@ -321,7 +321,10 @@ test('the background script: Google sign-in, the Docs API over fetch, Lunta’s 
   const lunta = fakeLunta(LIB);
   const DOC = 'abcdefghijklmnopqrstuvwxyz0123';
   let consented = false, tokenN = 0, valid = new Set(), luntaRoutes = true;
-  const flows = [];
+  const flows = [], pickers = [];
+  // drive.file: Google opens for Lunta only the documents given to it in the picker
+  const given = new Set();
+  let pickerAnswer = (doc) => '#picked=' + doc, viewOnly = false;
   const json = (status, j) => new Response(JSON.stringify(j), { status, headers: { 'Content-Type': 'application/json' } });
   const fetch = async (url, init) => {
     init = init || {};
@@ -329,6 +332,8 @@ test('the background script: Google sign-in, the Docs API over fetch, Lunta’s 
     if (url.startsWith('https://docs.googleapis.com/v1/documents/')) {
       if (!valid.has((h.Authorization || '').replace('Bearer ', ''))) return json(401, { error: { message: 'Invalid Credentials' } });
       const rest = url.slice('https://docs.googleapis.com/v1/documents/'.length);
+      if (!given.has(DOC)) return json(404, { error: { message: 'Requested entity was not found.' } });
+      if (viewOnly && init.method !== 'GET') return json(403, { error: { message: 'The caller does not have permission' } });
       try {
         if (init.method === 'GET') { assert.equal(rest, DOC + '?includeTabsContent=true'); return json(200, await api.get(DOC)); }
         const b = JSON.parse(init.body);
@@ -347,16 +352,30 @@ test('the background script: Google sign-in, the Docs API over fetch, Lunta’s 
     if (url.startsWith('https://oauth2.googleapis.com/revoke')) return json(200, {});
     throw new TypeError('fetch failed: ' + url);
   };
-  const session = {};
+  const session = {}, local = {};
+  const grants = () => JSON.parse(JSON.stringify(local.grantedDocs || []));   // plain arrays across the vm boundary
   const chrome = {
     identity: {
       getRedirectURL: () => 'https://abcdefghijklmnop.chromiumapp.org/',
       launchWebAuthFlow: async ({ url, interactive }) => {
+        if (url.startsWith('https://getlunta.app/picker.html')) {
+          // Lunta's picker page: everything in the fragment, nothing in the query
+          const u = new URL(url), f = new URLSearchParams(u.hash.slice(1));
+          assert.equal(u.search, '');
+          assert.equal(interactive, true);
+          assert.ok(valid.has(f.get('token')), 'a token Google takes');
+          assert.equal(f.get('back'), 'https://abcdefghijklmnop.chromiumapp.org/');
+          pickers.push(f.get('doc'));
+          const a = pickerAnswer(f.get('doc'));
+          if (a === null) throw new Error('The user did not approve access.');
+          if (a.startsWith('#picked=') && a.slice(8) === f.get('doc')) given.add(f.get('doc'));
+          return f.get('back') + a;
+        }
         const q = new URL(url).searchParams;
         flows.push({ interactive, prompt: q.get('prompt') });
         assert.equal(q.get('client_id'), 'test-client.apps.googleusercontent.com');
         assert.equal(q.get('redirect_uri'), 'https://abcdefghijklmnop.chromiumapp.org/');
-        assert.equal(q.get('scope'), 'https://www.googleapis.com/auth/documents');
+        assert.equal(q.get('scope'), 'https://www.googleapis.com/auth/drive.file');
         if (!interactive && !consented) throw new Error('User interaction required.');
         consented = true;
         const t = 'tok' + (++tokenN);
@@ -364,7 +383,10 @@ test('the background script: Google sign-in, the Docs API over fetch, Lunta’s 
         return `https://abcdefghijklmnop.chromiumapp.org/#access_token=${t}&token_type=Bearer&expires_in=3599&scope=${encodeURIComponent(q.get('scope'))}`;
       }
     },
-    storage: { session: { get: async (k) => ({ [k]: session[k] }), set: async (o) => Object.assign(session, o), remove: async (k) => { delete session[k]; } } }
+    storage: {
+      session: { get: async (k) => ({ [k]: session[k] }), set: async (o) => Object.assign(session, o), remove: async (k) => { delete session[k]; } },
+      local: { get: async (k) => ({ [k]: local[k] }), set: async (o) => Object.assign(local, o), remove: async (k) => { delete local[k]; } }
+    }
   };
   const ctx = { chrome, fetch, LuntaCite: C, LuntaDocs: D, makeLuntaGDocs, LUNTA_GOOGLE_CLIENT_ID: 'test-client.apps.googleusercontent.com',
     URL, URLSearchParams, AbortController, setTimeout, clearTimeout, console, Blob, Response, CompressionStream, DecompressionStream, btoa, atob };
@@ -378,6 +400,28 @@ test('the background script: Google sign-in, the Docs API over fetch, Lunta’s 
   assert.deepEqual(await ask({ op: 'connect' }), { connected: true });
   s = await ask({ op: 'status' });
   assert.equal(s.connected, true);
+  // a document not given to Lunta yet: the panel offers Google's picker, set to it
+  let a = await ask({ op: 'state', docId: DOC });
+  assert.equal(a.kind, 'access');
+  assert.match(a.error, /Give Lunta access to this document/);
+  // closed without choosing, cancelled, another document: still not given, said so
+  pickerAnswer = () => null;
+  assert.equal((await ask({ op: 'grant', docId: DOC })).kind, 'access');
+  pickerAnswer = () => '#error=cancelled';
+  assert.match((await ask({ op: 'grant', docId: DOC })).error, /without choosing/);
+  pickerAnswer = () => '#picked=zzzzzzzzzzzzzzzzzzzzzzzzzz';
+  assert.match((await ask({ op: 'grant', docId: DOC })).error, /wasn’t this document/);
+  pickerAnswer = () => '#error=setup';
+  assert.equal((await ask({ op: 'grant', docId: DOC })).kind, 'setup');
+  assert.deepEqual(grants(), []);
+  assert.equal((await ask({ op: 'grant', docId: '../x' })).kind, 'http');
+  // chosen: remembered, and the same request works
+  pickerAnswer = (doc) => '#picked=' + doc;
+  assert.deepEqual(await ask({ op: 'grant', docId: DOC }), { granted: true });
+  assert.deepEqual(pickers, [DOC, DOC, DOC, DOC, DOC]);
+  assert.deepEqual(grants(), [DOC]);
+  a = await ask({ op: 'state', docId: DOC });
+  assert.equal(a.error, undefined, a.error);
   // insert a citation the way the panel does
   const prep = await ask({ op: 'prepareInsert', docId: DOC, ids: ['a'] });
   assert.ok(prep.token && prep.html.includes(prep.token));
@@ -396,16 +440,32 @@ test('the background script: Google sign-in, the Docs API over fetch, Lunta’s 
   // another account: Google's account picker
   await ask({ op: 'connect', selectAccount: true });
   assert.equal(flows[flows.length - 1].prompt, 'select_account');
-  // a document this account can't open; an older Lunta; not a document id
-  const real = api.get.bind(api);
-  api.get = async () => { const e = new Error('The caller does not have permission'); e.status = 403; throw e; };
-  assert.equal((await ask({ op: 'state', docId: DOC })).kind, 'access');
-  api.get = real;
+  // the other account's documents are not this one's: given again
+  assert.deepEqual(grants(), []);
+  // a document Lunta may read but this account may only view: no picker, said so
+  viewOnly = true;
+  assert.equal((await ask({ op: 'update', docId: DOC, style: 'vancouver' })).kind, 'readonly');
+  viewOnly = false;
+  // a document opened before that Google no longer opens for Lunta: said so, and forgotten
+  assert.equal((await ask({ op: 'state', docId: DOC })).error, undefined);
+  assert.deepEqual(grants(), [DOC]);
+  given.clear();
+  a = await ask({ op: 'state', docId: DOC });
+  assert.equal(a.kind, 'access');
+  assert.match(a.error, /had this document before/);
+  assert.deepEqual(grants(), []);
+  a = await ask({ op: 'state', docId: DOC });
+  assert.match(a.error, /can’t open this document yet/);
+  given.add(DOC);
+  // an older Lunta; not a document id
   luntaRoutes = false;
   assert.match((await ask({ op: 'search', q: 'alpha' })).error, /Update Lunta/);
   assert.match((await ask({ op: 'state', docId: '../x' })).error, /isn’t a Google Docs document/);
-  // disconnect: forgotten
+  // disconnect: forgotten, the documents given too
+  assert.equal((await ask({ op: 'state', docId: DOC })).error, undefined);
+  assert.deepEqual(grants(), [DOC]);
   await ask({ op: 'disconnect' });
+  assert.deepEqual(grants(), []);
   consented = false;
   assert.equal((await ask({ op: 'status' })).connected, false);
 });

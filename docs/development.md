@@ -529,8 +529,12 @@ their browser extensions. Lunta's does the same (`extension/gdocs/`):
 
 - **How it reads and writes.** Docs draws its pages on a canvas, so the page's DOM can't be edited. The
   extension uses the **Google Docs REST API** (`documents.get` with tabs, `documents.batchUpdate`), signed in with
-  `identity.launchWebAuthFlow` (Chrome, Edge, Firefox; one *Web application* OAuth client, scope `documents`; the
-  token only in the background script, in session storage). This is what Zotero does.
+  `identity.launchWebAuthFlow` (Chrome, Edge, Firefox; one *Web application* OAuth client, scope `drive.file`; the
+  token only in the background script, in session storage). With `drive.file`, Google opens only the documents the
+  user gave Lunta in Google's picker: a 404/403 on a document makes the panel offer **Give Lunta access to this
+  document** (the Picker on `getlunta.app/picker.html` opened with `launchWebAuthFlow`; in Safari, Google's
+  desktop picker during the app's sign-in), then it carries on. Details: google-docs-extension.md, "Giving Lunta
+  a document". Google's verification refused the sensitive `documents` scope (Nov 2026).
 - **Where the cursor is.** The API doesn't know. The panel pastes a placeholder through Docs' own paste handling
   (a synthetic `paste` on Docs' input iframe, `.docs-texteventtarget-iframe`, as Zotero does): a link to
   `https://margins.local/insert?t=<token>&ids=…` (or `&bib=1`). The background then finds it with the API (Docs
@@ -558,13 +562,13 @@ their browser extensions. Lunta's does the same (`extension/gdocs/`):
 - **Rejected:** editing through the page (canvas; Docs' accessibility DOM is read-only and changes often);
   reading through `export?format=html` and writing by paste only (no way to rewrite existing citations or the
   bibliography: Update All and style changes are the point); `chrome.identity.getAuthToken` (Chrome only; a second
-  OAuth client); the narrower `drive.file` scope (needs the Google Picker per document, a remote script an MV3
-  extension can't load: see google-docs-extension.md); keeping only the Apps Script (it stays, as the fallback); for Safari, a second
+  OAuth client); the `documents` scope (sensitive: Google's verification refused it in favour of `drive.file` with
+  the Picker); keeping only the Apps Script (it stays, as the fallback); for Safari, a second
   implementation of the citations in Swift (the app runs the extension's JavaScript instead), and
   `ASWebAuthenticationSession` (it doesn't take a loopback redirect, which a Desktop client needs).
 - **Safari (on the Mac): Lunta for Mac does the Google part.** Safari has no `identity` API for extensions and
   blocks the synthetic paste. There, the background script passes the panel's requests (status, connect,
-  disconnect, state, update, prepareInsert, finishInsert, details, editCitation) to the app, `POST /gdocs` on
+  disconnect, grant, state, update, prepareInsert, finishInsert, details, editCitation) to the app, `POST /gdocs` on
   the extension endpoint (searching and styles keep using `/cite/…`). The app signs in to Google as an
   installed app (`GoogleDocsAuth.swift`: a *Desktop app* OAuth client, Google's page in the default browser, PKCE,
   a loopback redirect to `http://127.0.0.1:<free port>` it answers itself; the refresh token in the Keychain) and
@@ -1244,7 +1248,7 @@ Google's picker. That scope is *non-sensitive* (brand verification only, no secu
 | Mac, iPhone, iPad with the library in Google Drive (`apple/Shared/DriveLibrarySync.swift`) | the same client (`ASWebAuthenticationSession`) | through `LibrarySync.google_drive_also_own` (lazy on iPhone/iPad by default, a setting on the Mac; the Mac adds its AI agent's log) |
 | CLI `lunta-sync` | any client of the project (`LUNTA_GOOGLE_CLIENT_ID`, a "Desktop app" client with its secret; loopback redirect) | `GoogleDrive` + `Syncer` |
 | Windows/Linux desktop app | none: it opens a library *folder* (e.g. inside Google Drive for desktop); no Drive API | — |
-| Google Docs extension / Mac (citations) | separate scope `auth/documents` (see google-docs-extension.md); no Drive API | — |
+| Google Docs extension / Mac (citations) | separate project (Lunta Docs), scope `drive.file` + the Google Picker per document, Docs API only (see google-docs-extension.md) | — |
 
 The core's Drive client (`core/src/drive/gdrive.rs`) makes these calls, all under the library folder:
 `files.list` (`'<folder>' in parents`, 20 parents per query, and `name = 'Lunta' and 'root' in parents` to

@@ -16,8 +16,19 @@ final class StandInAccount: GoogleDocsAccount {
     let base: String
     init(base: String) { self.base = base }
 
-    func connect(selectAccount: Bool) throws { connected = true }
-    func disconnect() async { connected = false }
+    var granted: Set<String> = []
+    /// the documents the last sign-ins were asked to give Lunta (Google's picker)
+    var picked: [String] = []
+
+    func connect(selectAccount: Bool, document: String?) throws {
+        connected = true
+        if selectAccount { granted = [] }
+        if let document { picked.append(document); granted.insert(document) }
+    }
+    func disconnect() async { connected = false; granted = [] }
+    func isGranted(_ document: String) -> Bool { granted.contains(document) }
+    func rememberGrant(_ document: String) { granted.insert(document) }
+    func forgetGrant(_ document: String) { granted.remove(document) }
 
     func send(method: String, url: String, body: Data?) async throws -> (Int, Data) {
         guard connected else { throw GoogleDocsFailure(message: "Connect your Google account to cite in this document.", kind: "auth") }
@@ -49,7 +60,8 @@ struct Driver {
             if let set = msg["_set"] as? [String: Any] {
                 if let c = set["configured"] as? Bool { account.configured = c }
                 if let c = set["connected"] as? Bool { account.connected = c }
-                out = ["ok": true]
+                if let g = set["granted"] as? [String] { account.granted = Set(g) }
+                out = ["ok": true, "granted": account.granted.sorted(), "picked": account.picked]
             } else {
                 out = await safari.answer(msg)
             }

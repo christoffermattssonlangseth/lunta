@@ -101,8 +101,13 @@
         <header><span class="logo"></span><strong>Lunta</strong><select class="style" title="Citation style" disabled></select></header>
         <div class="setup" hidden><p class="note setupText"></p></div>
         <div class="connect" hidden>
-          <p class="note connectText">Lunta writes citations into this document through Google Docs, with your permission (asked once). Only the document you cite in is read or changed.</p>
+          <p class="note connectText">Lunta writes citations into this document through Google Docs, with your permission (asked once). Lunta reaches only the documents you give it in Google’s window, one by one.</p>
           <div class="buttons"><button class="btn primary connectBtn">Connect Google account</button></div>
+        </div>
+        <div class="grant" hidden>
+          <p class="note grantText">Google lets Lunta open only the documents you give it. Click below, then click Select in Google’s window: the document is chosen already. Once per document.</p>
+          <div class="buttons"><button class="btn primary grantBtn">Give Lunta access to this document</button></div>
+          <p class="note"><button class="link grantAccount">Switch Google account</button></p>
         </div>
         <div class="main" hidden>
           <div class="journal box" hidden>
@@ -178,7 +183,7 @@
     $(".cadd").disabled = !can || !current || !picked.length;
   }
   function show(which) {
-    ["setup", "connect", "main"].forEach((k) => { $("." + k).hidden = k !== which; });
+    ["setup", "connect", "grant", "main"].forEach((k) => { $("." + k).hidden = k !== which; });
   }
 
   function fillStyles() {
@@ -203,6 +208,7 @@
   function check(r) {
     if (r && r.error) {
       if (r.kind === "auth") { ready = false; show("connect"); }
+      if (r.kind === "access") { ready = false; show("grant"); }
       const e = new Error(r.error); e.kind = r.kind; throw e;
     }
     return r;
@@ -655,8 +661,8 @@
   $(".rclose").onclick = () => { $(".rbox").hidden = true; if (resolver) resolver.load([]); $(".rlist").innerHTML = ""; status(""); };
 
   async function connect(selectAccount) {
-    status(viaApp ? "Lunta for Mac opened Google’s sign-in in your browser: sign in there and allow Lunta to edit your documents, then come back here…" : "Waiting for Google…");
-    const r = await send({ op: "connect", selectAccount });
+    status(viaApp ? "Lunta for Mac opened Google’s sign-in in your browser: sign in there, allow Lunta and choose this document (it is the one shown), then come back here…" : "Waiting for Google…");
+    const r = await send({ op: "connect", selectAccount, docId: docId() });   // Safari: the sign-in gives Lunta this document too
     if (r.error) { status(r.error, true); return; }
     // Safari: the app signs in, in a browser tab of its own; ask it until it's done
     if (r.started) {
@@ -675,6 +681,37 @@
   }
   $(".connectBtn").onclick = () => connect(false);
   $(".account").onclick = () => connect(true);
+  $(".grantAccount").onclick = () => connect(true);
+
+  // drive.file: Google's picker, set to this document (the extension: a window from getlunta.app;
+  // Safari: Lunta for Mac opens Google's page in the browser), then everything as before
+  async function grant() {
+    $(".grantBtn").disabled = true;
+    status(viaApp ? "Lunta for Mac opened Google’s page in your browser: choose this document there (it is the one shown) and click Select, then come back here…"
+      : "In Google’s window, click this document (it is the one shown), then Select…");
+    try {
+      const r = await send({ op: "grant", docId: docId() });
+      if (r.error) { status(r.error, true); return; }
+      if (r.started) {
+        const until = Date.now() + 5 * 60000;
+        for (;;) {
+          await delay(1500);
+          const s = await send({ op: "status", docId: docId() });
+          if (s.error) { status(s.error, true); return; }
+          if (!s.connecting) {
+            if (s.authError) { status(s.authError, true); return; }
+            break;
+          }
+          if (Date.now() > until) { status("Google’s page didn’t finish. Try again.", true); return; }
+        }
+      }
+      status("");
+      load();
+    } finally {
+      $(".grantBtn").disabled = false;
+    }
+  }
+  $(".grantBtn").onclick = grant;
 
   // ---- opening ----
 
@@ -686,7 +723,7 @@
     viaApp = !!s.viaApp;
     luntaApi = (s.lunta && s.lunta.api) || 0;
     if (viaApp) {
-      $(".connectText").textContent = "In Safari, Lunta for Mac writes the citations into this document through Google Docs. Connect it to your Google account once (your browser opens Google’s page), with permission to edit your Google Docs documents; only the document you cite in is read or changed.";
+      $(".connectText").textContent = "In Safari, Lunta for Mac writes the citations into this document through Google Docs. Connect it to your Google account (your browser opens Google’s page) and choose this document there: Lunta reaches only the documents you give it.";
     }
     if (!s.configured || !s.supported) {
       show("setup");
@@ -703,6 +740,7 @@
     const st = await send({ op: "state", docId: docId() });
     if (st.error) {
       if (st.kind === "auth") show("connect");
+      if (st.kind === "access") show("grant");
       status(st.error, true);
       return;
     }

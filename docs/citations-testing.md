@@ -149,7 +149,14 @@ once the desktop app on Windows or Linux.
 - [ ] Connect Google account: Google's consent screen once; afterwards opening the panel doesn't ask again,
       also after an hour (the token is renewed without a window) and after restarting the browser (one
       silent renewal, no window). Untick the permission on the consent screen: the panel says why it needs it.
-- [ ] Switch Google account; a document of another account, and one shared view-only: the message says so.
+- [ ] Give Lunta access to this document (`drive.file`; the API key in `site/picker.html` and the site
+      published): a new document shows the step with its button; Google's picker window opens showing only that
+      document; Select: the window closes and the panel loads. Close the window or Cancel: the panel says Lunta
+      still can't open it. Reload the page: no picker again (also after restarting the browser). Another
+      document: the picker again. Without the API key: the panel says it isn't set up yet.
+- [ ] Switch Google account; a document of another account, and one shared view-only: the message says so
+      (view-only: "can't edit", no picker). Take Lunta's access away at myaccount.google.com/permissions and
+      reconnect: a document given before says Lunta had it before and offers the picker.
 - [ ] Search (also a pasted DOI), pick three papers, Insert Citation: one citation at the cursor, numbered,
       the text around it untouched; the citation looks like plain text.
 - [ ] Cursor inside a citation: the papers join it. Right after one: a new citation. Text selected: the
@@ -183,8 +190,10 @@ Lunta for Mac with the Desktop client in `GoogleDocsAuth.swift` (see [google-doc
 
 - [ ] Without the Desktop client (`GoogleDocsClient.id` empty): the panel says it isn't set up yet in Safari and
       points to the Apps Script. Lunta closed: the panel says to open Lunta for Mac.
-- [ ] Connect Google account: the default browser opens Google's page; allow; the tab says Lunta is connected and
-      the panel shows the search by itself. Deny: the panel says so. Quit and reopen Lunta: still connected
+- [ ] Connect Google account: the default browser opens Google's page with its file picker showing this document;
+      allow and choose it; the tab says Lunta is connected and the panel shows the search by itself. Not choosing
+      it: the panel says so and offers Give Lunta access to this document (the picker again). Another document:
+      Give Lunta access to this document, the same page. Deny: the panel says so. Quit and reopen Lunta: still connected
       (Keychain), no window. Switch Google account: Google's account picker.
 - [ ] Insert Citation: the panel says "Press ⌘V in the document where the citation goes"; ⌘V (the cursor where it
       was before clicking the button): "(…)" appears and becomes the citation within a few seconds. Cancel while

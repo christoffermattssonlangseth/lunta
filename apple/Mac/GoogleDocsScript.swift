@@ -28,8 +28,14 @@ protocol GoogleDocsAccount: AnyObject {
     var connecting: Bool { get }
     /// Why the last sign-in didn't finish.
     var lastError: String? { get }
-    /// Starts signing in (returns at once; `connecting` until done).
-    func connect(selectAccount: Bool) throws
+    /// Starts signing in (returns at once; `connecting` until done). `document`: a Google Docs
+    /// document id to give Lunta in the same step (Google's file picker during the sign-in; with
+    /// `drive.file` Lunta may open only the documents the user gave it).
+    func connect(selectAccount: Bool, document: String?) throws
+    /// Whether the user gave Lunta this document (in Google's picker, or Lunta opened it before).
+    func isGranted(_ document: String) -> Bool
+    func rememberGrant(_ document: String)
+    func forgetGrant(_ document: String)
     func disconnect() async
     /// A Docs API request with the account's token (`url` on https://docs.googleapis.com/v1/documents/):
     /// status and body. Throws GoogleDocsFailure("auth") without a usable token; other errors: no network.
@@ -71,7 +77,19 @@ final class GoogleDocsSafari {
         case "connect":
             guard account.configured else { return ["error": Self.setupMessage, "kind": "setup"] }
             do {
-                try account.connect(selectAccount: msg["selectAccount"] as? Bool ?? false)
+                // the sign-in gives Lunta the document the panel is in, too (drive.file)
+                let doc = (msg["docId"] as? String).flatMap { Self.isDocID($0) ? $0 : nil }
+                try account.connect(selectAccount: msg["selectAccount"] as? Bool ?? false, document: doc)
+                return ["started": true]
+            } catch {
+                return Self.failure(error)
+            }
+        case "grant":
+            // "Give Lunta access to this document": Google's page with its file picker set to it
+            guard account.configured else { return ["error": Self.setupMessage, "kind": "setup"] }
+            guard let doc = msg["docId"] as? String, Self.isDocID(doc) else { return ["error": "This isn’t a Google Docs document.", "kind": "http"] }
+            do {
+                try account.connect(selectAccount: false, document: doc)
                 return ["started": true]
             } catch {
                 return Self.failure(error)
@@ -83,12 +101,22 @@ final class GoogleDocsSafari {
              "scanZotero", "convertZotero":
             guard account.configured else { return ["error": Self.setupMessage, "kind": "setup"] }
             guard account.connected else { return ["error": "Connect your Google account to cite in this document.", "kind": "auth"] }
+            let out: [String: Any]
             do {
                 let s = try loadScript()
-                return await s.handle(msg)
+                out = await s.handle(msg)
             } catch {
                 return Self.failure(error)
             }
+            guard let doc = msg["docId"] as? String, Self.isDocID(doc) else { return out }
+            if out["error"] == nil {
+                if op == "state", !account.isGranted(doc) { account.rememberGrant(doc) }
+            } else if out["kind"] as? String == "access", account.isGranted(doc) {
+                // given before, but Google no longer opens it for this account
+                account.forgetGrant(doc)
+                return ["error": Self.lostAccessMessage, "kind": "access"]
+            }
+            return out
         default:
             return ["error": "unknown request", "kind": "http"]
         }
@@ -103,6 +131,12 @@ final class GoogleDocsSafari {
         let s = try GoogleDocsScript(folder: dir, docs: { m, u, b in try await account.send(method: m, url: u, body: b) }, lunta: lunta)
         script = s
         return s
+    }
+
+    static let lostAccessMessage = "Lunta had this document before, but Google doesn’t open it for Lunta now (another Google account is connected, or the access was taken back). Give Lunta access to this document again, or use Switch Google account."
+
+    static func isDocID(_ s: String) -> Bool {
+        s.count >= 20 && s.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }
     }
 
     static func failure(_ error: Error) -> [String: Any] {

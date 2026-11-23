@@ -530,9 +530,16 @@ makeLuntaGDocs.docsAPI = function (send) {
     var msg = (j.error && j.error.message) || ('Google Docs answered ' + r.status + '.');
     if (r.status === 400 && /revision/i.test(msg)) throw fail(msg, 'revision');
     if (r.status === 401) throw fail('Connect your Google account to cite in this document.', 'auth');
+    // With drive.file, Google lets Lunta open only the documents the user gave it in Google's
+    // picker: a document not given yet answers 404 (or 403). The panel then offers "Give Lunta
+    // access to this document". Writing refused for a document Lunta could read: view or comment only.
+    if (method !== 'GET' && r.status === 403) {
+      throw fail('The Google account connected to Lunta can’t edit this document (you can only view or comment). ' +
+        'Ask for edit access, or use Switch Google account in Lunta’s panel.', 'readonly');
+    }
     if (r.status === 403 || r.status === 404) {
-      throw fail('The Google account connected to Lunta can’t edit this document (another account owns it, or you can only view or comment). ' +
-        'Use Switch account in Lunta’s panel, or ask for edit access.', 'access');
+      throw fail('Lunta can’t open this document yet: Google lets Lunta see only the documents you give it. ' +
+        'Click Give Lunta access to this document and choose it in Google’s window.', 'access');
     }
     throw fail('Google Docs: ' + msg, 'http');
   }
