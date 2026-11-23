@@ -450,7 +450,8 @@ var LuntaCite = (function () {
    *   store:     what the document keeps of its papers (see above)
    *   options:   per citation, its papers' options ({id: options}, see above) or null
    * Returns {texts (one per citation), superscript, superscripts (one per citation: a narrative
-   * citation isn't raised), bibliography [{id, text}], unknown (ids with
+   * citation isn't raised), befores and afters (one per citation: the start and end of a raised
+   * citation's text that stay on the line, "see " in "see ⁴"; '' when none), bibliography [{id, text}], unknown (ids with
    * nothing to format them from: write nothing), fromDocument (ids formatted from the document's
    * copy), store (to keep), references}.
    */
@@ -477,6 +478,7 @@ var LuntaCite = (function () {
       else if (store[id]) newStore[id] = store[id];
     });
     var result = { texts: [], superscript: !!st.superscript, superscripts: citations.map(function () { return !!st.superscript; }),
+      befores: citations.map(function () { return ''; }), afters: citations.map(function () { return ''; }),
       bibliography: [], unknown: unknown, fromDocument: fromDocument, store: newStore, references: 0 };
     if (unknown.length) return result;
 
@@ -503,9 +505,20 @@ var LuntaCite = (function () {
           var n = num.order[id], x = o[id];
           var inner = x && x.locator ? (st.superscript ? n + '(' + locatorText(x).replace(/\.\s?/g, '') + ')' : n + ', ' + locatorText(x)) : String(n);
           if (x && x.mode === 'narrative') narrative.push(affix(x, names(papers[id], st) + ' ' + (st.open || '[') + n + (x.locator ? ', ' + locatorText(x) : '') + (st.close || ']')));
-          else if (x && (x.prefix || x.suffix || x.locator)) extra.push({ n: n, text: affix(x, inner) });
+          else if (x && (x.prefix || x.suffix || x.locator)) extra.push({ n: n, text: affix(x, inner), inner: inner, o: x });
           else plainNums.push(n);
         });
+        // raised: the first paper's prefix and the last one's suffix stay on the line ("see ⁴")
+        var before = '', after = '';
+        if (st.superscript && !narrative.length && extra.length) {
+          var nums = plainNums.concat(extra.map(function (x) { return x.n; }));
+          var lo = Math.min.apply(null, nums), hi = Math.max.apply(null, nums);
+          extra.forEach(function (x) {
+            if (x.n === lo && x.o.prefix) { before = affix({ prefix: x.o.prefix }, '').replace(/^\s*/, ''); x.text = affix({ suffix: x.n === hi ? '' : x.o.suffix }, x.inner); }
+            if (x.n === hi && x.o.suffix) { after = affix({ suffix: x.o.suffix }, ''); x.text = affix({ prefix: x.n === lo ? '' : x.o.prefix }, x.inner); }
+          });
+        }
+        result.befores[i] = before; result.afters[i] = after;
         // in number order; plain numbers between them as ranges ("[1–3; see 4, p. 2]")
         var parts = [];
         if (!extra.length) parts = plainNums.length ? [compress(plainNums)] : [];
@@ -519,7 +532,7 @@ var LuntaCite = (function () {
           if (run.length) parts.push(compress(run));
         }
         var body = parts.length ? (st.open || '') + parts.join(extra.length ? '; ' : ',') + (st.close || '') : '';
-        if (!narrative.length) return body;
+        if (!narrative.length) return before + body + after;
         result.superscripts[i] = false;
         // the rest of a narrative citation can't be raised in the same text: in brackets
         if (body && st.superscript) body = '[' + parts.join(extra.length ? '; ' : ',') + ']';
@@ -618,6 +631,11 @@ var LuntaCite = (function () {
     citations.forEach(function (l, i) {
       if (l.length && !texts[i] && !(res.missing)) l.forEach(function (id) { if (unknown.indexOf(id) < 0) unknown.push(id); });
     });
+    // a raised citation's start and end that aren't raised ("see " before "⁴"); an older Lunta doesn’t say
+    var ends = function (i, k) {
+      var c = res.citations && res.citations[i], t = texts[i] || '', v = c && c.superscript && typeof c[k] === 'string' ? c[k] : '';
+      return v && (k === 'before' ? t.indexOf(v) === 0 : t.length >= v.length && t.slice(t.length - v.length) === v) ? v : '';
+    };
     var items = {};
     (res.items || []).forEach(function (e) { if (e && e.id) items[e.id] = e; });
     var newStore = {};
@@ -628,6 +646,8 @@ var LuntaCite = (function () {
     return {
       texts: citations.map(function (l, i) { return texts[i] === undefined ? null : texts[i]; }),
       superscripts: citations.map(function (l, i) { return !!(res.citations && res.citations[i] && res.citations[i].superscript); }),
+      befores: citations.map(function (l, i) { return ends(i, 'before'); }),
+      afters: citations.map(function (l, i) { return ends(i, 'after'); }),
       bibliography: (res.bibliography || []).map(function (e) { return { id: e.id, text: e.text }; }),
       unknown: unknown,
       fromDocument: ids.filter(function (id) { return items[id] && items[id].fromDocument; }),

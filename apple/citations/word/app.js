@@ -10,7 +10,7 @@
 // Microsoft store listing): either way the library comes from the Lunta app on this computer.
 var LUNTA = 'https://localhost:47481';
 var API = (location.origin === LUNTA ? '' : LUNTA) + '/api';
-var VERSION = '15';   // bump with the ?v= in index.html, so Word loads the new files
+var VERSION = '16';   // bump with the ?v= in index.html, so Word loads the new files
 var NS = 'https://lunta.app/ns/word-citations/1';
 var picked = [];          // [{id, title, ...}]
 var style = 'apa';
@@ -360,6 +360,48 @@ function bibliographyHTML(entries) {
   return entries.map(function (e) { return '<p style="' + css + '">' + LuntaCite.toHTML(e.text) + '</p>'; }).join('');
 }
 
+/**
+ * Every entry of a rewritten bibliography formatted alike. Word gives the HTML's paragraphs its own
+ * font (Times New Roman) and spacing but keeps the control's last paragraph mark, with the font and
+ * spacing of what was there before (another manager's bibliography, the theme's font): the last
+ * entry came out in another font. All take the first entry's paragraph spacing and indents, and
+ * the font of the text the citations are in (the first entry's when that can't be read).
+ */
+function evenBibliography(ctx, bibs, cite) {
+  if (!bibs.length) return Promise.resolve();
+  var body = null;
+  if (cite && cite.paragraphs) {
+    body = cite.paragraphs.getFirst();
+    body.load('font/name,font/size,font/color');
+  }
+  var lists = bibs.map(function (b) {
+    var ps = b.paragraphs;
+    if (!ps) return null;
+    ps.load('items/font/name,items/font/size,items/font/color,items/lineSpacing,items/spaceAfter,items/spaceBefore,items/leftIndent,items/firstLineIndent,items/alignment');
+    return ps;
+  });
+  return ctx.sync().then(function () {
+    lists.forEach(function (ps) {
+      if (!ps || ps.items.length < 2) return;
+      var first = ps.items[0];
+      var font = {
+        name: (body && body.font.name) || first.font.name,
+        size: (body && body.font.size) || first.font.size,
+        color: (body && body.font.color) || first.font.color
+      };
+      ps.items.forEach(function (p) {
+        ['lineSpacing', 'spaceAfter', 'spaceBefore', 'leftIndent', 'firstLineIndent', 'alignment'].forEach(function (k) {
+          if (first[k] !== null && first[k] !== undefined && p[k] !== first[k]) p[k] = first[k];
+        });
+        ['name', 'size', 'color'].forEach(function (k) {
+          if (font[k] && p.font[k] !== font[k]) p.font[k] = font[k];
+        });
+      });
+    });
+    return ctx.sync();
+  });
+}
+
 function update() {
   if (styleUnknown) {
     return Promise.reject(new Error('This document’s citation style wasn’t saved with it. Choose its style in the menu above first (Update All would otherwise rewrite every citation in ' + LuntaCite.styleName(style) + ').'));
@@ -397,18 +439,32 @@ function update() {
           cites.forEach(function (c, i) {
             var t = f.texts[i], sup = !!f.superscripts[i];
             if (!t) return;
-            if (c.text === t && c.font.superscript === sup) return;
-            var r = c.insertText(t, 'Replace');
+            // a raised citation's prefix and suffix stay on the line: "see ⁴"
+            var before = sup && f.befores ? f.befores[i] || '' : '', after = sup && f.afters ? f.afters[i] || '' : '';
+            var mid = t.slice(before.length, t.length - after.length);
+            if (!mid) { before = ''; after = ''; mid = t; }
+            // Word gives null for a mix of raised and not
+            if (c.text === t && c.font.superscript === (before || after ? null : sup)) return;
+            var r = c.insertText(mid, 'Replace');
             r.font.superscript = sup;
+            if (before) c.insertText(before, 'Start').font.superscript = false;
+            if (after) c.insertText(after, 'End').font.superscript = false;
             changed++;
           });
+          var rewritten = [];
           var plainBib = f.bibliography.length ? f.bibliography.map(function (e) { return LuntaCite.plain(e.text); }).join('') : 'No citations yet.';
           bibs.forEach(function (b) {
             if (state.bibStyle === style && squash(b.text) === squash(plainBib)) return;
             b.insertHtml(bibliographyHTML(f.bibliography), 'Replace');
             changed++;
+            rewritten.push(b);
           });
           return ctx.sync().then(function () {
+            // formatting only: a Word without these properties keeps the entries as written
+            return evenBibliography(ctx, rewritten, cites[0]).catch(function (e) {
+              if (window.console) console.error('formatting the bibliography', e);
+            });
+          }).then(function () {
             state.style = style;
             state.papers = f.store;
             if (bibs.length) state.bibStyle = style;

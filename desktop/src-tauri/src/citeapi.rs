@@ -11,7 +11,7 @@
 //!          ({libraryId}), or else {missing: true}
 //!   GET  /cite/styles?q=…                   → journal styles in the CSL catalogue [{id, title, format}]
 //!   POST /cite/render {style, citations, papers?, options?}
-//!        → a journal style: {title, citations: [{text, superscript}], bibliography: [{id, text}],
+//!        → a journal style: {title, citations: [{text, superscript, before, after}], bibliography: [{id, text}],
 //!          items: [item], missing: [id]}; `options` (api 4), one per citation (null: none):
 //!          {id: {locator, label, prefix, suffix, mode}} (mode "", "suppress" or "narrative")
 //!   Resolve Citations (api 3; core/src/placeholders):
@@ -145,7 +145,7 @@ pub(crate) fn route(lib: &Library, cache_dir: &str, method: &str, path: &str, qu
                     200,
                     json!({
                         "title": out.style_title,
-                        "citations": out.citations.iter().map(|c| json!({"text": c.text, "superscript": c.superscript})).collect::<Vec<_>>(),
+                        "citations": out.citations.iter().map(|c| json!({"text": c.text, "superscript": c.superscript, "before": c.before, "after": c.after})).collect::<Vec<_>>(),
                         "bibliography": out.bibliography.iter().map(|e| json!({"id": back.get(&e.id).map(|s| s.as_str()).unwrap_or(&e.id), "text": e.text})).collect::<Vec<_>>(),
                         "items": items,
                         "missing": missing,
