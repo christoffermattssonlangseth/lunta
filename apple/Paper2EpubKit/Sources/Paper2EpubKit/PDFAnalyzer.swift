@@ -1700,6 +1700,11 @@ final class PDFAnalyzer {
             paras.removeAll { $0.page == 0 && $0.kind == .figure && $0.bbox.y1 <= ty + 2 && $0.bbox.h < 0.25 * h }
         }
         var headingSizes = Set<CGFloat>()
+        // (a numbered heading's number is set like its words: "33. Jung KH: Enhanced…" with the entry's
+        // number in regular type and the rest in a bold-named font is a reference, not a heading)
+        func numberBold(_ p: Para) -> Bool {
+            p.lines.first?.spans.first(where: { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty })?.bold ?? false
+        }
         // (a box's own headings and labels stay in the box: plain text)
         for p in paras where p.kind == .text && p.boxed == nil {
             let t = p.text.trimmingCharacters(in: .whitespaces)
@@ -1711,7 +1716,7 @@ final class PDFAnalyzer {
             let endsSentence = t.hasSuffix(".") && n > 60
             if n <= 160 && p.lines.count <= 3 && !endsSentence {
                 if p.size >= body + 1 || Self.knownSections.test(t) || (boldish > 0.85 && n < 110 && p.size >= body - 0.6)
-                    || (numbered && boldish > 0.5) {
+                    || (numbered && boldish > 0.5 && numberBold(p)) {
                     if p.size < body - 1.5 { continue }
                     p.kind = .heading
                     headingSizes.insert(p.size)
