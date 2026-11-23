@@ -188,6 +188,7 @@ struct ForYouState: Codable {
     var morning = 7 * 60           // minutes after midnight: when the day's papers are picked
     var preprints = Preprints.any
     var orcid: OrcidLink?          // you, by your ORCID iD (optional)
+    var openalexKey: String?       // your OpenAlex API key (optional): Lunta's own daily allowance on OpenAlex
 
     /// How many of the day's papers may be preprints (bioRxiv, medRxiv, arXiv, …).
     enum Preprints: String, Codable, CaseIterable {
@@ -227,6 +228,7 @@ struct ForYouState: Codable {
         morning = (try? c.decodeIfPresent(Int.self, forKey: .morning)) ?? 7 * 60
         preprints = (try? c.decodeIfPresent(Preprints.self, forKey: .preprints)) ?? .any
         orcid = (try? c.decodeIfPresent(OrcidLink.self, forKey: .orcid)) ?? nil
+        openalexKey = try? c.decodeIfPresent(String.self, forKey: .openalexKey)
     }
 
     /// The latest time the day's papers were due (this morning, or yesterday's before then).
@@ -263,6 +265,22 @@ final class WatchCenter: ObservableObject {
     private var summaryTimer: Timer?
     private var libraryVectors: [String: [Double]] = [:]
     private var ownVectors: [String: [Double]] = [:]     // your own papers (ORCID), by key
+
+    /// What went wrong in this device's latest run: nothing could be fetched (`failed`, no feed was
+    /// made and the run is still due), or some sources failed. Not synced: another device may well
+    /// reach them.
+    struct RunProblem: Equatable {
+        var text: String
+        var failed: Bool
+        var at: Date
+    }
+    @Published private(set) var problem: RunProblem?
+    /// The problem to show with the feed, unless a run since (here or on another device) made it.
+    var shownProblem: RunProblem? {
+        guard let problem, problem.at >= (state.lastRun ?? .distantPast) else { return nil }
+        return problem
+    }
+    private var appliedKey: String?
 
     /// Testing: keep the files somewhere else than the library.
     var folderOverride: URL?
@@ -313,6 +331,9 @@ final class WatchCenter: ObservableObject {
                 state = s
                 rebuild()
             }
+            // every request to OpenAlex (New for You and the rest of the app) carries your key
+            let key = state.openalexKey ?? ""
+            if appliedKey != key { appliedKey = key; LuntaCore.setOpenalexKey(key: key) }
         }
     }
 
@@ -342,6 +363,17 @@ final class WatchCenter: ObservableObject {
 
     var interests: String { state.interests }
     var perDay: Int { state.perDay }
+
+    /// Your OpenAlex API key ("" for none), kept with New for You's settings so every device has it.
+    func setOpenalexKey(_ key: String) {
+        let k = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard k != (state.openalexKey ?? "") else { return }
+        change { $0.openalexKey = k.isEmpty ? nil : k }
+        appliedKey = k
+        LuntaCore.setOpenalexKey(key: k)
+        // the day's run failed for want of an allowance: try again with the key (when the settings close)
+        if !k.isEmpty, shownProblem?.failed == true { pendingRun = true }
+    }
 
     func setInterests(_ text: String, perDay: Int, morning: Int, preprints: ForYouState.Preprints) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -603,12 +635,19 @@ final class WatchCenter: ObservableObject {
         }
         let keywords = state.keywords
         var pool: [(hit: DiscoverHit, source: String, explicit: Bool)] = []
-        await withTaskGroup(of: [(DiscoverHit, String, Bool)].self) { group in
+        // a source that can't be reached is said, not taken for a day without new papers
+        var openAlexErrors: [String] = []
+        var otherErrors: [String] = []
+        await withTaskGroup(of: (hits: [(DiscoverHit, String, Bool)], openAlexError: String?, otherError: String?).self) { group in
             for j in jobs {
                 group.addTask {
-                    let hits = (j.notBy.map { try? lib.citingNew(doi: j.value, excludeAuthor: $0, since: since, limit: j.limit) }
-                                ?? (try? lib.watchNew(kind: j.kind, value: j.value, since: since, limit: j.limit))) ?? []
-                    return hits.map { ($0, j.source, j.explicit) }
+                    do {
+                        let hits = try j.notBy.map { try lib.citingNew(doi: j.value, excludeAuthor: $0, since: since, limit: j.limit) }
+                            ?? lib.watchNew(kind: j.kind, value: j.value, since: since, limit: j.limit)
+                        return (hits.map { ($0, j.source, j.explicit) }, nil, nil)
+                    } catch {
+                        return ([], error.readable, nil)
+                    }
                 }
             }
             if !keywords.isEmpty, state.preprints != .none {
@@ -616,13 +655,26 @@ final class WatchCenter: ObservableObject {
                 let to = fmt.string(from: Date())
                 for server in ["biorxiv", "medrxiv"] {
                     group.addTask {
-                        await Self.preprints(server, from: from, to: to, keywords: keywords)
-                            .map { ($0, server == "biorxiv" ? "bioRxiv" : "medRxiv", false) }
+                        let label = server == "biorxiv" ? "bioRxiv" : "medRxiv"
+                        let (hits, error) = await Self.preprints(server, from: from, to: to, keywords: keywords)
+                        return (hits.map { ($0, label, false) }, nil, error.map { "Couldn't reach \(label): \($0)" })
                     }
                 }
             }
-            for await batch in group { pool.append(contentsOf: batch.map { (hit: $0.0, source: $0.1, explicit: $0.2) }) }
+            for await r in group {
+                pool.append(contentsOf: r.hits.map { (hit: $0.0, source: $0.1, explicit: $0.2) })
+                if let e = r.openAlexError { openAlexErrors.append(e) }
+                if let e = r.otherError { otherErrors.append(e) }
+            }
         }
+        if !jobs.isEmpty, openAlexErrors.count == jobs.count {
+            // nothing from OpenAlex: no feed today yet (the run stays due), and the feed says why
+            problem = RunProblem(text: openAlexErrors[0], failed: true, at: Date())
+            lastStats = "OpenAlex failed for all \(jobs.count) requests: \(openAlexErrors[0])"
+            return
+        }
+        let problems = (openAlexErrors.first.map { ["\(openAlexErrors.count) of \(jobs.count) OpenAlex requests failed: \($0)"] } ?? []) + otherErrors
+        problem = problems.isEmpty ? nil : RunProblem(text: problems.joined(separator: " "), failed: false, at: Date())
 
         // 3. new to you: not in the library, never offered before, not your own
         let offered = Set(state.shown).union(state.items.map(\.key))
@@ -1075,25 +1127,33 @@ final class WatchCenter: ObservableObject {
 
     /// The last days of bioRxiv or medRxiv, keeping papers that use your keywords. The API serves
     /// 30 papers a request, so after the first page the rest are fetched six at a time.
-    nonisolated static func preprints(_ server: String, from: String, to: String, keywords: [String]) async -> [DiscoverHit] {
+    /// The last days of bioRxiv or medRxiv with your keywords; the error when the first page couldn't be fetched.
+    nonisolated static func preprints(_ server: String, from: String, to: String, keywords: [String]) async -> ([DiscoverHit], String?) {
         let kws = keywords.map { $0.lowercased() }.filter { $0.count > 3 }
-        guard !kws.isEmpty else { return [] }
+        guard !kws.isEmpty else { return ([], nil) }
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60
         let session = URLSession(configuration: config)
         defer { session.finishTasksAndInvalidate() }
 
-        func page(_ cursor: Int) async -> (items: [[String: Any]], total: Int) {
-            guard let url = URL(string: "https://api.biorxiv.org/details/\(server)/\(from)/\(to)/\(cursor)/json"),
-                  let (data, _) = try? await session.data(from: url),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return ([], 0) }
+        func fetch(_ cursor: Int) async -> (items: [[String: Any]], total: Int, error: String?) {
+            guard let url = URL(string: "https://api.biorxiv.org/details/\(server)/\(from)/\(to)/\(cursor)/json") else { return ([], 0, "bad address") }
+            let data: Data, response: URLResponse
+            do { (data, response) = try await session.data(from: url) } catch { return ([], 0, error.localizedDescription) }
+            if let code = (response as? HTTPURLResponse)?.statusCode, code >= 400 { return ([], 0, "api.biorxiv.org answered HTTP \(code)") }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return ([], 0, "api.biorxiv.org sent something unreadable") }
             let msg = (json["messages"] as? [[String: Any]])?.first
             let total = (msg?["total"] as? Int) ?? Int(msg?["total"] as? String ?? "") ?? 0
-            return ((json["collection"] as? [[String: Any]]) ?? [], total)
+            return ((json["collection"] as? [[String: Any]]) ?? [], total, nil)
+        }
+        func page(_ cursor: Int) async -> (items: [[String: Any]], total: Int) {
+            let r = await fetch(cursor)
+            return (r.items, r.total)
         }
 
-        let first = await page(0)
+        let first = await fetch(0)
+        if let e = first.error { return ([], e) }
         var all = first.items
         let size = max(first.items.count, 1)
         let cursors = Array(stride(from: size, to: min(first.total, 3000), by: size))
@@ -1125,7 +1185,7 @@ final class WatchCenter: ObservableObject {
                                                    keywords: [], license: ""),
                                    citedBy: 0, openAccess: true, inLibrary: nil)
         }
-        return Array(out.values)
+        return (Array(out.values), nil)
     }
 
     // MARK: notifications
@@ -1205,6 +1265,9 @@ struct WatchInbox: View {
             } else {
                 Section { status }
             }
+            if let p = center.shownProblem, !center.checking {
+                Section { problem(p) }
+            }
             if !center.interests.isEmpty, !center.latestFinds.isEmpty, center.summarizing || !center.state.digest.isEmpty {
                 Section { digest }
             }
@@ -1214,7 +1277,7 @@ struct WatchInbox: View {
                         row(f).tag(f.id)
                     }
                 }
-            } else if !center.interests.isEmpty && !center.checking {
+            } else if !center.interests.isEmpty && !center.checking && center.shownProblem == nil {
                 Text(center.finds.isEmpty ? "Nothing yet. New papers are picked once a day; refresh to look now."
                                           : "Nothing new today. New papers are picked once a day; refresh to look now.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -1302,6 +1365,23 @@ struct WatchInbox: View {
                         #endif
                         return .handled
                     })
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// Fetching failed (or partly): said, with Retry, instead of "Nothing new today".
+    private func problem(_ p: WatchCenter.RunProblem) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(p.failed ? "Couldn’t reach OpenAlex" : "Some sources couldn’t be reached", systemImage: "exclamationmark.triangle")
+                .font(.subheadline.weight(.semibold)).foregroundStyle(.orange)
+            Text(p.text).font(.callout).foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                Button { Task { await center.run() } } label: { Label("Retry", systemImage: "arrow.clockwise") }
+                    .buttonStyle(.bordered).tint(.luntaTeal)
+                if p.text.contains("API key"), (center.state.openalexKey ?? "").isEmpty {
+                    Button("Add an API Key…") { settings = true }.buttonStyle(.borderless).tint(.luntaTeal)
+                }
             }
         }
         .padding(.vertical, 4)
@@ -1452,6 +1532,7 @@ struct ForYouSettings: View {
     @State private var orcidText = ""
     @State private var connecting = false
     @State private var orcidProblem: String?
+    @State private var openalexKey = ""
 
     var body: some View {
         NavigationStack {
@@ -1511,6 +1592,17 @@ struct ForYouSettings: View {
                 } header: { Text("Also follow") } footer: {
                     Text("New papers by authors you follow, and papers citing ones you watch, always show up. Papers in journals you follow come first and pass at a lower bar, so the ones near your research make it in.")
                 }
+                Section {
+                    TextField("API key (optional)", text: $openalexKey)
+                        .autocorrectionDisabled()
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.asciiCapable)
+                        #endif
+                    Link("Get a Free Key", destination: URL(string: "https://openalex.org/settings/api")!).tint(.luntaTeal)
+                } header: { Text("OpenAlex") } footer: {
+                    Text("New for You searches OpenAlex. Without a key, OpenAlex gives everyone on your network one small daily allowance, which a university or mobile network can use up by morning. A free key gives Lunta its own.")
+                }
             }
             .formStyle(.grouped)
             .navigationTitle("New for You")
@@ -1519,6 +1611,7 @@ struct ForYouSettings: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         let c = Calendar.current.dateComponents([.hour, .minute], from: morning)
+                        center.setOpenalexKey(openalexKey)
                         center.setInterests(text, perDay: perDay, morning: (c.hour ?? 7) * 60 + (c.minute ?? 0), preprints: preprints)
                         dismiss()
                     }
@@ -1528,6 +1621,7 @@ struct ForYouSettings: View {
             .onDisappear { center.runIfPending() }
             .onAppear {
                 text = center.interests; perDay = center.perDay; preprints = center.state.preprints
+                openalexKey = center.state.openalexKey ?? ""
                 let m = center.state.morning
                 morning = Calendar.current.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: Date()) ?? Date()
             }

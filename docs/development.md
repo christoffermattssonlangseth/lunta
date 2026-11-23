@@ -1604,6 +1604,23 @@ desktop and Android apps have it too, on **the same files**:
   offered, not yours, an abstract, no data deposits or theses); ranking; screening; the feed (newest picks on top,
   80 kept, 3,000 offered keys remembered). Due at the morning time, local time; whichever device runs first makes the
   day's feed (a phone leaves the first two hours to a computer, as the iPhone does).
+- **When a source fails** (both apps): a request that fails is no longer taken for "no new papers". If every
+  OpenAlex request fails, no feed is made, nothing is marked as offered, the day's run stays due (tried again at
+  the next check) and the feed says "Couldn't reach OpenAlex" with the reason and Retry instead of "Nothing new
+  today"; if some fail (or bioRxiv/medRxiv), the feed is made and the failures are said above it. The problem is
+  kept on the device only (`foryou-local.json` `problem`/`failed`/`problemAt`; `WatchCenter.problem` on Apple)
+  and hidden once a later run, here or on another device, made a feed.
+- **OpenAlex's daily allowance**: OpenAlex charges requests against a daily allowance: without an API key one
+  allowance ($0.10/day, 1,000 credits; a search costs 10, a filtered list 1, a lookup by id 0) is shared by
+  everyone behind the network's address (a university, a phone carrier's shared address), with a free key the
+  user has their own ($1/day). A day's run costs about 140 credits. Used up, OpenAlex answers 429 with
+  `"reason": "daily_budget"` and a Retry-After of hours: `metadata::get_text` (and Check Citations' client) no
+  longer waits and retries then, but says "OpenAlex's free daily allowance for your network is used up (it renews
+  …). A free OpenAlex API key (in New for You's settings) gives Lunta its own." The key (Settings › OpenAlex) is
+  kept in foryou.json (`openalexKey`, so every device has it) and set process-wide (`set_openalex_key`), so every
+  OpenAlex request in the app carries it. Journal and author names are resolved to OpenAlex ids once per app run
+  (a search each). `cargo run --example foryou_diag -- <copy of a library folder>` runs the stages on a copy and
+  logs every request, what each filter dropped, and the candidates.
 - **Ranking** (`rank.rs`): the Swift formula (0.55 × paragraph + 0.35 × the three closest library papers, ± 0.25 for
   papers you added or turned down, + 0.3 for More Like This; + 0.15 for what you follow, + 0.06 for journals you
   follow, up to + 0.04 for new papers), on TF-IDF vectors of words and word pairs: Apple's sentence embeddings

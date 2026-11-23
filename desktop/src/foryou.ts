@@ -21,13 +21,14 @@ interface Feed {
   has_interests: boolean; has_setup: boolean; interests: string; latest: Find[]; earlier: Find[];
   digest: DigestPart[]; digest_share: string; last_run: number | null; next_morning: number;
   new_count: number; running: boolean; stage: string | null; ai: boolean;
+  problem: string | null; fetch_failed: boolean;
 }
 interface WatchView { id: string; kind: string; value: string; label: string; describe: string; }
 interface Coauthor { name: string; author: string; orcid: string; shared: number; following: boolean; }
 interface Settings {
   interests: string; per_day: number; morning: number; preprints: 'any' | 'few' | 'none';
   orcid: { orcid: string; name: string; works: number; coauthors: Coauthor[] } | null;
-  watches: WatchView[]; ai: boolean;
+  watches: WatchView[]; ai: boolean; openalex_key: string;
 }
 
 const tz = () => -new Date().getTimezoneOffset();
@@ -48,6 +49,7 @@ const fy = {
   add: (key: string, mustRead: boolean) => invoke<string>('foryou_add', { key, mustRead }),
   draft: () => invoke<string | null>('foryou_draft'),
   run: () => invoke<void>('foryou_run', { tz: tz() }),
+  setKey: (key: string) => invoke<void>('foryou_set_openalex_key', { key }),
   tick: () => invoke<[string, string] | null>('foryou_tick', { tz: tz() }),
 };
 
@@ -173,9 +175,10 @@ function paintList() {
   } else {
     kids.push(statusBar(f));
   }
+  if (f.problem && !running) kids.push(problemBox(f));
   if (f.has_interests && f.latest.length && f.digest.length) kids.push(digestBox(f));
   if (f.latest.length) kids.push(...f.latest.map(row));
-  else if (f.has_interests && !running) {
+  else if (f.has_interests && !running && !f.problem) {
     kids.push(h('p.fy-empty', { text: (f.earlier.length ? 'Nothing new today.' : 'Nothing yet.') + ' New papers are picked once a day; ↻ looks now.' }));
   }
   if (f.earlier.length) {
@@ -184,6 +187,16 @@ function paintList() {
     if (showEarlier) kids.push(...f.earlier.map(row));
   }
   fill(list, ...kids);
+}
+
+/** Fetching failed (or partly): said, with Retry, instead of "Nothing new today". */
+function problemBox(f: Feed): HTMLElement {
+  const retry = () => fy.run().catch((e) => status(String(e), 'error')).then(() => { running = true; stage = 'Looking for new papers…'; paintList(); });
+  return h('div.fy-problem', {},
+    h('div.fy-problem-head', { text: f.fetch_failed ? '⚠ Couldn’t reach OpenAlex' : '⚠ Some sources couldn’t be reached' }),
+    h('p', { text: f.problem! }),
+    h('div.row', {}, h('button', { text: '↻ Retry', onclick: retry }),
+      f.problem!.includes('API key') ? h('button', { text: 'Add an API Key…', onclick: settingsDialog }) : null));
 }
 
 function digestBox(f: Feed): HTMLElement {
@@ -330,6 +343,7 @@ export async function settingsDialog() {
   const morning = h('input', { type: 'time', value: `${String(Math.floor(s.morning / 60)).padStart(2, '0')}:${String(s.morning % 60).padStart(2, '0')}` }) as HTMLInputElement;
   const preprints = h('select', {}, PREPRINTS.map(([v, l]) => h('option', { value: v, text: l, selected: v === s.preprints }))) as HTMLSelectElement;
   const orcidBox = h('div');
+  const key = h('input', { type: 'text', spellcheck: 'false', placeholder: 'API key (optional)', value: s.openalex_key }) as HTMLInputElement;
   const watchBox = h('div');
   let changedFollows = false;
 
@@ -392,9 +406,12 @@ export async function settingsDialog() {
   const save = async () => {
     const [hh, mm] = (morning.value || '07:00').split(':').map(Number);
     try {
+      const newKey = key.value.trim() !== s.openalex_key;
+      if (newKey) await fy.setKey(key.value);
       await fy.save(text.value, Math.max(3, Math.min(20, Number(perDay.value) || 8)), hh * 60 + mm, preprints.value);
-      // connected or followed something new without changing the paragraph: look now too
-      if (changedFollows) await fy.run();
+      // connected or followed something new without changing the paragraph, or a key after a
+      // failed run: look now too
+      if (changedFollows || (newKey && key.value.trim() && feed?.fetch_failed)) await fy.run();
     } catch (e) { status(String(e), 'error'); return; }
     done();
     if (showing) reloadFeed();
@@ -413,6 +430,9 @@ export async function settingsDialog() {
         h('label', { text: 'Papers from' }), preprints),
       h('p.hint', { text: 'The day’s papers are picked at this time on whichever device runs Lunta first (or as soon as Lunta opens after it). “Mostly journals” allows about one preprint in four.' }),
       h('h4', { text: 'Also follow' }), watchBox,
+      h('h4', { text: 'OpenAlex' }),
+      h('div.row', {}, key, h('button', { text: 'Get a Free Key', onclick: () => openUrl('https://openalex.org/settings/api') })),
+      h('p.hint', { text: 'New for You searches OpenAlex. Without a key, OpenAlex gives everyone on your network one small daily allowance, which a university network can use up by morning. A free key gives Lunta its own.' }),
       h('div.buttons', {}, h('button', { text: 'Cancel', onclick: done }), h('button.primary', { text: 'Save', onclick: save }))));
   back.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Escape') done(); });
   document.body.append(back);

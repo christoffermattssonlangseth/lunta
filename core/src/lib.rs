@@ -1035,6 +1035,13 @@ pub fn journal_name(query: String) -> Result<Option<String>> {
     metadata::journal_name(&query)
 }
 
+/// The OpenAlex API key every request to OpenAlex carries from now on ("" for none): with one,
+/// Lunta has its own daily allowance instead of the one shared by everyone on the network.
+#[uniffi::export]
+pub fn set_openalex_key(key: String) {
+    metadata::set_openalex_key(&key)
+}
+
 /// "0000-0002-1825-0097" from an ORCID iD as typed or pasted, or "" when it isn't a valid one
 /// (format and check digit).
 #[uniffi::export]
