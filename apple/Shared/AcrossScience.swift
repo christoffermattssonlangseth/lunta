@@ -214,7 +214,7 @@ struct AcrossScienceSection: View {
     }
 
     private func digest(_ v: AcrossView) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label("Today", systemImage: "text.alignleft")
                     .font(.caption.weight(.semibold)).foregroundStyle(Color.luntaTeal).textCase(.uppercase)
@@ -227,14 +227,23 @@ struct AcrossScienceSection: View {
             if v.digest.isEmpty {
                 HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Summarizing the papers…").font(.callout).foregroundStyle(.secondary) }
             } else {
+                // The field above its sentence (a small heading), not beside it: beside it, a long field
+                // name ("Materials, energy & engineering") left the sentence a narrow column.
                 ForEach(Array(v.digest.enumerated()), id: \.offset) { _, d in
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(d.fieldLabel).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        Text(d.text.trimmingCharacters(in: CharacterSet(charactersIn: ". "))).font(.callout)
-                        ForEach(d.cites, id: \.key) { c in
-                            Button("\(c.number)") { open(c.key) }.buttonStyle(.borderless).tint(.luntaTeal).font(.callout.weight(.medium))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(d.fieldLabel.uppercased())
+                            .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(d.text.trimmingCharacters(in: CharacterSet(charactersIn: ". ")))
+                                .font(.subheadline)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            ForEach(d.cites, id: \.key) { c in
+                                Button("\(c.number)") { open(c.key) }.buttonStyle(.borderless).tint(.luntaTeal)
+                                    .font(.subheadline.weight(.medium))
+                            }
                         }
                     }
+                    .padding(.vertical, 3)
                 }
             }
         }
