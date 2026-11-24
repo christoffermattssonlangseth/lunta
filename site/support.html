@@ -20,6 +20,7 @@
 <link rel="preload" href="fonts/libre-franklin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
+<script>try{var t=localStorage.getItem("lunta-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-color-scheme",t)}catch(e){}</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -31,6 +32,7 @@
         <a class="wide" href="./#platforms">Platforms</a>
         <a class="wide" href="./#privacy">Privacy</a>
         <a href="getting-started.html">Getting started</a>
+        <button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch color theme" title="Switch light / dark theme"><span class="t-icon" aria-hidden="true">◐</span></button>
         <a class="btn btn-amber" href="download.html">Download</a>
       </nav>
     </div>
@@ -151,9 +153,6 @@ library.</p>
     <span>No cookies, no analytics, no third-party requests on this site.</span>
   </div>
 </footer>
-<script>
-/* the header turns frosted once the page scrolls; without this script it is frosted all along */
-(function(){var h=document.querySelector(".site-header");function f(){h.classList.toggle("at-top",scrollY<16)}f();addEventListener("scroll",f,{passive:true})})();
-</script>
+<script src="js/site.js" defer></script>
 </body>
 </html>

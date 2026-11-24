@@ -30,6 +30,7 @@
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Lunta","applicationCategory":"ProductivityApplication","operatingSystem":"macOS, iOS, iPadOS, Android, Windows, Linux","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://opensource.org/licenses/MIT","url":"https://getlunta.app/","downloadUrl":"https://github.com/christoffermattssonlangseth/lunta/releases/latest","description":"A free, open-source reader and reference manager for scientific papers."}
 </script>
+<script>try{var t=localStorage.getItem("lunta-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-color-scheme",t)}catch(e){}</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -71,20 +72,23 @@
       <a class="wide" href="#platforms">Platforms</a>
       <a class="wide" href="#privacy">Privacy</a>
       <a href="getting-started.html">Getting started</a>
+      <button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch color theme" title="Switch light / dark theme"><span class="t-icon" aria-hidden="true">◐</span></button>
       <a class="btn btn-amber" href="download.html">Download</a>
     </nav>
   </div>
+  <div class="read-progress" aria-hidden="true"></div>
 </header>
 
 <div class="band hero">
+  <canvas class="hero-canvas" aria-hidden="true"></canvas>
   <div class="wrap hero-grid">
     <div class="hero-copy">
-      <a class="pill" href="https://github.com/christoffermattssonlangseth/lunta/releases/tag/v1.1.0"><b>New</b>Lunta 1.1: on-device AI, Listen and New for You on every platform <span aria-hidden="true">→</span></a>
+      <a class="pill" href="https://github.com/christoffermattssonlangseth/lunta/releases/tag/v1.2.0"><b>New</b>Lunta 1.2: books, web pages and highlights across pages <span aria-hidden="true">→</span></a>
       <h1>Read papers,<br> <span class="stroke">not PDFs.</span></h1>
       <p class="lead">Lunta turns every paper into a clean reading view that fits your screen, keeps your highlights in sync, and cites in Word, Google Docs and LaTeX. On Mac, iPhone, iPad, Android, Windows and Linux, free and open source.</p>
       <div class="cta-row">
-        <a class="btn btn-amber" href="https://apps.apple.com/app/lunta/id6835403752"><svg aria-hidden="true"><use href="#i-phone"/></svg><span>Download on the App Store<small>iPhone and iPad</small></span></a>
-        <a class="btn btn-ghost" href="https://github.com/christoffermattssonlangseth/lunta/releases/latest"><svg aria-hidden="true"><use href="#i-download"/></svg><span>Download for computers<small>Mac, Windows, Linux · and Android</small></span></a>
+        <a class="btn btn-amber" data-cta-ios href="https://apps.apple.com/app/lunta/id6835403752"><svg aria-hidden="true"><use href="#i-phone"/></svg><span>Download on the App Store<small>iPhone and iPad</small></span></a>
+        <a class="btn btn-ghost" data-cta-desktop href="https://github.com/christoffermattssonlangseth/lunta/releases/latest"><svg aria-hidden="true"><use href="#i-download"/></svg><span>Download for computers<small>Mac, Windows, Linux · and Android</small></span></a>
       </div>
       <p class="cta-links"><a href="download.html">Which file do I need?</a> <a href="download.html#extension">Browser extension</a></p>
       <p class="hero-meta"><span>Free</span><span>No account</span><span>No tracking</span><span>MIT license</span></p>
@@ -108,7 +112,7 @@
     <div class="wrap">
       <p>Works with</p>
       <ul>
-        <li>Word</li><li>Google Docs</li><li>LaTeX &amp; Overleaf</li><li>Zotero</li><li>Mendeley</li><li>EndNote</li><li>PubMed</li><li>arXiv</li><li>bioRxiv</li><li>ORCID</li>
+        <li><a href="#cite">Word</a></li><li><a href="#cite">Google Docs</a></li><li><a href="#cite">LaTeX &amp; Overleaf</a></li><li><a href="#switch" data-pick-source="zotero">Zotero</a></li><li><a href="#switch" data-pick-source="mendeley">Mendeley</a></li><li><a href="#switch" data-pick-source="endnote">EndNote</a></li><li><a href="#library">PubMed</a></li><li><a href="#library">arXiv</a></li><li><a href="#library">bioRxiv</a></li><li><a href="#new-for-you">ORCID</a></li>
       </ul>
     </div>
   </section>
@@ -122,30 +126,56 @@
       </div>
       <div class="stage">
         <figure>
-          <img class="pdf shot" src="images/kukanja-pdf-page-886.webp" srcset="images/kukanja-pdf-page-560.webp 560w, images/kukanja-pdf-page-886.webp 886w" sizes="(min-width: 52rem) 25rem, 90vw" width="886" height="950" loading="lazy" alt="The first page of the paper's PDF in Lunta, with two highlights in its Highlights.">
+          <div class="pdf-wrap">
+            <img class="pdf shot" src="images/kukanja-pdf-page-886.webp" srcset="images/kukanja-pdf-page-560.webp 560w, images/kukanja-pdf-page-886.webp 886w" sizes="(min-width: 52rem) 25rem, 90vw" width="886" height="950" loading="lazy" alt="The first page of the paper's PDF in Lunta, with two highlights in its Highlights.">
+            <div class="pdf-scan" aria-hidden="true"></div>
+          </div>
           <figcaption>The PDF</figcaption>
         </figure>
         <div class="arrow" aria-hidden="true"><svg><use href="#i-arrow"/></svg></div>
         <figure>
-          <div class="phone">
-            <div class="screen read" role="img" aria-label="The same paper in Lunta's reading view on a phone: the introduction in large, readable text with two highlights, tappable citations and a card for Fig. 1.">
+          <div class="phone" data-showcase-phone>
+            <div class="screen read" data-theme="paper" role="region" aria-label="Interactive reading view of the paper on a phone: try switching themes, tapping citations, or opening Fig. 1.">
               <div class="status" aria-hidden="true">9:41 <i></i></div>
-              <div aria-hidden="true">
+              <div class="read-body">
                 <h4>Introduction</h4>
-                <p>Multiple sclerosis (MS) is a complex disease of unclear, multifactorial etiology<sup>1,2</sup> and lesion pathology. Lesions affect the white and gray matter of the central nervous system. <mark>Their distribution and composition vary between and within patients,</mark><sup>3</sup> and their localization often reflects the clinical symptoms.<sup>6</sup></p>
-                <p>Some patients develop lesions limited to specific regions, such as the spinal cord,<sup>7</sup> <mark class="g">suggesting the influence of the tissue microenvironment in disease specification</mark>.</p>
-                <div class="figcard"><i></i><span><b>Fig. 1</b>Comprehensive spatiotemporal cellular mapping of the EAE mouse model of MS</span></div>
+                <p>Multiple sclerosis (MS) is a complex disease of unclear, multifactorial etiology<button type="button" class="cite-sup" data-cite-ref="1" aria-expanded="false">1,2</button> and lesion pathology. Lesions affect the white and gray matter of the central nervous system. <mark>Their distribution and composition vary between and within patients,</mark><button type="button" class="cite-sup" data-cite-ref="3" aria-expanded="false">3</button> and their localization often reflects the clinical symptoms.<button type="button" class="cite-sup" data-cite-ref="6" aria-expanded="false">6</button></p>
+                <p>Some patients develop lesions limited to specific regions, such as the spinal cord,<button type="button" class="cite-sup" data-cite-ref="7" aria-expanded="false">7</button> <mark class="g">suggesting the influence of the tissue microenvironment in disease specification</mark>.</p>
+                <button type="button" class="figcard" data-fig-open aria-label="Open Fig. 1 preview"><i></i><span><b>Fig. 1</b>Comprehensive spatiotemporal cellular mapping of the EAE mouse model of MS</span></button>
+              </div>
+              <div class="cite-popover" data-cite-popover hidden>
+                <div class="pop-top">
+                  <span class="pop-num" data-pop-num>Ref. 1</span>
+                  <button type="button" class="pop-close" data-pop-close aria-label="Close reference">×</button>
+                </div>
+                <strong data-pop-title></strong>
+                <small data-pop-meta></small>
+                <button type="button" class="pop-add" data-pop-add aria-pressed="false">+ Add to library</button>
+              </div>
+              <div class="fig-overlay" data-fig-overlay hidden>
+                <div class="fig-overlay-bar">
+                  <span>Fig. 1</span>
+                  <button type="button" class="pop-close" data-fig-close aria-label="Close figure">×</button>
+                </div>
+                <img src="images/kukanja-figure-900.webp" width="900" height="913" loading="lazy" alt="Fig. 1 of Kukanja et al., Cell 2024">
+                <p>Comprehensive spatiotemporal cellular mapping of the EAE mouse model of MS.</p>
               </div>
             </div>
           </div>
-          <figcaption>The reading view</figcaption>
+          <div class="theme-switcher" role="group" aria-label="Reading view theme">
+            <button type="button" data-read-theme="light" aria-pressed="false">Light</button>
+            <button type="button" data-read-theme="paper" aria-pressed="true">Paper</button>
+            <button type="button" data-read-theme="quiet" aria-pressed="false">Quiet</button>
+            <button type="button" data-read-theme="black" aria-pressed="false">Black</button>
+          </div>
+          <figcaption>The reading view · tap citations, Fig. 1, or themes</figcaption>
         </figure>
       </div>
       <div class="proof">
-        <div class="reveal"><b>99%</b><span>of the text kept (median) when the reading view is made from the PDF</span></div>
-        <div class="reveal"><b>0.95</b><span>token F1 against the publisher's XML, as for GROBID</span></div>
-        <div class="reveal"><b>97%</b><span>of figures missing from author manuscripts recovered from the PDF</span></div>
-        <div class="reveal"><b>89%</b><span>of highlights back on the right passage after the view is rebuilt</span></div>
+        <div class="reveal"><b data-count-to="99" data-count-suffix="%" data-count-decimals="0">99%</b><div class="proof-meter" aria-hidden="true"><i></i></div><span>of the text kept (median) when the reading view is made from the PDF</span></div>
+        <div class="reveal"><b data-count-to="0.95" data-count-suffix="" data-count-decimals="2">0.95</b><div class="proof-meter" aria-hidden="true"><i></i></div><span>token F1 against the publisher's XML, as for GROBID</span></div>
+        <div class="reveal"><b data-count-to="97" data-count-suffix="%" data-count-decimals="0">97%</b><div class="proof-meter" aria-hidden="true"><i></i></div><span>of figures missing from author manuscripts recovered from the PDF</span></div>
+        <div class="reveal"><b data-count-to="89" data-count-suffix="%" data-count-decimals="0">89%</b><div class="proof-meter" aria-hidden="true"><i></i></div><span>of highlights back on the right passage after the view is rebuilt</span></div>
       </div>
       <p class="proof-note"><span>Measured on 200 open-access papers from PubMed Central.</span> <a class="textlink" href="https://github.com/christoffermattssonlangseth/lunta/blob/main/eval/RESULTS.md">How it was measured</a></p>
       <p class="muted" style="font-size:.8125rem;margin-top:.5rem">The paper shown on this page: Kukanja et al., “Cellular architecture of evolving neuroinflammatory lesions and multiple sclerosis pathology”, <em>Cell</em> 187, 1990–2009 (2024), <a href="https://doi.org/10.1016/j.cell.2024.02.030">doi:10.1016/j.cell.2024.02.030</a>, CC BY 4.0.</p>
@@ -176,9 +206,19 @@
             <h3>Highlights that last</h3>
             <p>Four colors and notes, in the reading view or the PDF, and Apple Pencil on iPad. They sync everywhere and are searchable, and they find their place again when a paper gets a better reading view.</p>
           </div>
-          <div class="vg" aria-hidden="true">
-            <p class="hl">We demonstrated that <mark>disease-associated (DA)-glia arise independently of lesions and are dynamically induced and resolved</mark> over the disease course.</p>
-            <div class="swatches"><i></i><i></i><i></i><i></i><span>+ note</span></div>
+          <div class="vg" data-hl-demo>
+            <p class="hl">We demonstrated that <mark data-color="yellow">disease-associated (DA)-glia arise independently of lesions and are dynamically induced and resolved</mark> over the disease course.</p>
+            <div class="swatches" role="group" aria-label="Try highlight colors">
+              <button type="button" class="swatch" data-hl-color="yellow" aria-label="Yellow highlight" aria-pressed="true"></button>
+              <button type="button" class="swatch" data-hl-color="green" aria-label="Green highlight" aria-pressed="false"></button>
+              <button type="button" class="swatch" data-hl-color="blue" aria-label="Blue highlight" aria-pressed="false"></button>
+              <button type="button" class="swatch" data-hl-color="pink" aria-label="Pink highlight" aria-pressed="false"></button>
+              <button type="button" class="note-btn" data-hl-note-btn aria-expanded="false">+ note</button>
+            </div>
+            <div class="hl-note" data-hl-note hidden>
+              <b>Note</b>
+              <p>Key finding: DA-glia appear independently of demyelinating lesions — cite in Discussion.</p>
+            </div>
           </div>
         </article>
 
@@ -188,25 +228,42 @@
             <h3>A summary on top, and answers from the paper</h3>
             <p>Ask about a paper or your whole library. It runs on your device, with Apple Intelligence or an open Qwen3 model downloaded once. Nothing is sent to a server.</p>
           </div>
-          <div class="vg summary" aria-hidden="true">
-            <b><svg width="14" height="14"><use href="#i-spark"/></svg>Summary</b>
+          <div class="vg summary" data-ai-demo>
+            <div class="ai-head">
+              <b><svg width="14" height="14" aria-hidden="true"><use href="#i-spark"/></svg><span data-ai-heading>Summary</span></b>
+              <span class="ai-badge">On-device · 0 bytes sent</span>
+            </div>
             <!-- Lunta's summary of Kukanja et al., Cell 2024, made on a Mac by Apple Intelligence (its first two sentences, verbatim) -->
-            <p>The study investigated evolving cellular processes in experimental autoimmune encephalomyelitis (EAE) by modeling disease progression and using in situ sequencing (ISS) with high-sensitivity CartaNA kit to map cell-to-cell interactions. It found that disease-associated (DA)-glia arise independently of lesions and are dynamically induced and resolved during disease progression. …</p>
-            <small>Made on device by Apple Intelligence. It can be wrong.</small>
+            <p data-ai-text aria-live="polite">The study investigated evolving cellular processes in experimental autoimmune encephalomyelitis (EAE) by modeling disease progression and using in situ sequencing (ISS) with high-sensitivity CartaNA kit to map cell-to-cell interactions. It found that disease-associated (DA)-glia arise independently of lesions and are dynamically induced and resolved during disease progression. …</p>
+            <div class="ai-prompts" role="group" aria-label="Ask this paper a sample question">
+              <button type="button" data-ai-q="summary" aria-pressed="true">Summary</button>
+              <button type="button" data-ai-q="daglia" aria-pressed="false">What are DA-glia?</button>
+              <button type="button" data-ai-q="method" aria-pressed="false">How was EAE mapped?</button>
+              <button type="button" data-ai-q="human" aria-pressed="false">Human MS lesions?</button>
+            </div>
+            <small data-ai-foot>Made on device by Apple Intelligence. It can be wrong.</small>
           </div>
         </article>
 
-        <article class="cell c-cite reveal" id="cite">
+        <article class="cell c-cite reveal" id="cite" data-cite-demo>
           <div class="txt">
             <p class="kicker"><svg aria-hidden="true"><use href="#i-cite"/></svg>Cite</p>
             <h3>Cite in Word, Google Docs and LaTeX</h3>
             <p>Citations and a reference list that keeps itself in order, in 12 built-in styles or any of about 10,000 journal styles. Documents carry the papers they cite, so co-authors can update them. For LaTeX: fixed citation keys, a .bib file that keeps itself up to date, and Import BibTeX that keeps your keys.</p>
           </div>
-          <div class="styles" aria-hidden="true"><span>Nature</span><span>APA</span><span>Vancouver</span><span>Cell</span><span>IEEE</span><span>BibTeX</span><span>+ 10,000 journals</span></div>
+          <div class="styles" role="group" aria-label="Preview citation style">
+            <button type="button" data-cite-style="nature" aria-pressed="true">Nature</button>
+            <button type="button" data-cite-style="apa" aria-pressed="false">APA</button>
+            <button type="button" data-cite-style="vancouver" aria-pressed="false">Vancouver</button>
+            <button type="button" data-cite-style="cell" aria-pressed="false">Cell</button>
+            <button type="button" data-cite-style="ieee" aria-pressed="false">IEEE</button>
+            <button type="button" data-cite-style="bibtex" aria-pressed="false">BibTeX</button>
+            <span class="styles-more">+ 10,000 journals</span>
+          </div>
           <div class="art cite-art">
-            <div class="doc-mock" aria-hidden="true">
-              <div class="doc-bar"><i></i><i></i><i></i><span>Google Docs</span></div>
-              <div class="doc-page">
+            <div class="doc-mock">
+              <div class="doc-bar" aria-hidden="true"><i></i><i></i><i></i><span>Google Docs</span></div>
+              <div class="doc-page" data-cite-page aria-live="polite">
                 <p>Spatial omics maps cells in their tissue context<sup>1,2</sup>.</p>
                 <ol><li>Kukanja, P. et al. Cellular architecture of evolving neuroinflammatory lesions and multiple sclerosis pathology. <i>Cell</i> <b>187</b>, 1990–2009 (2024).</li><li>Tejada-Lapuerta, A. et al. Nicheformer: a foundation model for single-cell and spatial omics. <i>Nature Methods</i> <b>22</b>, 2525–2538 (2025).</li></ol>
               </div>
@@ -263,15 +320,32 @@
           <div class="art"><div class="shot-crop narrow"><img src="images/extension-panel.webp" width="545" height="567" loading="lazy" alt="The Lunta extension's panel on a Nature Genetics article page: the paper is in the library, its PDF saved, and the reading view updated from the page's full text."></div></div>
         </article>
 
-        <article class="cell dark c-agents reveal" id="agents">
+        <article class="cell dark c-agents reveal" id="agents" data-agent-demo>
           <div class="txt">
             <p class="kicker"><svg aria-hidden="true"><use href="#i-agent"/></svg>AI agents</p>
             <h3>Hand the legwork to an agent. Keep the final say.</h3>
             <p>Connect Claude, Cursor or any MCP client to Lunta for Mac (<strong>Lunta › Connect AI Agents…</strong>). An agent can look up papers, add them with their open-access PDF, file them in folders, highlight passages and format citations. Every change it makes goes into its own change log, so you can see it and undo it.</p>
           </div>
           <div class="agent-side">
-            <div class="chips" aria-label="Some of the agent's tools"><code>search_papers</code><code>read_paper</code><code>add_paper</code><code>find_pdf</code><code>add_to_collection</code><code>add_highlight</code><code>cite</code></div>
-            <div class="agent-log" aria-hidden="true"><span>›</span> <em>claude mcp add lunta -- /Applications/Lunta.app/Contents/MacOS/lunta-mcp</em><br><span>›</span> the agent's changes sync to your Mac and iPhone like another device's</div>
+            <div class="chips" role="group" aria-label="Preview an agent tool">
+              <button type="button" data-mcp-tool="search_papers" aria-pressed="false"><code>search_papers</code></button>
+              <button type="button" data-mcp-tool="read_paper" aria-pressed="false"><code>read_paper</code></button>
+              <button type="button" data-mcp-tool="add_paper" aria-pressed="false"><code>add_paper</code></button>
+              <button type="button" data-mcp-tool="find_pdf" aria-pressed="false"><code>find_pdf</code></button>
+              <button type="button" data-mcp-tool="add_to_collection" aria-pressed="false"><code>add_to_collection</code></button>
+              <button type="button" data-mcp-tool="add_highlight" aria-pressed="false"><code>add_highlight</code></button>
+              <button type="button" data-mcp-tool="cite" aria-pressed="false"><code>cite</code></button>
+            </div>
+            <div class="agent-log">
+              <div class="agent-log-top">
+                <span class="agent-label">MCP · click any tool above</span>
+                <button type="button" class="copy-btn" data-copy-mcp="claude mcp add lunta -- /Applications/Lunta.app/Contents/MacOS/lunta-mcp">Copy setup</button>
+              </div>
+              <div class="agent-output" data-agent-output aria-live="polite">
+                <div><span>›</span> <em>claude mcp add lunta -- /Applications/Lunta.app/Contents/MacOS/lunta-mcp</em></div>
+                <div class="agent-res"><span>›</span> the agent's changes sync to your Mac and iPhone like another device's</div>
+              </div>
+            </div>
           </div>
         </article>
 
@@ -286,16 +360,22 @@
         <h2 id="switch-title">Switching from Zotero, Mendeley, ReadCube or EndNote</h2>
         <p class="lead">Export once, import once. Your papers come along with their PDFs, tags and notes, and duplicates are merged rather than added twice.</p>
       </div>
-      <ol class="steps">
+      <ol class="steps" data-switch-demo>
         <li class="step reveal">
           <span class="num" aria-hidden="true">01</span>
           <h3>Export from your reference manager</h3>
           <p>As BibTeX or RIS, with the files where the app offers it.</p>
+          <div class="source-tabs" role="group" aria-label="Choose your current reference manager">
+            <button type="button" data-source-tab="zotero" aria-pressed="true">Zotero</button>
+            <button type="button" data-source-tab="mendeley" aria-pressed="false">Mendeley</button>
+            <button type="button" data-source-tab="readcube" aria-pressed="false">ReadCube</button>
+            <button type="button" data-source-tab="endnote" aria-pressed="false">EndNote</button>
+          </div>
           <dl class="sources">
-            <div><dt>Zotero</dt><dd><b>File › Export Library…</b>, BibTeX, tick <b>Export Files</b></dd></div>
-            <div><dt>Mendeley</dt><dd>Select the papers, <b>File › Export…</b> as BibTeX</dd></div>
-            <div><dt>ReadCube</dt><dd><b>Export › BibTeX</b>, and <b>Export PDFs</b> to a folder</dd></div>
-            <div><dt>EndNote</dt><dd><b>File › Export…</b>, style <b>RefMan (RIS) Export</b></dd></div>
+            <div data-source-row="zotero" class="is-selected"><dt>Zotero</dt><dd><b>File › Export Library…</b>, BibTeX, tick <b>Export Files</b></dd></div>
+            <div data-source-row="mendeley"><dt>Mendeley</dt><dd>Select the papers, <b>File › Export…</b> as BibTeX</dd></div>
+            <div data-source-row="readcube"><dt>ReadCube</dt><dd><b>Export › BibTeX</b>, and <b>Export PDFs</b> to a folder</dd></div>
+            <div data-source-row="endnote"><dt>EndNote</dt><dd><b>File › Export…</b>, style <b>RefMan (RIS) Export</b></dd></div>
           </dl>
           <p class="fine">Paperpile, JabRef, BibDesk and any app that writes .bib or .ris work too.</p>
         </li>
@@ -319,10 +399,10 @@
             <li>Makes the reading views in the background; <b>Find Missing PDFs</b> gets legal open-access copies for the rest</li>
           </ul>
           <div class="import-mock" aria-hidden="true">
-            <div class="im-row"><b>Importing Thesis.bib</b><span>into “Thesis”</span></div>
+            <div class="im-row"><b data-import-file>Importing Zotero.bib</b><span data-import-folder>into “Thesis”</span></div>
             <div class="im-bar"><i></i></div>
             <p>Added 312 papers, merged 4 with papers already in Lunta, 280 PDFs.</p>
-            <p class="im-sub"><span class="spin"></span>Making reading views · 41 of 312</p>
+            <p class="im-sub"><span class="spin"></span><span data-import-count>Making reading views · 41 of 312</span></p>
           </div>
         </li>
       </ol>
@@ -382,6 +462,7 @@
 
       <details class="compare">
         <summary>Compare every feature</summary>
+        <div class="compare-body">
         <div class="table-scroll" tabindex="0" role="region" aria-labelledby="platforms-title">
         <table class="platforms">
           <thead>
@@ -410,6 +491,7 @@
         </table>
         </div>
         <p class="footnote">Google Docs citing works through the browser extension, with Lunta for Mac, Windows or Linux open on the same computer.</p>
+        </div>
       </details>
     </div>
   </section>
@@ -504,16 +586,8 @@
     <span>No cookies, no analytics, no third-party requests on this site.</span>
   </div>
 </footer>
-<script>
-/* the header turns frosted once the page scrolls; without this script it is frosted all along */
-(function(){var h=document.querySelector(".site-header");function f(){h.classList.toggle("at-top",scrollY<16)}f();addEventListener("scroll",f,{passive:true})})();
-/* Listen: the sample plays with its own button, the bars fill and the sentence being read is marked; without this script the audio has its own controls */
-(function(){var r=document.querySelector("[data-listen]");if(!r)return;var a=r.querySelector("audio"),b=r.querySelector(".play"),bars=r.querySelectorAll(".bars i"),ss=r.querySelectorAll("[data-t]");
-a.controls=false;a.hidden=true;b.hidden=false;r.classList.add("js");
-function tick(){var t=a.currentTime,d=a.duration||27.6,n=a.ended?0:Math.round(t/d*bars.length),k=-1,i;for(i=0;i<bars.length;i++)bars[i].classList.toggle("done",i<n);if(!a.ended&&t>0)for(i=0;i<ss.length;i++)if(t>=+ss[i].dataset.t)k=i;for(i=0;i<ss.length;i++)ss[i].classList.toggle("now",i===k)}
-function state(){var p=!a.paused&&!a.ended;b.setAttribute("aria-pressed",p);b.classList.toggle("on",p);tick()}
-b.addEventListener("click",function(){if(a.paused){a.preload="auto";a.play()}else a.pause()});
-["play","pause","ended","timeupdate","seeked"].forEach(function(e){a.addEventListener(e,e==="timeupdate"?tick:state)})})();
-</script>
+<script src="js/gsap.min.js" defer></script>
+<script src="js/ScrollTrigger.min.js" defer></script>
+<script src="js/site.js" defer></script>
 </body>
 </html>
