@@ -20,6 +20,7 @@
 <link rel="preload" href="fonts/libre-franklin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
+<script>try{var t=localStorage.getItem("lunta-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-color-scheme",t)}catch(e){}</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -59,9 +60,11 @@
         <a class="wide" href="./#platforms">Platforms</a>
         <a class="wide" href="./#privacy">Privacy</a>
         <a href="getting-started.html">Getting started</a>
+        <button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch color theme" title="Switch light / dark theme"><span class="t-icon" aria-hidden="true">◐</span></button>
         <a class="btn btn-amber" href="download.html" aria-current="page">Download</a>
       </nav>
     </div>
+    <div class="read-progress" aria-hidden="true"></div>
 </header>
 
 <div class="band">
@@ -105,11 +108,11 @@ your device; its name carries the version number, for example <code>Lunta-1.1.0-
 <table>
   <thead><tr><th scope="col">Your device</th><th scope="col">File</th><th scope="col">How to install</th></tr></thead>
   <tbody>
-  <tr><td><strong>Mac</strong> (Apple silicon: M1 or newer; macOS 15 Sequoia or newer)</td><td><code>Lunta-…-Mac-AppleSilicon.zip</code></td><td>Unzip and drag <strong>Lunta</strong> to Applications. Signed and notarized by Apple.</td></tr>
-  <tr><td><strong>Windows</strong></td><td><code>Lunta-…-Windows-Setup.exe</code></td><td>Run the installer. (<code>Lunta-…-Windows.msi</code> is the same app for managed installs.)</td></tr>
-  <tr><td><strong>Linux</strong> (Ubuntu, Debian)</td><td><code>Lunta-…-Linux-Ubuntu-Debian.deb</code></td><td><code>sudo apt install ./Lunta-…-Linux-Ubuntu-Debian.deb</code></td></tr>
-  <tr><td><strong>Linux</strong> (any other)</td><td><code>Lunta-…-Linux.AppImage</code></td><td>Make it executable (<code>chmod +x</code>) and run it.</td></tr>
-  <tr><td><strong>Android</strong></td><td><code>Lunta-…-Android.apk</code></td><td>Open it on the phone and allow installing from this source. Later versions install over it.</td></tr>
+  <tr data-os="mac"><td><strong>Mac</strong> (Apple silicon: M1 or newer; macOS 15 Sequoia or newer)</td><td><code>Lunta-…-Mac-AppleSilicon.zip</code></td><td>Unzip and drag <strong>Lunta</strong> to Applications. Signed and notarized by Apple.</td></tr>
+  <tr data-os="win"><td><strong>Windows</strong></td><td><code>Lunta-…-Windows-Setup.exe</code></td><td>Run the installer. (<code>Lunta-…-Windows.msi</code> is the same app for managed installs.)</td></tr>
+  <tr data-os="linux"><td><strong>Linux</strong> (Ubuntu, Debian)</td><td><code>Lunta-…-Linux-Ubuntu-Debian.deb</code></td><td><code>sudo apt install ./Lunta-…-Linux-Ubuntu-Debian.deb</code></td></tr>
+  <tr data-os="linux"><td><strong>Linux</strong> (any other)</td><td><code>Lunta-…-Linux.AppImage</code></td><td>Make it executable (<code>chmod +x</code>) and run it.</td></tr>
+  <tr data-os="android"><td><strong>Android</strong></td><td><code>Lunta-…-Android.apk</code></td><td>Open it on the phone and allow installing from this source. Later versions install over it.</td></tr>
   <tr><td><strong>Browser extension</strong></td><td><code>Lunta-…-Chrome-Extension.zip</code></td><td>See <a href="#extension">below</a>.</td></tr>
   </tbody>
 </table>
@@ -215,9 +218,6 @@ keeps the two in sync. More in <a href="getting-started.html#setup">Getting star
     <span>No cookies, no analytics, no third-party requests on this site.</span>
   </div>
 </footer>
-<script>
-/* the header turns frosted once the page scrolls; without this script it is frosted all along */
-(function(){var h=document.querySelector(".site-header");function f(){h.classList.toggle("at-top",scrollY<16)}f();addEventListener("scroll",f,{passive:true})})();
-</script>
+<script src="js/site.js" defer></script>
 </body>
 </html>
