@@ -1252,6 +1252,43 @@ extension LibraryModel {
 
 // MARK: - Views
 
+/// The header between New for You's sections (your papers, the journals you follow, across science): an icon
+/// and a title in the body's colour and a larger size, a line under it, space above. The list's own section
+/// headers (small grey capitals) were hard to see as the start of a new section.
+struct ForYouHeader<Trailing: View>: View {
+    let title: String
+    let systemImage: String
+    var subtitle: String? = nil
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Label {
+                    Text(title).foregroundStyle(.primary)
+                } icon: {
+                    Image(systemName: systemImage).foregroundStyle(Color.luntaTeal)
+                }
+                .font(.title3.weight(.semibold))
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            trailing()
+        }
+        .textCase(nil)
+        .padding(.top, 14)
+        .padding(.bottom, 2)
+    }
+}
+
+extension ForYouHeader where Trailing == EmptyView {
+    init(title: String, systemImage: String, subtitle: String? = nil) {
+        self.init(title: title, systemImage: systemImage, subtitle: subtitle, trailing: { EmptyView() })
+    }
+}
+
 /// "New for You": the ranked feed.
 struct WatchInbox: View {
     @EnvironmentObject var model: LibraryModel
@@ -1272,14 +1309,18 @@ struct WatchInbox: View {
             if let p = center.shownProblem, !center.checking {
                 Section { problem(p) }
             }
-            if !center.interests.isEmpty, !center.latestFinds.isEmpty, center.summarizing || !center.state.digest.isEmpty {
-                Section { digest }
+            let hasDigest = !center.interests.isEmpty && !center.latestFinds.isEmpty
+                && (center.summarizing || !center.state.digest.isEmpty)
+            if hasDigest {
+                Section { digest } header: { ForYouHeader(title: "Your papers", systemImage: "sparkles") }
             }
             if !center.latestFinds.isEmpty {
                 Section {
                     ForEach(center.latestFinds) { f in
                         row(f).tag(f.id)
                     }
+                } header: {
+                    if !hasDigest { ForYouHeader(title: "Your papers", systemImage: "sparkles") }
                 }
             } else if !center.interests.isEmpty && !center.checking && center.shownProblem == nil {
                 Text(center.finds.isEmpty ? "Nothing yet. New papers are picked once a day; refresh to look now."

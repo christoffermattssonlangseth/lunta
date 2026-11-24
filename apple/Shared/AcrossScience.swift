@@ -187,14 +187,7 @@ struct AcrossScienceSection: View {
     }
 
     private func header(_ v: AcrossView?) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Across science")
-                if let v, !v.subtitle.isEmpty {
-                    Text(v.subtitle).font(.caption).foregroundStyle(.secondary).textCase(nil)
-                }
-            }
-            Spacer()
+        ForYouHeader(title: "Across science", systemImage: "globe", subtitle: v?.subtitle) {
             if center.running { ProgressView().controlSize(.small) }
             else if v?.on == true {
                 Button { Task { await center.run() } } label: { Image(systemName: "arrow.clockwise") }
