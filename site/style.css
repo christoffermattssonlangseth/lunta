@@ -985,3 +985,11 @@ html[data-color-scheme="light"] .hl mark[data-color="pink"] { background-image: 
 @media (max-width: 29.99rem) {
   .nav a[href="getting-started.html"]:not(.btn) { display: none; }
 }
+
+/* The Read card spans two rows: its figure (an iPhone screen, framed at the top and running off the card's
+   bottom) starts just under the credit and the frame stretches to the bottom, instead of a fixed-size
+   screenshot pushed down with an empty band above it. */
+.cell.read-cell .art { flex: 1; align-items: stretch; margin-top: .25rem; }
+.cell.read-cell .art .shot-crop { width: min(calc(100% - 3rem), 34rem); display: flex; flex-direction: column; justify-content: flex-start; margin-bottom: 0; border-bottom: 0; border-radius: 1.25rem 1.25rem 0 0; background: #fefdf9; }
+.cell.read-cell .art .shot-crop img { display: block; width: 104%; max-width: none; margin-left: -2%; height: auto; flex: none; }
+/* (the screenshot's thin grey side edges are cut off, so the white screen runs on cleanly below it) */
