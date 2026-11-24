@@ -1516,7 +1516,12 @@ mod across_science {
         let v = a.view(NOW, CET);
         assert_eq!(n as usize, v.digest.len());
         let cited: Vec<u32> = v.digest.iter().map(|d| d.cites[0].number).collect();
-        assert_eq!(cited, vec![1, 2, 4], "one a field, said only what the papers say: {:?}", v.digest);
+        // one a field, said only what the papers say; a field whose sentence went (3: a claim its paper
+        // doesn't make) or never came is there with its paper's title, in the list's order
+        let fields = s.digest_batch().len() as u32;
+        assert_eq!(cited, (1..=fields).collect::<Vec<u32>>(), "every field, in order: {:?}", v.digest);
+        assert_eq!(v.digest[2].text, t(2).trim().trim_end_matches('.'), "the title stands in for the claim");
+        assert!(!v.digest[2].text.contains("99 diseases"));
         assert_eq!(v.digest[0].field_label, "Cell & molecular biology");
         assert!(v.digest_share.starts_with("Across science (24 Nov), Lunta\n\nCell & molecular biology: "), "{}", v.digest_share);
         assert!(a.digest_request().is_none(), "written");
@@ -1524,7 +1529,7 @@ mod across_science {
         // a stale answer is ignored; a sentence about a paper turned down since goes
         assert_eq!(set_digest(&files, "v1|other", "x [1].").unwrap(), 0);
         a.dismiss(s.items[1].key.clone()).unwrap();
-        assert_eq!(a.view(NOW, CET).digest.len(), 2);
+        assert_eq!(a.view(NOW, CET).digest.len() as u32, fields - 1);
         // a model's digest (desktop and Android)
         struct Model;
         impl Writer for Model {
@@ -1534,7 +1539,8 @@ mod across_science {
                 Some(format!("{title} [1]."))
             }
         }
-        assert_eq!(write_digest(&files, &Model), 1);
+        // the model wrote one sentence; the other fields (one turned down above) have their titles
+        assert_eq!(write_digest(&files, &Model), fields - 1);
     }
 
     #[test]

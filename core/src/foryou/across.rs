@@ -571,10 +571,22 @@ pub fn check_digest(answer: &str, s: &AcrossState) -> Vec<DigestSentence> {
     let (kept, _drops) = summary::validate(answer, &ids, &sources, None, batch.len());
     let field_of_key: HashMap<&str, &str> = s.items.iter().map(|r| (r.key.as_str(), r.field.as_str())).collect();
     let mut fields_said = HashSet::new();
-    kept.into_iter()
+    let mut out: Vec<DigestSentence> = kept
+        .into_iter()
         .map(|x| DigestSentence { text: x.text, keys: x.citations.iter().filter_map(|n| by_number.get(n).cloned()).collect() })
         .filter(|d| !d.keys.is_empty() && fields_said.insert(field_of_key.get(d.keys[0].as_str()).copied().unwrap_or("")))
-        .collect()
+        .collect();
+    // A field whose sentence was left out (the model skipped it, or it said more than the title and
+    // abstract: a paper without an abstract has only its title to go on) is still in the summary, with
+    // the paper's title, so the numbers run on without a gap.
+    for r in &batch {
+        if fields_said.insert(field_of_key.get(r.key.as_str()).copied().unwrap_or("")) {
+            out.push(DigestSentence { text: r.title.trim().trim_end_matches('.').to_string(), keys: vec![r.key.clone()] });
+        }
+    }
+    let number: HashMap<&str, usize> = s.items.iter().enumerate().map(|(i, r)| (r.key.as_str(), i)).collect();
+    out.sort_by_key(|d| number.get(d.keys[0].as_str()).copied().unwrap_or(usize::MAX));
+    out
 }
 
 /// The digest by the core's model (desktop and Android). How many sentences were kept.
