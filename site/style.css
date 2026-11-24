@@ -461,7 +461,7 @@ p:last-child { margin-bottom: 0; }
 .compare .table-scroll { border: 0; border-top: 1px solid var(--hairline); border-radius: 0 0 var(--radius-lg) var(--radius-lg); box-shadow: none; }
 .compare .footnote { padding: 0 1.5rem 1.5rem; margin: 1rem 0 0; }
 
-.table-scroll { overflow-x: auto; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-1); }
+.table-scroll { position: relative; overflow-x: auto; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-1); }
 .platforms { width: 100%; min-width: 40rem; border-collapse: collapse; font-size: .9375rem; }
 .platforms th, .platforms td { padding: .75rem 1rem; border-bottom: 1px solid var(--hairline); text-align: center; vertical-align: middle; }
 .platforms thead th { font: 500 .6875rem/1.3 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); background: var(--bg-alt); }
@@ -870,6 +870,7 @@ p:last-child { margin-bottom: 0; }
   transition: background-color .18s, border-color .18s;
 }
 .copy-btn:hover { background: rgba(247, 244, 236, .14); border-color: var(--amber); }
+.agent-output { overflow-wrap: anywhere; }
 .agent-output .agent-res { margin-top: .25rem; }
 .undo-pill {
   appearance: none; margin-left: .45rem; border: 1px solid rgba(242, 180, 90, .55);
@@ -993,3 +994,31 @@ html[data-color-scheme="light"] .hl mark[data-color="pink"] { background-image: 
 .cell.read-cell .art .shot-crop { width: min(calc(100% - 3rem), 34rem); display: flex; flex-direction: column; justify-content: flex-start; margin-bottom: 0; border-bottom: 0; border-radius: 1.25rem 1.25rem 0 0; background: #fefdf9; }
 .cell.read-cell .art .shot-crop img { display: block; width: 104%; max-width: none; margin-left: -2%; height: auto; flex: none; }
 /* (the screenshot's thin grey side edges are cut off, so the white screen runs on cleanly below it) */
+
+/* ---------- the front page, kept short: one number, four cards, a row of platforms (the rest is on features.html) ---------- */
+.proof.one { grid-template-columns: minmax(0, 1fr); max-width: 30rem; margin-inline: auto; text-align: center; border-bottom: 1px solid var(--hairline); }
+.proof.one > div { padding: 1.75rem 0; border-left: 0; }
+.proof.one + .proof-note { justify-content: center; text-align: center; }
+.proof-links { display: inline-flex; flex-wrap: wrap; justify-content: center; gap: .5rem 1.5rem; }
+.bento.lean .cite-art { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 64rem) {
+  .bento.lean .c-read { grid-column: span 7; grid-row: span 2; }
+  .bento.lean .c-hl, .bento.lean .c-new { grid-column: span 5; }
+  .bento.lean .c-cite { grid-column: span 12; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); grid-template-rows: auto 1fr; }
+  .bento.lean .c-cite .txt { grid-column: 1; grid-row: 1; }
+  .bento.lean .c-cite .styles { grid-column: 1; grid-row: 2; align-self: start; }
+  .bento.lean .c-cite .art { grid-column: 2; grid-row: 1 / span 2; margin-top: 0; padding-top: 1.5rem; }
+}
+.more-features { margin-top: 2rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem 2rem; }
+.more-features p { margin: 0; color: var(--muted); max-width: 44rem; }
+.plat-row { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+@media (min-width: 60rem) { .plat-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.plat-row li { display: flex; align-items: center; gap: .875rem; padding: 1rem 1.125rem; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--hairline); box-shadow: var(--shadow-1); }
+.plat-row li > svg { flex: none; width: 1.75rem; height: 1.75rem; color: var(--link); }
+.plat-row li > span { flex: 1; min-width: 0; }
+.plat-row b { display: block; font-weight: 650; line-height: 1.25; color: var(--ink); }
+.plat-row small { display: block; margin-top: .125rem; color: var(--muted); font-size: .8125rem; line-height: 1.35; }
+.plat-row .btn { flex: none; }
+.privacy-points { list-style: none; margin: 0; padding: 1.25rem 0; display: flex; flex-wrap: wrap; gap: .75rem 2rem; border-block: 1px solid var(--hairline); }
+.privacy-points li { display: flex; align-items: center; gap: .5rem; font-weight: 600; color: var(--ink); }
+.privacy-points svg { flex: none; width: 1.25rem; height: 1.25rem; color: var(--kicker); }

@@ -898,15 +898,23 @@
     /* Hero entrance timeline */
     /* Movement only, no fade: the hero (title, download buttons) is visible from the first frame even where
        animations never run (link previews, screenshot tools, a stalled clock). */
-    var heroTl = gsap.timeline({ defaults: { ease: "power3.out" } });
-    heroTl
-      .from(".hero .pill", { y: 16, duration: 0.55 })
-      .from(".hero h1", { y: 26, duration: 0.7 }, "-=0.35")
-      .from(".hero .lead", { y: 18, duration: 0.6 }, "-=0.45")
-      .from(".hero .cta-row .btn", { y: 16, stagger: 0.08, duration: 0.55 }, "-=0.4")
-      .from(".hero .cta-links, .hero .hero-meta", { y: 12, stagger: 0.08, duration: 0.5 }, "-=0.35")
-      .from(".hero-art .tablet", { y: 40, scale: 0.96, duration: 0.9, ease: "power2.out" }, 0.15)
-      .from(".hero-art .phone", { y: 56, scale: 0.94, duration: 0.9, ease: "power2.out" }, 0.3);
+    /* Only on the front page: every page loads this file, and GSAP warns about selectors that match nothing. */
+    var qsa = function (sel) { return document.querySelectorAll(sel); };
+    if (document.querySelector(".hero")) {
+      var heroTl = gsap.timeline({ defaults: { ease: "power3.out" } });
+      [
+        [".hero .pill", { y: 16, duration: 0.55 }, undefined],
+        [".hero h1", { y: 26, duration: 0.7 }, "-=0.35"],
+        [".hero .lead", { y: 18, duration: 0.6 }, "-=0.45"],
+        [".hero .cta-row .btn", { y: 16, stagger: 0.08, duration: 0.55 }, "-=0.4"],
+        [".hero .cta-links, .hero .hero-meta", { y: 12, stagger: 0.08, duration: 0.5 }, "-=0.35"],
+        [".hero-art .tablet", { y: 40, scale: 0.96, duration: 0.9, ease: "power2.out" }, 0.15],
+        [".hero-art .phone", { y: 56, scale: 0.94, duration: 0.9, ease: "power2.out" }, 0.3]
+      ].forEach(function (step) {
+        var els = qsa(step[0]);
+        if (els.length) heroTl.from(els, step[1], step[2]);
+      });
+    }
 
     /* Hero subtle mouse 3D depth on desktop */
     var heroArt = document.querySelector(".hero-art");
@@ -947,13 +955,16 @@
     }
 
     /* "Works with" subtle stagger */
-    gsap.from(".works li", {
-      y: 10,
-      stagger: 0.04,
-      duration: 0.45,
-      ease: "power2.out",
-      scrollTrigger: { trigger: ".works", start: "top 90%", once: true }
-    });
+    var worksItems = document.querySelectorAll(".works li");
+    if (worksItems.length) {
+      gsap.from(worksItems, {
+        y: 10,
+        stagger: 0.04,
+        duration: 0.45,
+        ease: "power2.out",
+        scrollTrigger: { trigger: ".works", start: "top 90%", once: true }
+      });
+    }
 
     /* Signature Showcase: PDF tilts/scans -> Arrow pulses -> Phone reading view locks in */
     var stage = document.querySelector(".stage");
@@ -1010,7 +1021,7 @@
       }
     }
 
-    /* Benchmark Proof Counters (99%, 0.95, 97%, 89%) */
+    /* Benchmark Proof Counters (99% on the front page; 99%, 0.95, 97%, 89% on features.html) */
     var counters = document.querySelectorAll("[data-count-to]");
     counters.forEach(function (el) {
       var target = parseFloat(el.getAttribute("data-count-to"));
@@ -1069,10 +1080,11 @@
     /* Import progress bar + live counter in Step 03 */
     var importBar = document.querySelector(".im-bar i");
     var importCount = document.querySelector("[data-import-count]");
-    if (importBar && importCount) {
+    var importMock = document.querySelector(".import-mock");
+    if (importBar && importCount && importMock) {
       var imObj = { n: 12 };
       ScrollTrigger.create({
-        trigger: ".import-mock",
+        trigger: importMock,
         start: "top 84%",
         once: true,
         onEnter: function () {

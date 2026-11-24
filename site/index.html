@@ -68,7 +68,7 @@
   <div class="wrap">
     <a class="brand" href="./"><img src="images/icon-64.png" alt="" width="32" height="32">Lunta</a>
     <nav class="nav" aria-label="Main">
-      <a class="wide" href="#features">Features</a>
+      <a class="wide" href="features.html">Features</a>
       <a class="wide" href="#platforms">Platforms</a>
       <a class="wide" href="#privacy">Privacy</a>
       <a href="getting-started.html">Getting started</a>
@@ -112,7 +112,7 @@
     <div class="wrap">
       <p>Works with</p>
       <ul>
-        <li><a href="#cite">Word</a></li><li><a href="#cite">Google Docs</a></li><li><a href="#cite">LaTeX &amp; Overleaf</a></li><li><a href="#switch" data-pick-source="zotero">Zotero</a></li><li><a href="#switch" data-pick-source="mendeley">Mendeley</a></li><li><a href="#switch" data-pick-source="endnote">EndNote</a></li><li><a href="#library">PubMed</a></li><li><a href="#library">arXiv</a></li><li><a href="#library">bioRxiv</a></li><li><a href="#new-for-you">ORCID</a></li>
+        <li><a href="#cite">Word</a></li><li><a href="#cite">Google Docs</a></li><li><a href="#cite">LaTeX &amp; Overleaf</a></li><li><a href="features.html#switch">Zotero</a></li><li><a href="features.html#switch">Mendeley</a></li><li><a href="features.html#switch">EndNote</a></li><li><a href="features.html#library">PubMed</a></li><li><a href="features.html#library">arXiv</a></li><li><a href="features.html#library">bioRxiv</a></li><li><a href="#new-for-you">ORCID</a></li>
       </ul>
     </div>
   </section>
@@ -171,13 +171,10 @@
           <figcaption>The reading view · tap citations, Fig. 1, or themes</figcaption>
         </figure>
       </div>
-      <div class="proof">
+      <div class="proof one">
         <div class="reveal"><b data-count-to="99" data-count-suffix="%" data-count-decimals="0">99%</b><div class="proof-meter" aria-hidden="true"><i></i></div><span>of the text kept (median) when the reading view is made from the PDF</span></div>
-        <div class="reveal"><b data-count-to="0.95" data-count-suffix="" data-count-decimals="2">0.95</b><div class="proof-meter" aria-hidden="true"><i></i></div><span>token F1 against the publisher's XML, as for GROBID</span></div>
-        <div class="reveal"><b data-count-to="97" data-count-suffix="%" data-count-decimals="0">97%</b><div class="proof-meter" aria-hidden="true"><i></i></div><span>of figures missing from author manuscripts recovered from the PDF</span></div>
-        <div class="reveal"><b data-count-to="89" data-count-suffix="%" data-count-decimals="0">89%</b><div class="proof-meter" aria-hidden="true"><i></i></div><span>of highlights back on the right passage after the view is rebuilt</span></div>
       </div>
-      <p class="proof-note"><span>Measured on 200 open-access papers from PubMed Central.</span> <a class="textlink" href="https://github.com/christoffermattssonlangseth/lunta/blob/main/eval/RESULTS.md">How it was measured</a></p>
+      <p class="proof-note"><span>Measured on 200 open-access papers from PubMed Central.</span> <span class="proof-links"><a class="textlink" href="features.html#numbers">More numbers</a> <a class="textlink" href="https://github.com/christoffermattssonlangseth/lunta/blob/main/eval/RESULTS.md">How it was measured</a></span></p>
       <p class="muted" style="font-size:.8125rem;margin-top:.5rem">The paper shown on this page: Kukanja et al., “Cellular architecture of evolving neuroinflammatory lesions and multiple sclerosis pathology”, <em>Cell</em> 187, 1990–2009 (2024), <a href="https://doi.org/10.1016/j.cell.2024.02.030">doi:10.1016/j.cell.2024.02.030</a>, CC BY 4.0.</p>
     </div>
   </section>
@@ -188,13 +185,13 @@
         <p class="kicker">Features</p>
         <h2 id="features-title">Everything a paper needs, from the first read to the reference list</h2>
       </div>
-      <div class="bento">
+      <div class="bento lean">
 
         <article class="cell dark c-read read-cell reveal" id="read">
           <div class="txt">
             <p class="kicker"><svg aria-hidden="true"><use href="#i-read"/></svg>Read</p>
             <h3>Figures, citations and equations that work on a phone</h3>
-            <p>Tap a figure, or “Fig. 2” in the text, to see it large with its caption, then swipe through the paper's figures. Tap a citation to see the reference and add it to your library. Scroll or turn pages in Light, Paper, Quiet or Black.</p>
+            <p>Tap a figure to see it large with its caption, and a citation to see the reference and add it to your library.</p>
           </div>
           <p class="credit">Figure from Kukanja et al., <em>Cell</em> 2024, <a href="https://doi.org/10.1016/j.cell.2024.02.030">CC BY 4.0</a></p>
           <div class="art"><div class="shot-crop"><img src="images/kukanja-figure-900.webp" width="900" height="913" loading="lazy" alt="The figure viewer on iPhone: Fig. 1 of the paper, all its panels, shown large over the text with the start of its caption."></div></div>
@@ -204,7 +201,7 @@
           <div class="txt">
             <p class="kicker"><svg aria-hidden="true"><use href="#i-highlight"/></svg>Highlight</p>
             <h3>Highlights that last</h3>
-            <p>Four colors and notes, in the reading view or the PDF, and Apple Pencil on iPad. They sync everywhere and are searchable, and they find their place again when a paper gets a better reading view.</p>
+            <p>Four colors and notes, in the reading view or the PDF. They sync everywhere and find their place again when a paper gets a better reading view.</p>
           </div>
           <div class="vg" data-hl-demo>
             <p class="hl">We demonstrated that <mark data-color="yellow">disease-associated (DA)-glia arise independently of lesions and are dynamically induced and resolved</mark> over the disease course.</p>
@@ -222,34 +219,20 @@
           </div>
         </article>
 
-        <article class="cell c-ai reveal" id="ai">
+        <article class="cell c-new reveal" id="new-for-you">
           <div class="txt">
-            <p class="kicker"><svg aria-hidden="true"><use href="#i-chip"/></svg>On-device AI</p>
-            <h3>A summary on top, and answers from the paper</h3>
-            <p>Ask about a paper or your whole library. It runs on your device, with Apple Intelligence or an open Qwen3 model downloaded once. Nothing is sent to a server.</p>
+            <p class="kicker"><svg aria-hidden="true"><use href="#i-sun"/></svg>New for You</p>
+            <h3>New papers, every morning</h3>
+            <p>Picks that match your research, with why each one is there.</p>
           </div>
-          <div class="vg summary" data-ai-demo>
-            <div class="ai-head">
-              <b><svg width="14" height="14" aria-hidden="true"><use href="#i-spark"/></svg><span data-ai-heading>Summary</span></b>
-              <span class="ai-badge">On-device · 0 bytes sent</span>
-            </div>
-            <!-- Lunta's summary of Kukanja et al., Cell 2024, made on a Mac by Apple Intelligence (its first two sentences, verbatim) -->
-            <p data-ai-text aria-live="polite">The study investigated evolving cellular processes in experimental autoimmune encephalomyelitis (EAE) by modeling disease progression and using in situ sequencing (ISS) with high-sensitivity CartaNA kit to map cell-to-cell interactions. It found that disease-associated (DA)-glia arise independently of lesions and are dynamically induced and resolved during disease progression. …</p>
-            <div class="ai-prompts" role="group" aria-label="Ask this paper a sample question">
-              <button type="button" data-ai-q="summary" aria-pressed="true">Summary</button>
-              <button type="button" data-ai-q="daglia" aria-pressed="false">What are DA-glia?</button>
-              <button type="button" data-ai-q="method" aria-pressed="false">How was EAE mapped?</button>
-              <button type="button" data-ai-q="human" aria-pressed="false">Human MS lesions?</button>
-            </div>
-            <small data-ai-foot>Made on device by Apple Intelligence. It can be wrong.</small>
-          </div>
+          <div class="art"><div class="shot-crop"><img src="images/new-for-you-900.webp" width="900" height="837" loading="lazy" alt="New for You on iPhone: when today's picks were made, and a card for a new preprint with a one-line description and an Add button."></div></div>
         </article>
 
         <article class="cell c-cite reveal" id="cite" data-cite-demo>
           <div class="txt">
             <p class="kicker"><svg aria-hidden="true"><use href="#i-cite"/></svg>Cite</p>
             <h3>Cite in Word, Google Docs and LaTeX</h3>
-            <p>Citations and a reference list that keeps itself in order, in 12 built-in styles or any of about 10,000 journal styles. Documents carry the papers they cite, so co-authors can update them. For LaTeX: fixed citation keys, a .bib file that keeps itself up to date, and Import BibTeX that keeps your keys.</p>
+            <p>Citations and a reference list that keeps itself in order, in 12 built-in styles or any of about 10,000 journal styles.</p>
           </div>
           <div class="styles" role="group" aria-label="Preview citation style">
             <button type="button" data-cite-style="nature" aria-pressed="true">Nature</button>
@@ -268,274 +251,58 @@
                 <ol><li>Kukanja, P. et al. Cellular architecture of evolving neuroinflammatory lesions and multiple sclerosis pathology. <i>Cell</i> <b>187</b>, 1990–2009 (2024).</li><li>Tejada-Lapuerta, A. et al. Nicheformer: a foundation model for single-cell and spatial omics. <i>Nature Methods</i> <b>22</b>, 2525–2538 (2025).</li></ol>
               </div>
             </div>
-            <div class="shot-crop panel"><img src="images/gdocs-panel-top.webp" width="669" height="880" loading="lazy" alt="Lunta's panel in Google Docs: the citation style, a search for papers in your library, Insert Citation, Insert Bibliography, Update All and Edit Citation."></div>
           </div>
         </article>
 
-        <article class="cell c-listen reveal" id="listen">
-          <div class="txt">
-            <p class="kicker"><svg aria-hidden="true"><use href="#i-listen"/></svg>Listen</p>
-            <h3>Papers read aloud</h3>
-            <p>A natural voice on every platform. The paragraph being read follows along, and it keeps playing from the lock screen.</p>
-          </div>
-          <div class="vg listen" data-listen>
-            <div class="wave">
-              <button class="play" type="button" aria-label="Play a sample of Lunta reading Kukanja et al., Cell 2024" aria-pressed="false" hidden><svg class="i-play" aria-hidden="true"><use href="#i-play"/></svg><svg class="i-pause" aria-hidden="true"><use href="#i-pause"/></svg></button>
-              <span class="bars" aria-hidden="true"><i style="--h:64%"></i><i style="--h:58%"></i><i style="--h:77%"></i><i style="--h:100%"></i><i style="--h:48%"></i><i style="--h:64%"></i><i style="--h:64%"></i><i style="--h:59%"></i><i style="--h:71%"></i><i style="--h:55%"></i><i style="--h:15%"></i><i style="--h:69%"></i><i style="--h:67%"></i><i style="--h:60%"></i><i style="--h:73%"></i><i style="--h:41%"></i><i style="--h:40%"></i><i style="--h:82%"></i><i style="--h:65%"></i><i style="--h:51%"></i><i style="--h:89%"></i><i style="--h:86%"></i><i style="--h:50%"></i><i style="--h:14%"></i><i style="--h:81%"></i><i style="--h:56%"></i><i style="--h:73%"></i><i style="--h:54%"></i><i style="--h:75%"></i><i style="--h:68%"></i><i style="--h:61%"></i><i style="--h:63%"></i><i style="--h:48%"></i><i style="--h:81%"></i><i style="--h:53%"></i><i style="--h:66%"></i><i style="--h:73%"></i><i style="--h:56%"></i><i style="--h:41%"></i><i style="--h:8%"></i></span>
-            </div>
-            <audio controls preload="none" src="audio/kukanja-listen.m4a"></audio>
-            <p class="wave-line"><span data-t="0">Multiple sclerosis (MS) is a neurological disease characterized by multifocal lesions and smoldering pathology.</span> <span data-t="7.66">Although single-cell analyses provided insights into cytopathology, evolving cellular processes underlying MS remain poorly understood.</span> <span data-t="16.66">We investigated the cellular dynamics of MS by modeling temporal and regional rates of disease progression in mouse experimental autoimmune encephalomyelitis (EAE).</span></p>
-            <p class="credit">Lunta's natural voice (Kokoro), read on device. From the abstract of Kukanja et al., <em>Cell</em> 2024, <a href="https://doi.org/10.1016/j.cell.2024.02.030">CC BY 4.0</a>.</p>
-          </div>
-        </article>
-
-        <article class="cell c-sync reveal" id="library">
-          <div class="txt">
-            <p class="kicker"><svg aria-hidden="true"><use href="#i-cloud"/></svg>Library and sync</p>
-            <h3>In your own cloud. No account.</h3>
-            <p>Add papers by DOI, PubMed ID, arXiv link or PDF; Lunta finds legal open-access PDFs. Bring your library from Zotero, Mendeley, ReadCube or EndNote.</p>
-          </div>
-          <div class="vg sync" aria-hidden="true">
-            <div class="store"><svg><use href="#i-folder"/></svg><span><b>Your iCloud Drive</b><small>Mac, iPhone, iPad</small></span></div>
-            <div class="bridge">A Mac syncs the two</div>
-            <div class="store"><svg><use href="#i-folder"/></svg><span><b>Your Google Drive</b><small>Windows, Linux, Android</small></span></div>
-          </div>
-        </article>
-
-        <article class="cell c-new reveal" id="new-for-you">
-          <div class="txt">
-            <p class="kicker"><svg aria-hidden="true"><use href="#i-sun"/></svg>New for You</p>
-            <h3>New papers, every morning</h3>
-            <p>Picks that match your research, with why each one is there. Add your ORCID iD and Lunta also learns from your own papers.</p>
-          </div>
-          <div class="art"><div class="shot-crop"><img src="images/new-for-you-900.webp" width="900" height="837" loading="lazy" alt="New for You on iPhone: when today's picks were made, and a card for a new preprint with a one-line description and an Add button."></div></div>
-        </article>
-
-        <article class="cell c-ext reveal" id="extension">
-          <div class="txt">
-            <p class="kicker"><svg aria-hidden="true"><use href="#i-ext"/></svg>Browser extension</p>
-            <h3>Save from the journal's page</h3>
-            <p>With the access your browser already has. <strong>Use this page's full text</strong> makes the reading view from the article page. Chrome, Edge, Firefox and Safari.</p>
-          </div>
-          <div class="art"><div class="shot-crop narrow"><img src="images/extension-panel.webp" width="545" height="567" loading="lazy" alt="The Lunta extension's panel on a Nature Genetics article page: the paper is in the library, its PDF saved, and the reading view updated from the page's full text."></div></div>
-        </article>
-
-        <article class="cell dark c-agents reveal" id="agents" data-agent-demo>
-          <div class="txt">
-            <p class="kicker"><svg aria-hidden="true"><use href="#i-agent"/></svg>AI agents</p>
-            <h3>Hand the legwork to an agent. Keep the final say.</h3>
-            <p>Connect Claude, Cursor or any MCP client to Lunta for Mac (<strong>Lunta › Connect AI Agents…</strong>). An agent can look up papers, add them with their open-access PDF, file them in folders, highlight passages and format citations. Every change it makes goes into its own change log, so you can see it and undo it.</p>
-          </div>
-          <div class="agent-side">
-            <div class="chips" role="group" aria-label="Preview an agent tool">
-              <button type="button" data-mcp-tool="search_papers" aria-pressed="false"><code>search_papers</code></button>
-              <button type="button" data-mcp-tool="read_paper" aria-pressed="false"><code>read_paper</code></button>
-              <button type="button" data-mcp-tool="add_paper" aria-pressed="false"><code>add_paper</code></button>
-              <button type="button" data-mcp-tool="find_pdf" aria-pressed="false"><code>find_pdf</code></button>
-              <button type="button" data-mcp-tool="add_to_collection" aria-pressed="false"><code>add_to_collection</code></button>
-              <button type="button" data-mcp-tool="add_highlight" aria-pressed="false"><code>add_highlight</code></button>
-              <button type="button" data-mcp-tool="cite" aria-pressed="false"><code>cite</code></button>
-            </div>
-            <div class="agent-log">
-              <div class="agent-log-top">
-                <span class="agent-label">MCP · click any tool above</span>
-                <button type="button" class="copy-btn" data-copy-mcp="claude mcp add lunta -- /Applications/Lunta.app/Contents/MacOS/lunta-mcp">Copy setup</button>
-              </div>
-              <div class="agent-output" data-agent-output aria-live="polite">
-                <div><span>›</span> <em>claude mcp add lunta -- /Applications/Lunta.app/Contents/MacOS/lunta-mcp</em></div>
-                <div class="agent-res"><span>›</span> the agent's changes sync to your Mac and iPhone like another device's</div>
-              </div>
-            </div>
-          </div>
-        </article>
-
+      </div>
+      <div class="more-features reveal">
+        <p>Also: papers read aloud, on-device AI, your library in your own cloud, the browser extension, AI agents, and switching from Zotero, Mendeley, ReadCube or EndNote.</p>
+        <a class="btn btn-line" href="features.html">All features <svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
       </div>
     </div>
   </section>
 
-  <section class="section" id="switch" aria-labelledby="switch-title">
-    <div class="wrap">
-      <div class="section-head reveal">
-        <p class="kicker"><svg aria-hidden="true"><use href="#i-folder"/></svg>Bring your library</p>
-        <h2 id="switch-title">Switching from Zotero, Mendeley, ReadCube or EndNote</h2>
-        <p class="lead">Export once, import once. Your papers come along with their PDFs, tags and notes, and duplicates are merged rather than added twice.</p>
-      </div>
-      <ol class="steps" data-switch-demo>
-        <li class="step reveal">
-          <span class="num" aria-hidden="true">01</span>
-          <h3>Export from your reference manager</h3>
-          <p>As BibTeX or RIS, with the files where the app offers it.</p>
-          <div class="source-tabs" role="group" aria-label="Choose your current reference manager">
-            <button type="button" data-source-tab="zotero" aria-pressed="true">Zotero</button>
-            <button type="button" data-source-tab="mendeley" aria-pressed="false">Mendeley</button>
-            <button type="button" data-source-tab="readcube" aria-pressed="false">ReadCube</button>
-            <button type="button" data-source-tab="endnote" aria-pressed="false">EndNote</button>
-          </div>
-          <dl class="sources">
-            <div data-source-row="zotero" class="is-selected"><dt>Zotero</dt><dd><b>File › Export Library…</b>, BibTeX, tick <b>Export Files</b></dd></div>
-            <div data-source-row="mendeley"><dt>Mendeley</dt><dd>Select the papers, <b>File › Export…</b> as BibTeX</dd></div>
-            <div data-source-row="readcube"><dt>ReadCube</dt><dd><b>Export › BibTeX</b>, and <b>Export PDFs</b> to a folder</dd></div>
-            <div data-source-row="endnote"><dt>EndNote</dt><dd><b>File › Export…</b>, style <b>RefMan (RIS) Export</b></dd></div>
-          </dl>
-          <p class="fine">Paperpile, JabRef, BibDesk and any app that writes .bib or .ris work too.</p>
-        </li>
-        <li class="step reveal">
-          <span class="num" aria-hidden="true">02</span>
-          <h3>Import into Lunta</h3>
-          <p>Choose the export's folder, a ZIP of it, or the .bib or .ris file.</p>
-          <dl class="sources">
-            <div><dt>Mac</dt><dd><b>File › Import from Zotero, Mendeley, ReadCube, EndNote…</b></dd></div>
-            <div><dt>iPhone, iPad</dt><dd><b>+ › Import Library</b>, the folder in iCloud Drive or an AirDropped ZIP</dd></div>
-            <div><dt>Windows, Linux</dt><dd><b>Import ▾ › Import Library…</b></dd></div>
-            <div><dt>Android</dt><dd><b>+ › Import library</b>, from the phone or Google Drive</dd></div>
-          </dl>
-        </li>
-        <li class="step reveal">
-          <span class="num" aria-hidden="true">03</span>
-          <h3>Lunta does the rest</h3>
-          <ul class="ticks">
-            <li>Finds the PDFs the export names, and matches other PDFs by DOI or title</li>
-            <li>Keeps tags and notes, and puts the papers in a folder if you like</li>
-            <li>Makes the reading views in the background; <b>Find Missing PDFs</b> gets legal open-access copies for the rest</li>
-          </ul>
-          <div class="import-mock" aria-hidden="true">
-            <div class="im-row"><b data-import-file>Importing Zotero.bib</b><span data-import-folder>into “Thesis”</span></div>
-            <div class="im-bar"><i></i></div>
-            <p>Added 312 papers, merged 4 with papers already in Lunta, 280 PDFs.</p>
-            <p class="im-sub"><span class="spin"></span><span data-import-count>Making reading views · 41 of 312</span></p>
-          </div>
-        </li>
-      </ol>
-      <div class="switch-foot">
-        <div class="latex reveal">
-          <p class="kicker"><svg aria-hidden="true"><use href="#i-cite"/></svg>Writing in LaTeX?</p>
-          <h3>Import your .bib and keep every citation key</h3>
-          <p><b>Import BibTeX (Keep Citation Keys)</b> on Mac, iPhone and iPad looks each entry up by DOI, arXiv id or Crossref and keeps its key, so every <code>\cite{…}</code> in your document still works. A report shows where your .bib and the published record differ.</p>
-        </div>
-        <div class="caveat reveal">
-          <h3>What stays behind</h3>
-          <p>Exports don't include your collections: export each one on its own and import it into a folder of the same name. Highlights and annotations made in another app don't become Lunta highlights.</p>
-          <a class="textlink" href="getting-started.html#import">The full guide, app by app</a>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="section section-alt" id="platforms" aria-labelledby="platforms-title">
+  <section class="section" id="platforms" aria-labelledby="platforms-title">
     <div class="wrap">
       <div class="section-head reveal">
         <p class="kicker">Platforms</p>
         <h2 id="platforms-title">One library on all your devices</h2>
         <p class="lead">A native app on each platform, on one shared core. A Mac keeps iCloud Drive and Google Drive in sync, so one library can span all of them.</p>
       </div>
-      <div class="plats">
-        <article class="plat reveal">
-          <div class="glyph"><svg aria-hidden="true"><use href="#i-laptop"/></svg></div>
-          <h3>Mac</h3>
-          <p class="sync-tag">iCloud Drive</p>
-          <p>Everything, including citing in Word and Google Docs, a .bib file that keeps itself up to date, the Safari extension and AI agents. Apple silicon.</p>
-          <a class="btn btn-teal" href="https://github.com/christoffermattssonlangseth/lunta/releases/latest">Download for Mac</a>
-        </article>
-        <article class="plat reveal">
-          <div class="glyph"><svg aria-hidden="true"><use href="#i-devices"/></svg></div>
-          <h3>iPhone and iPad</h3>
-          <p class="sync-tag">iCloud Drive</p>
-          <p>Reading, highlights in the reading view and the PDF, Apple Pencil, New for You, Listen, Ask and the Safari extension.</p>
-          <a class="btn btn-teal" href="https://apps.apple.com/app/lunta/id6835403752">App Store</a>
-        </article>
-        <article class="plat reveal">
-          <div class="glyph"><svg aria-hidden="true"><use href="#i-monitor"/></svg></div>
-          <h3>Windows and Linux</h3>
-          <p class="sync-tag">Google Drive</p>
-          <p>Reading, highlights, Listen, on-device AI, New for You, citing in Google Docs and a .bib file kept up to date.</p>
-          <a class="btn btn-teal" href="https://github.com/christoffermattssonlangseth/lunta/releases/latest">Download</a>
-        </article>
-        <article class="plat reveal">
-          <div class="glyph"><svg aria-hidden="true"><use href="#i-handset"/></svg></div>
-          <h3>Android</h3>
-          <p class="sync-tag">Google Drive</p>
-          <p>Reading, highlights, Listen, on-device AI on phones with 6 GB of memory, New for You, and the journal's page for full text.</p>
-          <a class="btn btn-teal" href="https://github.com/christoffermattssonlangseth/lunta/releases/latest">Download the APK</a>
-        </article>
-      </div>
-      <p class="footnote"><a href="download.html">Which file do I need, and how do I install it?</a></p>
-
-      <details class="compare">
-        <summary>Compare every feature</summary>
-        <div class="compare-body">
-        <div class="table-scroll" tabindex="0" role="region" aria-labelledby="platforms-title">
-        <table class="platforms">
-          <thead>
-            <tr><th scope="col">Feature</th><th scope="col">Mac</th><th scope="col">iPhone, iPad</th><th scope="col">Windows, Linux</th><th scope="col">Android</th></tr>
-          </thead>
-          <tbody>
-            <tr class="group"><th scope="rowgroup" colspan="5">Reading</th></tr>
-            <tr><th scope="row">Reading view with figures and citations</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-            <tr><th scope="row">Books and theses, with their chapters</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td>Yes<small>as one long page</small></td><td>Yes<small>as one long page</small></td></tr>
-            <tr><th scope="row">Highlights and notes, synced</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-            <tr><th scope="row">Highlighting in the PDF</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td>Yes<small>and Apple Pencil</small></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">Not yet</span></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">Not yet</span></td></tr>
-            <tr><th scope="row">Listen in a natural voice</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-            <tr><th scope="row">Summary and Ask, on the device</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td>Yes<small>phones with 6 GB</small></td></tr>
-            <tr class="group"><th scope="rowgroup" colspan="5">Library</th></tr>
-            <tr><th scope="row">Sync</th><td>iCloud Drive<small>or Google Drive</small></td><td>iCloud Drive<small>or Google Drive</small></td><td>A synced folder<small>such as Google Drive</small></td><td>Google Drive</td></tr>
-            <tr><th scope="row">New for You</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-            <tr><th scope="row">Import from Zotero, Mendeley, EndNote…</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-            <tr><th scope="row">Web pages and blog posts</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td></tr>
-            <tr><th scope="row">Browser extension</th><td>Safari, Chrome,<small>Edge, Firefox</small></td><td>Safari</td><td>Chrome, Edge,<small>Firefox</small></td><td><small>The journal's page<br>in the app</small></td></tr>
-            <tr class="group"><th scope="rowgroup" colspan="5">Citing</th></tr>
-            <tr><th scope="row">Cite in Word</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td><td>Yes<small>on Windows</small></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td></tr>
-            <tr><th scope="row">Cite in Google Docs</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td></tr>
-            <tr><th scope="row">Convert citations from Zotero, EndNote, Mendeley</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td></tr>
-            <tr><th scope="row">A .bib file that keeps itself up to date</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td></tr>
-            <tr><th scope="row">Import BibTeX, keeping citation keys</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td></tr>
-            <tr><th scope="row">AI agents (MCP)</th><td class="yes"><svg role="img" aria-label="Yes"><use href="#i-check"/></svg></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td><td class="no"><span aria-hidden="true">–</span><span class="visually-hidden">No</span></td></tr>
-          </tbody>
-          
-        </table>
-        </div>
-        <p class="footnote">Google Docs citing works through the browser extension, with Lunta for Mac, Windows or Linux open on the same computer.</p>
-        </div>
-      </details>
+      <ul class="plat-row">
+        <li class="reveal">
+          <svg aria-hidden="true"><use href="#i-devices"/></svg>
+          <span><b>iPhone and iPad</b><small>iOS and iPadOS 18 or newer</small></span>
+          <a class="btn btn-amber" href="https://apps.apple.com/app/lunta/id6835403752">App Store</a>
+        </li>
+        <li class="reveal">
+          <svg aria-hidden="true"><use href="#i-laptop"/></svg>
+          <span><b>Mac, Windows, Linux, Android</b><small>Free download</small></span>
+          <a class="btn btn-teal" href="download.html">Download</a>
+        </li>
+        <li class="reveal">
+          <svg aria-hidden="true"><use href="#i-ext"/></svg>
+          <span><b>Browser extension</b><small>Safari, Chrome, Edge, Firefox</small></span>
+          <a class="btn btn-line" href="download.html#extension">Get it</a>
+        </li>
+      </ul>
+      <p class="footnote"><a href="download.html">Which file do I need, and how do I install it?</a> · <a href="features.html#compare">Compare every feature</a></p>
     </div>
   </section>
 
-  <section class="section" id="privacy" aria-labelledby="privacy-title">
+  <section class="section section-alt" id="privacy" aria-labelledby="privacy-title">
     <div class="wrap">
       <div class="section-head reveal">
         <p class="kicker">Privacy</p>
         <h2 id="privacy-title">Lunta collects nothing</h2>
         <p class="lead">Your papers, highlights and notes are yours. Lunta looks papers up in public scholarly services, and sends nothing about you anywhere.</p>
       </div>
-      <div class="pillars">
-        <div class="reveal">
-          <h3><svg aria-hidden="true"><use href="#i-user"/></svg>No account</h3>
-          <p>Nothing to sign up for. Open the app and start reading.</p>
-        </div>
-        <div class="reveal">
-          <h3><svg aria-hidden="true"><use href="#i-eye"/></svg>No tracking, no ads</h3>
-          <p>No analytics and no trackers, in the apps, the extension or on this website.</p>
-        </div>
-        <div class="reveal">
-          <h3><svg aria-hidden="true"><use href="#i-folder"/></svg>Your own storage</h3>
-          <p>Your library stays in your iCloud Drive or Google Drive. There is no Lunta server.</p>
-        </div>
-      </div>
-      <p style="margin-top:2rem"><a class="textlink" href="app-privacy.html">Read the privacy policy</a></p>
-    </div>
-  </section>
-
-  <section class="section section-alt" id="open-source" aria-labelledby="oss-title">
-    <div class="wrap split">
-      <div class="reveal">
-        <p class="kicker"><svg aria-hidden="true"><use href="#i-code"/></svg>Open source</p>
-        <h2 id="oss-title">Free, and open source</h2>
-        <p class="lead" style="max-width:40rem">Lunta is MIT licensed. The code, every release, the evaluation and the issue tracker are on GitHub. Questions, bugs and ideas are welcome there.</p>
-        <p hidden data-todo="arxiv">How Lunta makes its reading views, and how well they work, is described in a paper on arXiv.</p>
-      </div>
-      <div class="actions">
-        <a class="btn btn-teal" href="https://github.com/christoffermattssonlangseth/lunta"><svg aria-hidden="true"><use href="#i-code"/></svg>Source on GitHub</a>
-        <a class="btn btn-line" href="https://github.com/christoffermattssonlangseth/lunta/issues">Ask a question</a>
-      </div>
+      <ul class="privacy-points reveal">
+        <li><svg aria-hidden="true"><use href="#i-user"/></svg>No account</li>
+        <li><svg aria-hidden="true"><use href="#i-eye"/></svg>No tracking, no ads</li>
+        <li><svg aria-hidden="true"><use href="#i-folder"/></svg>Your library stays in your own iCloud Drive or Google Drive</li>
+      </ul>
+      <p style="margin-top:1.5rem"><a class="textlink" href="app-privacy.html">Read the privacy policy</a></p>
     </div>
   </section>
 
@@ -570,6 +337,7 @@
     <nav aria-labelledby="f-help">
       <h2 id="f-help">Help</h2>
       <ul>
+        <li><a href="features.html">All features</a></li>
         <li><a href="getting-started.html">Getting started</a></li>
         <li><a href="support.html">Lunta Citations for Word</a></li>
         <li><a href="https://github.com/christoffermattssonlangseth/lunta/issues">Questions and problems</a></li>
@@ -585,7 +353,7 @@
     </nav>
   </div>
   <div class="wrap footer-bottom">
-    <span>Made by Christoffer Mattsson Langseth · MIT license</span>
+    <span>Made by Christoffer Mattsson Langseth · Free and <a href="https://github.com/christoffermattssonlangseth/lunta">open source</a>, MIT license</span>
     <span>No cookies, no analytics, no third-party requests on this site.</span>
   </div>
 </footer>
