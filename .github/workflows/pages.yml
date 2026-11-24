@@ -36,5 +36,9 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+      # deploy-pages looks the artifact up straight after the upload; GitHub sometimes doesn't list it yet
+      # ("No artifacts named github-pages were found", 24 Nov 2026, several runs in a row), so wait a little
+      - name: Let GitHub register the artifact
+        run: sleep 20
       - id: deployment
         uses: actions/deploy-pages@v4
