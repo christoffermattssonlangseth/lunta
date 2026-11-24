@@ -319,14 +319,14 @@ p:last-child { margin-bottom: 0; }
   }
 }
 .proof { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin-top: clamp(3rem, 6vw, 4.5rem); border-top: 1px solid var(--hairline); }
-.proof div { padding: 1.5rem 1rem 1.5rem 0; border-bottom: 1px solid var(--hairline); }
-.proof div:nth-child(even) { padding-left: 1rem; border-left: 1px solid var(--hairline); }
+.proof > div { padding: 1.5rem 1rem 1.5rem 0; border-bottom: 1px solid var(--hairline); }
+.proof > div:nth-child(even) { padding-left: 1rem; border-left: 1px solid var(--hairline); }
 .proof b { display: block; font: 650 clamp(1.75rem, 1.2rem + 1.8vw, 2.5rem)/1 var(--font-display); letter-spacing: -.03em; color: var(--ink); margin-bottom: .5rem; }
 .proof span { display: block; font-size: .9375rem; line-height: 1.45; color: var(--muted); }
 @media (min-width: 52rem) {
   .proof { grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--hairline); }
-  .proof div { border-bottom: 0; padding: 2rem 1.5rem 2rem 0; }
-  .proof div + div { padding-left: 1.5rem; border-left: 1px solid var(--hairline); }
+  .proof > div { border-bottom: 0; padding: 2rem 1.5rem 2rem 0; }
+  .proof > div + div { padding-left: 1.5rem; border-left: 1px solid var(--hairline); }
 }
 .proof-note { margin-top: 1.25rem; font-size: .875rem; color: var(--muted); display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 2rem; }
 
