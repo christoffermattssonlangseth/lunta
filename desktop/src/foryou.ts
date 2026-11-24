@@ -33,6 +33,13 @@ interface Highlights {
   last_run: number | null; next_run: number; problem: string | null;
 }
 interface JournalChoice { name: string; on: boolean; followed: boolean; }
+interface APaper extends HPaper { field: string; field_label: string; }
+interface Across {
+  on: boolean; per_field: number; subtitle: string; papers: APaper[];
+  digest: { field_label: string; text: string; cites: { number: number; key: string }[] }[]; digest_share: string;
+  quiet_fields: string[]; last_run: number | null; next_run: number; problem: string | null;
+}
+interface FieldChoice { id: string; label: string; on: boolean; }
 interface WatchView { id: string; kind: string; value: string; label: string; describe: string; }
 interface Coauthor { name: string; author: string; orcid: string; shared: number; following: boolean; }
 interface Settings {
@@ -68,6 +75,14 @@ const fy = {
   cadence: (cadence: string) => invoke<void>('foryou_set_highlight_cadence', { cadence, tz: tz() }),
   runHighlights: () => invoke<void>('foryou_highlights_run', { tz: tz() }),
   hDismiss: (key: string) => invoke<void>('foryou_highlight_dismiss', { key }),
+  across: () => invoke<Across>('foryou_across', { tz: tz() }),
+  acrossFields: () => invoke<FieldChoice[]>('foryou_across_fields'),
+  acrossOn: (on: boolean) => invoke<void>('foryou_across_set_on', { on, tz: tz() }),
+  acrossField: (id: string, on: boolean) => invoke<void>('foryou_across_set_field', { id, on, tz: tz() }),
+  acrossPerField: (n: number) => invoke<void>('foryou_across_set_per_field', { n, tz: tz() }),
+  runAcross: () => invoke<void>('foryou_across_run', { tz: tz() }),
+  aDismiss: (key: string) => invoke<void>('foryou_across_dismiss', { key }),
+  aAdd: (key: string, mustRead: boolean) => invoke<string>('foryou_across_add', { key, mustRead }),
   hAdd: (key: string, mustRead: boolean) => invoke<string>('foryou_highlight_add', { key, mustRead }),
 };
 
@@ -77,6 +92,7 @@ let showing = false;                  // the New for You place is selected
 let feed: Feed | null = null;
 let hl: Highlights | null = null;
 let showAllHighlights = false;
+let across: Across | null = null;
 let selected: string | null = null;
 let showEarlier = false;
 let stage: string | null = null;
@@ -142,6 +158,7 @@ export function forYouShowing() { return showing; }
 async function reloadFeed() {
   const f = await fy.feed().catch((e) => { status(String(e), 'error'); return null; });
   hl = await fy.highlights().catch(() => null);
+  across = await fy.across().catch(() => null);
   if (!f || !showing) return;
   feed = f;
   // a run that is still loading the model isn't running in the core yet: keep the event's word
@@ -149,7 +166,8 @@ async function reloadFeed() {
   stage = f.stage ?? (running ? stage : null);
   const all = [...f.latest, ...f.earlier];
   // the detail pane always shows a paper: the first one, or the next after one is turned down
-  const inHighlights = selected?.startsWith('hl:') && hl?.papers.some((p) => 'hl:' + p.key === selected);
+  const inHighlights = (selected?.startsWith('hl:') && hl?.papers.some((p) => 'hl:' + p.key === selected))
+    || (selected?.startsWith('as:') && across?.papers.some((p) => 'as:' + p.key === selected));
   if (!selected || (!inHighlights && !all.some((x) => x.key === selected))) selected = f.latest[0]?.key ?? (showEarlier ? f.earlier[0]?.key : null) ?? null;
   paintList();
   paintDetail();
@@ -203,7 +221,7 @@ function paintList() {
   else if (f.has_interests && !running && !f.problem) {
     kids.push(h('p.fy-empty', { text: (f.earlier.length ? 'Nothing new today.' : 'Nothing yet.') + ' New papers are picked once a day; ↻ looks now.' }));
   }
-  if (f.has_setup) kids.push(...highlightsSection());
+  if (f.has_setup) kids.push(...highlightsSection(), ...acrossSection());
   if (f.earlier.length) {
     kids.push(h('button.fy-earlier', { onclick: () => { showEarlier = !showEarlier; paintList(); } },
       `${showEarlier ? '▾' : '▸'} Earlier (${f.earlier.length})`));
@@ -344,6 +362,109 @@ async function hDismiss(p: HPaper) {
   await reloadFeed();
 }
 
+// ---- Across science ----
+
+function acrossSection(): HTMLElement[] {
+  const a = across;
+  if (!a) return [];
+  if (!a.on) {
+    return [h('div.fy-hl-intro', {},
+      h('div.fy-hl-head', { text: 'ACROSS SCIENCE' }),
+      h('p', { text: 'Every morning, the standout new paper in each field of science, outside your own: from cell biology and medicine to physics, mathematics and the social sciences, picked from the top journals.' }),
+      h('div.row', {},
+        h('button.primary', { text: 'Show Across Science', onclick: async () => {
+          status('Looking for today’s papers across science…', 'busy');
+          try { await fy.acrossOn(true); } catch (e) { status(String(e), 'error'); }
+          reloadFeed();
+        } })))];
+  }
+  const out: HTMLElement[] = [h('div.fy-hl-title', {},
+    h('div', {}, h('div.fy-hl-head', { text: 'ACROSS SCIENCE' }), h('div.fy-dim', { text: a.subtitle })),
+    h('div.spacer'),
+    h('button.icon', { text: '↻', title: 'Look for today’s papers', onclick: () => fy.runAcross().then(() => status('Looking for today’s papers across science…', 'busy')).catch((e) => status(String(e), 'error')) }))];
+  if (a.problem) {
+    out.push(h('div.fy-problem', {}, h('div.fy-problem-head', { text: '⚠ Couldn’t get today’s papers across science' }), h('p', { text: a.problem }),
+      h('div.row', {}, h('button', { text: '↻ Retry', onclick: () => fy.runAcross().catch((e) => status(String(e), 'error')) }))));
+  }
+  if (a.digest.length) {
+    const box = h('div.fy-digest', {},
+      h('div.fy-digest-head', {}, h('span', { text: 'TODAY' }), h('div.spacer'),
+        h('button.icon', { text: '⧉', title: 'Copy the summary and its papers', onclick: () => copy(a.digest_share, 'summary') })));
+    for (const d of a.digest) {
+      const p = h('p.fy-digest-text', {}, h('b', { text: d.field_label + ': ' }), d.text.replace(/[.\s]+$/, '') + ' (');
+      d.cites.forEach((c, i) => {
+        if (i) p.append(', ');
+        p.append(h('a', { href: '#', text: String(c.number), onclick: (e: Event) => { e.preventDefault(); select('as:' + c.key); } }));
+      });
+      p.append(').');
+      box.append(p);
+    }
+    out.push(box);
+  }
+  if (!a.papers.length && !a.problem) {
+    out.push(h('p.fy-empty', { text: a.last_run ? 'No new papers in these fields today.' : 'Looking for today’s papers…' }));
+  }
+  out.push(...a.papers.map(aRow));
+  return out;
+}
+
+function aRow(p: APaper): HTMLElement {
+  const id = 'as:' + p.key;
+  return h('div.fy-row' + (id === selected ? '.on' : ''), { 'data-key': id, onclick: () => select(id) },
+    h('div.fy-field', { text: p.field_label.toUpperCase() }),
+    h('div.fy-title', { text: `${p.number}. ${p.title}` }),
+    h('div.fy-byline', { text: p.byline }),
+    p.line ? h('div.fy-abstract', { text: p.line }) : null,
+    h('div.fy-actions', { onclick: (e: Event) => e.stopPropagation() },
+      p.in_library ? h('button', { text: 'Open', onclick: () => onOpenPaper(p.in_library!) })
+        : h('button.primary', { text: adding.has(id) ? 'Adding…' : '＋ Add', disabled: adding.has(id), onclick: () => aAdd(p, false) }),
+      h('div.spacer'),
+      h('button.icon', { text: '👎', title: 'Not for me: hides it (your feed isn’t affected)', onclick: () => aDismiss(p) })));
+}
+
+function aDetail(p: APaper): HTMLElement {
+  const busy = adding.has('as:' + p.key);
+  return h('div.detail.fy-detail', {},
+    h('div.fy-beyond', { text: `🔭 Across science · ${p.field_label}: a standout new paper outside your own topics.` }),
+    h('div.actions', {},
+      p.in_library ? h('button.primary', { text: 'Show in Library', onclick: () => onOpenPaper(p.in_library!) })
+        : h('button.primary', { text: busy ? 'Adding…' : 'Add to Library', disabled: busy, onclick: () => aAdd(p, false) }),
+      p.in_library ? null : h('button', { text: '🔖 Add as Must Read', disabled: busy, onclick: () => aAdd(p, true) }),
+      h('div.spacer'),
+      h('button.icon', { text: '👎', title: 'Not for Me', onclick: () => aDismiss(p) })),
+    h('h2', { text: p.title }),
+    h('p.authors', { text: p.authors.join(', ') }),
+    h('p.venue', { text: [p.journal, p.published ?? p.date].filter(Boolean).join(' · ') }),
+    p.link ? h('p.ids', {}, h('a', { href: '#', text: p.doi ? `DOI ${p.doi}` : p.link, onclick: (e: Event) => { e.preventDefault(); openUrl(p.link); } })) : null,
+    p.abstract_text ? h('h4', { text: 'Abstract' }) : null,
+    p.abstract_text ? h('p.abstract', { text: p.abstract_text }) : h('p.hint', { text: 'No abstract yet.' }));
+}
+
+async function aAdd(p: APaper, mustRead: boolean) {
+  const id = 'as:' + p.key;
+  if (adding.has(id)) return;
+  adding.add(id);
+  paintList(); paintDetail();
+  status(`Adding “${p.title}”…`, 'busy');
+  try {
+    await fy.aAdd(p.key, mustRead);
+    status(mustRead ? `Added “${p.title}” to Must Read` : `Added “${p.title}”`);
+    onLibraryChanged();
+  } catch (e) { status(String(e), 'error'); }
+  adding.delete(id);
+  await reloadFeed();
+}
+
+async function aDismiss(p: APaper) {
+  try { await fy.aDismiss(p.key); status('Not for you: hidden (your feed isn’t affected)'); } catch (e) { status(String(e), 'error'); }
+  if (selected === 'as:' + p.key) {
+    const i = across?.papers.findIndex((x) => x.key === p.key) ?? -1;
+    const next = across?.papers[i + 1] ?? across?.papers[i - 1];
+    selected = next ? 'as:' + next.key : null;
+  }
+  await reloadFeed();
+}
+
 function select(key: string) {
   selected = key;
   if (feed?.earlier.some((x) => x.key === key)) showEarlier = true;
@@ -397,6 +518,8 @@ function paintDetail() {
   const box = $('#detail');
   const hp = selected?.startsWith('hl:') ? hl?.papers.find((p) => 'hl:' + p.key === selected) : undefined;
   if (hp) { box.replaceChildren(hDetail(hp)); return; }
+  const ap = selected?.startsWith('as:') ? across?.papers.find((p) => 'as:' + p.key === selected) : undefined;
+  if (ap) { box.replaceChildren(aDetail(ap)); return; }
   const f = feed && [...feed.latest, ...feed.earlier].find((x) => x.key === selected);
   if (!f) {
     box.replaceChildren(h('div.empty', {}, h('p', { text: feed && (feed.latest.length || feed.earlier.length) ? 'Select a paper' : '' })));
@@ -479,6 +602,7 @@ export async function settingsDialog() {
   const key = h('input', { type: 'text', spellcheck: 'false', placeholder: 'API key (optional)', value: s.openalex_key }) as HTMLInputElement;
   const watchBox = h('div');
   const hlBox = h('div');
+  const asBox = h('div');
   let changedFollows = false;
 
   const draftBtn = h('button', {
@@ -561,7 +685,30 @@ export async function settingsDialog() {
       h('p.hint', { text: 'The latest research papers in these journals, whatever their topic (no news, editorials or corrections), with a few sentences on the notable ones when the on-device model is downloaded. Each sentence cites the papers it is about, and says only what their titles and abstracts say.' }));
   }
 
-  paintOrcid(); paintWatches(); paintHighlights();
+  async function paintAcross() {
+    const [fields, a] = await Promise.all([fy.acrossFields().catch(() => [] as FieldChoice[]), fy.across().catch(() => null)]);
+    const on = !!a?.on;
+    const perField = h('select', { disabled: !on, onchange: async (e: Event) => {
+      await fy.acrossPerField(Number((e.target as HTMLSelectElement).value)).catch((err) => status(String(err), 'error'));
+    } },
+      h('option', { value: '1', text: '1', selected: (a?.per_field ?? 1) === 1 }),
+      h('option', { value: '2', text: '2', selected: a?.per_field === 2 })) as HTMLSelectElement;
+    fill(asBox,
+      h('label.fy-hl-choice', {}, h('input', { type: 'checkbox', checked: on, onchange: async (e: Event) => {
+        try { await fy.acrossOn((e.target as HTMLInputElement).checked); } catch (err) { status(String(err), 'error'); }
+        paintAcross();
+      } }), h('span', { text: 'Show Across science' })),
+      h('div.fy-grid', {}, h('label', { text: 'Papers a field' }), perField),
+      h('div.fy-hl-choices', {}, ...fields.map((f) => h('label.fy-hl-choice', {},
+        h('input', { type: 'checkbox', checked: f.on, disabled: !on, onchange: async (e: Event) => {
+          try { await fy.acrossField(f.id, (e.target as HTMLInputElement).checked); } catch (err) { status(String(err), 'error'); }
+          paintAcross();
+        } }),
+        h('span', { text: f.label })))),
+      h('p.hint', { text: 'Each morning the standout new research paper in each field, from the top journals (by journal and early citations), leaving out your own topics: they are in your feed. One OpenAlex request a day. Not for Me here doesn’t change your feed.' }));
+  }
+
+  paintOrcid(); paintWatches(); paintHighlights(); paintAcross();
   const done = () => back.remove();
   const save = async () => {
     const [hh, mm] = (morning.value || '07:00').split(':').map(Number);
@@ -591,6 +738,7 @@ export async function settingsDialog() {
       h('p.hint', { text: 'The day’s papers are picked at this time on whichever device runs Lunta first (or as soon as Lunta opens after it). “Mostly journals” allows about one preprint in four.' }),
       h('h4', { text: 'Also follow' }), watchBox,
       h('h4', { text: 'From the journals you follow' }), hlBox,
+      h('h4', { text: 'Across science' }), asBox,
       h('h4', { text: 'OpenAlex' }),
       h('div.row', {}, key, h('button', { text: 'Get a Free Key', onclick: () => openUrl('https://openalex.org/settings/api') })),
       h('p.hint', { text: 'New for You searches OpenAlex. Without a key, OpenAlex gives everyone on your network one small daily allowance, which a university network can use up by morning. A free key gives Lunta its own.' }),

@@ -297,6 +297,7 @@ final class WatchCenter: ObservableObject {
         self.model = model
         load()
         HighlightsCenter.shared.start(model)
+        AcrossCenter.shared.start(model)
         // the morning notification (asked once; a no-op after the first answer)
         if !state.interests.isEmpty || !watches.isEmpty { requestNotifications() }
         Task { await runIfDue() }
@@ -721,8 +722,10 @@ final class WatchCenter: ObservableObject {
             guard let d = Self.publishedDate(h.meta.date) else { return 0 }
             return 0.04 * max(0, 1 - now.timeIntervalSince(d) / (9 * 86400))
         }
+        // closeness, a little more for a paper in a top journal or already cited (the core's impact
+        // prior, core/src/foryou/impact.rs, so feeds made here and on the other apps rank alike)
         let ranked = zip(candidates, scores)
-            .map { (c: $0.0, s: $0.1 + ($0.0.explicit ? 0.15 : 0) + (Self.fromJournal($0.0.source) ? 0.06 : 0) + recency($0.0.hit)) }
+            .map { (c: $0.0, s: foryouWeigh(closeness: $0.1, journal: $0.0.hit.meta.journal, citedBy: $0.0.hit.citedBy) + ($0.0.explicit ? 0.15 : 0) + (Self.fromJournal($0.0.source) ? 0.06 : 0) + recency($0.0.hit)) }
             .sorted { $0.s > $1.s }
 
         // 5. the language model reads the best abstracts
@@ -1285,6 +1288,7 @@ struct WatchInbox: View {
             }
             if !center.interests.isEmpty || !center.watches.isEmpty || center.state.orcid != nil {
                 JournalHighlightsSection(selection: $selection, push: { pushed = FeedKey(id: $0.id) }, openSettings: { settings = true })
+                AcrossScienceSection(selection: $selection, push: { pushed = FeedKey(id: $0.id) })
             }
             if !center.earlierFinds.isEmpty {
                 Section {
@@ -1310,13 +1314,14 @@ struct WatchInbox: View {
         .navigationDestination(item: $pushed) { k in
             if let f = center.finds.first(where: { $0.id == k.id }) { DiscoverDetail(hit: f.hit) }
             else if k.id.hasPrefix("hl:"), let p = HighlightsCenter.shared.paper(String(k.id.dropFirst(3))) { DiscoverDetail(hit: p.hit) }
+            else if k.id.hasPrefix("as:"), let p = AcrossCenter.shared.paper(String(k.id.dropFirst(3))) { DiscoverDetail(hit: p.hit) }
         }
         #endif
-        .onAppear { center.load(); center.markOpened(); HighlightsCenter.shared.reload() }
+        .onAppear { center.load(); center.markOpened(); HighlightsCenter.shared.reload(); AcrossCenter.shared.reload() }
         #if os(macOS)
         // the detail pane always shows a paper: the first one, or the next after one is turned down
         .onChange(of: center.finds.map(\.id), initial: true) { _, ids in
-            if selection == nil || (!ids.contains(selection!) && !selection!.hasPrefix("hl:")) { selection = center.latestFinds.first?.id }
+            if selection == nil || (!ids.contains(selection!) && !selection!.hasPrefix("hl:") && !selection!.hasPrefix("as:")) { selection = center.latestFinds.first?.id }
         }
         #endif
         .onDisappear { center.markOpened() }
@@ -1609,6 +1614,7 @@ struct ForYouSettings: View {
                     Text("New papers by authors you follow, and papers citing ones you watch, always show up. Papers in journals you follow come first and pass at a lower bar, so the ones near your research make it in.")
                 }
                 JournalHighlightsSettings()
+                AcrossScienceSettings()
                 Section {
                     TextField("API key (optional)", text: $openalexKey)
                         .autocorrectionDisabled()

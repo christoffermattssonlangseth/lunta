@@ -100,6 +100,7 @@ fun ForYouScreen(model: AppModel) {
                 }
             }
             if (feed.hasSetup) journalHighlights(model, highlightsAll, { highlightsAll = !highlightsAll }) { settingsOpen = true }
+            if (feed.hasSetup) acrossScience(model)
             if (feed.earlier.isNotEmpty()) {
                 item {
                     Row(Modifier.fillMaxWidth().clickable { earlierOpen = !earlierOpen }.padding(horizontal = 8.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -304,6 +305,7 @@ private fun shareText(ctx: Context, subject: String, text: String) {
 @Composable
 fun ForYouFindScreen(model: AppModel, key: String) {
     if (key.startsWith("hl:")) { HighlightFindScreen(model, key.removePrefix("hl:")); return }
+    if (key.startsWith("as:")) { AcrossFindScreen(model, key.removePrefix("as:")); return }
     val fy = model.forYou
     val ctx = LocalContext.current
     val feed = fy.feed
@@ -511,6 +513,7 @@ fun ForYouSettingsSheet(model: AppModel, onDismiss: () -> Unit, onSaved: () -> U
             Hint("New papers by authors you follow, and papers citing ones you watch, always show up. Papers in journals you follow come first and pass at a lower bar.")
 
             JournalHighlightsSettings(fy)
+            AcrossScienceSettings(fy)
 
             Spacer(Modifier.height(16.dp))
             Text("OpenAlex", style = MaterialTheme.typography.titleMedium)

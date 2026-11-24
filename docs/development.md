@@ -1859,6 +1859,41 @@ desktop and Android apps have it too, on **the same files**:
   follow" (weekly/daily, a toggle per journal, the ones you follow marked, another journal by name), and on the
   Mac/iPhone a Highlights switch on each followed journal. Tests: `cargo test foryou::tests::journal_highlights`
   (recorded Crossref and Europe PMC answers for 16–23 Nov 2026 in `testdata/journals/`).
+- **Across science** (`across.rs`, `AcrossScience` through UniFFI on every platform; Apple:
+  `apple/Shared/AcrossScience.swift`): each morning (the feed's morning time), the standout new research paper (or
+  two, a setting) in each of 13 broad fields (`FIELDS`: OpenAlex's 26 fields folded, plus the Genetics subfields
+  1311 and 2716 as "Genetics & genomics"), outside the user's own topics. **One OpenAlex list request** (1 credit
+  of the free 1,000 a day; the feed's run is about 140): `/works?filter=primary_location.source.issn:<71 ISSNs,
+  OR>,from_publication_date:<7 days back the first time, 4 after>,type:article&sort=publication_date:desc&per_page=200`
+  with `primary_topic`, `cited_by_count` and `fwci`; plain `page=` paging (OpenAlex refuses a cursor's later pages
+  without a key), at most 5 pages: the 71 journals publish about 300 articles in 4 days, so a day is 1–2
+  requests, the first run (7 days, ~900 works) 5. No `group_by`, no searches, no request per field. The answer is
+  kept for the day on the device (`across-science-pool.json` in the local folder): switching fields or 1/2 a
+  field picks again from it with no request. Research papers only (journals.rs's filters: Nature's `d41586`
+  news, PNAS's "In This Issue", C&EN's news…). Left out: papers in the library, in the feed or offered there, in
+  "From the journals you follow", the user's own, and papers on the user's topics (the feed's closeness ≥
+  `YOURS` = 0.025, TF-IDF: on the recorded day the MERFISH and microglia papers scored 0.025–0.09 for a
+  spatial-transcriptomics/microglia paragraph, everything else under 0.02). Picked by impact (`impact.rs`), then
+  OpenAlex's confidence in the field (+0.05 × `primary_topic.score`), an abstract (+0.03), recency (≤ +0.04,
+  none extra for issue dates ahead), − 0.1 × closeness to papers turned down here; two a field: the second from
+  another journal if there is one. Never offered twice. Not for Me hides the paper and lowers similar ones here
+  only: foryou.json's feedback isn't touched. Digest: one sentence a field (each field's first paper, abstracts
+  cut to 320 characters, < 6,000 characters for 13) by the on-device model, checked by
+  `outline::summary::validate` like the journals' digest, at most one a field; links `foryou://across?key=`.
+  State: `<library>/across-science.json` (on, fields off, 1/2 a field, the day's papers, offered and turned-down
+  keys, the digest); off until turned on ("Show Across Science"). A failed fetch says "Couldn't get today's papers
+  across science" with the reason and Retry, and the day stays due. `cargo run --example across_live --
+  "<paragraph>" [1|2]` runs it against the live OpenAlex in a temporary library. Tests: `cargo test
+  foryou::tests::across_science` (a recorded OpenAlex answer of 24 Nov 2026 in `testdata/across/`, cut from 897
+  works to 91).
+- **Impact prior** (`impact.rs`): 0.75 × the journal's tier (`JOURNALS`, 71 journals with ISSNs, shared with
+  journals.rs's suggestions: 1 for Nature/Science/Cell, 0.9 for NEJM/Lancet/JAMA/Nature Medicine, 0.8 for field
+  flagships, 0.6–0.7 strong, 0.4–0.5 for PNAS, Nature Communications, Science Advances, eLife; 0 otherwise) +
+  0.25 × attention (citations on a log scale, 1 at 50, or FWCI/10, whichever is more: only what the work came
+  with, no extra requests; no author track records). In the feed the closeness is weighted modestly:
+  `closeness × (1 + IMPACT_WEIGHT × impact)`, `IMPACT_WEIGHT` = 0.15, so two papers change places only when within
+  15 % (run.rs and journals.rs; the Mac/iPhone's WatchCenter calls the core's `foryou_weigh`, so feeds made on a
+  Mac and elsewhere weigh alike). In Across science impact is what picks.
 - **Ranking** (`rank.rs`): the Swift formula (0.55 × paragraph + 0.35 × the three closest library papers, ± 0.25 for
   papers you added or turned down, + 0.3 for More Like This; + 0.15 for what you follow, + 0.06 for journals you
   follow, up to + 0.04 for new papers), on TF-IDF vectors of words and word pairs: Apple's sentence embeddings

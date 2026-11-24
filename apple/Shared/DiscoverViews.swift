@@ -30,6 +30,7 @@ extension LibraryModel {
         let key = Self.hitKey(hit)
         return WatchCenter.shared.finds.first { $0.hit.inLibrary != nil && Self.hitKey($0.hit) == key }?.hit.inLibrary
             ?? HighlightsCenter.shared.paper(key)?.inLibrary
+            ?? AcrossCenter.shared.paper(key)?.inLibrary
     }
 }
 
@@ -177,6 +178,7 @@ struct DiscoverDetail: View {
             if let id = await model.addDiscovered(hit) {
                 if mustRead { model.setMustRead([id], true) }
                 HighlightsCenter.shared.added(key: LibraryModel.hitKey(hit), id: id)
+                AcrossCenter.shared.added(key: LibraryModel.hitKey(hit), id: id)
             }
             adding = false
         }

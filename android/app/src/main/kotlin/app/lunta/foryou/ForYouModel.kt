@@ -54,6 +54,29 @@ class ForYouModel(private val model: AppModel) {
     /** the digest last asked for (once per set of papers and run of the app) */
     private var digestTried: String? = null
 
+    // "Across science" (the core's AcrossScience, across-science.json)
+    var across by mutableStateOf<AcrossView?>(null)
+        private set
+    var acrossFields by mutableStateOf<List<FieldChoice>>(emptyList())
+        private set
+    var acrossRunning by mutableStateOf(false)
+        private set
+    var acrossWriting by mutableStateOf(false)
+        private set
+    private var asCore: AcrossScience? = null
+    private var asLib: Library? = null
+    private var acrossDigestTried: String? = null
+
+    @Synchronized
+    fun acrossCore(): AcrossScience? {
+        val lib = model.library ?: return null
+        if (asCore == null || asLib !== lib) {
+            asCore = AcrossScience(lib, model.libraryDir().absolutePath, File(model.app.filesDir, "foryou").also { it.mkdirs() }.absolutePath)
+            asLib = lib
+        }
+        return asCore
+    }
+
     @Synchronized
     fun highlightsCore(): JournalHighlights? {
         val lib = model.library ?: return null
@@ -91,6 +114,10 @@ class ForYouModel(private val model: AppModel) {
             val (v, c) = withContext(Dispatchers.IO) { h.view(now, tz(now)) to h.choices() }
             highlights = v; journalChoices = c
         }
+        acrossCore()?.let { a ->
+            val (v, c) = withContext(Dispatchers.IO) { a.view(now, tz(now)) to a.fields() }
+            across = v; acrossFields = c
+        }
     }
 
     /** The feed was looked at: the badge counts from now. */
@@ -108,6 +135,99 @@ class ForYouModel(private val model: AppModel) {
             if (withContext(Dispatchers.IO) { fy.isDue(now, tz(now), true) }) runNow() else summarizeIfNeeded()
             val h = highlightsCore()
             if (h != null && withContext(Dispatchers.IO) { h.isDue(now, tz(now), true) }) runHighlights() else writeHighlightsDigest()
+            val a = acrossCore()
+            if (a != null && withContext(Dispatchers.IO) { a.isDue(now, tz(now), true) }) runAcross() else writeAcrossDigest()
+        }
+    }
+
+    // ---- Across science ----
+
+    /** Looks for today's papers across science now (one OpenAlex request), or picks again from today's. */
+    fun runAcross() {
+        val a = acrossCore() ?: return
+        if (acrossRunning) return
+        acrossRunning = true
+        model.scope.launch {
+            try {
+                val now = System.currentTimeMillis()
+                withContext(Dispatchers.IO) { a.run(now, tz(now)) }
+                reload()
+                model.syncNow()
+            } catch (e: Exception) {
+                model.error = "Couldn't get today's papers across science: ${e.message ?: e}"
+            } finally {
+                acrossRunning = false
+            }
+            writeAcrossDigest()
+        }
+    }
+
+    /** One sentence a field by the on-device model, when it may run here; the core keeps only checked sentences. */
+    fun writeAcrossDigest() {
+        val a = acrossCore() ?: return
+        OnDeviceAi.init(model.app)
+        if (acrossWriting || !OnDeviceAi.usable) return
+        model.scope.launch {
+            val key = withContext(Dispatchers.IO) { a.digestRequest()?.key } ?: return@launch
+            if (key == acrossDigestTried) return@launch
+            acrossDigestTried = key
+            acrossWriting = true
+            try {
+                val engine = OnDeviceAi.engine() ?: return@launch
+                withContext(Dispatchers.IO) { a.writeDigest(engine) }
+            } finally {
+                acrossWriting = false
+            }
+            reload()
+        }
+    }
+
+    fun setAcrossOn(on: Boolean) = acrossSetting { it.setOn(on) }
+    fun setAcrossField(id: String, on: Boolean) = acrossSetting { it.setField(id, on) }
+    fun setAcrossPerField(n: Int) = acrossSetting { it.setPerField(n.toUInt()) }
+
+    private fun acrossSetting(change: (AcrossScience) -> Unit) {
+        val a = acrossCore() ?: return
+        model.scope.launch {
+            withContext(Dispatchers.IO) { runCatching { change(a) } }
+            reload()
+            if (across?.on == true) runAcross()
+        }
+    }
+
+    fun dismissAcross(key: String) {
+        val a = acrossCore() ?: return
+        model.scope.launch { withContext(Dispatchers.IO) { runCatching { a.dismiss(key) } }; reload() }
+    }
+
+    /** Add to Library, as for a find. */
+    fun addAcross(p: AcrossPaper, mustRead: Boolean) {
+        val a = acrossCore() ?: return
+        val lib = model.library ?: return
+        val busy = "as:" + p.key
+        if (busy in adding) return
+        adding = adding + busy
+        model.scope.launch {
+            try {
+                val id = withContext(Dispatchers.IO) {
+                    p.inLibrary
+                        ?: p.doi.takeIf { it.isNotBlank() }?.let { lib.findByDoi(it)?.id }
+                        ?: p.doi.takeIf { it.isNotBlank() }?.let { runCatching { lib.addFromInput(it, model.progress).paper.id }.getOrNull() }
+                        ?: a.findMeta(p.key)?.let { lib.addPaper(it, null, null, null).id }
+                } ?: throw IllegalStateException("Couldn't add “${p.title}”.")
+                withContext(Dispatchers.IO) {
+                    a.added(p.key, id)
+                    if (mustRead) lib.setMustRead(id, true)
+                }
+                model.status = null
+                model.reload()
+                reload()
+            } catch (e: Exception) {
+                model.status = null
+                model.error = e.message ?: e.toString()
+            } finally {
+                adding = adding - busy
+            }
         }
     }
 

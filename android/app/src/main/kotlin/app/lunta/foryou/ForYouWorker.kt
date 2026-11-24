@@ -50,6 +50,13 @@ class ForYouWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 withContext(Dispatchers.IO) { runCatching { h.run(t2, ForYouModel.tz(t2)) } }
                 model.syncNow()
             }
+            // Across science: one OpenAlex request in the morning (the digest is written in the app)
+            val a = model.forYou.acrossCore()
+            val t3 = System.currentTimeMillis()
+            if (a != null && withContext(Dispatchers.IO) { a.isDue(t3, ForYouModel.tz(t3), true) }) {
+                withContext(Dispatchers.IO) { runCatching { a.run(t3, ForYouModel.tz(t3)) } }
+                model.syncNow()
+            }
             notify(applicationContext, model.forYou)
             model.forYou.refresh()
             Result.success()

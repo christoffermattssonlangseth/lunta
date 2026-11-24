@@ -438,6 +438,8 @@ pub struct LocalState {
     pub problem_at: i64,
     /// what went wrong in this device's latest journal highlights run, "" if nothing
     pub highlights_problem: String,
+    /// what went wrong in this device's latest Across science run, "" if nothing
+    pub across_problem: String,
 }
 
 impl LocalState {

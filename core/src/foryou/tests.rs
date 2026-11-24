@@ -1203,3 +1203,377 @@ mod journal_highlights {
         assert_eq!(iso8601(daily.last_due(7 * 60, wed, CET)), "2026-11-25T06:00:00Z");
     }
 }
+
+// ---- Across science (across.rs) and the impact prior (impact.rs), on a recorded OpenAlex answer ----
+
+mod across_science {
+    use super::super::across::{self, *};
+    use super::super::impact;
+    use super::*;
+
+    /// OpenAlex as recorded on 24 Nov 2026: the table's journals' articles since 17 Nov (91 of the
+    /// 897 works, cut down: every field's best and some of the broad journals', Nature's news,
+    /// PNAS's "In This Issue", C&EN's news, and papers on a neuroscientist's own topics).
+    const OA_DAY: &str = include_str!("testdata/across/openalex-2026-11-24.json");
+    /// 2026-11-24T08:00:00Z (09:00 CET): the morning after the recording.
+    const NOW: i64 = D0 + DAY_MS;
+    const NEURO: &str = "I map the brain's circuits and cell types with spatial transcriptomics (MERFISH, in situ sequencing) and study neurons and glia: microglia in neuroinflammation and myelin.";
+
+    /// OpenAlex: the recorded day as page 1; `pages`: that many full pages of 200 instead (to
+    /// count requests); `down`: refused.
+    struct Recorded {
+        calls: Mutex<Vec<String>>,
+        down: bool,
+        pages: Option<(usize, u64)>,
+    }
+
+    impl Recorded {
+        fn new() -> Recorded {
+            Recorded { calls: Mutex::new(vec![]), down: false, pages: None }
+        }
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    impl Finder for Recorded {
+        fn watch_new(&self, _: WatchKind, _: &str, _: &str, _: u32) -> crate::model::Result<Vec<DiscoverHit>> {
+            Ok(vec![])
+        }
+        fn citing_new(&self, _: &str, _: &str, _: &str, _: u32) -> crate::model::Result<Vec<DiscoverHit>> {
+            Ok(vec![])
+        }
+        fn orcid_profile(&self, o: &str) -> crate::model::Result<OrcidProfile> {
+            Err(CoreError::NotFound(o.into()))
+        }
+        fn get_json(&self, url: &str) -> crate::model::Result<Value> {
+            self.calls.lock().unwrap().push(url.to_string());
+            assert!(url.starts_with("https://api.openalex.org/works?"), "only OpenAlex's works: {url}");
+            if self.down {
+                return Err(CoreError::Network("OpenAlex's free daily allowance for your network is used up (it renews in about 17 hours, at midnight UTC).".into()));
+            }
+            if let Some((_, count)) = self.pages {
+                // a page of 200 trivial works (research, Nature, one field)
+                let page: usize = url.split("&page=").nth(1).and_then(|p| p.split('&').next()).and_then(|p| p.parse().ok()).unwrap();
+                let results: Vec<Value> = (0..200)
+                    .map(|i| {
+                        serde_json::json!({"id": format!("W{page}-{i}"), "doi": format!("https://doi.org/10.9/p{page}-{i}"), "title": format!("A long enough research title {page} {i}"),
+                        "authorships": [{"author": {"display_name": "A"}}, {"author": {"display_name": "B"}}, {"author": {"display_name": "C"}}],
+                        "publication_date": "2026-11-21", "primary_location": {"source": {"display_name": "Nature", "issn": ["0028-0836"]}},
+                        "primary_topic": {"field": {"id": "https://openalex.org/fields/31"}, "subfield": {"id": "https://openalex.org/subfields/3100"}, "score": 0.9}})
+                    })
+                    .collect();
+                return Ok(serde_json::json!({"meta": {"count": count, "page": page, "per_page": 200}, "results": results}));
+            }
+            assert!(url.contains("&page=1&"), "one page answers the recorded day: {url}");
+            Ok(serde_json::from_str(OA_DAY).unwrap())
+        }
+    }
+
+    fn handle(interests: &str) -> (Arc<AcrossScience>, Arc<Library>, Files) {
+        let (root, lib, files) = setup();
+        files.change(|s| s.interests = interests.into()).unwrap();
+        let a = AcrossScience::new(lib.clone(), root.to_string_lossy().into(), files.local.to_string_lossy().into());
+        a.set_on(true).unwrap();
+        (a, lib, files)
+    }
+
+    /// The recorded day's research papers as candidates.
+    fn candidates() -> Vec<Candidate> {
+        let j: Value = serde_json::from_str(OA_DAY).unwrap();
+        j["results"].as_array().unwrap().iter().filter_map(across::candidate).collect()
+    }
+
+    fn titles(a: &AcrossScience) -> Vec<String> {
+        a.state().items.iter().map(|r| r.title.clone()).collect()
+    }
+
+    #[test]
+    fn the_table_and_the_fields() {
+        assert_eq!(impact::by_name("Proceedings of the National Academy of Sciences").unwrap().name, "PNAS");
+        assert_eq!(impact::by_name("Nature Structural & Molecular Biology").unwrap().tier, 0.8);
+        assert_eq!(impact::by_name("the lancet").unwrap().name, "The Lancet");
+        assert_eq!(impact::by_issn("1476-4687").unwrap().name, "Nature");
+        assert!(impact::by_name("Journal of Something Else").is_none() && impact::by_name("").is_none());
+        // journals.rs's suggestions are the table's, ISSNs and all
+        for n in super::super::journals::SUGGESTED {
+            assert!(impact::by_name(n).is_some(), "{n}");
+        }
+        assert_eq!(super::super::journals::suggested("NEJM").unwrap().1, &["0028-4793", "1533-4406"]);
+        // one ISSN each in the one request, OpenAlex's limit is 100
+        assert!(impact::JOURNALS.len() <= 100);
+        let url = request_url("2026-11-20", 1);
+        assert_eq!(url.matches('|').count(), impact::JOURNALS.len() - 1);
+        assert!(!url.contains("group_by") && !url.contains("search=") && url.contains("type:article") && url.contains("per_page=200"));
+        // every journal's field is a field, every OpenAlex field has one
+        for j in impact::JOURNALS {
+            assert!(j.field.is_empty() || field(j.field).is_some(), "{}", j.name);
+        }
+        for f in 11..=36 {
+            assert!(field_of(f, 0).is_some(), "OpenAlex field {f}");
+        }
+        assert_eq!(field_of(13, 1311).unwrap().id, "genetics");
+        assert_eq!(field_of(13, 1312).unwrap().id, "cellbio");
+        assert_eq!(field_of(27, 2716).unwrap().id, "genetics");
+        assert_eq!(FIELDS.len(), 13);
+    }
+
+    #[test]
+    fn research_papers_only_one_a_field_by_impact() {
+        let (a, _lib, _files) = handle("");
+        let rec = Recorded::new();
+        assert!(a.is_due(NOW, CET, false), "due the first time");
+        let r = a.run_with(&rec, NOW, CET).unwrap();
+        assert!(r.ran && !r.failed && r.problem.is_none(), "{r:?}");
+        // one request: the first run looks back 7 days
+        let calls = rec.calls();
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].contains("from_publication_date:2026-11-17,type:article") && calls[0].contains("primary_location.source.issn:0028-0836|0036-8075|0092-8674|"), "{}", calls[0]);
+        assert_eq!(r.requests, 1);
+        let s = a.state();
+        assert_eq!((r.found, r.fields), (13, 13), "{:?}", titles(&a));
+        // in the fields' order, one each
+        let order: Vec<&str> = s.items.iter().map(|x| x.field.as_str()).collect();
+        assert_eq!(order, FIELDS.iter().map(|f| f.id).collect::<Vec<_>>());
+        // no news, comment, "In This Issue" or C&EN's news
+        for x in &s.items {
+            assert!(!x.doi.contains("d41586") && !x.title.starts_with("In This Issue") && !x.title.starts_with("News"), "{}", x.title);
+        }
+        // each field's paper is its most impactful research paper (impact first, then the rest)
+        let pool = candidates();
+        for x in &s.items {
+            let best = pool
+                .iter()
+                .filter(|c| c.field.id == x.field && !super::super::journals::not_research(&c.meta) && super::super::journals::is_research(&c.meta))
+                .map(|c| c.impact())
+                .fold(0.0, f64::max);
+            assert!(x.impact >= best - 0.08, "{}: {} picked at {}, best {best}", x.field, x.title, x.impact);
+        }
+        let neuro = s.items.iter().find(|x| x.field == "neuro").unwrap();
+        assert!(["Nature", "Science", "Cell"].contains(&neuro.journal.as_str()), "{neuro:?}");
+        // shown: never offered again
+        assert_eq!(s.shown.len(), 13);
+        // the view
+        let v = a.view(NOW, CET);
+        assert_eq!(v.subtitle, "13 fields · 24 Nov");
+        assert_eq!(v.papers[0].number, 1);
+        assert_eq!(v.papers[2].field_label, "Neuroscience");
+        assert!(v.quiet_fields.is_empty() && v.problem.is_none());
+        assert!(v.papers.iter().all(|p| p.link.starts_with("https://doi.org/10.")));
+        // the same day: not due, no request
+        assert!(!a.is_due(NOW + HOUR_MS, CET, false));
+    }
+
+    #[test]
+    fn your_own_topics_stay_out() {
+        let pool = candidates();
+        let merfish = pool.iter().find(|c| c.meta.title.starts_with("TransA-MERFISH")).unwrap();
+        assert_eq!(merfish.field.id, "neuro");
+        let (a, lib, files) = handle(NEURO);
+        // a paper in the library, and one the feed offered
+        let science = pool.iter().find(|c| c.field.id == "neuro" && c.meta.journal == "Science").unwrap();
+        lib.add_paper(PaperMeta { title: "Saved".into(), doi: science.meta.doi.clone(), ..Default::default() }, None, None, None).unwrap();
+        let nature_neuro = pool.iter().find(|c| c.meta.title.starts_with("Microglia mediate motor memory")).unwrap();
+        files.change(|s| s.shown.push(text::doi_key(&nature_neuro.meta.doi))).unwrap();
+        let r = a.run_with(&Recorded::new(), NOW, CET).unwrap();
+        assert!(r.yours >= 3, "{r:?}");
+        let t = titles(&a);
+        for gone in ["TransA-MERFISH", "Microglia mediate", "Galectin-3 links microglial", "Space-map"] {
+            assert!(!t.iter().any(|x| x.starts_with(gone)), "{gone}: {t:?}");
+        }
+        assert!(!a.state().items.iter().any(|x| x.doi == science.meta.doi), "in the library");
+        // the other fields as without a paragraph
+        assert!(r.fields >= 12, "{r:?} {t:?}");
+    }
+
+    #[test]
+    fn two_a_field_and_choosing_fields_pick_again_without_asking() {
+        let (a, _lib, _files) = handle("");
+        let rec = Recorded::new();
+        a.run_with(&rec, NOW, CET).unwrap();
+        let first: Vec<String> = a.state().items.iter().map(|r| r.key.clone()).collect();
+        a.set_per_field(2).unwrap();
+        assert!(a.is_due(NOW + HOUR_MS, CET, false));
+        let r = a.run_with(&rec, NOW + HOUR_MS, CET).unwrap();
+        assert_eq!(r.requests, 0, "picked again from the day's answer");
+        assert_eq!(rec.calls().len(), 1);
+        let s = a.state();
+        // the morning's picks are still there (offered today, not before), with a second
+        for k in &first {
+            assert!(s.items.iter().any(|r| &r.key == k), "{k}");
+        }
+        for f in FIELDS {
+            let mine: Vec<&AcrossRecord> = s.items.iter().filter(|r| r.field == f.id).collect();
+            assert!(mine.len() <= 2);
+            if mine.len() == 2 && mine[0].journal == mine[1].journal {
+                // only when the field has nothing from another journal
+                let others = candidates().into_iter().filter(|c| c.field.id == f.id && c.meta.journal != mine[0].journal && super::super::journals::is_research(&c.meta)).count();
+                assert_eq!(others, 0, "{}: {:?}", f.id, mine);
+            }
+        }
+        assert!(s.items.len() > 20, "{}", s.items.len());
+        // a field off
+        a.set_field("math".into(), false).unwrap();
+        a.run_with(&rec, NOW + 2 * HOUR_MS, CET).unwrap();
+        assert!(!a.state().items.iter().any(|r| r.field == "math"));
+        assert!(!a.fields().iter().find(|f| f.id == "math").unwrap().on);
+        assert_eq!(rec.calls().len(), 1);
+        let v = a.view(NOW + 2 * HOUR_MS, CET);
+        assert!(!v.subtitle.contains("13 fields") && v.subtitle.contains("Psychology & social sciences"), "{}", v.subtitle);
+    }
+
+    #[test]
+    fn frugal_with_openalex() {
+        let (a, _lib, _files) = handle("");
+        let rec = Recorded::new();
+        a.run_with(&rec, NOW, CET).unwrap();
+        let first: Vec<String> = a.state().items.iter().map(|r| r.key.clone()).collect();
+        // the next morning: one request, 4 days back, nothing offered twice
+        let next = NOW + DAY_MS;
+        assert!(a.is_due(next - HOUR_MS, CET, false) && !a.is_due(next - HOUR_MS, CET, true), "a phone leaves the first two hours to a computer");
+        let r = a.run_with(&rec, next, CET).unwrap();
+        assert_eq!(r.requests, 1);
+        assert!(rec.calls()[1].contains("from_publication_date:2026-11-21,"), "{}", rec.calls()[1]);
+        assert!(a.state().items.iter().all(|x| !first.contains(&x.key)));
+        // a busy week: page by page, at most five
+        let (a, _lib, _files) = handle("");
+        let busy = Recorded { calls: Mutex::new(vec![]), down: false, pages: Some((0, 450)) };
+        let r = a.run_with(&busy, NOW, CET).unwrap();
+        assert_eq!((r.requests, busy.calls().len()), (3, 3));
+        assert!(busy.calls()[2].contains("&page=3&"));
+        let (a, _lib, _files) = handle("");
+        let huge = Recorded { calls: Mutex::new(vec![]), down: false, pages: Some((0, 50_000)) };
+        assert_eq!(a.run_with(&huge, NOW, CET).unwrap().requests, MAX_PAGES as u32);
+        // off: nothing
+        let (a, _lib, _files) = handle("");
+        a.set_on(false).unwrap();
+        assert!(!a.is_due(NOW, CET, false));
+        let rec = Recorded::new();
+        assert!(!a.run_with(&rec, NOW, CET).unwrap().ran);
+        assert!(rec.calls().is_empty());
+    }
+
+    #[test]
+    fn openalex_down_is_said_and_the_day_stays_due() {
+        let (a, _lib, _files) = handle("");
+        let down = Recorded { calls: Mutex::new(vec![]), down: true, pages: None };
+        let r = a.run_with(&down, NOW, CET).unwrap();
+        assert!(r.failed && r.ran);
+        assert_eq!(r.problem.as_deref(), Some("Couldn't reach OpenAlex. OpenAlex's free daily allowance for your network is used up (it renews in about 17 hours, at midnight UTC)."));
+        assert_eq!(down.calls().len(), 1, "not asked again and again");
+        assert_eq!(a.state().last_run, None);
+        assert!(a.is_due(NOW, CET, false));
+        assert_eq!(a.view(NOW, CET).problem, r.problem);
+        // and gone once it answers
+        a.run_with(&Recorded::new(), NOW, CET).unwrap();
+        assert_eq!(a.view(NOW, CET).problem, None);
+        assert_eq!(a.state().items.len(), 13);
+    }
+
+    #[test]
+    fn not_for_me_stays_here() {
+        let (a, _lib, files) = handle(NEURO);
+        let rec = Recorded::new();
+        a.run_with(&rec, NOW, CET).unwrap();
+        let before = files.state();
+        let gone = a.state().items[3].clone();
+        a.dismiss(gone.key.clone()).unwrap();
+        assert!(!a.state().items.iter().any(|r| r.key == gone.key));
+        assert_eq!(a.state().dismissed.len(), 1);
+        // the feed's own feedback isn't touched
+        let after = files.state();
+        assert_eq!((after.disliked.len(), after.liked.len(), after.boosted.len()), (before.disliked.len(), before.liked.len(), before.boosted.len()));
+        // picking again the same day doesn't bring it back
+        a.set_per_field(2).unwrap();
+        a.run_with(&rec, NOW + HOUR_MS, CET).unwrap();
+        assert!(!a.state().items.iter().any(|r| r.key == gone.key));
+        // added
+        let k = a.state().items[0].key.clone();
+        a.added(k.clone(), "p1".into()).unwrap();
+        assert_eq!(a.view(NOW, CET).papers[0].in_library.as_deref(), Some("p1"));
+        assert_eq!(a.find_meta(k).unwrap().work_type, "journal-article");
+    }
+
+    #[test]
+    fn the_digest_one_sentence_a_field() {
+        let (a, _lib, files) = handle("");
+        a.run_with(&Recorded::new(), NOW, CET).unwrap();
+        let s = a.state();
+        let req = a.digest_request().unwrap();
+        assert_eq!(req.instructions, across::DIGEST_INSTRUCTIONS);
+        assert!(req.prompt.contains("[3] Neuroscience: "), "{}", req.prompt);
+        assert!(req.prompt.len() < 6000, "fits the on-device model: {}", req.prompt.len());
+        let t = |i: usize| s.items[i].title.clone();
+        let answer = format!(
+            "{} [1]. {} [2]. Also, {} [1]. This cures 99 diseases in 3 weeks [3]. {} [40]. Nothing cited here. {} [4].",
+            t(0),
+            t(1),
+            t(0),
+            t(2),
+            t(3)
+        );
+        let n = a.set_digest(req.key.clone(), answer).unwrap();
+        let v = a.view(NOW, CET);
+        assert_eq!(n as usize, v.digest.len());
+        let cited: Vec<u32> = v.digest.iter().map(|d| d.cites[0].number).collect();
+        assert_eq!(cited, vec![1, 2, 4], "one a field, said only what the papers say: {:?}", v.digest);
+        assert_eq!(v.digest[0].field_label, "Cell & molecular biology");
+        assert!(v.digest_share.starts_with("Across science (24 Nov), Lunta\n\nCell & molecular biology: "), "{}", v.digest_share);
+        assert!(a.digest_request().is_none(), "written");
+        assert_eq!(across_key(&across_link(&v.digest[1].cites[0].key)).as_deref(), Some(v.digest[1].cites[0].key.as_str()));
+        // a stale answer is ignored; a sentence about a paper turned down since goes
+        assert_eq!(set_digest(&files, "v1|other", "x [1].").unwrap(), 0);
+        a.dismiss(s.items[1].key.clone()).unwrap();
+        assert_eq!(a.view(NOW, CET).digest.len(), 2);
+        // a model's digest (desktop and Android)
+        struct Model;
+        impl Writer for Model {
+            fn answer(&self, i: &str, p: &str, _: u32) -> Option<String> {
+                assert_eq!(i, across::DIGEST_INSTRUCTIONS);
+                let title = p.lines().find(|l| l.starts_with("[1] ")).unwrap().split(": ").nth(1).unwrap().rsplit_once(" (").unwrap().0.to_string();
+                Some(format!("{title} [1]."))
+            }
+        }
+        assert_eq!(write_digest(&files, &Model), 1);
+    }
+
+    #[test]
+    fn impact_weighting_changes_order_only_modestly() {
+        // at most 15 % more closeness: a closer paper stays first unless they were within 15 %
+        let nature = impact::impact("Nature", 0, 0.0);
+        assert_eq!(nature, 0.75);
+        assert!(impact::weigh(0.30, nature) < impact::weigh(0.36, impact::impact("Some Journal", 0, 0.0)));
+        assert!(impact::weigh(0.30, nature) > impact::weigh(0.32, 0.0));
+        assert_eq!(impact::weigh(-0.1, 1.0), -0.1);
+        assert_eq!(impact::weigh(0.2, 0.0), 0.2);
+        assert!((impact::weigh(1.0, 1.0) - (1.0 + impact::IMPACT_WEIGHT)).abs() < 1e-12);
+        assert_eq!(impact::foryou_weigh(0.3, "Nature".into(), 0), impact::weigh(0.3, 0.75));
+        // attention: citations and FWCI, capped
+        assert_eq!(impact::attention(0, 0.0), 0.0);
+        assert!(impact::attention(50, 0.0) > 0.99 && impact::attention(5000, 0.0) <= 1.0);
+        assert!(impact::attention(0, 5.0) > impact::attention(2, 0.0));
+        assert!(impact::impact("Nature", 12, 0.0) > impact::impact("Nature", 0, 0.0));
+        // the recorded feed: the order by closeness alone and weighted barely differ
+        let hits: Vec<DiscoverHit> = works(OA_SPATIAL).into_iter().chain(works(OA_SOIL)).collect();
+        let texts: Vec<String> = hits.iter().map(|h| snip(&h.meta.title, &h.meta.abstract_text)).collect();
+        let interests = "I work on spatial transcriptomics: imaging-based cell segmentation and cell-type maps of tissue.";
+        let close = rank::score(&texts, interests, &[], &[], &[], &[]);
+        let weighted: Vec<f64> = close.iter().zip(&hits).map(|(c, h)| impact::weigh(*c, impact::impact(&h.meta.journal, h.cited_by, 0.0))).collect();
+        let order = |s: &[f64]| {
+            let mut i: Vec<usize> = (0..s.len()).collect();
+            i.sort_by(|a, b| s[*b].partial_cmp(&s[*a]).unwrap());
+            i
+        };
+        let (o1, o2) = (order(&close), order(&weighted));
+        assert_eq!(o1[0], o2[0], "the closest stays first");
+        let moved = o1.iter().enumerate().map(|(r, i)| (o2.iter().position(|x| x == i).unwrap() as i64 - r as i64).abs()).max().unwrap();
+        assert!(moved <= 2, "a paper moves at most two places: {o1:?} {o2:?}");
+        for x in 0..hits.len() {
+            for y in 0..hits.len() {
+                if close[x] > close[y] && weighted[x] < weighted[y] {
+                    assert!(close[x] / close[y] < 1.0 + impact::IMPACT_WEIGHT, "swapped only within 15 %");
+                }
+            }
+        }
+    }
+}

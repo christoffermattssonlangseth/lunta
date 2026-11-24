@@ -1046,6 +1046,14 @@ pub fn run() {
             foryou::foryou_highlights_run,
             foryou::foryou_highlight_dismiss,
             foryou::foryou_highlight_add,
+            foryou::foryou_across,
+            foryou::foryou_across_fields,
+            foryou::foryou_across_set_on,
+            foryou::foryou_across_set_field,
+            foryou::foryou_across_set_per_field,
+            foryou::foryou_across_run,
+            foryou::foryou_across_dismiss,
+            foryou::foryou_across_add,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lunta");

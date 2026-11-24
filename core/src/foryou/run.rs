@@ -5,7 +5,8 @@
 //!    your ORCID iD) and the newest papers in your library, and the last days of bioRxiv and medRxiv;
 //! 3. only papers new to you: not in the library, never offered before, not your own, papers with
 //!    an abstract (no datasets, theses or book series);
-//! 4. ranking (rank.rs) with bonuses for what you follow, journals you follow and new papers;
+//! 4. ranking (rank.rs), closeness weighted a little by impact (impact.rs: the journal's tier,
+//!    citations so far), with bonuses for what you follow, journals you follow and new papers;
 //! 5. the language model reads the best abstracts and keeps those that fit, saying why (without a
 //!    model the ranking is trusted);
 //! 6. the new picks go on top of the feed, best first.
@@ -13,6 +14,7 @@
 //! The network and the model come in through traits ([`Finder`], [`Writer`]), so the tests run
 //! on recorded answers.
 
+use super::impact;
 use super::rank;
 use super::state::*;
 use super::text::{self, hit_key};
@@ -562,6 +564,8 @@ pub fn run(r: &Run) -> Result<RunReport> {
         .into_iter()
         .zip(scores)
         .map(|(c, s)| {
+            // closeness, a little more for a paper in a top journal or already cited (impact.rs)
+            let s = impact::weigh(s, impact::impact(&c.hit.meta.journal, c.hit.cited_by, 0.0));
             let s = s + if c.explicit { 0.15 } else { 0.0 } + if text::from_journal(&c.source) { 0.06 } else { 0.0 } + rank::recency(&c.hit.meta.date, r.now, r.tz_min);
             (c, s)
         })

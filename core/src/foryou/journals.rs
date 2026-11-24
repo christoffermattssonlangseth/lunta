@@ -26,6 +26,7 @@
 //! model (`digest_request` → the model → `set_digest`); the desktop and Android apps with the
 //! core's model (`write_digest`).
 
+use super::impact;
 use super::rank;
 use super::run::{Finder, NetFinder, Writer};
 use super::state::{write_atomic, FeedbackSnip, Files, ForYouState, Watch, WatchType};
@@ -44,38 +45,30 @@ use std::sync::{Arc, Mutex};
 
 pub const FILE: &str = "journal-highlights.json";
 
-/// Journals to suggest, with their ISSNs (print, electronic) as Crossref has them.
-pub const SUGGESTED: &[(&str, &[&str])] = &[
-    ("Nature", &["0028-0836", "1476-4687"]),
-    ("Science", &["0036-8075", "1095-9203"]),
-    ("Cell", &["0092-8674"]),
-    ("Nature Neuroscience", &["1097-6256", "1546-1726"]),
-    ("Neuron", &["0896-6273"]),
-    ("Nature Methods", &["1548-7091", "1548-7105"]),
-    ("New England Journal of Medicine", &["0028-4793", "1533-4406"]),
-    ("PNAS", &["0027-8424", "1091-6490"]),
-    ("eLife", &["2050-084X"]),
-    ("Nature Biotechnology", &["1087-0156", "1546-1696"]),
-    ("Nature Genetics", &["1061-4036", "1546-1718"]),
-    ("Nature Medicine", &["1078-8956", "1546-170X"]),
-    ("Nature Immunology", &["1529-2908", "1529-2916"]),
-    ("Immunity", &["1074-7613"]),
-    ("Molecular Cell", &["1097-2765"]),
-    ("Cell Stem Cell", &["1934-5909"]),
-    ("The Lancet", &["0140-6736", "1474-547X"]),
+/// Journals to suggest, in this order (their ISSNs from the impact table, impact.rs, which any
+/// journal in it can also be chosen by name from without asking Crossref).
+pub const SUGGESTED: &[&str] = &[
+    "Nature",
+    "Science",
+    "Cell",
+    "Nature Neuroscience",
+    "Neuron",
+    "Nature Methods",
+    "New England Journal of Medicine",
+    "PNAS",
+    "eLife",
+    "Nature Biotechnology",
+    "Nature Genetics",
+    "Nature Medicine",
+    "Nature Immunology",
+    "Immunity",
+    "Molecular Cell",
+    "Cell Stem Cell",
+    "The Lancet",
 ];
 
 /// The three offered when the section is first turned on.
 pub const DEFAULTS: &[&str] = &["Nature", "Science", "Cell"];
-
-/// Other names of the suggested journals (a followed journal as OpenAlex names it).
-const ALIASES: &[(&str, &str)] = &[
-    ("Proceedings of the National Academy of Sciences", "PNAS"),
-    ("Proceedings of the National Academy of Sciences of the United States of America", "PNAS"),
-    ("The New England Journal of Medicine", "New England Journal of Medicine"),
-    ("NEJM", "New England Journal of Medicine"),
-    ("Lancet", "The Lancet"),
-];
 
 const PER_JOURNAL: usize = 30;
 const MAX_PAPERS: usize = 90;
@@ -225,12 +218,9 @@ fn norm(name: &str) -> String {
     n.split_whitespace().filter(|w| *w != "the").collect::<Vec<_>>().join(" ")
 }
 
-/// The suggested journal by this name (or another name for it).
+/// The journal in Lunta's table by this name (or another name for it), with its ISSNs.
 pub fn suggested(name: &str) -> Option<(&'static str, &'static [&'static str])> {
-    let n = norm(name);
-    let alias = ALIASES.iter().find(|(a, _)| norm(a) == n).map(|(_, to)| norm(to));
-    let n = alias.unwrap_or(n);
-    SUGGESTED.iter().find(|(s, _)| norm(s) == n).copied()
+    impact::by_name(name).map(|j| (j.name, j.issn))
 }
 
 /// A journal's ISSNs: the table's, else Crossref's journal by that name (network).
@@ -281,7 +271,7 @@ pub fn choices(s: &HighlightsState, watches: &[Watch]) -> Vec<JournalChoice> {
     for f in &followed {
         push(f, false);
     }
-    for (n, _) in SUGGESTED {
+    for n in SUGGESTED {
         push(n, false);
     }
     out
@@ -318,7 +308,7 @@ fn page_span(pages: &str) -> Option<i64> {
 }
 
 /// Before the abstracts are filled in: not a correction, news, editorial, short piece, ….
-fn not_research(m: &PaperMeta) -> bool {
+pub(crate) fn not_research(m: &PaperMeta) -> bool {
     let t = m.title.trim().to_lowercase().replace(['‘', '’'], "'");
     if t.is_empty() || NOT_RESEARCH.iter().any(|x| t.starts_with(&x.replace('’', "'"))) {
         return true;
@@ -465,7 +455,8 @@ pub fn run(lib: &Library, files: &Files, finder: &dyn Finder, now: i64, tz_min: 
     let texts: Vec<String> = papers.iter().map(|m| text::snip(&m.title, &m.abstract_text)).collect();
     let snips = |l: &[FeedbackSnip]| l.iter().map(|x| x.text.clone()).collect::<Vec<_>>();
     let scores = rank::score(&texts, &fy.interests, &library, &snips(&fy.liked), &snips(&fy.disliked), &snips(&fy.boosted));
-    let mut ranked: Vec<(PaperMeta, f64)> = papers.into_iter().zip(scores).collect();
+    // as in the feed: a little more for a top journal's paper (impact.rs)
+    let mut ranked: Vec<(PaperMeta, f64)> = papers.into_iter().zip(scores).map(|(m, s)| (impact::weigh(s, impact::impact(&m.journal, 0, 0.0)), m)).map(|(s, m)| (m, s)).collect();
     ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     let mut per: HashMap<String, usize> = HashMap::new();
     let records: Vec<HighlightRecord> = ranked
@@ -540,7 +531,7 @@ pub struct HighlightsDigestRequest {
     pub key: String,
 }
 
-fn and_list(names: &[String]) -> String {
+pub(crate) fn and_list(names: &[String]) -> String {
     match names.len() {
         0 => String::new(),
         1 => names[0].clone(),

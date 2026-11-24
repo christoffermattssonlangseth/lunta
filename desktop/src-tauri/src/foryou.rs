@@ -11,6 +11,7 @@
 //!
 //! Events: `foryou` {running, stage, finished, found, error}.
 
+use lunta_core::foryou::across::{AcrossScience, AcrossView, FieldChoice};
 use lunta_core::foryou::journals::{HighlightsView, JournalChoice, JournalHighlights};
 use lunta_core::foryou::run::{NetFinder, Writer};
 use lunta_core::foryou::view::{FeedView, SettingsView};
@@ -35,6 +36,10 @@ pub struct Feed {
     journals: Mutex<Option<(PathBuf, Arc<JournalHighlights>)>>,
     /// the highlights digest last tried (once per set of papers and session)
     digested: Mutex<Option<String>>,
+    /// Across science for the open library
+    across: Mutex<Option<(PathBuf, Arc<AcrossScience>)>>,
+    /// its digest last tried (once per set of papers and session)
+    across_digested: Mutex<Option<String>>,
 }
 
 fn now() -> i64 {
@@ -73,6 +78,23 @@ fn highlights(app: &AppHandle) -> R<Arc<JournalHighlights>> {
     let j = JournalHighlights::new(lib, root.to_string_lossy().into(), local.to_string_lossy().into());
     *open = Some((root, j.clone()));
     Ok(j)
+}
+
+/// Across science for the open library (made when the library changes).
+fn across(app: &AppHandle) -> R<Arc<AcrossScience>> {
+    let state = app.state::<AppState>();
+    let (lib, root) = (state.lib()?, state.root()?);
+    let feed = app.state::<Feed>();
+    let mut open = feed.across.lock().unwrap();
+    if let Some((r, a)) = open.as_ref() {
+        if *r == root {
+            return Ok(a.clone());
+        }
+    }
+    let local = app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("foryou").join(folder_name(&root));
+    let a = AcrossScience::new(lib, root.to_string_lossy().into(), local.to_string_lossy().into());
+    *open = Some((root, a.clone()));
+    Ok(a)
 }
 
 /// A stable folder name for a library path (FNV-1a, as the search index's cache folder).
@@ -395,12 +417,138 @@ fn digest_highlights(app: &AppHandle, j: &Arc<JournalHighlights>) {
     }
 }
 
+// ---- Across science ----
+
+#[tauri::command]
+pub async fn foryou_across(app: AppHandle, tz: i32) -> R<AcrossView> {
+    let a = across(&app)?;
+    tauri::async_runtime::spawn_blocking(move || a.view(now(), tz)).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn foryou_across_fields(app: AppHandle) -> R<Vec<FieldChoice>> {
+    Ok(across(&app)?.fields())
+}
+
+/// On (today's papers are looked for) or off.
+#[tauri::command]
+pub async fn foryou_across_set_on(app: AppHandle, on: bool, tz: i32) -> R<()> {
+    across(&app)?.set_on(on).map_err(|e| e.to_string())?;
+    if on {
+        start_across(&app, tz);
+    }
+    Ok(())
+}
+
+/// A field on or off; picked again from today's answer.
+#[tauri::command]
+pub async fn foryou_across_set_field(app: AppHandle, id: String, on: bool, tz: i32) -> R<()> {
+    across(&app)?.set_field(id, on).map_err(|e| e.to_string())?;
+    start_across(&app, tz);
+    Ok(())
+}
+
+/// 1 or 2 papers a field; picked again from today's answer.
+#[tauri::command]
+pub async fn foryou_across_set_per_field(app: AppHandle, n: u32, tz: i32) -> R<()> {
+    across(&app)?.set_per_field(n).map_err(|e| e.to_string())?;
+    start_across(&app, tz);
+    Ok(())
+}
+
+/// Looks for today's papers now (Retry), or picks again from today's.
+#[tauri::command]
+pub async fn foryou_across_run(app: AppHandle, tz: i32) -> R<()> {
+    across(&app)?;
+    start_across(&app, tz);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn foryou_across_dismiss(app: AppHandle, key: String) -> R<()> {
+    across(&app)?.dismiss(key).map_err(|e| e.to_string())
+}
+
+/// Adds a paper from Across science (as foryou_add does). The library's id.
+#[tauri::command]
+pub async fn foryou_across_add(app: AppHandle, state: State<'_, AppState>, key: String, must_read: bool) -> R<String> {
+    let a = across(&app)?;
+    let lib = state.lib()?;
+    let log = crate::logger(&app);
+    tauri::async_runtime::spawn_blocking(move || -> R<String> {
+        let meta: PaperMeta = a.find_meta(key.clone()).ok_or("That paper is no longer in Across science.")?;
+        let existing = (!meta.doi.is_empty()).then(|| lib.find_by_doi(meta.doi.clone())).flatten();
+        let id = match existing {
+            Some(p) => p.id,
+            None => {
+                let by_doi = if meta.doi.is_empty() { None } else { crate::add::add(&lib, &meta.doi, &log).ok().map(|a| a.paper.id) };
+                match by_doi {
+                    Some(id) => id,
+                    None => lib.add_paper(meta, None, None, None).map_err(|e| e.to_string())?.id,
+                }
+            }
+        };
+        if must_read {
+            lib.set_must_read(id.clone(), true).map_err(|e| e.to_string())?;
+        }
+        a.added(key, id.clone()).map_err(|e| e.to_string())?;
+        Ok(id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Today's papers in the background, then the digest when the model is downloaded.
+fn start_across(app: &AppHandle, tz: i32) {
+    let Ok(a) = across(app) else { return };
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let r = a.run(now(), tz);
+        let error = match &r {
+            Ok(r) if r.failed => r.problem.clone(),
+            Err(e) => Some(e.to_string()),
+            _ => None,
+        };
+        let _ = app.emit("foryou", Event { running: false, stage: None, finished: true, found: 0, error });
+        digest_across(&app, &a);
+    });
+}
+
+/// Across science's digest by the on-device model, once per set of papers and session.
+fn digest_across(app: &AppHandle, a: &Arc<AcrossScience>) {
+    if !crate::ai::model_installed(app) {
+        return;
+    }
+    let Some(req) = a.digest_request() else { return };
+    {
+        let feed = app.state::<Feed>();
+        let mut last = feed.across_digested.lock().unwrap();
+        if last.as_deref() == Some(req.key.as_str()) {
+            return;
+        }
+        *last = Some(req.key.clone());
+    }
+    if let Ok(Some(e)) = crate::ai::engine(app) {
+        if lunta_core::foryou::across::write_digest(a.files(), e.as_ref()) > 0 {
+            let _ = app.emit("foryou", Event { running: false, stage: None, finished: true, found: 0, error: None });
+        }
+    }
+}
+
 /// Every ten minutes and at start: the day's run when it is due; otherwise summaries for a feed
 /// another device made without them (once per feed). The notice for a new feed, once (the
 /// frontend shows it in the status bar: there is no system notification here).
 #[tauri::command]
 pub async fn foryou_tick(app: AppHandle, tz: i32) -> R<Option<(String, String)>> {
     let f = handle(&app)?;
+    if let Ok(a) = across(&app) {
+        if a.is_due(now(), tz, false) {
+            start_across(&app, tz);
+        } else if a.digest_request().is_some() {
+            let app2 = app.clone();
+            std::thread::spawn(move || digest_across(&app2, &a));
+        }
+    }
     if let Ok(j) = highlights(&app) {
         if j.is_due(now(), tz, false) {
             start_highlights(&app, tz);

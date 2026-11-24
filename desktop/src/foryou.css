@@ -49,3 +49,4 @@ button.icon.fy-on { background: var(--sel); }
 .fy-hl-head { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--accent); }
 .fy-hl-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 2px 12px; margin: 6px 0; }
 .fy-hl-choice { display: flex; align-items: center; gap: 6px; }
+.fy-field { font-size: 10px; font-weight: 600; letter-spacing: .05em; color: var(--accent); margin-bottom: 2px; }

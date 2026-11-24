@@ -51,6 +51,8 @@ struct LibraryWindow: View {
                         DiscoverDetail(hit: f.hit)
                     } else if let id = discoverSelection, id.hasPrefix("hl:"), let p = HighlightsCenter.shared.paper(String(id.dropFirst(3))) {
                         DiscoverDetail(hit: p.hit)
+                    } else if let id = discoverSelection, id.hasPrefix("as:"), let p = AcrossCenter.shared.paper(String(id.dropFirst(3))) {
+                        DiscoverDetail(hit: p.hit)
                     } else {
                         ContentUnavailableView("New for You", systemImage: "sparkles",
                                                description: Text("Papers picked for your research appear here."))
