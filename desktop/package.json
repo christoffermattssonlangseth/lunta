@@ -1,7 +1,7 @@
 {
   "name": "lunta-desktop",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "scripts": {
     "assets": "node ../scripts/extract-reader-assets.mjs",
