@@ -1024,6 +1024,8 @@ html[data-color-scheme="light"] .hl mark[data-color="pink"] { background-image: 
 .privacy-points li { display: flex; align-items: center; gap: .5rem; font-weight: 600; color: var(--ink); }
 .privacy-points svg { flex: none; width: 1.25rem; height: 1.25rem; color: var(--kicker); }
 
-/* No drawn Dynamic Island on the phones: on the screenshot it flickered at its edges, and on the showcase's
-   reading view it crowded the heading; the rounded frame says "phone" well enough. */
-.phone::after { display: none; }
+/* The phones keep their Dynamic Island (they are pictures of a phone). It flickered at its edges while the
+   hero's phone followed the pointer: drawn at half-pixel positions on each frame of the movement. It is
+   now composited with the phone (its own layer, no subpixel re-rasterising). */
+.phone { transform-style: flat; }
+.phone::after { transform: translate3d(-50%, 0, 0); backface-visibility: hidden; will-change: transform; }
