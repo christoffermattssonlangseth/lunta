@@ -1024,7 +1024,6 @@ html[data-color-scheme="light"] .hl mark[data-color="pink"] { background-image: 
 .privacy-points li { display: flex; align-items: center; gap: .5rem; font-weight: 600; color: var(--ink); }
 .privacy-points svg { flex: none; width: 1.25rem; height: 1.25rem; color: var(--kicker); }
 
-/* A phone showing a real screenshot has its own Dynamic Island in the picture: the drawn one on top of it
-   didn't quite line up and flickered at its edges (most when the phone follows the pointer). Only the
-   phones drawn in HTML (the showcase's reading view) get the drawn island. */
-.phone:has(> img)::after { display: none; }
+/* No drawn Dynamic Island on the phones: on the screenshot it flickered at its edges, and on the showcase's
+   reading view it crowded the heading; the rounded frame says "phone" well enough. */
+.phone::after { display: none; }
