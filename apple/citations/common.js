@@ -875,7 +875,7 @@ var LuntaCite = (function () {
   function workKey(m) {
     var doi = String(m.doi || '').toLowerCase().replace(/^https?:\/\/(dx\.)?doi\.org\//, '').trim();
     if (doi) return 'doi:' + doi;
-    var t = String(m.title || '').toLowerCase().replace(/[^a-z0-9À-￿]+/g, '');
+    var t = String(m.title || '').toLowerCase().replace(/[^a-z0-9À-\uffff]+/g, '');
     if (t) return 't:' + t + ':' + String(m.date || '').slice(0, 4);
     // only a PubMed id (a ReadCube Papers citation whose bibliography entry wasn't found)
     return /^\d+$/.test(String(m.pmid || '').trim()) ? 'pmid:' + String(m.pmid).trim() : '';
