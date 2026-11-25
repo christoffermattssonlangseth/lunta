@@ -26,18 +26,20 @@
   <div class="current-h">This citation <button id="cclose" class="cite-x" title="Close">✕</button></div>
   <div id="citelist"></div>
 </div>
-<div class="buttons"><button id="convert" disabled title="Make citations inserted with Zotero Lunta citations: you review the papers first, nothing changes until you click Convert">Convert Citations from Zotero…</button></div>
+<details class="more"><summary>More</summary>
+  <div class="buttons"><button id="convert" disabled title="Make citations inserted with Zotero Lunta citations: you review the papers first, nothing changes until you click Convert">Convert Citations from Zotero…</button></div>
+  <div class="buttons"><button id="plain" disabled title="For the version you submit: every Lunta citation and the bibliography become ordinary text, as they look now. Do it on a copy of the document.">Convert Citations to Plain Text…</button></div>
+  <div class="buttons"><button id="claims" disabled title="Does each cited paper plausibly support its sentence? Lunta shows the best-matching passages (and, with an on-device model, a suggested verdict). Nothing in the document changes.">Check Citations…</button></div>
+</details>
 <div id="convertBox" class="resolve" hidden>
   <div class="current-h">Convert Citations <button id="cvclose" class="cite-x" title="Close">✕</button></div>
   <div id="cvlist"></div>
 </div>
-<div class="buttons"><button id="plain" disabled title="For the version you submit: every Lunta citation and the bibliography become ordinary text, as they look now. Do it on a copy of the document.">Convert Citations to Plain Text…</button></div>
 <div id="plainBox" class="resolve" hidden>
   <div class="current-h">Convert Citations to Plain Text <button id="plainClose" class="cite-x" title="Close">✕</button></div>
   <p id="plainText" class="hint"></p>
   <div class="buttons"><button id="plainGo" class="primary">Convert to Plain Text</button><button id="plainCancel">Cancel</button></div>
 </div>
-<div class="buttons"><button id="claims" disabled title="Does each cited paper plausibly support its sentence? Lunta shows the best-matching passages (and, with an on-device model, a suggested verdict). Nothing in the document changes.">Check Citations…</button></div>
 <div id="claimsBox" class="resolve" hidden>
   <div class="current-h">Check Citations <button id="clstop" class="cite-x" title="Stop" hidden>Stop</button><button id="clclose" class="cite-x" title="Close">✕</button></div>
   <div id="cllist"></div>

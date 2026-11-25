@@ -19,6 +19,9 @@ button:disabled { opacity: .5; cursor: default; }
 .status.err { color: #c0392b; }
 
 .hint { font-size: 12px; opacity: .6; margin: 4px 0 8px; }
+/* the rarely used buttons (Convert, Check Citations), collapsed under More */
+.more { margin-top: 8px; }
+.more > summary { font-size: 12px; color: var(--teal); cursor: pointer; user-select: none; }
 .journal { border: 1px solid rgba(0,0,0,.12); border-radius: 8px; padding: 8px; margin-bottom: 10px; }
 .journal[hidden] { display: none; }
 .jrow { display: flex; gap: 6px; }

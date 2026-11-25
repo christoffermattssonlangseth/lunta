@@ -145,8 +145,9 @@ your library first, else from Crossref. Lunta proposes, you decide: **Confirm** 
 fits. Only then does a placeholder become a citation (a paper not yet in your library is added to it), and the
 reference list updates. Ordinary brackets like "(see Fig. 2)" or "(n = 2025)" are left alone.
 
-**Moving a manuscript from EndNote, Zotero or Mendeley.** Open it and click **Convert Citations from Zotero,
-EndNote or Mendeley…** in Lunta's Word panel (in Google Docs: **Convert Citations from Zotero…**). Lunta reads
+**Moving a manuscript from EndNote, Zotero or Mendeley.** Open it and click **More** › **Convert Citations
+from Zotero, EndNote or Mendeley…** in Lunta's Word panel (in Google Docs: **More** › **Convert Citations from
+Zotero…**). Lunta reads
 the citations those programs left in the document (with their pages, prefixes and suffixes), finds the papers in
 your library and lists those it would add: "12 citations, 34 papers: 30 in your library, 4 to add" (and those
 found only by a similar title, to untick if one is another paper). Nothing

@@ -55,6 +55,7 @@
       .status { color: #3a3a3c; font-size: 12px; margin: 8px 0 0; white-space: pre-wrap; }
       .status.err { color: #b3261e; }
       .note { color: #6e6e73; font-size: 12px; margin: 6px 0; }
+      .morerow { margin: 6px 0 0; }
       .box { border-top: 1px solid #eee; margin-top: 8px; padding-top: 8px; }
       .row { display: flex; gap: 6px; align-items: center; }
       .row strong { flex: 1; color: #2a6478; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
@@ -134,6 +135,7 @@
         <div class="grant" hidden>
           <p class="note grantText">Google lets Lunta open only the documents you give it. Click below, then click Select in Google’s window: the document is chosen already. Once per document.</p>
           <div class="buttons"><button class="btn primary grantBtn">Give Lunta access to this document</button></div>
+          <p class="note grantHint" hidden>A brand-new document appears in Google’s window once it has some text: type something, wait a few seconds, then try again.</p>
           <p class="note"><button class="link grantAccount">Switch Google account</button></p>
         </div>
         <div class="main" hidden>
@@ -147,8 +149,12 @@
           <div class="buttons"><button class="btn primary insert" disabled>Insert Citation</button></div>
           <div class="buttons"><button class="btn bib" disabled>Insert Bibliography</button><button class="btn refresh" disabled>Update All</button></div>
           <div class="buttons"><button class="btn edit" disabled>Edit Citation…</button><button class="btn resolve" disabled title="Turn placeholders typed while writing, like (Langseth et al. 2025) or [Smith 2019 cortex], into citations: you confirm each one">Resolve Citations…</button></div>
-          <div class="buttons"><button class="btn convert" disabled title="Make citations inserted with Zotero Lunta citations: you review the papers first, nothing changes until you click Convert">Convert Citations from Zotero…</button></div>
-          <div class="buttons"><button class="btn plain" disabled title="For the version you submit: every Lunta citation and the bibliography become ordinary text, as they look now. Do it on a copy of the document.">Convert Citations to Plain Text…</button></div>
+          <p class="morerow"><button class="link moreBtn" aria-expanded="false">More ▾</button></p>
+          <div class="more" hidden>
+            <div class="buttons"><button class="btn convert" disabled title="Make citations inserted with Zotero Lunta citations: you review the papers first, nothing changes until you click Convert">Convert Citations from Zotero…</button></div>
+            <div class="buttons"><button class="btn plain" disabled title="For the version you submit: every Lunta citation and the bibliography become ordinary text, as they look now. Do it on a copy of the document.">Convert Citations to Plain Text…</button></div>
+            <div class="buttons"><button class="btn claims" disabled title="Does each cited paper plausibly support its sentence? Lunta shows the best-matching passages (and, with an on-device model, a suggested verdict). Nothing in the document changes.">Check Citations…</button></div>
+          </div>
           <div class="plainbox box" hidden>
             <div class="row"><strong>Convert Citations to Plain Text</strong><button class="link plainclose">Close</button></div>
             <p class="note plaintext"></p>
@@ -158,7 +164,6 @@
             <div class="row"><strong>Convert Citations</strong><button class="link cvclose">Close</button></div>
             <div class="cvlist"></div>
           </div>
-          <div class="buttons"><button class="btn claims" disabled title="Does each cited paper plausibly support its sentence? Lunta shows the best-matching passages (and, with an on-device model, a suggested verdict). Nothing in the document changes.">Check Citations…</button></div>
           <div class="clbox box" hidden>
             <div class="row"><strong>Check Citations</strong><button class="link clstop" hidden>Stop</button><button class="link clclose">Close</button></div>
             <div class="cllist"></div>
@@ -223,6 +228,8 @@
     $(".claims").disabled = !ready || checking;
     $(".cadd").disabled = !can || !current || !picked.length;
   }
+  /** The Docs API's answer for a document never given to Lunta (flow.js), not one given before and lost. */
+  function notGrantedYet(error) { return /can’t open this document yet/.test(String(error || "")); }
   function show(which) {
     ["setup", "connect", "grant", "main"].forEach((k) => { $("." + k).hidden = k !== which; });
   }
@@ -790,7 +797,7 @@
       : "In Google’s window, click this document (it is the one shown), then Select…");
     try {
       const r = await send({ op: "grant", docId: docId() });
-      if (r.error) { status(r.error, true); return; }
+      if (r.error) { status(r.error, true); if (r.kind === "access") newDocHint(true); return; }
       if (r.started) {
         const until = Date.now() + 5 * 60000;
         for (;;) {
@@ -798,7 +805,7 @@
           const s = await send({ op: "status", docId: docId() });
           if (s.error) { status(s.error, true); return; }
           if (!s.connecting) {
-            if (s.authError) { status(s.authError, true); return; }
+            if (s.authError) { status(s.authError, true); newDocHint(true); return; }
             break;
           }
           if (Date.now() > until) { status("Google’s page didn’t finish. Try again.", true); return; }
@@ -811,6 +818,22 @@
     }
   }
   $(".grantBtn").onclick = grant;
+  // Google's picker lists a docs.new document only once it has text and Google has indexed it
+  // ("No documents." until then): said when the picker came back without it, and at once for a
+  // document still called "Untitled document".
+  function newDocHint(failed) {
+    $(".grantHint").hidden = !(failed || /^Untitled document\b/.test(document.title || ""));
+  }
+
+  // the rarely used buttons, under More (open or closed as left, in this browser)
+  function showMore(open, keep) {
+    $(".more").hidden = !open;
+    $(".moreBtn").textContent = open ? "Less ▴" : "More ▾";
+    $(".moreBtn").setAttribute("aria-expanded", String(open));
+    if (keep) { try { chrome.storage.local.set({ luntaPanelMore: open }); } catch (e) { /* this page only */ } }
+  }
+  $(".moreBtn").onclick = () => showMore($(".more").hidden, true);
+  try { chrome.storage.local.get("luntaPanelMore", (r) => { if (r && r.luntaPanelMore) showMore(true); }); } catch (e) { /* closed */ }
 
   // ---- opening ----
 
@@ -839,7 +862,13 @@
     const st = await send({ op: "state", docId: docId() });
     if (st.error) {
       if (st.kind === "auth") show("connect");
-      if (st.kind === "access") show("grant");
+      if (st.kind === "access") {
+        show("grant");
+        newDocHint(false);
+        // a document not given to Lunta yet is expected (right after connecting, or never given):
+        // the grey text and the button say it; red only for a real failure (given before and lost)
+        if (notGrantedYet(st.error)) { status(""); return; }
+      }
       status(st.error, true);
       return;
     }
