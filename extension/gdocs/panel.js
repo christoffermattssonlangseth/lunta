@@ -30,7 +30,10 @@
       .card { position: absolute; right: 0; bottom: 50px; width: 330px; max-height: min(620px, calc(100vh - 170px)); overflow: auto; background: #fff;
               border-radius: 14px; box-shadow: 0 10px 34px rgba(16,40,50,.28); padding: 12px; display: none; box-sizing: border-box; }
       .card.open { display: block; }
-      header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+      header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; cursor: grab; user-select: none; touch-action: none; }
+      header.dragging { cursor: grabbing; }
+      header select { cursor: pointer; }
+      .card.moved { position: fixed; right: auto; bottom: auto; }
       header .logo, header .logo svg { display: block; width: 20px; height: 20px; }
       header strong { color: #173e4c; font-weight: 650; flex: 1; }
       select, input { font: inherit; box-sizing: border-box; border: 1px solid #c9ced2; border-radius: 7px; padding: 5px 7px; background: #fff; color: inherit; }
@@ -765,10 +768,60 @@
     else status(`Connected to Lunta · ${s.lunta.papers} papers` + (st.pending ? " · Update All finishes citations inserted before" : ""));
   }
 
+  // ---- moving the panel ----
+  // The card can be dragged by its header (not the style menu) off the text it covers; where it was left is
+  // kept (this browser) and it is kept inside the window. A double-click on the header puts it back.
+  const POS_KEY = "luntaPanelPos";
+  function placeCard(pos) {
+    const card = $(".card");
+    if (!pos) { card.classList.remove("moved"); card.style.left = card.style.top = ""; return; }
+    const w = card.offsetWidth || 330, h = Math.min(card.offsetHeight || 400, innerHeight - 16);
+    const left = Math.max(8, Math.min(pos.left, innerWidth - w - 8));
+    const top = Math.max(8, Math.min(pos.top, innerHeight - Math.min(h, 120) - 8));
+    card.classList.add("moved");
+    card.style.left = left + "px"; card.style.top = top + "px";
+    card.style.maxHeight = `calc(100vh - ${top + 16}px)`;
+  }
+  let savedPos = null;
+  try { chrome.storage.local.get(POS_KEY, (r) => { savedPos = r && r[POS_KEY] || null; if ($(".card").classList.contains("open")) placeCard(savedPos); }); } catch (e) { /* stays where it is */ }
+  (() => {
+    const head = $("header");
+    let drag = null;
+    head.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || e.target.closest("select, button, input, a")) return;
+      const r = $(".card").getBoundingClientRect();
+      drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+      head.setPointerCapture(e.pointerId); head.classList.add("dragging");
+      e.preventDefault(); e.stopPropagation();
+    });
+    head.addEventListener("pointermove", (e) => {
+      if (!drag) return;
+      placeCard({ left: e.clientX - drag.dx, top: e.clientY - drag.dy });
+      e.preventDefault(); e.stopPropagation();
+    });
+    const end = (e) => {
+      if (!drag) return;
+      drag = null; head.classList.remove("dragging");
+      const r = $(".card").getBoundingClientRect();
+      savedPos = { left: Math.round(r.left), top: Math.round(r.top) };
+      try { chrome.storage.local.set({ [POS_KEY]: savedPos }); } catch (err) { /* this page only */ }
+      e.stopPropagation();
+    };
+    head.addEventListener("pointerup", end);
+    head.addEventListener("pointercancel", end);
+    head.addEventListener("dblclick", (e) => {
+      if (e.target.closest("select")) return;
+      savedPos = null; placeCard(null);
+      try { chrome.storage.local.remove(POS_KEY); } catch (err) { /* nothing kept */ }
+    });
+    addEventListener("resize", () => { if (savedPos && $(".card").classList.contains("open")) placeCard(savedPos); });
+  })();
+
   $(".tab").addEventListener("click", () => {
     const card = $(".card");
     card.classList.toggle("open");
     if (card.classList.contains("open")) {
+      if (savedPos) requestAnimationFrame(() => placeCard(savedPos));
       if (!opened || !ready) { opened = true; load(); }
       setTimeout(() => $(".q").focus(), 0);
     }
