@@ -167,7 +167,8 @@ test("no duplicate ids, and every #anchor link on index.html and features.html p
 });
 
 test("every page's header links Features to features.html, and the sitemap lists it", () => {
-  for (const file of fs.readdirSync(SITE).filter((f) => f.endsWith(".html"))) {
+  // picker.html is Google's file picker for the extension, opened by it alone: no site header or footer.
+  for (const file of fs.readdirSync(SITE).filter((f) => f.endsWith(".html") && f !== "picker.html")) {
     const html = fs.readFileSync(path.join(SITE, file), "utf8");
     assert.ok(/<a class="wide" href="features\.html"[^>]*>Features<\/a>/.test(html), `${file}: header Features should link to features.html`);
     assert.ok(!html.includes('href="./#features"') && !html.includes('href="#features"'), `${file}: stale link to the front page's features`);

@@ -1029,3 +1029,29 @@ html[data-color-scheme="light"] .hl mark[data-color="pink"] { background-image: 
    now composited with the phone (its own layer, no subpixel re-rasterising). */
 .phone { transform-style: flat; }
 .phone::after { transform: translate3d(-50%, 0, 0); backface-visibility: hidden; will-change: transform; }
+
+/* Platforms: an Android phone, drawn (Android's shape: squarer corners, a punch-hole camera, Material icons,
+   a gesture bar), with the same reading view as the iPhone's, beside the heading on wide screens. */
+.plat-intro { display: grid; gap: 2.5rem; align-items: center; margin-bottom: 2.5rem; }
+.plat-intro .section-head { margin-bottom: 0; }
+@media (min-width: 52rem) { .plat-intro { grid-template-columns: minmax(0, 1fr) auto; gap: 4rem; } }
+.android { --aw: clamp(14rem, 66vw, 16.5rem); margin: 0 auto; width: var(--aw); }
+.android figcaption { margin-top: 1rem; text-align: center; font: 500 .75rem/1.4 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.a-frame { background: #16191b; border-radius: calc(var(--aw) * .105); padding: calc(var(--aw) * .028); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12), var(--shadow-2); }
+.a-screen { position: relative; background: #fff; color: #1d1d1d; border-radius: calc(var(--aw) * .085); overflow: hidden; aspect-ratio: 9 / 19.5; display: flex; flex-direction: column; }
+.a-status { position: relative; display: flex; justify-content: space-between; align-items: center; padding: calc(var(--aw) * .045) calc(var(--aw) * .07) 0; font: 500 calc(var(--aw) * .042)/1 Roboto, system-ui, sans-serif; color: #222; }
+.a-cam { position: absolute; left: 50%; top: calc(var(--aw) * .03); width: calc(var(--aw) * .048); height: calc(var(--aw) * .048); margin-left: calc(var(--aw) * -.024); border-radius: 50%; background: #0b0d0e; box-shadow: 0 0 0 calc(var(--aw) * .006) #2a2f33; }
+.a-icons { display: flex; gap: calc(var(--aw) * .018); align-items: center; }
+.a-icons svg { width: calc(var(--aw) * .048); height: calc(var(--aw) * .036); fill: #222; }
+.a-icons b { width: calc(var(--aw) * .03); height: calc(var(--aw) * .055); border-radius: 2px; background: #222; }
+.a-bar { display: flex; align-items: center; gap: calc(var(--aw) * .06); padding: calc(var(--aw) * .06) calc(var(--aw) * .06) calc(var(--aw) * .03); border-bottom: 1px solid #ececec; }
+.a-bar span { flex: 1; }
+.a-bar svg { width: calc(var(--aw) * .075); height: calc(var(--aw) * .075); fill: #2b5f70; }
+.a-bar svg.stroke { fill: none; stroke: #2b5f70; stroke-width: 2.4; stroke-linecap: round; }
+.a-body { padding: calc(var(--aw) * .06) calc(var(--aw) * .065) 0; font-family: var(--font-read); font-size: calc(var(--aw) * .058); line-height: 1.5; overflow: hidden; flex: 1; }
+.a-body h4 { font: 700 calc(var(--aw) * .075)/1.2 var(--font-body); margin: 0 0 .45em; color: #111; }
+.a-body p { margin: 0; hyphens: auto; }
+.a-body sup { font-size: .62em; color: #2b5f70; text-decoration: underline; text-underline-offset: 2px; }
+.a-body mark { background: #fbe7a8; color: inherit; padding: 0 .05em; }
+.a-gesture { display: block; width: calc(var(--aw) * .3); height: calc(var(--aw) * .012); border-radius: 99px; background: #222; margin: calc(var(--aw) * .03) auto calc(var(--aw) * .035); opacity: .8; }
+@media (prefers-color-scheme: dark) { .a-frame { box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), var(--shadow-2); } }
