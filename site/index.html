@@ -135,21 +135,30 @@
         <div class="arrow" aria-hidden="true"><svg><use href="#i-arrow"/></svg></div>
         <figure>
           <div class="phone" data-showcase-phone>
-            <div class="screen read" data-theme="paper" role="region" aria-label="Interactive reading view of the paper on a phone: try switching themes, tapping citations, or opening Fig. 1.">
+            <div class="screen read" data-theme="paper" data-reader role="region" aria-label="Interactive reading view of the paper on a phone: switch themes, tap citations, open Fig. 1, and turn the page with the left and right arrow keys.">
               <div class="status" aria-hidden="true">9:41 <i></i></div>
-              <div class="read-body">
-                <h4>Introduction</h4>
-                <p>Multiple sclerosis (MS) is a complex disease of unclear, multifactorial etiology<button type="button" class="cite-sup" data-cite-ref="1" aria-expanded="false">1,2</button> and lesion pathology. Lesions affect the white and gray matter of the central nervous system. <mark>Their distribution and composition vary between and within patients,</mark><button type="button" class="cite-sup" data-cite-ref="3" aria-expanded="false">3</button> and their localization often reflects the clinical symptoms.<button type="button" class="cite-sup" data-cite-ref="6" aria-expanded="false">6</button></p>
-                <p>Some patients develop lesions limited to specific regions, such as the spinal cord,<button type="button" class="cite-sup" data-cite-ref="7" aria-expanded="false">7</button> <mark class="g">suggesting the influence of the tissue microenvironment in disease specification</mark>.</p>
-                <button type="button" class="figcard" data-fig-open aria-label="Open Fig. 1 preview"><i></i><span><b>Fig. 1</b>Comprehensive spatiotemporal cellular mapping of the EAE mouse model of MS</span></button>
+              <div class="read-body" data-pages>
+                <div class="read-page" data-page>
+                  <h4>Introduction</h4>
+                  <p>Multiple sclerosis (MS) is a complex disease of unclear, multifactorial etiology<button type="button" class="cite-sup" data-cite-ref="1,2" aria-expanded="false">1,2</button> and lesion pathology. Lesions affect the white and gray matter of the central nervous system. <mark>Their distribution and composition vary between and within patients,</mark><button type="button" class="cite-sup" data-cite-ref="3" aria-expanded="false">3</button> and their localization often reflects the clinical symptoms.<button type="button" class="cite-sup" data-cite-ref="6" aria-expanded="false">6</button></p>
+                  <p>Some patients develop lesions predominantly or limited to specific regions, such as the spinal cord,<button type="button" class="cite-sup" data-cite-ref="7" aria-expanded="false">7</button> <mark class="g">suggesting the influence of the tissue microenvironment in disease specification</mark>.</p>
+                  <button type="button" class="figcard" data-fig-open aria-label="Open Fig. 1 preview"><i></i><span><b>Fig. 1</b>Comprehensive spatiotemporal cellular mapping of the EAE mouse model of MS</span></button>
+                </div>
+                <div class="read-page" data-page hidden>
+                  <p>Traditional immunohistochemical approaches stratify lesions into different categories, e.g., active, mixed active/inactive, and inactive with or without ongoing demyelination or remyelination.<button type="button" class="cite-sup" data-cite-ref="8,9" aria-expanded="false">8,9</button> Nevertheless, our understanding of MS lesions and cytopathology relies on tissue collected almost invariably at the end stages of the disease, hindering the exploration of disease evolution.<button type="button" class="cite-sup" data-cite-ref="3" aria-expanded="false">3</button> Focal inflammation, driven by peripheral immune infiltration, is thought to govern MS neuropathology and the disease course.<button type="button" class="cite-sup" data-cite-ref="10" aria-expanded="false">10</button></p>
+                </div>
+              </div>
+              <div class="page-ind" data-page-ind hidden>
+                <button type="button" data-page-prev aria-label="Previous page">‹</button>
+                <span aria-live="polite"><span class="visually-hidden">Page </span><span data-page-now>1</span> of 2</span>
+                <button type="button" data-page-next aria-label="Next page">›</button>
               </div>
               <div class="cite-popover" data-cite-popover hidden>
                 <div class="pop-top">
                   <span class="pop-num" data-pop-num>Ref. 1</span>
                   <button type="button" class="pop-close" data-pop-close aria-label="Close reference">×</button>
                 </div>
-                <strong data-pop-title></strong>
-                <small data-pop-meta></small>
+                <div class="pop-refs" data-pop-refs></div>
                 <button type="button" class="pop-add" data-pop-add aria-pressed="false">+ Add to library</button>
               </div>
               <div class="fig-overlay" data-fig-overlay hidden>
@@ -168,7 +177,7 @@
             <button type="button" data-read-theme="quiet" aria-pressed="false">Quiet</button>
             <button type="button" data-read-theme="black" aria-pressed="false">Black</button>
           </div>
-          <figcaption>The reading view · tap citations, Fig. 1, or themes</figcaption>
+          <figcaption>The reading view · tap citations, Fig. 1, or themes<span class="fig-hint" data-reader-hint hidden>Tap the right edge to turn the page</span></figcaption>
         </figure>
       </div>
       <div class="proof one">
@@ -270,8 +279,8 @@
           <h2 id="platforms-title">One library on all your devices</h2>
           <p class="lead">A native app on each platform, on one shared core. A Mac keeps iCloud Drive and Google Drive in sync, so one library can span all of them.</p>
         </div>
-      <figure class="android reveal" role="img" aria-label="Lunta on an Android phone: the introduction of a Cell paper in the reading view, with a yellow highlight and tappable citations.">
-        <div class="a-frame"><div class="a-screen">
+      <figure class="android reveal">
+        <div class="a-frame"><div class="a-screen" data-reader role="region" aria-label="Lunta on an Android phone, interactive: the introduction of a Cell paper in the reading view. Tap a citation or the highlight, and turn the page with the left and right arrow keys.">
           <div class="a-status" aria-hidden="true"><span>9:41</span><i class="a-cam"></i><span class="a-icons"><svg viewBox="0 0 16 12"><path d="M8 11.5 0.5 3.4a10.6 10.6 0 0 1 15 0Z"/></svg><svg viewBox="0 0 16 12"><path d="M2 11h12V1Z"/></svg><b></b></span></div>
           <div class="a-bar" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z"/></svg>
@@ -280,13 +289,41 @@
             <svg viewBox="0 0 24 24"><path d="M3 17.3V21h3.8L17.8 9.9l-3.7-3.7L3 17.3ZM20.7 7a1 1 0 0 0 0-1.4l-2.3-2.3a1 1 0 0 0-1.4 0l-1.8 1.8 3.7 3.7L20.7 7Z"/></svg>
             <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
           </div>
-          <div class="a-body">
-            <h4>Introduction</h4>
-            <p>Multiple sclerosis (MS) is a complex disease of unclear, multifactorial etiology<sup>1,2</sup> and lesion pathology. Lesions, defined by inflammation, gliosis, demyelination, and/or neurodegeneration,<sup>3–5</sup> affect the white and gray matter (WM and GM) of the central nervous system (CNS). <mark>Their distribution and composition vary between and within patients,</mark><sup>3</sup> and their localization often reflects the clinical symptoms.</p>
+          <div class="a-body" data-pages>
+            <div class="a-page" data-page>
+              <h4>Introduction</h4>
+              <p>Multiple sclerosis (MS) is a complex disease of unclear, multifactorial etiology<button type="button" class="cite-sup" data-cite-ref="1,2" aria-expanded="false">1,2</button> and lesion pathology. Lesions, defined by inflammation, gliosis, demyelination, and/or neurodegeneration,<button type="button" class="cite-sup" data-cite-ref="3,4,5" aria-expanded="false">3–5</button> affect the white and gray matter (WM and GM) of the central nervous system (CNS). <mark data-mark>Their distribution and composition vary between and within patients,</mark><button type="button" class="cite-sup" data-cite-ref="3" aria-expanded="false">3</button> and their localization often reflects the clinical symptoms.<button type="button" class="cite-sup" data-cite-ref="6" aria-expanded="false">6</button></p>
+            </div>
+            <div class="a-page" data-page hidden>
+              <p>Some patients develop lesions predominantly or limited to specific regions, such as the spinal cord,<button type="button" class="cite-sup" data-cite-ref="7" aria-expanded="false">7</button> suggesting the influence of the tissue microenvironment in disease specification. Traditional immunohistochemical approaches stratify lesions into different categories, e.g., active, mixed active/inactive, and inactive with or without ongoing demyelination or remyelination.<button type="button" class="cite-sup" data-cite-ref="8,9" aria-expanded="false">8,9</button></p>
+            </div>
+            <div class="a-page" data-page hidden>
+              <p>Nevertheless, our understanding of MS lesions and cytopathology relies on tissue collected almost invariably at the end stages of the disease, hindering the exploration of disease evolution.<button type="button" class="cite-sup" data-cite-ref="3" aria-expanded="false">3</button> Focal inflammation, driven by peripheral immune infiltration, is thought to govern MS neuropathology and the disease course.<button type="button" class="cite-sup" data-cite-ref="10" aria-expanded="false">10</button></p>
+            </div>
+          </div>
+          <div class="page-ind" data-page-ind hidden>
+            <button type="button" data-page-prev aria-label="Previous page">‹</button>
+            <span aria-live="polite"><span class="visually-hidden">Page </span><span data-page-now>1</span> of 3</span>
+            <button type="button" data-page-next aria-label="Next page">›</button>
+          </div>
+          <div class="a-hlbar" data-mark-bar role="group" aria-label="Highlight colour" hidden>
+            <button type="button" data-mark-color="yellow" aria-label="Yellow" aria-pressed="true"></button>
+            <button type="button" data-mark-color="green" aria-label="Green" aria-pressed="false"></button>
+            <button type="button" data-mark-color="blue" aria-label="Blue" aria-pressed="false"></button>
+            <button type="button" data-mark-color="pink" aria-label="Pink" aria-pressed="false"></button>
+          </div>
+          <div class="a-sheet" data-cite-popover role="dialog" aria-label="Reference" hidden>
+            <i class="a-handle" aria-hidden="true"></i>
+            <div class="pop-top">
+              <span class="pop-num" data-pop-num>Ref. 1</span>
+              <button type="button" class="pop-close" data-pop-close aria-label="Close reference">×</button>
+            </div>
+            <div class="pop-refs" data-pop-refs></div>
+            <button type="button" class="pop-add" data-pop-add aria-pressed="false">+ Add to library</button>
           </div>
           <i class="a-gesture" aria-hidden="true"></i>
         </div></div>
-        <figcaption>Lunta on Android</figcaption>
+        <figcaption>Lunta on Android<span class="fig-hint" data-reader-hint hidden>Tap a citation, or the edge to turn the page</span></figcaption>
       </figure>
       </div>
       <ul class="plat-row">

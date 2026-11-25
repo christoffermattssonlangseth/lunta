@@ -1055,3 +1055,65 @@ html[data-color-scheme="light"] .hl mark[data-color="pink"] { background-image: 
 .a-body mark { background: #fbe7a8; color: inherit; padding: 0 .05em; }
 .a-gesture { display: block; width: calc(var(--aw) * .3); height: calc(var(--aw) * .012); border-radius: 99px; background: #222; margin: calc(var(--aw) * .03) auto calc(var(--aw) * .035); opacity: .8; }
 @media (prefers-color-scheme: dark) { .a-frame { box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), var(--shadow-2); } }
+
+/* The drawn phones' pages (site.js turns them: a tap on the text's left or right third, a swipe, the arrow
+   keys or the indicator's buttons); without JS only page 1 shows and the indicator stays hidden. */
+[data-reader].is-paged [data-pages] { touch-action: pan-y; -webkit-user-select: none; user-select: none; }
+.phone > .screen[data-reader]:focus-visible { outline-offset: 2px; border-radius: calc(var(--pw) * .14); }
+.a-screen[data-reader]:focus-visible { outline-offset: 2px; border-radius: calc(var(--aw) * .085); }
+.page-ind { display: flex; justify-content: center; align-items: center; gap: .2em; font-variant-numeric: tabular-nums; }
+.page-ind[hidden] { display: none; }
+.page-ind button {
+  appearance: none; border: 0; background: none; color: inherit; font: inherit; font-size: 1.45em; line-height: 1;
+  padding: 0 .45em .1em; border-radius: 999px; cursor: pointer;
+}
+.page-ind button:hover { background: rgba(127, 127, 127, .16); }
+.page-ind button:disabled { opacity: .28; cursor: default; background: none; }
+.screen.read .page-ind { position: absolute; left: 0; right: 0; bottom: calc(var(--pw) * .05); font: 500 calc(var(--pw) * .038)/1 var(--font-body); opacity: .6; }
+.fig-hint { display: block; margin-top: .35rem; font: 400 .78rem/1.4 var(--font-body); letter-spacing: 0; text-transform: none; }
+.fig-hint[hidden] { display: none; }
+
+/* Android: the page indicator above the gesture bar, a Material bottom sheet for a reference, a colour bar
+   for the highlight */
+.a-screen .cite-sup { color: #2b5f70; }
+.a-screen .cite-sup:focus-visible, .a-screen mark:focus-visible { outline-offset: 0; }
+.a-screen .page-ind { padding-top: calc(var(--aw) * .03); font: 500 calc(var(--aw) * .042)/1 Roboto, system-ui, sans-serif; color: #49454f; }
+.a-body mark[role="button"] { cursor: pointer; }
+.a-body mark[data-color="green"] { background: #cfe8c3; }
+.a-body mark[data-color="blue"] { background: #cfe2f6; }
+.a-body mark[data-color="pink"] { background: #f6d3e2; }
+.a-hlbar {
+  position: absolute; left: 0; right: 0; margin-inline: auto; width: max-content; z-index: 3;
+  display: flex; gap: calc(var(--aw) * .03); padding: calc(var(--aw) * .025) calc(var(--aw) * .035);
+  background: #2f3336; border-radius: 999px; box-shadow: 0 6px 18px -6px rgba(0, 0, 0, .45);
+}
+.a-hlbar[hidden] { display: none; }
+.a-hlbar button {
+  appearance: none; width: calc(var(--aw) * .075); height: calc(var(--aw) * .075); border-radius: 50%; padding: 0; cursor: pointer;
+  border: 2px solid transparent; background: #fbe7a8;
+}
+.a-hlbar button[data-mark-color="green"] { background: #cfe8c3; }
+.a-hlbar button[data-mark-color="blue"] { background: #cfe2f6; }
+.a-hlbar button[data-mark-color="pink"] { background: #f6d3e2; }
+.a-hlbar button[aria-pressed="true"] { border-color: #fff; }
+.a-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; max-height: 72%; overflow: auto;
+  padding: calc(var(--aw) * .03) calc(var(--aw) * .065) calc(var(--aw) * .075);
+  background: #f1f4f5; color: #1b1c1e; border-radius: calc(var(--aw) * .09) calc(var(--aw) * .09) 0 0;
+  box-shadow: 0 -8px 28px -8px rgba(0, 0, 0, .35);
+  font: 400 calc(var(--aw) * .046)/1.38 Roboto, system-ui, sans-serif; text-align: left;
+}
+.a-sheet[hidden] { display: none; }
+.a-handle { display: block; width: calc(var(--aw) * .12); height: 4px; border-radius: 99px; background: #79747e; opacity: .45; margin: 0 auto calc(var(--aw) * .03); }
+.a-sheet .pop-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: .35em; }
+.a-sheet .pop-num { font: 500 .82em/1 Roboto, system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase; color: #2b5f70; }
+.a-sheet .pop-close { color: #49454f; font-size: 1.5em; }
+.a-sheet .pop-close:hover { background: rgba(0, 0, 0, .06); color: #1b1c1e; }
+.a-sheet strong { display: block; font-weight: 600; margin-bottom: .15em; }
+.a-sheet small { display: block; color: #49454f; font-size: .88em; margin-bottom: .65em; }
+.a-sheet .pop-add, .a-sheet .pop-add:hover {
+  width: 100%; margin-top: .2em; padding: .75em 1em; border-radius: 999px; border: 0; transform: none;
+  background: #2b5f70; color: #fff; font: 500 .95em/1 Roboto, system-ui, sans-serif; letter-spacing: .01em;
+}
+.a-sheet .pop-add.is-saved { background: #cfe3e8; color: #10313b; }
+.screen.read .read-page + .read-page { padding-top: calc(var(--pw) * .07); }

@@ -420,87 +420,72 @@
     });
   })();
 
-  /* ---------- 5. Interactive Showcase Phone: Reading Themes, Citations & Fig. 1 ---------- */
-  (function initShowcasePhone() {
-    var phone = document.querySelector("[data-showcase-phone]");
-    if (!phone) return;
-    var screen = phone.querySelector(".screen.read");
-    var themeBtns = document.querySelectorAll("[data-read-theme]");
-    var citeBtns = phone.querySelectorAll("[data-cite-ref]");
-    var popover = phone.querySelector("[data-cite-popover]");
+  /* ---------- 5. The drawn phones' reading views: the showcase's iPhone and the Platforms' Android ----------
+     Each [data-reader] screen has tappable citations (a popover on the iPhone, a bottom sheet on Android), pages
+     turned by tapping the left or right third of the text, a horizontal swipe, the arrow keys or the indicator's
+     buttons, and on the iPhone Fig. 1 and the theme buttons. Without JS the phones show page 1. */
+  /* The paper's references 1-10 (Kukanja et al., Cell 2024), as its reference list has them */
+  var READ_REFS = {
+    "1": { title: "Interactions between genetic, lifestyle and environmental risk factors for multiple sclerosis", meta: "Olsson T, Barcellos LF, Alfredsson L · Nat Rev Neurol (2016)" },
+    "2": { title: "Longitudinal analysis reveals high prevalence of Epstein-Barr virus associated with multiple sclerosis", meta: "Bjornevik K et al. · Science (2022)" },
+    "3": { title: "Multiple sclerosis pathology", meta: "Lassmann H · Cold Spring Harb Perspect Med (2018)" },
+    "4": { title: "Inflammation, demyelination, neurodegeneration and neuroprotection in the pathogenesis of multiple sclerosis", meta: "Peterson LK, Fujinami RS · J Neuroimmunol (2007)" },
+    "5": { title: "Immunopathology of multiple sclerosis", meta: "Dendrou CA, Fugger L, Friese MA · Nat Rev Immunol (2015)" },
+    "6": { title: "Defining the clinical course of multiple sclerosis: the 2013 revisions", meta: "Lublin FD et al. · Neurology (2014)" },
+    "7": { title: "Spinal MRI in patients with suspected multiple sclerosis and negative brain MRI", meta: "Thorpe JW et al. · Brain (1996)" },
+    "8": { title: "Staging of multiple sclerosis (MS) lesions: pathology of the time frame of MS", meta: "van der Valk P, De Groot CJ · Neuropathol Appl Neurobiol (2000)" },
+    "9": { title: "An updated histological classification system for multiple sclerosis lesions", meta: "Kuhlmann T et al. · Acta Neuropathol (2017)" },
+    "10": { title: "Pathogenic mechanisms associated with different clinical courses of multiple sclerosis", meta: "Lassmann H · Front Immunol (2019)" }
+  };
+
+  /* A short entrance: GSAP, else the Web Animations API; none with reduced motion */
+  function animIn(el, from, to, ms) {
+    if (REDUCED || !el) return;
+    if (hasGSAP) {
+      var vars = { duration: ms / 1000, ease: "power2.out", clearProps: "transform,opacity" };
+      for (var k in to) vars[k] = to[k];
+      window.gsap.fromTo(el, from, vars);
+    } else if (el.animate) {
+      var tf = function (v) { return (v.yPercent != null ? "translateY(" + v.yPercent + "%) " : "") + (v.xPercent != null ? "translateX(" + v.xPercent + "%) " : "") + (v.y != null ? "translateY(" + v.y + "px) " : "") + (v.scale != null ? "scale(" + v.scale + ")" : ""); };
+      el.animate([{ transform: tf(from) || "none", opacity: from.opacity == null ? 1 : from.opacity }, { transform: tf(to) || "none", opacity: to.opacity == null ? 1 : to.opacity }], { duration: ms, easing: "cubic-bezier(.2,.7,.2,1)" });
+    }
+  }
+
+  function initReader(screen, opts) {
+    var citeBtns = screen.querySelectorAll("[data-cite-ref]");
+    var popover = screen.querySelector("[data-cite-popover]");
     var popNum = popover && popover.querySelector("[data-pop-num]");
-    var popTitle = popover && popover.querySelector("[data-pop-title]");
-    var popMeta = popover && popover.querySelector("[data-pop-meta]");
+    var popRefs = popover && popover.querySelector("[data-pop-refs]");
     var popAdd = popover && popover.querySelector("[data-pop-add]");
     var popClose = popover && popover.querySelector("[data-pop-close]");
-    var figBtn = phone.querySelector("[data-fig-open]");
-    var figOverlay = phone.querySelector("[data-fig-overlay]");
-    var figClose = phone.querySelector("[data-fig-close]");
-
-    var REFS = {
-      "1": {
-        num: "Ref. 1, 2",
-        title: "Multiple sclerosis",
-        meta: "Compston A, Coles A · The Lancet (2008)"
-      },
-      "3": {
-        num: "Ref. 3",
-        title: "Multiple sclerosis pathology",
-        meta: "Lassmann H · Cold Spring Harb Perspect Med (2018)"
-      },
-      "6": {
-        num: "Ref. 6",
-        title: "Heterogeneity of multiple sclerosis lesions",
-        meta: "Lucchinetti C et al. · Ann Neurol (2000)"
-      },
-      "7": {
-        num: "Ref. 7",
-        title: "Spinal cord pathology in multiple sclerosis",
-        meta: "DeLuca GC et al. · Brain (2004)"
-      }
-    };
+    var figBtn = screen.querySelector("[data-fig-open]");
+    var figOverlay = screen.querySelector("[data-fig-overlay]");
+    var figClose = screen.querySelector("[data-fig-close]");
+    var pagesWrap = screen.querySelector("[data-pages]");
+    var pages = pagesWrap ? pagesWrap.querySelectorAll("[data-page]") : [];
+    var ind = screen.querySelector("[data-page-ind]");
+    var indNow = ind && ind.querySelector("[data-page-now]");
+    var prevBtn = ind && ind.querySelector("[data-page-prev]");
+    var nextBtn = ind && ind.querySelector("[data-page-next]");
+    var mark = screen.querySelector("[data-mark]");
+    var markBar = screen.querySelector("[data-mark-bar]");
     var saved = {};
     var activeRef = null;
+    var activeBtn = null;
+    var page = 0;
+    var swipedAt = 0;
 
-    themeBtns.forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var t = btn.getAttribute("data-read-theme");
-        screen.setAttribute("data-theme", t);
-        themeBtns.forEach(function (b) {
-          b.setAttribute("aria-pressed", b === btn ? "true" : "false");
-        });
-      });
-    });
+    function justSwiped() { return Date.now() - swipedAt < 450; }
 
-    function closePopover() {
-      if (!popover) return;
+    /* citations */
+    function closePopover(returnFocus) {
+      if (!popover || popover.hidden) return;
       popover.hidden = true;
       citeBtns.forEach(function (b) { b.setAttribute("aria-expanded", "false"); });
+      if (returnFocus && activeBtn) activeBtn.focus();
       activeRef = null;
+      activeBtn = null;
     }
-
-    citeBtns.forEach(function (btn) {
-      btn.addEventListener("click", function (e) {
-        e.stopPropagation();
-        var id = btn.getAttribute("data-cite-ref");
-        if (activeRef === id && !popover.hidden) {
-          closePopover();
-          return;
-        }
-        var ref = REFS[id];
-        if (!ref || !popover) return;
-        activeRef = id;
-        popNum.textContent = ref.num;
-        popTitle.textContent = ref.title;
-        popMeta.textContent = ref.meta;
-        updateAddBtn();
-        popover.hidden = false;
-        citeBtns.forEach(function (b) { b.setAttribute("aria-expanded", b === btn ? "true" : "false"); });
-        if (hasGSAP && !REDUCED) {
-          window.gsap.fromTo(popover, { y: 10, opacity: 0 }, { y: 0, opacity: 1, duration: 0.24, ease: "power2.out" });
-        }
-      });
-    });
 
     function updateAddBtn() {
       if (!popAdd || !activeRef) return;
@@ -510,6 +495,38 @@
       popAdd.setAttribute("aria-pressed", isSaved ? "true" : "false");
     }
 
+    citeBtns.forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        if (justSwiped() || !popover) return;
+        var id = btn.getAttribute("data-cite-ref");
+        if (activeBtn === btn && !popover.hidden) {
+          closePopover();
+          return;
+        }
+        var ids = id.split(",").filter(function (n) { return READ_REFS[n]; });
+        if (!ids.length) return;
+        closeMarkBar();
+        activeRef = id;
+        activeBtn = btn;
+        popNum.textContent = (ids.length > 1 ? "Refs. " : "Ref. ") + btn.textContent.replace(/,/g, ", ");
+        popRefs.textContent = "";
+        ids.forEach(function (n) {
+          var s = document.createElement("strong");
+          s.textContent = READ_REFS[n].title;
+          var m = document.createElement("small");
+          m.textContent = READ_REFS[n].meta;
+          popRefs.appendChild(s);
+          popRefs.appendChild(m);
+        });
+        updateAddBtn();
+        popover.hidden = false;
+        citeBtns.forEach(function (b) { b.setAttribute("aria-expanded", b === btn ? "true" : "false"); });
+        if (opts.sheet) animIn(popover, { yPercent: 100 }, { yPercent: 0 }, 280);
+        else animIn(popover, { y: 10, opacity: 0 }, { y: 0, opacity: 1 }, 240);
+      });
+    });
+
     if (popAdd) {
       popAdd.addEventListener("click", function () {
         if (!activeRef) return;
@@ -517,27 +534,151 @@
         updateAddBtn();
       });
     }
-    if (popClose) popClose.addEventListener("click", closePopover);
+    if (popClose) popClose.addEventListener("click", function () { closePopover(true); });
 
+    /* Fig. 1 */
     if (figBtn && figOverlay) {
       figBtn.addEventListener("click", function () {
+        if (justSwiped()) return;
         closePopover();
         figOverlay.hidden = false;
-        if (hasGSAP && !REDUCED) {
-          window.gsap.fromTo(figOverlay, { opacity: 0, scale: 0.96 }, { opacity: 1, scale: 1, duration: 0.26, ease: "power2.out" });
-        }
+        animIn(figOverlay, { opacity: 0, scale: 0.96 }, { opacity: 1, scale: 1 }, 260);
+        if (figClose) figClose.focus();
       });
       if (figClose) {
         figClose.addEventListener("click", function () {
           figOverlay.hidden = true;
+          figBtn.focus();
         });
       }
     }
 
-    screen.addEventListener("click", function (e) {
-      if (popover && !popover.hidden && !popover.contains(e.target) && !e.target.closest("[data-cite-ref]")) {
+    /* the highlight: a colour bar, as in the app */
+    function closeMarkBar() {
+      if (!markBar || markBar.hidden) return;
+      markBar.hidden = true;
+      mark.setAttribute("aria-expanded", "false");
+    }
+    if (mark && markBar) {
+      mark.setAttribute("role", "button");
+      mark.setAttribute("tabindex", "0");
+      mark.setAttribute("aria-expanded", "false");
+      mark.setAttribute("aria-description", "Highlight: change its colour");
+      var openMarkBar = function () {
+        if (justSwiped()) return;
+        if (!markBar.hidden) { closeMarkBar(); return; }
         closePopover();
+        var sr = screen.getBoundingClientRect();
+        var rects = mark.getClientRects();
+        var first = rects[0] || mark.getBoundingClientRect();
+        markBar.hidden = false;
+        markBar.style.top = Math.max(4, first.top - sr.top - markBar.offsetHeight - 6) + "px";
+        mark.setAttribute("aria-expanded", "true");
+        animIn(markBar, { y: -4, opacity: 0 }, { y: 0, opacity: 1 }, 180);
+      };
+      mark.addEventListener("click", function (e) { e.stopPropagation(); openMarkBar(); });
+      mark.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openMarkBar(); }
+      });
+      var swatches = markBar.querySelectorAll("[data-mark-color]");
+      swatches.forEach(function (b) {
+        b.addEventListener("click", function (e) {
+          e.stopPropagation();
+          mark.setAttribute("data-color", b.getAttribute("data-mark-color"));
+          swatches.forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+        });
+      });
+    }
+
+    /* pages */
+    function goTo(i) {
+      if (i < 0 || i >= pages.length || i === page) return;
+      var dir = i > page ? 1 : -1;
+      closePopover();
+      closeMarkBar();
+      pages[page].hidden = true;
+      pages[i].hidden = false;
+      page = i;
+      if (indNow) indNow.textContent = String(i + 1);
+      if (prevBtn) prevBtn.disabled = i === 0;
+      if (nextBtn) nextBtn.disabled = i === pages.length - 1;
+      animIn(pages[i], { xPercent: dir * 28, opacity: 0 }, { xPercent: 0, opacity: 1 }, 300);
+    }
+
+    if (pages.length > 1) {
+      screen.classList.add("is-paged");
+      if (!screen.hasAttribute("tabindex")) screen.setAttribute("tabindex", "0");
+      if (ind) ind.hidden = false;
+      if (prevBtn) {
+        prevBtn.disabled = true;
+        prevBtn.addEventListener("click", function (e) { e.stopPropagation(); goTo(page - 1); });
       }
+      if (nextBtn) nextBtn.addEventListener("click", function (e) { e.stopPropagation(); goTo(page + 1); });
+
+      var startX = null, startY = 0;
+      pagesWrap.addEventListener("pointerdown", function (e) {
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        startX = e.clientX;
+        startY = e.clientY;
+      });
+      pagesWrap.addEventListener("pointerup", function (e) {
+        if (startX === null) return;
+        var dx = e.clientX - startX, dy = e.clientY - startY;
+        startX = null;
+        if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+          swipedAt = Date.now();
+          goTo(page + (dx < 0 ? 1 : -1));
+        }
+      });
+      pagesWrap.addEventListener("pointercancel", function () { startX = null; });
+    }
+
+    /* a tap: closes what is open, else turns the page at the text's left or right third */
+    screen.addEventListener("click", function (e) {
+      if (justSwiped()) return;
+      var t = e.target;
+      if (popover && !popover.hidden && !popover.contains(t)) { closePopover(); return; }
+      if (markBar && !markBar.hidden && !markBar.contains(t)) { closeMarkBar(); return; }
+      if (pages.length < 2 || !pagesWrap.contains(t) || t.closest("button, a, [data-mark]")) return;
+      var r = pagesWrap.getBoundingClientRect();
+      var x = (e.clientX - r.left) / r.width;
+      if (x > 2 / 3) goTo(page + 1);
+      else if (x < 1 / 3) goTo(page - 1);
+    });
+
+    screen.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") {
+        if (figOverlay && !figOverlay.hidden) { figOverlay.hidden = true; if (figBtn) figBtn.focus(); }
+        else if (popover && !popover.hidden) closePopover(true);
+        else if (markBar && !markBar.hidden) { closeMarkBar(); mark.focus(); }
+        return;
+      }
+      if (pages.length < 2 || (figOverlay && !figOverlay.hidden)) return;
+      if (e.key === "ArrowRight") { e.preventDefault(); goTo(page + 1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); goTo(page - 1); }
+    });
+
+    var hint = screen.closest("figure") && screen.closest("figure").querySelector("[data-reader-hint]");
+    if (hint && pages.length > 1) hint.hidden = false;
+  }
+
+  (function initReaders() {
+    document.querySelectorAll("[data-reader]").forEach(function (screen) {
+      initReader(screen, { sheet: screen.classList.contains("a-screen") });
+    });
+
+    /* the showcase's theme buttons (beside its phone) */
+    var phone = document.querySelector("[data-showcase-phone]");
+    var screen = phone && phone.querySelector(".screen.read");
+    var themeBtns = document.querySelectorAll("[data-read-theme]");
+    if (!screen) return;
+    themeBtns.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        screen.setAttribute("data-theme", btn.getAttribute("data-read-theme"));
+        themeBtns.forEach(function (b) {
+          b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+        });
+      });
     });
   })();
 

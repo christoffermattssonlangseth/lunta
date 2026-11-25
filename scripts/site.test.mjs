@@ -60,6 +60,16 @@ test("the interactive demo DOM hooks in site/js/site.js exist on the page that s
     "data-cite-popover",
     "data-fig-open",
     "data-fig-overlay",
+    "data-reader",
+    "data-pages",
+    "data-page-ind",
+    "data-page-prev",
+    "data-page-next",
+    "data-page-now",
+    "data-pop-refs",
+    "data-reader-hint",
+    "data-mark-bar",
+    "data-mark-color",
     "data-count-to",
     "data-hl-demo",
     "data-hl-color",
@@ -117,6 +127,32 @@ test("the interactive demo DOM hooks in site/js/site.js exist on the page that s
   for (const theme of ["light", "paper", "quiet", "black"]) {
     assert.ok(indexHtml.includes(`data-read-theme="${theme}"`), `Missing reading theme button: ${theme}`);
     assert.ok(styleCss.includes(`[data-theme="${theme}"]`), `Missing reading theme CSS: ${theme}`);
+  }
+});
+
+test("the drawn phones (showcase iPhone, Platforms Android) have pages, an indicator and citations with references", () => {
+  const readers = indexHtml.split(/(?=<div class="[^"]*"[^>]*\bdata-reader\b)/).slice(1);
+  assert.equal(readers.length, 2, "index.html should have two interactive reading views (iPhone and Android)");
+  const refIds = new Set([...siteJs.matchAll(/^\s*"(\d+)": \{ title: /gm)].map((m) => m[1]));
+  for (const r of readers) {
+    const screen = r.slice(0, r.indexOf("data-cite-popover"));
+    const pages = screen.match(/<div class="[^"]*" data-page(?: hidden)?>/g) || [];
+    assert.ok(pages.length >= 2 && pages.length <= 3, `a phone should have 2-3 pages, got ${pages.length}`);
+    assert.ok(!pages[0].includes("hidden"), "page 1 shows without JS");
+    assert.ok(pages.slice(1).every((p) => p.includes(" hidden")), "the pages after the first are hidden without JS");
+    const ind = screen.match(/<div class="page-ind" data-page-ind hidden>[\s\S]*?<\/div>/);
+    assert.ok(ind, "the page indicator is hidden without JS");
+    assert.ok(ind[0].includes(`<span data-page-now>1</span> of ${pages.length}</span>`), `the indicator says 1 of ${pages.length}`);
+    assert.ok(/aria-live="polite"/.test(ind[0]), "the page indicator is announced");
+    assert.ok(/data-page-prev aria-label="Previous page"/.test(ind[0]) && /data-page-next aria-label="Next page"/.test(ind[0]));
+    assert.ok(!/<sup>/.test(screen), "citations are buttons, not bare <sup>");
+    for (const m of screen.matchAll(/<button type="button" class="cite-sup" data-cite-ref="([\d,]+)" aria-expanded="false">/g)) {
+      for (const n of m[1].split(",")) assert.ok(refIds.has(n), `reference ${n} is missing from site.js`);
+    }
+  }
+  assert.ok(!/<figure class="android[^"]*"[^>]*role="img"/.test(indexHtml), "the Android figure holds controls, so it is not role=img");
+  for (const sel of [".page-ind[hidden]", ".a-sheet[hidden]", ".a-hlbar[hidden]", ".fig-hint[hidden]"]) {
+    assert.ok(styleCss.includes(sel), `${sel} must stay hidden (its display rule would show it)`);
   }
 });
 
