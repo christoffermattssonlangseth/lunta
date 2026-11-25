@@ -305,7 +305,9 @@ p:last-child { margin-bottom: 0; }
 .read p { margin: 0 0 .8em; hyphens: auto; }
 .read sup { font-size: .62em; color: #2a6478; text-decoration: underline; text-underline-offset: 1px; }
 .read mark { background: #f9e3a6; color: inherit; padding: .05em 0; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
-.read mark.g { background: #cfe8c3; }
+.read mark[data-color="green"] { background: #cfe8c3; }
+.read mark[data-color="blue"] { background: #cfe2f6; }
+.read mark[data-color="pink"] { background: #f6d3e2; }
 .read .figcard { display: flex; gap: .7em; align-items: center; border: 1px solid #e6e4df; border-radius: .7em; padding: .55em; background: #fafaf8; font: 500 .72em/1.35 var(--font-body); color: #555; }
 .read .figcard b { display: block; color: #2a6478; }
 .read .figcard i { flex: none; width: 2.6em; height: 2.6em; border-radius: .3em; border: 1px solid #e6e4df; background: #fff url(images/kukanja-fig1-thumb.webp) top center / cover; }
@@ -682,18 +684,20 @@ p:last-child { margin-bottom: 0; }
   position: relative;
   transition: background-color .32s var(--ease), color .32s var(--ease);
 }
-.screen.read[data-theme="light"] { background: #ffffff; color: #191919; }
-.screen.read[data-theme="paper"] { background: #fbf5e8; color: #241f18; }
-.screen.read[data-theme="quiet"] { background: #262c30; color: #dde3e6; }
-.screen.read[data-theme="black"] { background: #0c0e10; color: #d7dce0; }
+.read[data-theme="light"] { background: #ffffff; color: #191919; }
+.read[data-theme="paper"] { background: #fbf5e8; color: #241f18; }
+.read[data-theme="quiet"] { background: #262c30; color: #dde3e6; }
+.read[data-theme="black"] { background: #0c0e10; color: #d7dce0; }
 
-.screen.read[data-theme="quiet"] h4, .screen.read[data-theme="black"] h4 { color: #f4f6f7; }
-.screen.read[data-theme="quiet"] .status i, .screen.read[data-theme="black"] .status i { background: #dde3e6; }
-.screen.read[data-theme="quiet"] .cite-sup, .screen.read[data-theme="black"] .cite-sup { color: #8ac6d6; }
-.screen.read[data-theme="quiet"] mark, .screen.read[data-theme="black"] mark { background: rgba(242, 180, 90, .32); color: #fff; }
-.screen.read[data-theme="quiet"] mark.g, .screen.read[data-theme="black"] mark.g { background: rgba(146, 206, 134, .28); color: #fff; }
-.screen.read[data-theme="quiet"] .figcard, .screen.read[data-theme="black"] .figcard { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .14); color: #b9c5ca; }
-.screen.read[data-theme="quiet"] .figcard b, .screen.read[data-theme="black"] .figcard b { color: #8ac6d6; }
+.read[data-theme="quiet"] h4, .read[data-theme="black"] h4 { color: #f4f6f7; }
+.read[data-theme="quiet"] .status i, .read[data-theme="black"] .status i { background: #dde3e6; }
+.read[data-theme="quiet"] .cite-sup, .read[data-theme="black"] .cite-sup { color: #8ac6d6; }
+.read[data-theme="quiet"] mark, .read[data-theme="black"] mark { background: rgba(242, 180, 90, .32); color: #fff; }
+.read[data-theme="quiet"] mark[data-color="green"], .read[data-theme="black"] mark[data-color="green"] { background: rgba(146, 206, 134, .28); color: #fff; }
+.read[data-theme="quiet"] mark[data-color="blue"], .read[data-theme="black"] mark[data-color="blue"] { background: rgba(120, 170, 230, .3); color: #fff; }
+.read[data-theme="quiet"] mark[data-color="pink"], .read[data-theme="black"] mark[data-color="pink"] { background: rgba(230, 140, 180, .3); color: #fff; }
+.read[data-theme="quiet"] .figcard, .read[data-theme="black"] .figcard { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .14); color: #b9c5ca; }
+.read[data-theme="quiet"] .figcard b, .read[data-theme="black"] .figcard b { color: #8ac6d6; }
 
 .cite-sup {
   appearance: none; border: 0; background: none; padding: 0 .15em; margin: 0;
@@ -1035,25 +1039,17 @@ html[data-color-scheme="light"] .hl mark[data-color="pink"] { background-image: 
 .plat-intro { display: grid; gap: 2.5rem; align-items: center; margin-bottom: 2.5rem; }
 .plat-intro .section-head { margin-bottom: 0; }
 @media (min-width: 52rem) { .plat-intro { grid-template-columns: minmax(0, 1fr) auto; gap: 4rem; } }
-.android { --aw: clamp(14rem, 66vw, 16.5rem); margin: 0 auto; width: var(--aw); }
+/* the iPhone's --pw, and a frame whose screen is as wide as the iPhone's (.932 pw), so the same text breaks the same way */
+.android { --pw: clamp(15rem, 74vw, 20rem); --aw: calc(var(--pw) * .9873); margin: 0 auto; width: var(--aw); }
 .android figcaption { margin-top: 1rem; text-align: center; font: 500 .75rem/1.4 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 .a-frame { background: #16191b; border-radius: calc(var(--aw) * .105); padding: calc(var(--aw) * .028); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12), var(--shadow-2); }
-.a-screen { position: relative; background: #fff; color: #1d1d1d; border-radius: calc(var(--aw) * .085); overflow: hidden; aspect-ratio: 9 / 19.5; display: flex; flex-direction: column; }
+.a-screen { position: relative; background: #fff; color: #1d1d1d; font-family: var(--font-read); font-size: calc(var(--pw) * .052); line-height: 1.52; border-radius: calc(var(--aw) * .085); overflow: hidden; aspect-ratio: 9 / 19.5; display: flex; flex-direction: column; }
 .a-status { position: relative; display: flex; justify-content: space-between; align-items: center; padding: calc(var(--aw) * .045) calc(var(--aw) * .07) 0; font: 500 calc(var(--aw) * .042)/1 Roboto, system-ui, sans-serif; color: #222; }
 .a-cam { position: absolute; left: 50%; top: calc(var(--aw) * .03); width: calc(var(--aw) * .048); height: calc(var(--aw) * .048); margin-left: calc(var(--aw) * -.024); border-radius: 50%; background: #0b0d0e; box-shadow: 0 0 0 calc(var(--aw) * .006) #2a2f33; }
 .a-icons { display: flex; gap: calc(var(--aw) * .018); align-items: center; }
 .a-icons svg { width: calc(var(--aw) * .048); height: calc(var(--aw) * .036); fill: #222; }
 .a-icons b { width: calc(var(--aw) * .03); height: calc(var(--aw) * .055); border-radius: 2px; background: #222; }
-.a-bar { display: flex; align-items: center; gap: calc(var(--aw) * .06); padding: calc(var(--aw) * .06) calc(var(--aw) * .06) calc(var(--aw) * .03); border-bottom: 1px solid #ececec; }
-.a-bar span { flex: 1; }
-.a-bar svg { width: calc(var(--aw) * .075); height: calc(var(--aw) * .075); fill: #2b5f70; }
-.a-bar svg.stroke { fill: none; stroke: #2b5f70; stroke-width: 2.4; stroke-linecap: round; }
-.a-body { padding: calc(var(--aw) * .06) calc(var(--aw) * .065) 0; font-family: var(--font-read); font-size: calc(var(--aw) * .058); line-height: 1.5; overflow: hidden; flex: 1; }
-.a-body h4 { font: 700 calc(var(--aw) * .075)/1.2 var(--font-body); margin: 0 0 .45em; color: #111; }
-.a-body p { margin: 0; hyphens: auto; }
-.a-body sup { font-size: .62em; color: #2b5f70; text-decoration: underline; text-underline-offset: 2px; }
-.a-body mark { background: #fbe7a8; color: inherit; padding: 0 .05em; }
-.a-gesture { display: block; width: calc(var(--aw) * .3); height: calc(var(--aw) * .012); border-radius: 99px; background: #222; margin: calc(var(--aw) * .03) auto calc(var(--aw) * .035); opacity: .8; }
+.a-gesture { position: absolute; left: 0; right: 0; bottom: calc(var(--aw) * .035); display: block; width: calc(var(--aw) * .3); height: calc(var(--aw) * .012); border-radius: 99px; background: #222; margin: 0 auto; opacity: .8; }
 @media (prefers-color-scheme: dark) { .a-frame { box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), var(--shadow-2); } }
 
 /* The drawn phones' pages (site.js turns them: a tap on the text's left or right third, a swipe, the arrow
@@ -1063,39 +1059,34 @@ html[data-color-scheme="light"] .hl mark[data-color="pink"] { background-image: 
 .a-screen[data-reader]:focus-visible { outline-offset: 2px; border-radius: calc(var(--aw) * .085); }
 .page-ind { display: flex; justify-content: center; align-items: center; gap: .2em; font-variant-numeric: tabular-nums; }
 .page-ind[hidden] { display: none; }
+/* Previous / next page: for keyboards and screen readers, shown only while focused (the app has none) */
 .page-ind button {
-  appearance: none; border: 0; background: none; color: inherit; font: inherit; font-size: 1.45em; line-height: 1;
-  padding: 0 .45em .1em; border-radius: 999px; cursor: pointer;
+  appearance: none; border: 0; background: none; color: inherit; font: inherit; font-size: 1.3em; line-height: 1;
+  padding: 0 .4em .1em; border-radius: 999px; cursor: pointer;
 }
-.page-ind button:hover { background: rgba(127, 127, 127, .16); }
-.page-ind button:disabled { opacity: .28; cursor: default; background: none; }
-.screen.read .page-ind { position: absolute; left: 0; right: 0; bottom: calc(var(--pw) * .05); font: 500 calc(var(--pw) * .038)/1 var(--font-body); opacity: .6; }
+.page-ind button:not(:focus-visible) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; padding: 0; }
+.page-ind button:disabled { opacity: .3; cursor: default; }
 .fig-hint { display: block; margin-top: .35rem; font: 400 .78rem/1.4 var(--font-body); letter-spacing: 0; text-transform: none; }
 .fig-hint[hidden] { display: none; }
 
 /* Android: the page indicator above the gesture bar, a Material bottom sheet for a reference, a colour bar
    for the highlight */
-.a-screen .cite-sup { color: #2b5f70; }
-.a-screen .cite-sup:focus-visible, .a-screen mark:focus-visible { outline-offset: 0; }
-.a-screen .page-ind { padding-top: calc(var(--aw) * .03); font: 500 calc(var(--aw) * .042)/1 Roboto, system-ui, sans-serif; color: #49454f; }
-.a-body mark[role="button"] { cursor: pointer; }
-.a-body mark[data-color="green"] { background: #cfe8c3; }
-.a-body mark[data-color="blue"] { background: #cfe2f6; }
-.a-body mark[data-color="pink"] { background: #f6d3e2; }
-.a-hlbar {
+.read mark[role="button"] { cursor: pointer; }
+.a-screen .cite-sup:focus-visible, .read mark:focus-visible { outline-offset: 0; }
+.hl-bar {
   position: absolute; left: 0; right: 0; margin-inline: auto; width: max-content; z-index: 3;
-  display: flex; gap: calc(var(--aw) * .03); padding: calc(var(--aw) * .025) calc(var(--aw) * .035);
+  display: flex; gap: calc(var(--pw) * .03); padding: calc(var(--pw) * .025) calc(var(--pw) * .035);
   background: #2f3336; border-radius: 999px; box-shadow: 0 6px 18px -6px rgba(0, 0, 0, .45);
 }
-.a-hlbar[hidden] { display: none; }
-.a-hlbar button {
-  appearance: none; width: calc(var(--aw) * .075); height: calc(var(--aw) * .075); border-radius: 50%; padding: 0; cursor: pointer;
+.hl-bar[hidden] { display: none; }
+.hl-bar button {
+  appearance: none; width: calc(var(--pw) * .075); height: calc(var(--pw) * .075); border-radius: 50%; padding: 0; cursor: pointer;
   border: 2px solid transparent; background: #fbe7a8;
 }
-.a-hlbar button[data-mark-color="green"] { background: #cfe8c3; }
-.a-hlbar button[data-mark-color="blue"] { background: #cfe2f6; }
-.a-hlbar button[data-mark-color="pink"] { background: #f6d3e2; }
-.a-hlbar button[aria-pressed="true"] { border-color: #fff; }
+.hl-bar button[data-mark-color="green"] { background: #cfe8c3; }
+.hl-bar button[data-mark-color="blue"] { background: #cfe2f6; }
+.hl-bar button[data-mark-color="pink"] { background: #f6d3e2; }
+.hl-bar button[aria-pressed="true"] { border-color: #fff; }
 .a-sheet {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; max-height: 72%; overflow: auto;
   padding: calc(var(--aw) * .03) calc(var(--aw) * .065) calc(var(--aw) * .075);
@@ -1116,4 +1107,14 @@ html[data-color-scheme="light"] .hl mark[data-color="pink"] { background-image: 
   background: #2b5f70; color: #fff; font: 500 .95em/1 Roboto, system-ui, sans-serif; letter-spacing: .01em;
 }
 .a-sheet .pop-add.is-saved { background: #cfe3e8; color: #10313b; }
-.screen.read .read-page + .read-page { padding-top: calc(var(--pw) * .07); }
+
+/* Both phones' reading view, full screen as in the app's page mode: the status bar, a thin rule, the page's text
+   filling the screen, "1 of N" at the bottom. The same size on both (the Android is drawn as wide as the iPhone),
+   so site.js cuts the same text into the same pages. */
+.read [data-pages] {
+  position: absolute; left: 0; right: 0; top: calc(var(--pw) * .15); height: calc(var(--pw) * 1.70);
+  padding: calc(var(--pw) * .045) calc(var(--pw) * .06) 0; overflow: hidden;
+}
+.read [data-pages]::before { content: ""; position: absolute; top: 0; left: calc(var(--pw) * .06); right: calc(var(--pw) * .06); height: 1px; background: currentColor; opacity: .16; }
+.read .figcard { margin: 0 0 .9em; }
+.read .page-ind { position: absolute; left: 0; right: 0; bottom: calc(var(--pw) * .075); font: 500 calc(var(--pw) * .036)/1 var(--font-body); color: inherit; opacity: .55; }

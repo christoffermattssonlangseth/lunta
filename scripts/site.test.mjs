@@ -66,6 +66,7 @@ test("the interactive demo DOM hooks in site/js/site.js exist on the page that s
     "data-page-prev",
     "data-page-next",
     "data-page-now",
+    "data-page-count",
     "data-pop-refs",
     "data-reader-hint",
     "data-mark-bar",
@@ -130,28 +131,39 @@ test("the interactive demo DOM hooks in site/js/site.js exist on the page that s
   }
 });
 
-test("the drawn phones (showcase iPhone, Platforms Android) have pages, an indicator and citations with references", () => {
-  const readers = indexHtml.split(/(?=<div class="[^"]*"[^>]*\bdata-reader\b)/).slice(1);
+test("the drawn phones (showcase iPhone, Platforms Android) show the same text, highlights and citations, cut into pages by site.js", () => {
+  const readers = indexHtml.split(/(?=<div class="[^"]*"[^>]*\bdata-reader\b)/).slice(1).map((r) => r.slice(0, r.indexOf("data-cite-popover")));
   assert.equal(readers.length, 2, "index.html should have two interactive reading views (iPhone and Android)");
   const refIds = new Set([...siteJs.matchAll(/^\s*"(\d+)": \{ title: /gm)].map((m) => m[1]));
-  for (const r of readers) {
-    const screen = r.slice(0, r.indexOf("data-cite-popover"));
+  const flows = readers.map((screen) => {
+    assert.ok(/class="[^"]*\bread\b[^"]*" data-theme="paper"/.test(screen), "both phones are reading views that start in Paper");
     const pages = screen.match(/<div class="[^"]*" data-page(?: hidden)?>/g) || [];
-    assert.ok(pages.length >= 2 && pages.length <= 3, `a phone should have 2-3 pages, got ${pages.length}`);
-    assert.ok(!pages[0].includes("hidden"), "page 1 shows without JS");
-    assert.ok(pages.slice(1).every((p) => p.includes(" hidden")), "the pages after the first are hidden without JS");
+    assert.equal(pages.length, 1, "the text is one flow (site.js cuts it into pages that fill the screen)");
+    assert.ok(!pages[0].includes("hidden"), "the text shows without JS");
     const ind = screen.match(/<div class="page-ind" data-page-ind hidden>[\s\S]*?<\/div>/);
     assert.ok(ind, "the page indicator is hidden without JS");
-    assert.ok(ind[0].includes(`<span data-page-now>1</span> of ${pages.length}</span>`), `the indicator says 1 of ${pages.length}`);
+    assert.ok(ind[0].includes('<span data-page-now>1</span> of <span data-page-count>1</span>'), "the indicator has its page number and count");
     assert.ok(/aria-live="polite"/.test(ind[0]), "the page indicator is announced");
     assert.ok(/data-page-prev aria-label="Previous page"/.test(ind[0]) && /data-page-next aria-label="Next page"/.test(ind[0]));
     assert.ok(!/<sup>/.test(screen), "citations are buttons, not bare <sup>");
     for (const m of screen.matchAll(/<button type="button" class="cite-sup" data-cite-ref="([\d,]+)" aria-expanded="false">/g)) {
       for (const n of m[1].split(",")) assert.ok(refIds.has(n), `reference ${n} is missing from site.js`);
     }
-  }
+    assert.ok(/data-fig-open/.test(screen) && /data-mark-bar/.test(screen), "both have Fig. 1 and the highlight colour bar");
+    const flow = screen.slice(screen.indexOf("data-pages>"), screen.indexOf('<div class="page-ind"'));
+    return {
+      text: flow.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
+      marks: [...flow.matchAll(/<mark data-mark data-color="(\w+)">([\s\S]*?)<\/mark>/g)].map((m) => m[1] + ": " + m[2]),
+      cites: [...flow.matchAll(/data-cite-ref="([\d,]+)"/g)].map((m) => m[1]).join(" ")
+    };
+  });
+  assert.ok(flows[0].text.length > 1000, "the reading view has the introduction's text");
+  assert.equal(flows[0].text, flows[1].text, "the iPhone and the Android show the same text");
+  assert.deepEqual(flows[0].marks, flows[1].marks, "the same highlights in the same colours");
+  assert.deepEqual(flows[0].marks.map((m) => m.split(":")[0]), ["yellow", "green"]);
+  assert.equal(flows[0].cites, flows[1].cites, "the same citations");
   assert.ok(!/<figure class="android[^"]*"[^>]*role="img"/.test(indexHtml), "the Android figure holds controls, so it is not role=img");
-  for (const sel of [".page-ind[hidden]", ".a-sheet[hidden]", ".a-hlbar[hidden]", ".fig-hint[hidden]"]) {
+  for (const sel of [".page-ind[hidden]", ".a-sheet[hidden]", ".hl-bar[hidden]", ".fig-hint[hidden]"]) {
     assert.ok(styleCss.includes(sel), `${sel} must stay hidden (its display rule would show it)`);
   }
 });
