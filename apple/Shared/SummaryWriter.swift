@@ -103,3 +103,30 @@ enum SummaryWriter {
         return p + i
     }
 }
+
+/// When a new summary may be written without being asked: not in Low Power Mode or with the device
+/// hot (the model works the chip hard while the page is being read); Regenerate always may.
+enum SummaryBudget {
+    static func allowsAutomatic(lowPower: Bool = ProcessInfo.processInfo.isLowPowerModeEnabled,
+                                thermal: ProcessInfo.ThermalState = ProcessInfo.processInfo.thermalState) -> Bool {
+        !lowPower && thermal != .serious && thermal != .critical
+    }
+    /// The page must have been still this long before the model starts (ms).
+    static let stillBeforeStart = 1500
+    /// The card while it's written: at most this many updates a second.
+    static let updatesPerSecond = 4.0
+}
+
+/// At most so many updates a second while the summary is written (partial texts); the first and
+/// the others (loading, done) always go through.
+struct SummaryThrottle {
+    let interval: TimeInterval
+    private var last = Date.distantPast
+    init(perSecond: Double) { interval = 1 / perSecond }
+
+    mutating func allows(partial: Bool, now: Date = Date()) -> Bool {
+        if partial, now.timeIntervalSince(last) < interval { return false }
+        last = now
+        return true
+    }
+}

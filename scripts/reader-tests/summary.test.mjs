@@ -151,3 +151,91 @@ test('highlight offsets: the text nodes the annotation script walks are the same
   win.luntaSummaryShow({ state: 'done', text: 'Some summary with words in it.', note: 'Note.' });
   assert.deepEqual(nodes(doc), before);
 });
+
+// While a summary is written the card changed a few times a second, and each change laid the pages
+// out again and put the place being read back on its page: a page being turned by a finger was
+// pulled back ("I cannot flip pages"). Changes wait for a still page; out of sight only the finished
+// summary is drawn.
+function live(html, { paged = false, pageNo = 0 } = {}) {
+  const listeners = {};
+  const calls = { keepPlace: 0, target: 0 };
+  const extra = {
+    addEventListener: (type, fn) => { (listeners[type] ??= []).push(fn); },
+    luntaPaged: () => paged,
+    luntaPageInfo: () => (paged ? { page: pageNo, pages: 9, cols: 1 } : null),
+    luntaPlace: () => 1234,
+    luntaKeepPlace: () => { calls.keepPlace++; },
+    luntaTargetPage: () => { calls.target++; return pageNo; },
+  };
+  const doc = parse(html);
+  const win = run(script, doc, extra);
+  const fire = (type) => (listeners[type] ?? []).forEach((fn) => fn({}));
+  const text = () => doc.querySelector('.m-summary')?.querySelector('.m-sum-text').getAttribute('data-t') ?? null;
+  return { doc, win, fire, calls, text, turnTo: (n) => { pageNo = n; } };
+}
+
+test('card: no change while the page is touched or moving; the latest is drawn once it is still', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 100000 });
+  const { win, fire, text } = live(PAPER);
+  assert.ok(win.luntaSummaryStill() > 1000);
+  win.luntaSummaryShow({ state: 'writing', text: 'One.' });
+  assert.equal(text(), 'One.');
+  fire('touchstart');
+  assert.equal(win.luntaSummaryStill(), 0);
+  win.luntaSummaryShow({ state: 'writing', text: 'One. Two.' });
+  win.luntaSummaryShow({ state: 'writing', text: 'One. Two. Three.' });
+  t.mock.timers.tick(2000);
+  assert.equal(text(), 'One.', 'not while a finger is on the page');
+  fire('touchend');
+  t.mock.timers.tick(300);
+  assert.equal(text(), 'One.', 'not while the page still glides');
+  fire('scroll');
+  t.mock.timers.tick(500);
+  assert.equal(text(), 'One.');
+  t.mock.timers.tick(700);
+  assert.equal(text(), 'One. Two. Three.', 'the latest, once the page is still');
+  assert.ok(win.luntaSummaryStill() >= 700);
+});
+
+test('card: in pages, away from the first page, only the finished summary is drawn (one relayout)', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 100000 });
+  const { win, calls, text, turnTo } = live(PAPER, { paged: true, pageNo: 4 });
+  win.luntaSummaryShow({ state: 'loading', text: 'Summarizing…' });
+  for (let i = 1; i <= 20; i++) win.luntaSummaryShow({ state: 'writing', text: 'Word '.repeat(i) });
+  assert.equal(text(), null, 'nothing drawn while it is written out of sight');
+  assert.equal(calls.target, 0, 'the pages are not laid out again');
+  win.luntaSummaryShow({ state: 'done', text: 'The summary.', note: 'Note.' });
+  assert.equal(text(), 'The summary.');
+  assert.equal(calls.keepPlace, 1);
+  assert.equal(calls.target, 1, 'one relayout, at the place being read');
+  // on the first page it is drawn as it comes
+  turnTo(0);
+  win.luntaSummaryShow({ state: 'writing', text: 'New words.' });
+  assert.equal(text(), 'New words.');
+  assert.equal(calls.target, 1, 'the first page needs no place kept');
+});
+
+test('card: hiding cancels a change still waiting', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 100000 });
+  const { win, fire, doc } = live(PAPER);
+  fire('scroll');
+  win.luntaSummaryShow({ state: 'done', text: 'The summary.' });
+  assert.equal(win.luntaSummaryHide(), false);
+  t.mock.timers.tick(2000);
+  assert.equal(doc.querySelectorAll('.m-summary').length, 0);
+});
+
+test('source: the page is walked once while the app fits the prompt', () => {
+  const { doc, win } = page(PAPER);
+  // the walk's cost is a closest() per paragraph: count them on one
+  const p = doc.querySelectorAll('p')[3];
+  let looks = 0;
+  const closest = p.closest.bind(p);
+  p.closest = (sel) => { looks++; return closest(sel); };
+  const a = JSON.parse(win.luntaSummarySource(1900)).text;
+  const once = looks;
+  assert.ok(once > 0);
+  win.luntaSummarySource(900); win.luntaSummarySource(500);
+  assert.equal(looks, once, 'the paragraphs are kept between calls');
+  assert.equal(JSON.parse(win.luntaSummarySource(1900)).text, a);
+});

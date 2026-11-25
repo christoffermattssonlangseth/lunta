@@ -66,9 +66,17 @@ extension ReaderAssets {
       // heading that has a kind) and which section that is
       // a PDF's footnotes that ended up in the text
       var JUNK = /(creativecommons\.org|open access article|declaration of competing|competing interests?:|^supplementary (data|material)|^correspond|[\w.]+@[\w-]+\.\w)/i;
+      // (kept: the app asks for the source a few times in a row while it fits the prompt, and on a
+      // long paper each walk holds up the page, page turns included, for a moment)
+      var parasKept = null, parasKey = -1, parasAt = 0;
       function paragraphs(){
-        var out = [], stack = [], sec = 0;
         var els = document.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li');
+        if (parasKept && parasKey === els.length && Date.now() - parasAt < 30000) return parasKept;
+        parasKept = walk(els); parasKey = els.length; parasAt = Date.now();
+        return parasKept;
+      }
+      function walk(els){
+        var out = [], stack = [], sec = 0;
         for (var i = 0; i < els.length; i++) {
           var el = els[i], tag = el.localName || el.tagName.toLowerCase();
           if (el.closest(SKIP)) continue;
@@ -207,9 +215,39 @@ extension ReaderAssets {
         if (!r && r2) above = r2.top < 0;
         if (above && h1 !== h0 && window.scrollBy) window.scrollBy(0, h1 - h0);
       }
-      // {state: 'loading' | 'writing' | 'done', text, note}
-      window.luntaSummaryShow = function(json){
-        var s = typeof json === 'string' ? JSON.parse(json) : json;
+      // ---- never while the page moves ----
+      // Each change to the card lays the page out again, and in pages puts the place being read
+      // back on its page: done while a finger turns the page (or the page glides after a swipe or a
+      // scroll), it pulled the page back. So a change waits until the page has been still for a
+      // moment, and while the summary is being written out of sight (the card's page isn't the one
+      // showing, or it is above the screen) only the finished summary is drawn.
+      var STILL = 700, movedAt = 0, touching = false, want = null, wait = null;
+      function moved(){ movedAt = Date.now(); }
+      if (window.addEventListener) {
+        var opt = { capture: true, passive: true };
+        ['scroll', 'wheel', 'keydown'].forEach(function(e){ window.addEventListener(e, moved, opt); });
+        window.addEventListener('touchstart', function(){ touching = true; moved(); }, opt);
+        ['touchend', 'touchcancel'].forEach(function(e){ window.addEventListener(e, function(){ touching = false; moved(); }, opt); });
+      }
+      // how long the page has been still, in ms (0 while touched or moving); the app waits for a
+      // still page before it starts writing a summary
+      window.luntaSummaryStill = function(){ return touching ? 0 : Math.max(0, Date.now() - movedAt); };
+      function moving(){ return window.luntaSummaryStill() < STILL; }
+      // the card (or where it goes) can be seen: in pages, on the first page; scrolling, not above the screen
+      function inSight(){
+        if (window.luntaPaged && window.luntaPaged()) {
+          var info = window.luntaPageInfo && window.luntaPageInfo();
+          return !info || info.page === 0;
+        }
+        var r = rect(card() || document.querySelector('.titlepage') || document.querySelector('h1'));
+        return !r || r.bottom > 0;
+      }
+      function apply(){
+        wait = null;
+        if (!want) return;
+        if (moving()) { wait = setTimeout(apply, 250); return; }
+        var s = want; want = null;
+        if (s.hide) { var c = card(); if (c) keep(function(){ c.remove(); }); return; }
         keep(function(){
           var c = card();
           if (!c) { c = build(); place(c); }
@@ -218,11 +256,22 @@ extension ReaderAssets {
           c.querySelector('.m-sum-note').setAttribute('data-t', s.state === 'done' ? (s.note || '') : '');
           c.setAttribute('aria-label', 'Summary');
         });
+      }
+      function later(s){
+        want = s;
+        if (!wait) apply();
+      }
+      // {state: 'loading' | 'writing' | 'done', text, note}
+      window.luntaSummaryShow = function(json){
+        var s = typeof json === 'string' ? JSON.parse(json) : json;
+        // being written where it can't be seen: nothing to draw until it's done
+        if (s.state !== 'done' && !inSight()) { if (want && !want.hide && want.state !== 'done') want = null; return true; }
+        later(s);
         return true;
       };
       window.luntaSummaryHide = function(){
-        var c = card(); if (!c) return false;
-        keep(function(){ c.remove(); });
+        if (!card()) { if (want) { want = null; clearTimeout(wait); wait = null; } return false; }
+        later({ hide: true });
         return true;
       };
       // the ⋯ menu: Regenerate, Hide Summaries (the app does them). Taps on the card do nothing

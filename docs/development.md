@@ -1773,6 +1773,15 @@ run in the desktop and Android apps on an open-weights model through llama.cpp, 
   source hash (SHA-256 of the 1,900-word source): a summary made on any device is shown on the others
   (it syncs like the paper's other small files, also in the Android app's lazy sync), and one made from a
   different reading view is made again. The card's note says which model wrote it, and that it can be wrong.
+  While a summary is written, the card never changes under a moving page: `luntaSummaryShow` holds each
+  change until the page has been still for 0.7 s (no finger on it, not scrolled or turned), and while the
+  card is out of sight (in pages, not on the first page; scrolling, above the screen) only the finished
+  summary is drawn, once. Before, each partial text (5 a second) laid the pages out again and put the
+  place being read back on its page, which pulled a page being turned back. `luntaSummaryStill()` gives
+  the ms the page has been still; the Apple apps start the model only after 1.5 s of it, at most 4 updates
+  a second reach the page, and no summary is written without being asked in Low Power Mode or with the
+  device hot (Regenerate still works). Signposts (subsystem `com.cmlangseth.lunta`, category `Summary`):
+  the wait for a still page, the session, prompt ready, first words, the whole summary.
 - **Ask:** one call, no tools: the app looks up first and gives the model just that. About a paper: its
   five passages of `fulltext.txt` that best match the question (BM25, words as prefixes, a follow-up looked
   up with the question before it), the abstract and the user's highlights; the answer cites them as [n],

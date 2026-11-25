@@ -2,6 +2,7 @@ import SwiftUI
 import WebKit
 import FoundationModels
 import LuntaCore
+import os
 
 // The Summary card at the top of the reading view: 3–4 sentences on what the paper did and found,
 // written on the device (Apple Intelligence, or the open model where that's what Ask uses) as soon
@@ -100,6 +101,14 @@ enum SummaryStore {
     }
 }
 
+/// Timing of the summaries, for Instruments (os_signpost, subsystem com.cmlangseth.lunta,
+/// category Summary) and the log: waiting for a still page, the source, fitting the prompt, the
+/// model's session, the first words and the whole summary.
+enum SummaryTrace {
+    static let log = Logger(subsystem: "com.cmlangseth.lunta", category: "Summary")
+    static let signposter = OSSignposter(logger: log)
+}
+
 /// Makes and shows one reader's summary. pageReady() when the page has loaded (and again after it
 /// reloads); stop() when the paper is closed.
 @MainActor
@@ -176,14 +185,26 @@ final class SummaryMaker: ObservableObject {
             show("done", saved.text, note: SummaryModel.note(saved.model))
             return
         }
-        guard !Task.isCancelled, let engine = SummaryModel.current, #available(macOS 26.0, iOS 26.0, *) else {
+        guard !Task.isCancelled, let engine = SummaryModel.current, #available(macOS 26.0, iOS 26.0, *),
+              force || SummaryBudget.allowsAutomatic() else {
             if !force { hide() }
             // Regenerate with no model here (a summary that synced from another device): say why
             else if !Task.isCancelled, let s = shown, s.state == "done" { show("done", s.text, note: Self.noModel) }
             return
         }
+        // The model works the chip hard: it starts once the paper has settled and the page has been
+        // still for a moment (not while it opens, its figures load or the pages are being turned)
+        if !force {
+            let w = SummaryTrace.signposter.beginInterval("wait for a still page")
+            let ok = await waitUntilStill(controller)
+            SummaryTrace.signposter.endInterval("wait for a still page", w)
+            guard ok, !Task.isCancelled else { return }
+        }
         show("loading", "Summarizing…")
         let started = Date()
+        let sp = SummaryTrace.signposter
+        let whole = sp.beginInterval("summary", "\(id, privacy: .public) \(engine.rawValue, privacy: .public)")
+        defer { sp.endInterval("summary", whole) }
         do {
             let prompt: String?
             if engine == .apple {
@@ -197,15 +218,24 @@ final class SummaryMaker: ObservableObject {
                 prompt = SummaryWriter.prompt(title: title, source: full) + " /no_think"
             }
             guard let prompt, !Task.isCancelled else { hide(); return }
+            sp.emitEvent("prompt ready", "\(Date().timeIntervalSince(started), format: .fixed(precision: 2)) s")
+            let sessionSP = sp.beginInterval("session")
             let session = await engine.session()
+            sp.endInterval("session", sessionSP)
+            var first = true, updates = 0
             let text = try await SummaryWriter.write(session, prompt: prompt) { [weak self] t in
+                if first {
+                    first = false
+                    sp.emitEvent("first words", "\(Date().timeIntervalSince(started), format: .fixed(precision: 2)) s")
+                }
+                updates += 1
                 self?.show("writing", t)
             }
             guard let text, !Task.isCancelled else { if !Task.isCancelled { hide() }; return }
             let s = PaperSummary(text: text, model: engine.rawValue, created: Date(), source: hash)
             SummaryStore.write(s, id, model: model)
             show("done", text, note: SummaryModel.note(engine.rawValue))
-            NSLog("Lunta: summary of %@ in %.1f s", id, Date().timeIntervalSince(started))
+            SummaryTrace.log.info("summary of \(id, privacy: .public) by \(engine.rawValue, privacy: .public) in \(Date().timeIntervalSince(started), format: .fixed(precision: 1)) s, \(updates) partial texts, \(self.pushes) drawn")
         } catch {
             // refused (guardrails), too long, or the model went away: no card, nothing kept
             if !(error is CancellationError) { NSLog("Lunta: no summary for %@: %@", id, String(describing: error)) }
@@ -213,14 +243,31 @@ final class SummaryMaker: ObservableObject {
         }
     }
 
-    private var lastPush = Date.distantPast
+    /// Waits until the page has been still (no finger on it, not scrolled or turned) for
+    /// SummaryBudget.stillBeforeStart ms; false when the reader went away meanwhile.
+    private func waitUntilStill(_ controller: ReaderController) async -> Bool {
+        // the paper's opening work first (place, highlights, figures)
+        try? await Task.sleep(for: .milliseconds(SummaryBudget.stillBeforeStart))
+        while !Task.isCancelled {
+            guard let v = controller.webView else { return false }
+            let still = (try? await v.evaluateJavaScript("window.luntaSummaryStill ? luntaSummaryStill() : 1e9")) as? Double ?? 1e9
+            if still >= Double(SummaryBudget.stillBeforeStart) { return true }
+            try? await Task.sleep(for: .milliseconds(max(250, SummaryBudget.stillBeforeStart - Int(still))))
+        }
+        return false
+    }
+
+    private var throttle = SummaryThrottle(perSecond: SummaryBudget.updatesPerSecond)
+    /// Updates sent to the page (for the log).
+    private var pushes = 0
 
     private func show(_ state: String, _ text: String, note: String = "") {
         guard Self.enabled else { return }
-        // while it's being written: at most a few updates a second (each one lays the page out again)
-        if state == "writing", Date().timeIntervalSince(lastPush) < 0.2 { shown = (state, text, note); return }
-        lastPush = Date()
+        // while it's being written: at most a few updates a second (each one lays the page out again;
+        // the page also holds them while it is touched or moving, SummaryCard.swift)
         shown = (state, text, note)
+        guard throttle.allows(partial: state == "writing") else { return }
+        pushes += 1
         let obj: [String: String] = ["state": state, "text": text, "note": note]
         guard let d = try? JSONSerialization.data(withJSONObject: obj), let json = String(data: d, encoding: .utf8) else { return }
         controller?.webView?.evaluateJavaScript("window.luntaSummaryShow && luntaSummaryShow(\(json))")
