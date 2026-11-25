@@ -33,11 +33,9 @@ citations into it, and only into the documents you give it this way.</p>
   // The Lunta Docs Cloud project (its number is the picker's app id: what the user picks is given
   // to this project's OAuth clients).
   var APP_ID = "535276504844";
-  // TODO(author): the Google Picker API key of the Lunta Docs project, restricted to the HTTP
-  // referrer https://getlunta.app/* and to the API "Google Picker API" (see
-  // docs/google-docs-extension.md, "Google's picker"). A browser key restricted this way isn't secret.
-  // Empty: the extension says giving documents isn't set up yet.
-  var API_KEY = "";
+  // The Google Picker API key of the Lunta Docs project: a browser key restricted to the HTTP referrer
+  // https://getlunta.app/* and to the Google Picker API only (not a secret; created 25 Nov 2026).
+  var API_KEY = "AIzaSyAwcaxIlvMXs_AJYskFjvN3FKjVKQOmMzA";
 
   var DOC_ID = /^[A-Za-z0-9_-]{20,}$/;
   // where an extension's launchWebAuthFlow finishes: Chrome and Edge, Firefox
