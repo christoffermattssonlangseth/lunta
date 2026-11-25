@@ -853,7 +853,7 @@ var LuntaCite = (function () {
   function workKey(m) {
     var doi = String(m.doi || '').toLowerCase().replace(/^https?:\/\/(dx\.)?doi\.org\//, '').trim();
     if (doi) return 'doi:' + doi;
-    var t = String(m.title || '').toLowerCase().replace(/[^a-z0-9À-￿]+/g, '');
+    var t = String(m.title || '').toLowerCase().replace(/[^a-z0-9À-\uffff]+/g, '');
     return t ? 't:' + t + ':' + String(m.date || '').slice(0, 4) : '';
   }
 
