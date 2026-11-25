@@ -186,6 +186,7 @@
     ["setup", "connect", "grant", "main"].forEach((k) => { $("." + k).hidden = k !== which; });
   }
 
+  let styleAsked = null;   // the menu's value last acted on (see styleChosen)
   function fillStyles() {
     const sel = $(".style");
     LuntaCite.fillStyles(sel, style, styleTitle);
@@ -195,6 +196,7 @@
       sel.insertBefore(o, sel.firstChild);
       sel.value = "";
     }
+    styleAsked = sel.value;   // what the menu shows now isn't a new choice
   }
 
   /** Runs one change at a time. */
@@ -523,13 +525,21 @@
 
   // ---- the style menu ----
 
-  $(".style").onchange = () => {
+  // Google Docs catches the page's mouse and keyboard events, so a change in the menu doesn't always reach
+  // its change event (the menu felt stuck): its value is also watched, as the boxes' are (watchBox), and a
+  // new choice is applied once, whichever way it arrives.
+  function styleChosen() {
     const sel = $(".style");
-    if (sel.value === "__find") { sel.value = needsStyle ? "" : style; $(".journal").hidden = false; $(".jq").focus(); return; }
-    if (!sel.value) return;
+    if (sel.disabled || sel.value === styleAsked) return;
+    styleAsked = sel.value;
+    if (sel.value === "__find") { sel.value = needsStyle ? "" : style; styleAsked = sel.value; $(".journal").hidden = false; $(".jq").focus(); return; }
+    if (!sel.value || (sel.value === style && styleSaved)) return;
     const s = sel.value;
     exclusive(() => update(s, ""));
-  };
+  }
+  $(".style").onchange = styleChosen;
+  $(".style").addEventListener("input", styleChosen);
+  setInterval(() => { const sel = $(".style"); if (sel.offsetParent && document.activeElement === sel) styleChosen(); }, 150);
   async function findJournal(q) {
     const box = $(".jresults");
     if (!q.trim()) { box.innerHTML = ""; return; }
