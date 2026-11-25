@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Lunta – Give Lunta access to this document</title>
+<link rel="icon" href="images/icon.svg" type="image/svg+xml">
+<style>
+  body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 3em auto; max-width: 34em; padding: 0 1em; color: #1d1d1f; }
+  h1 { font-size: 20px; color: #1f4f60; }
+  .err { color: #b3261e; }
+  button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #c7c7cc; background: #f2f2f4; cursor: pointer; }
+  @media (prefers-color-scheme: dark) { body { background: #1c1c1e; color: #eee; } h1 { color: #9ec9d8; } .err { color: #ff8a80; } button { background: #2c2c2e; color: #eee; border-color: #48484a; } }
+</style>
+</head>
+<body>
+<h1>Give Lunta access to this document</h1>
+<p id="say">Opening Google’s window… Choose the document shown and click <strong>Select</strong>: Lunta can then write
+citations into it, and only into the documents you give it this way.</p>
+<p><button id="back" hidden>Back to the document</button></p>
+<script>
+// Google's picker for one Google Docs document, for Lunta's browser extension
+// (extension/gdocs/background-gdocs.js, grantDocument). Lunta asks Google only for drive.file:
+// it may open a document once the user has chosen it here. An MV3 extension may not load Google's
+// picker script, so the extension opens this page with identity.launchWebAuthFlow and the URL
+// fragment #doc=<document id>&token=<the extension's access token>&back=<its redirect URL>. The
+// fragment never reaches a server (and is removed from the address at once); this page keeps
+// nothing, has no analytics, and sends the token only to Google. It goes back to `back` (only an
+// extension's redirect URL) with #picked=<id> or #error=<cancelled|setup|…>.
+(function () {
+  "use strict";
+  // The Lunta Docs Cloud project (its number is the picker's app id: what the user picks is given
+  // to this project's OAuth clients).
+  var APP_ID = "535276504844";
+  // The Google Picker API key of the Lunta Docs project: a browser key restricted to the HTTP referrer
+  // https://getlunta.app/* and to the Google Picker API only (not a secret; created 25 Nov 2026).
+  var API_KEY = "AIzaSyAwcaxIlvMXs_AJYskFjvN3FKjVKQOmMzA";
+
+  var DOC_ID = /^[A-Za-z0-9_-]{20,}$/;
+  // where an extension's launchWebAuthFlow finishes: Chrome and Edge, Firefox
+  var BACK = /^https:\/\/[a-z0-9-]+\.(chromiumapp\.org|extensions\.allizom\.org|extensions\.mozilla\.org)\/$/;
+
+  var h = new URLSearchParams(location.hash.slice(1));
+  try { history.replaceState(null, "", location.pathname); } catch (e) { /* the address keeps it */ }
+  var doc = h.get("doc") || "", token = h.get("token") || "", back = h.get("back") || "";
+  var say = document.getElementById("say");
+
+  function problem(text) { say.textContent = text; say.className = "err"; }
+  function finish(frag) { location.replace(back + "#" + frag); }
+
+  if (!BACK.test(back)) {
+    problem("This page is opened by Lunta’s browser extension, from the Lunta button in a Google Docs document.");
+    return;
+  }
+  var backBtn = document.getElementById("back");
+  backBtn.onclick = function () { finish("error=cancelled"); };
+  if (!DOC_ID.test(doc) || !token) { finish("error=bad_request"); return; }
+  if (!API_KEY) { finish("error=setup"); return; }
+
+  function failed(why) {
+    problem("Google’s window didn’t open (" + why + "). Go back to the document and try again.");
+    backBtn.hidden = false;
+    backBtn.onclick = function () { finish("error=" + encodeURIComponent(why)); };
+  }
+
+  function show() {
+    var P = window.google && google.picker;
+    if (!P) { failed("Google’s picker didn’t load"); return; }
+    var view = new P.DocsView(P.ViewId.DOCUMENTS)
+      .setFileIds(doc)
+      .setMode(P.DocsViewMode.LIST)
+      .setIncludeFolders(false);
+    new P.PickerBuilder()
+      .setAppId(APP_ID)
+      .setDeveloperKey(API_KEY)
+      .setOAuthToken(token)
+      .addView(view)
+      .enableFeature(P.Feature.NAV_HIDDEN)
+      .setTitle("Give Lunta access to this document")
+      .setCallback(function (data) {
+        var action = data[P.Response.ACTION];
+        if (action === P.Action.PICKED) {
+          var ids = (data[P.Response.DOCUMENTS] || []).map(function (d) { return d[P.Document.ID]; });
+          finish("picked=" + encodeURIComponent(ids.join(",")));
+        } else if (action === P.Action.CANCEL) {
+          finish("error=cancelled");
+        }
+      })
+      .build()
+      .setVisible(true);
+    backBtn.hidden = false;
+  }
+
+  var s = document.createElement("script");
+  s.src = "https://apis.google.com/js/api.js";
+  s.onload = function () {
+    if (!window.gapi) { failed("Google’s picker didn’t load"); return; }
+    gapi.load("picker", { callback: show, onerror: function () { failed("Google’s picker didn’t load"); } });
+  };
+  s.onerror = function () { failed("Google couldn’t be reached"); };
+  document.head.appendChild(s);
+})();
+</script>
+</body>
+</html>
