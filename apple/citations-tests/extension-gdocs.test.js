@@ -620,3 +620,40 @@ test('Zotero in Google Docs: read from its links and named ranges, converted aft
   assert.deepEqual(api.paragraphs().slice(2), ['Ek (2018). Delta rivers. Science.', 'Lee (2020). Alpha cells. Cell.']);
   assert.ok(!t.named.some((n) => n.name.startsWith('Z_F')));
 });
+
+test('the panel: a document not given yet is a calm note, a lost one red; the brand-new document hint; rarely used buttons under More (also in Word and the Apps Script sidebar)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'extension', 'gdocs', 'panel.js'), 'utf8');
+  const flowSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'extension', 'gdocs', 'flow.js'), 'utf8');
+  const bgSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'extension', 'gdocs', 'background-gdocs.js'), 'utf8');
+  const fn = src.match(/function notGrantedYet\(error\) \{[^\n]*\}/);
+  assert.ok(fn, 'notGrantedYet in panel.js');
+  const notGrantedYet = new Function(fn[0] + '; return notGrantedYet;')();
+  // flow.js's answer for a document never given (404/403): the grey note and the button only
+  const notYet = flowSrc.match(/'(Lunta can’t open this document yet[^']*)'/)[1];
+  assert.equal(notGrantedYet(notYet), true);
+  // given before and lost (the extension; Lunta for Mac in Safari), the picker closed, network: red
+  const lost = bgSrc.match(/"(Lunta had this document before[^"]*)"/)[1];
+  const swift = fs.readFileSync(path.join(__dirname, '..', 'Mac', 'GoogleDocsScript.swift'), 'utf8').match(/lostAccessMessage = "([^"]*)"/)[1];
+  for (const m of [lost, swift, 'Google Docs couldn’t be reached. Check the internet connection and try again.', '', undefined]) assert.equal(notGrantedYet(m), false, m);
+  // the hint for a brand-new document, under the button; shown when the picker came back without it
+  // or for an "Untitled document"
+  assert.match(src, /<p class="note grantHint" hidden>A brand-new document appears in Google’s window once it has some text: type something, wait a few seconds, then try again\.<\/p>/);
+  assert.match(src, /\^Untitled document/);
+  assert.match(src, /if \(r\.error\) \{ status\(r\.error, true\); if \(r\.kind === "access"\) newDocHint\(true\); return; \}/);
+  // More: Convert from Zotero, to Plain Text and Check Citations; the rest stays in the main panel
+  const more = src.match(/<div class="more" hidden>([\s\S]*?)\n {10}<\/div>\n/)[1];
+  for (const c of ['convert']) assert.match(more, new RegExp(`class="btn ${c}"`), c);
+  for (const c of ['insert', 'bib', 'refresh', 'edit', 'resolve']) {
+    assert.doesNotMatch(more, new RegExp(`class="btn (primary )?${c}"`), c);
+    assert.match(src, new RegExp(`class="btn (primary )?${c}"`), c);
+  }
+  // the same in the Word panel and the Apps Script sidebar (a <details>), their boxes outside it
+  for (const [f, under, kept] of [['word/index.html', ['convert'], ['insert', 'bib', 'refresh', 'resolve']],
+    ['gdocs/Sidebar.html', ['convert'], ['insert', 'bib', 'refresh', 'edit']]]) {
+    const html = fs.readFileSync(path.join(__dirname, '..', 'citations', f), 'utf8');
+    const d = html.match(/<details class="more"><summary>More<\/summary>([\s\S]*?)<\/details>/)[1];
+    for (const id of under) assert.match(d, new RegExp(`<button id="${id}"`), f + ' ' + id);
+    for (const id of kept) { assert.doesNotMatch(d, new RegExp(`id="${id}"`), f + ' ' + id); assert.match(html, new RegExp(`<button id="${id}"`), f + ' ' + id); }
+    assert.doesNotMatch(d, /Box"/, f);
+  }
+});

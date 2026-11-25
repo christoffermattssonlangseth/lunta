@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lunta Citations</title>
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="../common.js?v=13.4"></script>
-<script src="../resolve.js?v=13.4"></script>
-<script src="fields.js?v=13.4"></script>
-<link rel="stylesheet" href="../panel.css?v=13.4">
+<script src="../common.js?v=13.5"></script>
+<script src="../resolve.js?v=13.5"></script>
+<script src="fields.js?v=13.5"></script>
+<link rel="stylesheet" href="../panel.css?v=13.5">
 </head>
 <body>
 <header>
@@ -38,8 +38,9 @@
 <div class="buttons">
   <button id="resolve" title="Turn placeholders typed while writing, like (Langseth et al. 2025) or [Smith 2019 cortex], into citations: you confirm each one">Resolve Citations…</button>
 </div>
-<div class="buttons">
-  <button id="convert" title="Make citations inserted with Zotero, EndNote or Mendeley Lunta citations: you review the papers first, nothing changes until you click Convert">Convert Citations from Zotero, EndNote or Mendeley…</button>
+<details class="more"><summary>More</summary>
+  <div class="buttons"><button id="convert" title="Make citations inserted with Zotero, EndNote or Mendeley Lunta citations: you review the papers first, nothing changes until you click Convert">Convert Citations from Zotero, EndNote or Mendeley…</button></div>
+</details>
 </div>
 <div id="convertBox" class="resolve" hidden>
   <div class="current-h">Convert Citations <button id="cvclose" class="cite-x" title="Close">✕</button></div>
@@ -51,6 +52,6 @@
   <div id="rslist"></div>
 </div>
 <p id="status" class="status"></p>
-<script src="app.js?v=13.4"></script>
+<script src="app.js?v=13.5"></script>
 </body>
 </html>
