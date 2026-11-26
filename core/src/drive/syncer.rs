@@ -156,11 +156,32 @@ pub struct Syncer {
     state: Mutex<SyncState>,
     /// (done, total) of the current sync's transfers, put in front of progress lines.
     step: Mutex<(usize, usize)>,
+    /// A first sync's line, "Getting your library (412 papers)…", said instead of each transfer
+    /// (with how far it is, in percent): the papers are what the user knows, not the files.
+    heading: Mutex<Option<String>>,
 }
 
 fn heavy(path: &str) -> bool {
     let name = path.rsplit('/').next().unwrap_or("");
     [FileKind::Pdf, FileKind::Epub, FileKind::Audio].iter().any(|k| k.file_name() == name)
+}
+
+/// What a first sync says while it works: getting the library (mostly downloads) or putting it
+/// into the remote (mostly uploads), with the number of papers it touches.
+/// `papers`: how many paper folders the library has, here or on the remote (those left on the
+/// remote by a lazy sync included).
+fn first_sync_heading(plan: &[(String, Decision)], papers: usize) -> Option<String> {
+    let down = plan.iter().filter(|(_, d)| matches!(d, Decision::Download)).count();
+    let up = plan.iter().filter(|(_, d)| matches!(d, Decision::Upload)).count();
+    if plan.len() < 2 {
+        return None;
+    }
+    let n = match papers {
+        0 => String::new(),
+        1 => " (1 paper)".to_string(),
+        n => format!(" ({n} papers)"),
+    };
+    Some(if up > down { format!("Uploading your library{n}…") } else { format!("Getting your library{n}…") })
 }
 
 enum Decision {
@@ -191,7 +212,7 @@ impl Syncer {
         };
         let root = root.into();
         fs::create_dir_all(&root)?;
-        Ok(Syncer { root, device, remote, opts, state: Mutex::new(state), step: Mutex::new((0, 0)) })
+        Ok(Syncer { root, device, remote, opts, state: Mutex::new(state), step: Mutex::new((0, 0)), heading: Mutex::new(None) })
     }
 
     fn classify(&self, path: &str) -> Option<Kind> {
@@ -228,11 +249,18 @@ impl Syncer {
         rel.split('/').fold(self.root.clone(), |p, c| p.join(c))
     }
 
-    /// A progress line, "312 of 2676 · upload papers/…" while a sync works through its plan.
+    /// A progress line, "312 of 2676 · upload papers/…" while a sync works through its plan; a
+    /// first sync's "Getting your library (412 papers)… 12%".
     fn say(&self, s: &str) {
         if let Some(f) = &self.opts.progress {
             let (done, total) = *self.step.lock().unwrap();
-            if total > 1 { f(&format!("{} of {total} · {s}", (done + 1).min(total))) } else { f(s) }
+            if let (Some(h), true) = (self.heading.lock().unwrap().as_ref(), total > 1) {
+                f(&format!("{h} {}%", done * 100 / total))
+            } else if total > 1 {
+                f(&format!("{} of {total} · {s}", (done + 1).min(total)))
+            } else {
+                f(s)
+            }
         }
     }
 
@@ -336,6 +364,7 @@ impl Syncer {
         rep.notices.extend(listing.notices);
 
         // 2. decide per path
+        let first = st.synced.is_empty();
         let local = self.scan_local();
         let mut paths: BTreeSet<String> = local.keys().cloned().collect();
         paths.extend(st.remote.keys().cloned());
@@ -351,6 +380,7 @@ impl Syncer {
             })
             .collect();
         order.sort();
+        let papers = order.iter().filter_map(|(_, p)| p.strip_prefix("papers/").and_then(|r| r.split('/').next())).collect::<BTreeSet<_>>().len();
 
         let mut plan: Vec<(String, Decision)> = Vec::new();
         for (_, p) in order {
@@ -370,6 +400,7 @@ impl Syncer {
         }
 
         // 3. act
+        *self.heading.lock().unwrap() = if first { first_sync_heading(&plan, papers) } else { None };
         let mut since_save = 0;
         let total = plan.len();
         for (i, (p, d)) in plan.into_iter().enumerate() {
@@ -389,6 +420,7 @@ impl Syncer {
         rep.finished_ms = now_ms();
         self.save_state(&st)?;
         *self.step.lock().unwrap() = (0, 0);
+        *self.heading.lock().unwrap() = None;
         Ok(rep)
     }
 

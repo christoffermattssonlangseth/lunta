@@ -89,13 +89,13 @@ struct LibraryStorageSettingRow: View {
     }
 }
 
-/// Settings: "Download papers when you open them" for a library in Google Drive (also in Library Storage).
+/// Settings: "Keep all papers on this Mac" for a library in Google Drive (also in Library Storage).
 struct DriveOnDemandSetting: View {
     @AppStorage(DriveLibrarySync.onDemandKey) private var onDemand = DriveLibrarySync.onDemandDefault
     var body: some View {
-        Toggle("Download papers when you open them", isOn: $onDemand)
+        Toggle(DriveDownloadsView.keepAllTitle, isOn: Binding(get: { !onDemand }, set: { onDemand = !$0 }))
             .onChange(of: onDemand) { _, _ in DriveLibrarySync.shared.onDemandChanged() }
-        Text(DriveDownloadsView.explanation).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        Text(DriveDownloadsView.explanation(keepAll: !onDemand)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 }
 #endif

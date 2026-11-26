@@ -15,7 +15,7 @@ enum StorageText {
             return "Recommended if all your devices are Apple’s. Your Mac, iPhone and iPad keep the library in sync by themselves, through your own iCloud Drive."
         case .googleDrive:
             #if os(macOS)
-            return "For when you also use Lunta on Android, Windows or Linux, or can’t use iCloud (on a work Mac, say). The library is kept on this device and synced with a “Lunta” folder in your own Google Drive while Lunta is open."
+            return "For when you also use Lunta on Android, Windows or Linux, or can’t use iCloud (on a work Mac, say). The library is synced with a “Lunta” folder in your own Google Drive while Lunta is open; a paper’s PDF and reading view are downloaded when you open it."
             #else
             return "For when you also use Lunta on Android, Windows or Linux, or can’t use iCloud. The library is synced with a “Lunta” folder in your own Google Drive while Lunta is open; a paper’s PDF and reading view are downloaded when you open it."
             #endif
@@ -461,7 +461,7 @@ struct LibraryStorageView: View {
         }
         if s == .googleDrive {
             t += "\n\n" + StorageText.driveSpace(librarySize)
-            t += "\n\nIf your Google Drive already has a Lunta library (from Android, say), the two are combined."
+            t += "\n\nIf your Google Drive already has a Lunta library (from Android, say), the two are combined; its papers stay in Google Drive and download when you open them (or turn on Keep all papers on \(StorageText.thisDevice) in Library Storage)."
             if !drive.connected, let note = GoogleDriveClient.signInNote { t += "\n\n" + note }
         }
         return t
@@ -545,8 +545,8 @@ struct DriveSyncStatusView: View {
     }
 }
 
-/// A Google Drive library: "Download papers when you open them", how much is on this device,
-/// Download All, and removing downloads not opened for a while.
+/// A Google Drive library: "Keep all papers on this Mac" (off: papers are downloaded when they're
+/// opened), how much is on this device, Download All, and removing downloads not opened for a while.
 struct DriveDownloadsView: View {
     @ObservedObject private var drive = DriveLibrarySync.shared
     @AppStorage(DriveLibrarySync.onDemandKey) private var onDemand = DriveLibrarySync.onDemandDefault
@@ -554,19 +554,24 @@ struct DriveDownloadsView: View {
     @State private var removing = false
     @State private var removed: String?
 
-    static var explanation: String {
+    /// "Keep all papers on this Mac", and what it means on or off.
+    static var keepAllTitle: String { "Keep all papers on \(StorageText.thisDevice)" }
+    static func explanation(keepAll: Bool) -> String {
+        if keepAll {
+            return "Every paper’s PDF, reading view and narration is downloaded to \(StorageText.thisDevice), for reading offline. Turn this off to download papers only when you open them."
+        }
         #if os(macOS)
-        return "Only the papers you open are kept on this Mac; the rest stay in Google Drive. Good for a work computer or a small disk. Full texts are always kept on the Mac, so search and the AI assistant still see every paper."
+        return "Off: papers stay in Google Drive and download when you open them. Notes, highlights and full texts are always kept on this Mac, so search and the AI assistant still see every paper."
         #else
-        return "Only the papers you open are kept on \(StorageText.thisDevice); the rest stay in Google Drive. Full texts are always kept here, so search still finds every paper."
+        return "Off: papers stay in Google Drive and download when you open them. Notes, highlights and full texts are always kept here, so search still finds every paper."
         #endif
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Toggle("Download papers when you open them", isOn: $onDemand)
+            Toggle(Self.keepAllTitle, isOn: Binding(get: { !onDemand }, set: { onDemand = !$0 }))
                 .onChange(of: onDemand) { _, _ in removed = nil; drive.onDemandChanged() }
-            Text(onDemand ? Self.explanation : Self.explanation + " Off: every paper is downloaded.")
+            Text(Self.explanation(keepAll: !onDemand))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let d = drive.downloads, d.papers > 0 {
                 Text(d.text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

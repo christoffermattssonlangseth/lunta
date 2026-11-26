@@ -30,7 +30,9 @@ pub struct Settings {
     /// named "Lunta" in My Drive (or the one the last sync used).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drive_folder_id: Option<String>,
-    /// "Download papers when you open them" (lazy sync); unset means off, as on the Mac.
+    /// Papers' files (PDF, reading view, narration) are downloaded when they are opened (lazy sync);
+    /// unset means on, so a library set up in or moved to Google Drive doesn't download every
+    /// paper. "Keep all papers on this computer" in Library Storage stores false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drive_download_on_open: Option<bool>,
 }
@@ -44,7 +46,7 @@ impl Settings {
         self.storage.as_deref() == Some("drive")
     }
     pub fn download_on_open(&self) -> bool {
-        self.drive_download_on_open.unwrap_or(false)
+        self.drive_download_on_open.unwrap_or(true)
     }
 }
 

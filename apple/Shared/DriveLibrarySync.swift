@@ -25,11 +25,13 @@ enum GoogleDriveClient {
 /// Android app (LibrarySync.google_drive, not the Mac's bridge mode).
 ///
 /// While Lunta is open: at start, when it comes to the front, every few minutes, and shortly after
-/// a change made here. "Download papers when you open them" (`onDemand`; on by default on iPhone
-/// and iPad, off on the Mac): like Android, change logs, metadata, full texts and reading positions
-/// always come down, a paper's PDF, reading view and narration when it is opened (`fetch`).
-/// Otherwise every file is downloaded. Either way, files not here (yet) count as present
-/// (`Library.setRemoteFiles`), so the app never takes them for missing, and opening one fetches it;
+/// a change made here. Papers are downloaded when they are opened (`onDemand`, the default
+/// everywhere since 1.3; a Mac whose library was in Google Drive before keeps downloading
+/// everything, `keepEarlierChoice`): like Android, change logs, metadata, full texts and reading
+/// positions always come down, a paper's PDF, reading view and narration when it is opened
+/// (`fetch`). With "Keep all papers on this Mac/iPhone/iPad" every file is downloaded. Either way,
+/// files not here (yet) count as present (`Library.setRemoteFiles`), so the app never takes them for
+/// missing, and opening one fetches it;
 /// "Remove Download" frees space without the next sync taking it for a deletion. The Mac also tells
 /// lunta-mcp which files are only in Drive (remote-files.json).
 @MainActor
@@ -65,14 +67,24 @@ final class DriveLibrarySync: ObservableObject {
     /// Download All: "Downloading 12 of 340…" while it runs.
     @Published private(set) var downloadingAll: String?
 
-    /// "Download papers when you open them": a Google Drive library's PDFs, reading views and
-    /// narrations stay in Drive until they are needed. On by default on iPhone and iPad.
+    /// Papers downloaded when they are opened: a Google Drive library's PDFs, reading views and
+    /// narrations stay in Drive until they are needed. On by default (on the Mac since 1.3); false
+    /// is "Keep all papers on this Mac/iPhone/iPad".
     nonisolated static let onDemandKey = "driveDownloadOnOpen"
-    nonisolated static var onDemandDefault: Bool {
-        #if os(iOS)
-        return true
-        #else
-        return false
+    nonisolated static let onDemandDefault = true
+
+    /// Until 1.3 the Mac downloaded every paper unless this was turned on: a Mac whose library was
+    /// already in Google Drive keeps that (written down once, at the first start of 1.3), a library
+    /// set up in or moved to Google Drive later downloads papers when they are opened.
+    static func keepEarlierChoice() {
+        #if os(macOS)
+        let d = UserDefaults.standard
+        let checked = "driveDownloadOnOpenChecked"
+        guard !d.bool(forKey: checked) else { return }
+        d.set(true, forKey: checked)
+        if LibraryStorage.stored == .googleDrive, d.object(forKey: onDemandKey) == nil {
+            d.set(false, forKey: onDemandKey)
+        }
         #endif
     }
     nonisolated static var onDemand: Bool {

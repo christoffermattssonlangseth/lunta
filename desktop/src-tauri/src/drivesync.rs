@@ -13,9 +13,10 @@
 //!
 //! Syncs: at start, when the window comes to the front (if the last one is over a minute old),
 //! every 5 minutes, and 20 s after this device's change log, reading positions or shared settings
-//! change; Sync Now. "Download papers when you open them" makes it lazy: PDFs, reading views and
+//! change; Sync Now. Lazy by default (`Settings::download_on_open`): PDFs, reading views and
 //! narration stay in Drive until opened (`ensure_local`), and count as present meanwhile
-//! (`Library::set_remote_files`).
+//! (`Library::set_remote_files`); the first sync brings only the library (metadata, notes,
+//! highlights, full texts). "Keep all papers on this computer" downloads every paper.
 //!
 //! Moving the library (`storage_move`): to Google Drive, the Drive library is synced first (what is
 //! already there comes down), then this library is copied in with the core's copy rules
@@ -571,8 +572,9 @@ pub fn drive_sync_soon(app: AppHandle) {
     }
 }
 
-/// "Download papers when you open them". Switching on deletes nothing; switching off downloads
-/// the rest at the next sync.
+/// Papers downloaded when opened (`on`), or "Keep all papers on this computer" (`!on`). Switching
+/// to on-demand deletes nothing (Remove Download frees space); keeping all downloads the rest at
+/// the next sync, which starts now.
 #[tauri::command]
 pub fn drive_set_download_on_open(app: AppHandle, on: bool) -> R<()> {
     {
@@ -640,7 +642,7 @@ pub async fn drive_download(app: AppHandle, ids: Vec<String>) -> R<u32> {
 pub async fn drive_remove_download(app: AppHandle, ids: Vec<String>) -> R<String> {
     let a = app.state::<DriveSync>().active().ok_or("The library isn’t synced with Google Drive.")?;
     if !a.lazy {
-        return Err("Turn on “Download papers when you open them” first (Settings ▾ › Library Storage…); otherwise the next sync downloads them again.".into());
+        return Err("Turn off “Keep all papers on this computer” first (Settings ▾ › Library Storage…); otherwise the next sync downloads them again.".into());
     }
     let a2 = a.clone();
     let (removed, kept, bytes) = tauri::async_runtime::spawn_blocking(move || -> R<(u32, u32, u64)> {
@@ -903,15 +905,16 @@ mod tests {
         assert_eq!((n, failed.len()), (1, 0));
     }
 
-    /// Moving a folder library into Google Drive: what Drive has comes down, this library is copied
-    /// in (logs merged), the next sync uploads it; the old folder is untouched.
+    /// Moving a folder library into Google Drive (papers downloaded when opened, the default): the
+    /// Drive library comes down without its papers' files, this library is copied in (logs
+    /// merged), the next sync uploads it; the old folder is untouched.
     #[test]
     fn move_into_drive_merges_and_uploads() {
         let t = tempfile::tempdir().unwrap();
         let p = |s: &str| t.path().join(s);
         let remote = p("drive");
         let other = lib(&p("other"), &p("other-cache"), "android-1");
-        other.add_paper(meta("From Android"), None, None, None).unwrap();
+        let theirs = other.add_paper(meta("From Android"), Some(b"%PDF theirs".to_vec()), None, None).unwrap();
         syncer(&p("other"), &p("other-state.json"), &remote, "android-1", false).sync_now().unwrap();
 
         let folder = p("Library");
@@ -921,16 +924,33 @@ mod tests {
         let before = std::fs::read(folder.join("ops/linux-1.jsonl")).unwrap();
 
         let root = p("DriveLibrary");
-        let s = syncer(&root, &p("state.json"), &remote, "linux-1", false);
+        let lazy = settings::Settings::default().download_on_open();
+        assert!(lazy, "a new Drive library downloads papers when they are opened");
+        let s = syncer(&root, &p("state.json"), &remote, "linux-1", lazy);
         let res = move_into_drive(&s, Some(&folder), &root, &|_| {}).unwrap().unwrap();
         assert!(res.copied >= 2 && res.failed.is_empty(), "{res:?}");
         assert_eq!(std::fs::read(folder.join("ops/linux-1.jsonl")).unwrap(), before, "the old copy is untouched");
-        s.sync_now().unwrap();
+        let r = s.sync_now().unwrap();
+        assert_eq!(r.downloaded, 0, "{r:?}");
         assert!(remote.join("ops/linux-1.jsonl").exists());
         assert!(remote.join(format!("papers/{}/paper.pdf", mine.id)).exists());
+        assert!(!root.join(format!("papers/{}/paper.pdf", theirs.id)).exists(), "the other device's PDF stays in Drive");
         let l = lib(&root, &p("cache"), "linux-1");
         let titles: BTreeSet<String> = l.papers(Default::default(), lunta_core::model::SortKey::Added).into_iter().map(|p| p.meta.title).collect();
         assert_eq!(titles, ["From Android", "From this computer"].into_iter().map(String::from).collect());
+    }
+
+    /// A stored choice stays: "Keep all papers on this computer" is false, an earlier true stays true.
+    #[test]
+    fn download_on_open_is_the_default_and_a_choice_is_kept() {
+        let mut s = settings::Settings::default();
+        assert!(s.download_on_open());
+        s.drive_download_on_open = Some(false);
+        assert!(!s.download_on_open());
+        let back: settings::Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert!(!back.download_on_open());
+        let old: settings::Settings = serde_json::from_str(r#"{"device_id":"linux-1","storage":"drive"}"#).unwrap();
+        assert!(old.download_on_open());
     }
 
     /// Moving out of Google Drive downloads what is only there first, so the new folder is complete.

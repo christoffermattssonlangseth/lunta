@@ -93,4 +93,9 @@ class Settings(context: Context) {
     var pendingRedirect: String
         get() = p.getString("pendingRedirect", "")!!
         set(v) = p.edit { putString("pendingRedirect", v) }
+    /** "Keep all papers on this phone": a Google Drive library's PDFs, reading views and narration
+     *  are all downloaded. Off (the default): each paper's files come down when it is opened. */
+    var keepAllPapers: Boolean
+        get() = p.getBoolean("keepAllPapers", false)
+        set(v) = p.edit { putBoolean("keepAllPapers", v) }
 }

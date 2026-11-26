@@ -255,6 +255,16 @@ private fun SettingsSheet(model: AppModel, onDismiss: () -> Unit) {
                     if (uniffi.lunta_core.narrowDriveAccess()) {
                         TextButton({ onDismiss(); model.beginPickFolder(ctx) }) { Text("Choose your Lunta folder…") }
                     }
+                    var keepAll by remember { mutableStateOf(model.settings.keepAllPapers) }
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Keep all papers on this phone", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                        Switch(keepAll, { keepAll = it; model.setKeepAllPapers(it) })
+                    }
+                    Text(
+                        if (keepAll) "Every paper’s PDF and reading view is downloaded to this phone, for reading offline."
+                        else "Off: papers stay in Google Drive and download when you open them. Notes, highlights and full texts are always on this phone, so search finds every paper.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 Text("Lunta also syncs in the background about every ${model.settings.syncMinutes} minutes.", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall)
             }

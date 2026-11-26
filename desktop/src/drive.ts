@@ -87,7 +87,8 @@ function bytes(b: number): string {
 function summary(s: DriveStatus): { text: string; error: boolean } {
   if (s.storage !== 'drive') return { text: '', error: false };
   if (!s.signed_in) return { text: 'Google Drive: signed out — changes stay on this computer', error: true };
-  if (s.syncing) return { text: s.progress ? `Syncing… ${s.progress}` : 'Syncing with Google Drive…', error: false };
+  // a first sync says what it does with the library ("Getting your library (412 papers)… 12%")
+  if (s.syncing) return { text: s.progress ? (/^(Getting|Uploading) your library/.test(s.progress) ? s.progress : `Syncing… ${s.progress}`) : 'Syncing with Google Drive…', error: false };
   if (s.needs_sign_in) return { text: 'Google Drive: sign in again', error: true };
   if (s.folder_not_visible) return { text: 'Google Drive: Lunta can’t open its folder', error: true };
   if (s.error) return { text: `Google Drive: ${s.error}`, error: true };
@@ -212,7 +213,7 @@ export async function storageDialog() {
 
   async function moveToDrive() {
     if (!st!.signed_in && !(await signIn())) return;
-    const sure = await ask('Lunta copies your library into the “Lunta” folder in your Google Drive and syncs it from there, with Lunta on Android, on a Mac or iPhone whose library is in Google Drive, and on your other computers. If that folder already has a library, the two are merged. The library in its current folder stays as it is; Lunta stops using it.', { title: 'Move your library to Google Drive?', okLabel: 'Move', cancelLabel: 'Cancel' });
+    const sure = await ask('Lunta copies your library into the “Lunta” folder in your Google Drive and syncs it from there, with Lunta on Android, on a Mac or iPhone whose library is in Google Drive, and on your other computers. If that folder already has a library, the two are merged, and its papers stay in Google Drive until you open them (to have every paper here, tick Keep all papers on this computer). The library in its current folder stays as it is; Lunta stops using it.', { title: 'Move your library to Google Drive?', okLabel: 'Move', cancelLabel: 'Cancel' });
     if (sure) run('Moving your library to Google Drive…', () => driveApi.move('drive'), true);
   }
 
@@ -261,16 +262,17 @@ export async function storageDialog() {
           }
         }) : null),
       h('label.check', {},
-        h('input', { type: 'checkbox', checked: s.download_on_open, disabled: busy, onchange: (e: Event) => {
-          const on = (e.target as HTMLInputElement).checked;
-          run(on ? 'Turning on…' : 'Downloading the rest at the next sync…', async () => { await driveApi.setDownloadOnOpen(on); }, true);
+        h('input', { type: 'checkbox', checked: !s.download_on_open, disabled: busy, onchange: (e: Event) => {
+          const keep = (e.target as HTMLInputElement).checked;
+          run(keep ? 'Downloading every paper in the background…' : 'Papers now stay in Google Drive until you open them.',
+            async () => { await driveApi.setDownloadOnOpen(!keep); return keep ? 'Downloading every paper in the background; the line at the bottom of the sidebar shows how far it is.' : 'Papers now stay in Google Drive until you open them. Nothing was removed from this computer: Remove Download (in a paper’s menu) frees space.'; }, true);
         } }),
-        'Download papers when you open them'),
+        'Keep all papers on this computer'),
       h('p.hint', { text: s.download_on_open
-        ? `PDFs, reading views and narration stay in Google Drive until you open them. Here: ${bytes(s.here_bytes)}; only in Google Drive: ${bytes(s.drive_only_bytes)}${s.not_downloaded ? ` (${s.not_downloaded} files)` : ''}.`
-        : 'Every paper’s files are downloaded to this computer. Turn this on to keep PDFs, reading views and narration in Google Drive until you open them.' }),
+        ? `Off: your library (papers, notes, highlights, full texts for search) is on this computer; a paper’s PDF, reading view and narration download when you open it. Here: ${bytes(s.here_bytes)}; only in Google Drive: ${bytes(s.drive_only_bytes)}${s.not_downloaded ? ` (${s.not_downloaded} files)` : ''}.`
+        : 'Every paper’s PDF, reading view and narration is downloaded to this computer, for reading offline. Turn this off to download papers only when you open them.' }),
       s.download_on_open && s.signed_in ? h('div.buttons.left', {},
-        button('Download All', () => run('Downloading from Google Drive…', async () => { const n = await driveApi.download([]); return n ? `Downloaded ${n} file${n === 1 ? '' : 's'}.` : 'Everything is downloaded.'; }, true), false, !s.not_downloaded)) : null,
+        button('Download All Now', () => run('Downloading from Google Drive…', async () => { const n = await driveApi.download([]); return n ? `Downloaded ${n} file${n === 1 ? '' : 's'}.` : 'Everything is downloaded.'; }, true), false, !s.not_downloaded)) : null,
     ] : [];
     fill(body,
       h('p.hint', { text: `Library: ${s.library ?? '—'}` }),

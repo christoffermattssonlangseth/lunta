@@ -155,7 +155,7 @@ class AppModel(val app: Application) {
         if (m == LibraryMode.Drive) {
             auth = makeAuth()
             if (auth.isConnected()) {
-                s = LibrarySync.googleDrive(root.absolutePath, device, state, auth, settings.driveFolder, settings.driveFolderId.ifBlank { null }, true, progress)
+                s = driveSync(auth)
                 driveFullAccess = auth.hasFullAccess()
             }
         } else if (settings.testRemoteDir.isNotBlank()) {
@@ -163,6 +163,33 @@ class AppModel(val app: Application) {
         }
         library = lib; librarySync = s; driveAuth = auth
         positions = Positions(root, device, "${Build.MODEL} (Android)")
+    }
+
+    /** The Google Drive library's sync: papers' files downloaded when opened (lazy), unless "Keep
+     *  all papers on this phone" is on. */
+    private fun driveSync(auth: DriveAuth): LibrarySync {
+        val m = LibraryMode.Drive
+        return LibrarySync.googleDrive(
+            rootDir(m).absolutePath, settings.deviceId, File(app.filesDir, "sync-state-${m.name}.json").absolutePath, auth,
+            settings.driveFolder, settings.driveFolderId.ifBlank { null }, !settings.keepAllPapers, progress,
+        )
+    }
+
+    /** "Keep all papers on this phone": on, the next sync (started now) downloads every paper's
+     *  files; off, papers download when opened again (nothing here is removed). */
+    fun setKeepAllPapers(on: Boolean) {
+        if (settings.keepAllPapers == on) return
+        settings.keepAllPapers = on
+        if (mode != LibraryMode.Drive) return
+        scope.launch {
+            syncLock.withLock {   // not in the middle of a sync
+                withContext(Dispatchers.IO) {
+                    val auth = driveAuth
+                    if (auth != null && auth.isConnected() && librarySync != null) librarySync = driveSync(auth)
+                }
+            }
+            syncNow()
+        }
     }
 
     // false = follow the core's narrow-access switch (narrowDriveAccess(), on since 1.3): drive.file,
@@ -554,6 +581,7 @@ class AppModel(val app: Application) {
     /** Makes sure the given kinds are on the device; returns the path of the first one that is. */
     suspend fun ensureFiles(id: String, vararg kinds: FileKind) {
         val lib = library ?: return
+        if (librarySync != null && kinds.any { lib.filePath(id, it) == null }) status = "Downloading from Google Drive…"
         withContext(Dispatchers.IO) {
             val missing = kinds.filter { lib.filePath(id, it) == null }
             if (missing.isNotEmpty()) {

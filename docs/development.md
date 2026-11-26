@@ -1188,7 +1188,12 @@ the folder through the API (Android, the Mac bridge, the CLI), not through Googl
   narration that the remote has unchanged, keeps copies with changes not uploaded yet, and records them as
   not here). Deleting a downloaded file any other way is still a deletion. `Library::set_remote_files(paths)`
   makes the files that are only on the remote count as present (`has_pdf`/`has_epub`, `file_status` =
-  `InCloud`), like iCloud's placeholders.
+  `InCloud`), like iCloud's placeholders. Lazy is the default on every platform since 1.3 (the user's
+  choice is "Keep all papers on this Mac/iPhone/iPad/computer/phone"); a sync that isn't lazy on the same
+  state downloads everything left on the remote.
+- **Progress**: each transfer says "312 of 2676 · upload papers/…"; a first sync (nothing synced yet) says
+  what it does with the library instead, "Getting your library (412 papers)… 12%" (or "Uploading your
+  library…" when it mostly uploads), counting the paper folders here and on the remote.
 
 **API** (plain owned types, ready for UniFFI; not exported to Swift yet):
 
@@ -1260,9 +1265,11 @@ Google's "unverified app" warning.
 last minute), every 5 minutes, and 20 s after this device's change log grows; a sync that is running when the
 iPhone app goes to the background gets the background time iOS allows.
 
-*Download papers when you open them* (`DriveLibrarySync.onDemand`, `UserDefaults` `driveDownloadOnOpen`; on by
-default on iPhone and iPad, off on the Mac; a switch in Library Storage and the Mac's Settings › Library):
-the sync is lazy, so a paper's PDF, reading view and narration stay in Drive until needed; change logs,
+Papers download when you open them (`DriveLibrarySync.onDemand`, `UserDefaults` `driveDownloadOnOpen`; on by
+default everywhere since 1.3; the switch, in Library Storage and the Mac's Settings › Library, is its inverse,
+*Keep all papers on this Mac/iPhone/iPad*). A Mac whose library was already in Google Drive before 1.3 keeps
+downloading everything: `DriveLibrarySync.keepEarlierChoice()` (at the Mac app's start, once, marked by
+`driveDownloadOnOpenChecked`) writes false for it when nothing was stored. On demand, the sync is lazy, so a paper's PDF, reading view and narration stay in Drive until needed; change logs,
 metadata, full texts, summaries, Pencil drawings and reading positions always come down. Either way the files
 not here count as present: while the library opens (`DriveLibrarySync.preload`, from the sync's records,
 offline) and after each sync, download or removed download, `remote_paper_files()` goes to
@@ -1369,11 +1376,11 @@ Google's picker. That scope is *non-sensitive* (brand verification only, no secu
 
 | Platform | OAuth client | Drive calls |
 |---|---|---|
-| Android (`AppModel.kt`, `SyncWorker.kt`) | the "iOS"-type client `340661790250-jvrurg…` (`lunta.googleClientId`, redirect `com.googleusercontent.apps.…:/oauth2redirect`, Custom Tab + PKCE) | through the core's `LibrarySync.google_drive` (lazy) |
+| Android (`AppModel.kt`, `SyncWorker.kt`) | the "iOS"-type client `340661790250-jvrurg…` (`lunta.googleClientId`, redirect `com.googleusercontent.apps.…:/oauth2redirect`, Custom Tab + PKCE) | through the core's `LibrarySync.google_drive` (lazy unless "Keep all papers on this phone", Settings sheet) |
 | Mac bridge (`apple/Mac/DriveBridge.swift`) | the same client (`ASWebAuthenticationSession`) | through `LibrarySync.google_drive_bridge` |
 | Mac, iPhone, iPad with the library in Google Drive (`apple/Shared/DriveLibrarySync.swift`) | the same client (`ASWebAuthenticationSession`) | through `LibrarySync.google_drive_also_own` (lazy on iPhone/iPad by default, a setting on the Mac; the Mac adds its AI agent's log) |
 | CLI `lunta-sync` | any client of the project (`LUNTA_GOOGLE_CLIENT_ID`, a "Desktop app" client with its secret; loopback redirect) | `GoogleDrive` + `Syncer` |
-| Windows/Linux desktop app with the library in Google Drive (`desktop/src-tauri/src/drivesync.rs`) | a **Desktop app** client (`LUNTA_DESKTOP_GOOGLE_CLIENT_ID` / `_SECRET`, compiled in by the release workflow; loopback redirect `http://127.0.0.1:<port>` + PKCE in the system browser) | `GoogleDrive` + `Syncer` (lazy if "Download papers when you open them") |
+| Windows/Linux desktop app with the library in Google Drive (`desktop/src-tauri/src/drivesync.rs`) | a **Desktop app** client (`LUNTA_DESKTOP_GOOGLE_CLIENT_ID` / `_SECRET`, compiled in by the release workflow; loopback redirect `http://127.0.0.1:<port>` + PKCE in the system browser) | `GoogleDrive` + `Syncer` (lazy unless "Keep all papers on this computer") |
 | Windows/Linux desktop app with the library in a folder | none: the folder may be inside Google Drive for desktop; no Drive API | — |
 | Google Docs extension / Mac (citations) | separate project (Lunta Docs), scope `drive.file` + the Google Picker per document, Docs API only (see google-docs-extension.md) | — |
 
@@ -1609,8 +1616,10 @@ runs on macOS, for testing.
   and on **Sync Now**. The sidebar's last line says how it is ("Google Drive: synced 2 min ago", "Syncing…",
   the error) and opens **Settings ▾ › Library Storage…**: Sync Now, Sign In / Sign Out (forgets the tokens on
   this computer; the library stays and syncs again after signing in; the grant isn't revoked, see
-  *Disconnect* above), *Download papers when you open them* (off by default, as on the Mac: PDFs, reading
-  views and narration stay in Drive until opened, count as present through `Library::set_remote_files`, and
+  *Disconnect* above), *Keep all papers on this computer* (off by default, `drive_download_on_open` unset
+  or true: PDFs, reading views and narration stay in Drive until opened, so neither a first setup nor Move to
+  Google Drive downloads every paper; ticking it stores false and syncs now, which downloads the rest;
+  unticking removes nothing; count as present through `Library::set_remote_files`, and
   are fetched by `pdf_bytes`, `open_book`, `make_reading_view` and `listen_paper_audio` with
   "Downloading from Google Drive…"; how much is here and only in Drive; Download All; per paper ☁ in the
   list and **Download** / **Remove Download** in its menu), errors and notices, and **Choose Your Lunta

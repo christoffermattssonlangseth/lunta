@@ -10,6 +10,7 @@ struct LuntaApp: App {
     @StateObject private var holder = ModelHolder()
 
     init() {
+        DriveLibrarySync.keepEarlierChoice()   // before anything reads "Keep all papers on this Mac"
         _ = AppUpdater.shared   // Sparkle's daily check starts with the app (Mac/Updates.swift)
     }
 

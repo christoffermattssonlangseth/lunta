@@ -1286,3 +1286,113 @@ fn summaries_sync_both_ways_also_in_lazy_mode() {
     ph.sync();
     assert!(read(&on_mac).ends_with(b"From the phone.\"}"));
 }
+
+/// Google Drive libraries download papers' files when they are opened (the default since 1.3):
+/// the first sync brings the list, notes, highlights and full texts, no PDF, reading view or
+/// narration, and says what it does in papers ("Getting your library (3 papers)… 40%"), not files;
+/// opening a paper downloads its file; "Keep all papers on this computer" (a sync that isn't lazy,
+/// on the same state) downloads every one of them.
+#[test]
+fn lazy_first_sync_gets_no_paper_files_and_keep_all_downloads_them() {
+    let w = World::new();
+    let mac = w.mac();
+    let mut ids = Vec::new();
+    for t in ["Alpha", "Beta", "Gamma"] {
+        let p = mac.lib.add_paper(meta(t, ""), Some(format!("%PDF {t}").into_bytes()), Some(b"epub".to_vec()), Some(format!("{t} text"))).unwrap();
+        mac.lib.save_annotation(note(&p.id, "a note")).unwrap();
+        ids.push(p.id);
+    }
+    let lines = Arc::new(Mutex::new(Vec::<String>::new()));
+    let state = w.tmp.path().join("state-linux.json");
+    let root = w.tmp.path().join("lib-linux");
+    let syncer = |lazy: bool, lines: Arc<Mutex<Vec<String>>>| {
+        let mut o = SyncOptions::new(&state);
+        o.lazy = lazy;
+        o.progress = Some(Arc::new(move |l: &str| lines.lock().unwrap().push(l.to_string())));
+        Syncer::new(&root, "linux", Box::new(LocalDirRemote::new(&w.remote)), o).unwrap()
+    };
+    let lib = Library::open(root.to_string_lossy().into(), w.tmp.path().join("cache-linux").to_string_lossy().into(), "linux".into()).unwrap();
+
+    // first sync, lazy: the library and its notes, no paper files
+    let s = syncer(true, lines.clone());
+    let r = s.sync_now().unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert_eq!(r.skipped_lazy, 6);
+    lib.refresh().unwrap();
+    let mut titles: Vec<String> = lib.papers(PaperFilter::default(), SortKey::Title).into_iter().map(|p| p.meta.title).collect();
+    titles.sort();
+    assert_eq!(titles, ["Alpha", "Beta", "Gamma"]);
+    for id in &ids {
+        assert_eq!(lib.annotations(id.clone()).len(), 1);
+        assert!(root.join(format!("papers/{id}/fulltext.txt")).exists(), "full texts come down, for search");
+        assert!(!root.join(format!("papers/{id}/paper.pdf")).exists());
+        assert!(!root.join(format!("papers/{id}/book.epub")).exists());
+    }
+    {
+        let l = lines.lock().unwrap();
+        assert!(!l.is_empty() && l.iter().all(|x| x.starts_with("Getting your library (3 papers)… ") && x.ends_with('%')), "{l:?}");
+    }
+    assert_eq!(s.status().not_downloaded, 6);
+
+    // a later sync speaks in files again
+    mac.lib.set_starred(ids[0].clone(), true).unwrap();
+    lines.lock().unwrap().clear();
+    s.sync_now().unwrap();
+    assert!(lines.lock().unwrap().iter().all(|x| !x.starts_with("Getting")), "{:?}", lines.lock().unwrap());
+
+    // opening a paper downloads it
+    assert_eq!(s.fetch_paper(&ids[0], &[FileKind::Pdf]).unwrap(), 1);
+    assert_eq!(read(&root.join(format!("papers/{}/paper.pdf", ids[0]))), b"%PDF Alpha");
+    assert_eq!(s.status().not_downloaded, 5);
+    drop(s);
+
+    // Keep all papers: the next sync downloads every file left in Drive, and deletes nothing
+    let s = syncer(false, Arc::new(Mutex::new(Vec::new())));
+    let r = s.sync_now().unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert_eq!((r.downloaded, r.deleted_local, r.deleted_remote), (5, 0, 0), "{r:?}");
+    for (id, t) in ids.iter().zip(["Alpha", "Beta", "Gamma"]) {
+        assert_eq!(read(&root.join(format!("papers/{id}/paper.pdf"))), format!("%PDF {t}").into_bytes());
+        assert!(root.join(format!("papers/{id}/book.epub")).exists());
+    }
+    assert_eq!(s.status().not_downloaded, 0);
+}
+
+/// Moving a library with papers into a Google Drive that already has one (lazy, the default):
+/// this library's papers are uploaded, the two are merged, and the remote papers' files stay in
+/// Drive. The first sync of an empty Drive says it uploads the library.
+#[test]
+fn moving_into_drive_uploads_ours_and_leaves_theirs_in_drive() {
+    let w = World::new();
+    let mac = w.mac();
+    let theirs = mac.lib.add_paper(meta("Theirs", ""), Some(b"%PDF theirs".to_vec()), None, Some("theirs".into())).unwrap();
+    let ph = w.api_with("linux", Box::new(LocalDirRemote::new(&w.remote)), true);
+    // the Drive library comes down first (no PDFs), then this computer's library is copied in
+    ph.sync();
+    let ours = ph.lib.add_paper(meta("Ours", ""), Some(b"%PDF ours".to_vec()), Some(b"epub ours".to_vec()), None).unwrap();
+    let r = ph.sync();
+    assert_eq!(r.downloaded, 0, "{r:?}");
+    assert!(r.uploaded >= 3, "{r:?}");
+    assert_eq!(read(&w.remote.join(format!("papers/{}/paper.pdf", ours.id))), b"%PDF ours");
+    assert!(!ph.root.join(format!("papers/{}/paper.pdf", theirs.id)).exists());
+    assert_eq!(ph.titles(), vec!["Ours", "Theirs"]);
+    mac.refresh();
+    let mut t: Vec<String> = mac.lib.papers(PaperFilter::default(), SortKey::Title).into_iter().map(|p| p.meta.title).collect();
+    t.sort();
+    assert_eq!(t, ["Ours", "Theirs"]);
+
+    // an empty Drive: the first sync puts the library there, and says so
+    let w2 = World::new();
+    let root = w2.tmp.path().join("lib-new");
+    let lib = Library::open(root.to_string_lossy().into(), w2.tmp.path().join("cache-new").to_string_lossy().into(), "linux".into()).unwrap();
+    lib.add_paper(meta("One", ""), Some(b"%PDF one".to_vec()), None, None).unwrap();
+    lib.add_paper(meta("Two", ""), Some(b"%PDF two".to_vec()), None, None).unwrap();
+    let lines = Arc::new(Mutex::new(Vec::<String>::new()));
+    let l2 = lines.clone();
+    let mut o = SyncOptions::new(w2.tmp.path().join("state-new.json"));
+    o.lazy = true;
+    o.progress = Some(Arc::new(move |l: &str| l2.lock().unwrap().push(l.to_string())));
+    Syncer::new(&root, "linux", Box::new(LocalDirRemote::new(&w2.remote)), o).unwrap().sync_now().unwrap();
+    let l = lines.lock().unwrap();
+    assert!(!l.is_empty() && l.iter().all(|x| x.starts_with("Uploading your library (2 papers)… ")), "{l:?}");
+}
