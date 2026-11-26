@@ -155,7 +155,7 @@ struct StorageChoiceView: View {
                         // (no library here yet, so no size)
                         Text(StorageText.driveSpace(nil)).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
-                    if s == .googleDrive, let note = GoogleDriveClient.unverifiedNote {
+                    if s == .googleDrive, let note = GoogleDriveClient.signInNote {
                         Text(note).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -462,7 +462,7 @@ struct LibraryStorageView: View {
         if s == .googleDrive {
             t += "\n\n" + StorageText.driveSpace(librarySize)
             t += "\n\nIf your Google Drive already has a Lunta library (from Android, say), the two are combined."
-            if !drive.connected, let note = GoogleDriveClient.unverifiedNote { t += "\n\n" + note }
+            if !drive.connected, let note = GoogleDriveClient.signInNote { t += "\n\n" + note }
         }
         return t
     }
@@ -501,6 +501,12 @@ struct DriveSyncStatusView: View {
                 if let n = drive.notice {
                     Text(n).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
+                if drive.fullAccess && !drive.adoptionPending && !drive.needsSignIn && !drive.syncing && drive.error == nil && drive.lastSync != nil {
+                    // signed in by 1.2 or earlier (whole Drive); the sync just prepared the folder
+                    Text("Lunta now asks Google only for access to the files it makes, not your whole Drive. The Drive folder has been prepared for it; sign in again to switch.")
+                        .font(.callout).fixedSize(horizontal: false, vertical: true)
+                    Button("Sign In Again…") { Task { await drive.signIn() } }.disabled(drive.syncing || drive.signingIn)
+                }
                 HStack {
                     Button("Sign Out of Google", role: .destructive) { drive.disconnect() }
                     Spacer()
@@ -519,11 +525,14 @@ struct DriveSyncStatusView: View {
                 Text("Not signed in to Google, so the library isn’t syncing. It stays on \(StorageText.thisDevice) meanwhile.")
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Sign In with Google…") { Task { await drive.signIn() } }.disabled(drive.signingIn)
-                if let note = GoogleDriveClient.unverifiedNote {
+                if let note = GoogleDriveClient.signInNote {
                     Text(note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
             if let e = drive.error { Text(e).foregroundStyle(.red).font(.callout).fixedSize(horizontal: false, vertical: true) }
+            if drive.needsSignIn && drive.connected {
+                Button("Sign In Again…") { Task { await drive.signIn() } }.disabled(drive.syncing || drive.signingIn)
+            }
             if drive.folderNotVisible {
                 if narrowDriveAccess() {
                     Button("Choose Your Lunta Folder…") { Task { await drive.chooseFolder() } }.disabled(drive.syncing || drive.signingIn)
@@ -704,6 +713,8 @@ struct DriveSyncSummary: View {
             Text("Google Drive: not signed in").foregroundStyle(.orange)
         } else if drive.syncing {
             Text(drive.lastSync == nil ? "Getting your library from Google Drive…" : "Syncing with Google Drive…")
+        } else if drive.needsSignIn {
+            Text("Google Drive: sign in again").foregroundStyle(.orange)
         } else if drive.error != nil {
             Text("Google Drive: sync problem").foregroundStyle(.red)
         } else if let last = drive.lastSync {

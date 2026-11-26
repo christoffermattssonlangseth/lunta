@@ -76,9 +76,9 @@ means:
 
 So group sync through the Drive API needs the **full `drive` scope** (restricted: a yearly CASA security
 assessment, and 100 users until verified), or at least `drive.readonly` (also restricted) for reading
-others' files plus `drive.file` for writing one's own. The core still asks for the full scope today
-(`NARROW_DRIVE_ACCESS = false` in `core/src/drive/auth.rs`), so a prototype could work now, but the plan is
-to drop that scope, and building a group feature on it would commit Lunta to CASA every year. Also
+others' files plus `drive.file` for writing one's own. Since 1.3 the core asks only for `drive.file`
+(`NARROW_DRIVE_ACCESS = true` in `core/src/drive/auth.rs`) and the full scope is being dropped from the
+Cloud project; building a group feature on it would commit Lunta to CASA every year. Also
 unverified: whether `changes.list` reports changes inside a folder that is *shared with me* and not in My
 Drive (the incremental sync depends on it); `docs/development.md` says a library shared by another account
 "was never supported". **Conclusion: a shared Google Drive folder is fine through Drive for desktop on

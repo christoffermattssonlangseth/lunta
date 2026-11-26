@@ -13,9 +13,10 @@ enum GoogleDriveClient {
     static var redirectScheme: String { "com.googleusercontent.apps." + clientID.replacingOccurrences(of: ".apps.googleusercontent.com", with: "") }
     static var redirectURI: String { redirectScheme + ":/oauth2redirect" }
 
-    /// Said wherever Lunta sends people to Google's sign-in, until Google has verified the app.
-    /// Set it to nil (or delete it) once verified: every place that shows it then shows nothing.
-    static let unverifiedNote: String? = "Google shows a warning that it hasn't verified Lunta yet; choose Advanced › Go to Lunta to continue."
+    /// Said wherever Lunta sends people to Google's sign-in. Since 1.3 Lunta asks only for
+    /// `drive.file` (non-sensitive), so Google no longer shows its "unverified app" warning; while
+    /// the consent screen is in Testing it would still say it hasn't verified Lunta (Continue).
+    static let signInNote: String? = "Google lets Lunta see only the files it makes itself (its “Lunta” folder), not the rest of your Drive."
 }
 
 /// Syncs the library with the "Lunta" folder in Google Drive when the user chose Google Drive for
@@ -52,6 +53,13 @@ final class DriveLibrarySync: ObservableObject {
     /// The last sync could not open the Drive folder: offer "Choose Your Lunta Folder…".
     @Published private(set) var folderNotVisible = false
     @Published private(set) var notice: String?
+    /// Signed in by 1.2 or earlier, with access to the whole Drive: after a sync (which prepared the
+    /// folder), offer to sign in again for the narrower access.
+    @Published private(set) var fullAccess = false
+    /// The last sync's adoption left items behind: no "Sign In Again" until they are adopted.
+    @Published private(set) var adoptionPending = false
+    /// The last sync failed in a way only signing in again fixes (expired or removed, Drive unticked).
+    @Published private(set) var needsSignIn = false
     /// On demand: what is on this device and what only in Drive (Library Storage).
     @Published private(set) var downloads: DownloadSummary?
     /// Download All: "Downloading 12 of 340…" while it runs.
@@ -150,6 +158,7 @@ final class DriveLibrarySync: ObservableObject {
     init() {
         lastSync = UserDefaults.standard.object(forKey: "driveLibraryLastSync") as? Date
         connected = auth.isConnected()
+        fullAccess = connected && auth.hasFullAccess()
     }
 
     // MARK: - Running
@@ -291,9 +300,12 @@ final class DriveLibrarySync: ObservableObject {
             if s.downloaded > 0 { parts.append("\(s.downloaded) received") }
             if s.deletedLocal + s.deletedRemote > 0 { parts.append("\(s.deletedLocal + s.deletedRemote) removed") }
             lastSummary = parts.isEmpty ? "Up to date" : parts.joined(separator: ", ")
-            if !s.errors.isEmpty { error = "\(s.errors.count) file(s) failed: \(s.errors.first ?? "")"; problem = error }
+            if !s.errors.isEmpty { error = "\(s.errors.count) file(s) failed: \(s.errors.first { driveNeedsSignIn(message: $0) } ?? s.errors.first ?? "")"; problem = error }
             if let n = s.notices.first { notice = n }
             folderNotVisible = false
+            needsSignIn = s.errors.contains { driveNeedsSignIn(message: $0) }
+            adoptionPending = driveAdoptionIncomplete(notices: s.notices)
+            fullAccess = auth.hasFullAccess()
             if s.changed, let model {
                 _ = try? model.lib.refresh()
                 model.reload()
@@ -304,6 +316,7 @@ final class DriveLibrarySync: ObservableObject {
             error = e.readable
             problem = e.readable
             folderNotVisible = driveFolderNotVisible(message: e.readable)
+            needsSignIn = driveNeedsSignIn(message: e.readable)
         }
         lastSeen = logSizes()
         let w = waiters
@@ -593,6 +606,8 @@ final class DriveLibrarySync: ObservableObject {
             return false
         }
         connected = true
+        needsSignIn = false
+        fullAccess = auth.hasFullAccess()
         if active { begin() }
         return true
     }
@@ -626,6 +641,8 @@ final class DriveLibrarySync: ObservableObject {
         lastSummary = nil
         notice = nil
         folderNotVisible = false
+        needsSignIn = false
+        fullAccess = false
         folderID = nil
     }
 
@@ -641,6 +658,7 @@ final class DriveLibrarySync: ObservableObject {
         if let f = UserDefaults.standard.string(forKey: "driveFolderId"), !f.isEmpty { folderID = f }
         auth = DriveAuth(clientId: GoogleDriveClient.clientID, tokenFile: Self.tokenFile.path, fullAccess: false)
         connected = auth.isConnected()
+        fullAccess = connected && auth.hasFullAccess()
     }
     #endif
 

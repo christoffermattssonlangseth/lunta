@@ -1249,8 +1249,9 @@ choice is kept in `UserDefaults` (`libraryStorage`: `icloud` | `googleDrive` | `
 
 Choosing Google Drive signs in first (`ASWebAuthenticationSession`, the same OAuth client and redirect
 `com.googleusercontent.apps.<id>:/oauth2redirect` as Android and the bridge; the session catches the redirect,
-so the scheme isn't in Info.plist). The text about Google's "unverified app" warning is
-`GoogleDriveClient.unverifiedNote` (`DriveLibrarySync.swift`): set it to nil once Google has verified Lunta.
+so the scheme isn't in Info.plist). The note shown next to sign-in is `GoogleDriveClient.signInNote`
+(`DriveLibrarySync.swift`): since 1.3 (`drive.file`) it says what Lunta can see, not how to get past
+Google's "unverified app" warning.
 
 **Google Drive sync on Apple devices** (`DriveLibrarySync`): the core's Syncer in normal (not bridge) mode,
 `LibrarySync.google_drive_also_own`, with tokens and state in `Application Support/Lunta/`
@@ -1352,12 +1353,11 @@ extensions write to the App Group inbox as before, so they work with any choice.
 
 ### Access: `drive.file` only
 
-> **Not switched on yet.** `NARROW_DRIVE_ACCESS` in `core/src/drive/auth.rs` is `false`: sign-in still asks for
-> the full `drive` scope, and no adoption runs. Every platform can now sync through the Drive API (the
-> Windows and Linux app too: Library Storage › Google Drive, see [Desktop app](#desktop-app-windows-and-linux)),
-> but desktop users whose library is a Google Drive for desktop *folder* still share it that way, and its new
-> files are invisible to `drive.file`. Everything below describes the behaviour once it is on; the tests run
-> with it on. See [Switching it on](#switching-narrow-access-on-checklist) for the steps.
+> **On since 1.3.** `NARROW_DRIVE_ACCESS` in `core/src/drive/auth.rs` is `true`: sign-in asks for `drive.file`
+> on every platform, and a device signed in by 1.2 or earlier adopts the folder at its next sync while its
+> token still has the full scope. 1.2 and earlier asked for the full `drive` scope. What is left is the
+> author's part in Google Cloud, *after* 1.3 has shipped and synced: see [Switching it
+> on](#switching-narrow-access-on-checklist).
 
 Lunta asks Google for **`https://www.googleapis.com/auth/drive.file`** and nothing else: it sees only the
 files and folders created by the Cloud project's OAuth clients, plus the items the user picks for it in
@@ -1432,10 +1432,25 @@ Ops logs are copied byte for byte under their own names, so the sync protocol do
 md5s don't, so no device transfers anything again. The cursor records `adopted`; until a run adopts
 everything (a failed item stays where it was, is reported and retried at the next sync) every sync with the
 full scope lists and adopts again, and with the full scope a change from another app (Drive for desktop
-adding a file) also triggers a listing and adoption. With `drive.file` adoption is never needed (and would
+adding a file) also triggers a listing and adoption. The cursor stores this as `adoptedFull`, not `adopted`:
+1.2 (switch off) wrote `"adopted": true` after every full listing without adopting anything, so a 1.2
+cursor must not count (test `migration_adopts_after_a_1_2_cursor_that_says_adopted`); a listing with a
+`drive.file` token doesn't count either. With `drive.file` adoption is never needed (and would
 see nothing). The report's `notices` say what happened ("Lunta made its own copies of 3 file(s)… the
 originals are in …"), shown under Sync on Android and in the Mac's Google Drive window. Afterwards the apps
-offer **Sign in again**, which replaces the token with a `drive.file` one (no revoke needed).
+offer **Sign in again**, which replaces the token with a `drive.file` one (no revoke needed): Android's
+Settings sheet, the Mac's Also Sync with Google Drive… window, Library Storage on Mac, iPhone and iPad
+(a library in Google Drive), and Settings ▾ › Library Storage… on Windows and Linux (only builds from
+before 1.3 had a full-scope token there). It appears once a sync has gone through without errors.
+
+**When only signing in again helps.** Errors that begin with `SIGN_IN_AGAIN` ("Sign in to Google Drive
+again: …"; `auth::is_sign_in_needed`, `drive_needs_sign_in()` for the apps) are: the token endpoint's
+`invalid_grant` (access removed in the Google account, an expired grant), a 401 that a fresh token doesn't
+fix, a 403 "insufficient authentication scopes", no tokens at all, and a sign-in whose grant includes no
+Drive scope (the user unticked it on Google's consent screen; `Authenticator::complete` then keeps nothing).
+The apps show a **Sign in again** button next to the error, and say it in the sidebar (Mac, iPhone, iPad,
+Windows, Linux: "Google Drive: sign in again"; the Mac bridge: a sidebar row that opens its window) or on
+the home screen (Android: under "Sync problem"), so a sync never stops silently.
 
 **Disconnect no longer revokes the grant**, only forgets the tokens on the device: with `drive.file`,
 revoking the grant removes the project's access to the files it created, for every device (they share
@@ -1446,7 +1461,9 @@ the grant), and signing in again does not give it back. (`lunta-sync disconnect 
   Windows/Linux desktop app whose library is a *folder* inside Google Drive for desktop does not share with
   Android or the Mac bridge through the API any more for anything it *creates* (its own op log, new papers);
   edits to files Lunta created stay visible. Its fix is Library Storage › **Move to Google Drive…**, which
-  syncs through the API; until then, one device still on the full scope keeps adopting those files.
+  syncs through the API (the desktop app says so once at start for a folder whose path looks like Google
+  Drive for desktop's, and in the Library Storage dialog); until then, one device still on the full scope
+  keeps adopting those files.
 - Two devices adopting at the same moment can copy the same file twice; the duplicate is harmless (same
   name and content; the syncer uses one and says "two files with this name").
 - A library in a *shared drive* or shared by another account was never supported and is not now.
@@ -1490,16 +1507,18 @@ Lunta ships **no** Google credentials; you create an OAuth client in your own pr
    `npx tauri build` (and warns when they are missing); `release.yml` inherits the secrets.
 4. Keep them in Bitwarden with the other keys. Never commit them (for a local build, export
    `LUNTA_GOOGLE_CLIENT_ID` / `LUNTA_GOOGLE_CLIENT_SECRET` in the shell instead).
-5. While the consent screen is in *Testing*, only its test users can sign in; with the restricted `drive`
-   scope unverified, users see Google's "unverified app" screen (*Advanced › Go to Lunta*), which the
-   sign-in dialog mentions.
+5. While the consent screen is in *Testing*, only its test users can sign in, and Google says it hasn't
+   verified the app (*Continue*). With only `drive.file` (non-sensitive) and the app *In production*,
+   Google shows no "unverified app" screen; the apps' sign-in notes no longer mention one (they say Lunta
+   sees only the files it makes: `GoogleDriveClient.signInNote` on Apple, the sign-in dialog on Windows
+   and Linux, Android's Google Drive card).
 
 **Moving the existing project (`lunta-514610`) from `drive` to `drive.file`** (the author, once):
 
-1. Ship the apps with this change first (Android and the Mac), and let them sync once on each device that
-   was signed in before: that adopts the folder while the old tokens still have the full scope. Removing the
-   scope from the console does not take it away from tokens already granted, but don't rely on that for
-   long: see 5.
+1. Ship the apps with this change first (1.3: Android, Mac, iPhone and iPad; Windows and Linux too), and
+   let them sync once on each device that was signed in before: that adopts the folder while the old tokens
+   still have the full scope. Removing the scope from the console does not take it away from tokens already
+   granted, but don't rely on that for long: see 5.
 2. *APIs & Services* → *Library* → **Google Picker API** → *Enable*. No API key is needed for the picker for
    apps (the OAuth client is enough); if you ever add a web picker, create a key under *Credentials*, restrict
    it to *Google Picker API* and to the site's HTTP referrer.
@@ -1518,18 +1537,20 @@ Lunta ships **no** Google credentials; you create an OAuth client in your own pr
 
 #### Switching narrow access on (checklist)
 
+State (1.3): steps 1 and 2 are done in code; step 3 is the author's, after 1.3 is out.
+
 1. **Every platform syncs through the API** — done: Android, the Mac bridge, Mac/iPhone/iPad with the library
    in Google Drive, the CLI, and (since 1.3) Windows and Linux with Library Storage › Google Drive. Before the
    switch, ship a desktop release with the Desktop app client built in (see [Setting up Google
    Cloud](#setting-up-google-cloud-once-by-you), step 3), and ask desktop users whose library is a folder in
    Google Drive for desktop to use **Settings ▾ › Library Storage… › Move to Google Drive…** (the dialog says
    so for a folder that looks like one in Google Drive for desktop).
-2. **Adoption runs**: set `NARROW_DRIVE_ACCESS = true`, ship every app with it, and let each device that
+2. **Adoption runs** — done in code (1.3): `NARROW_DRIVE_ACCESS = true`. Ship every app with it, and let each device that
    was signed in before sync once while its old token still has the full scope (that copies files other apps
    made into app-made ones, see *Moving existing users over* above). The desktop app adopts like the others
    (same `GoogleDrive` client); its **Choose Your Lunta Folder…** (Google's picker through the loopback
    sign-in, `Authenticator::connect_loopback_with(.., pick)`) appears only with the switch on.
-3. **Then** the author changes the Cloud scopes (*Moving the existing project* above, steps 2–5): remove
+3. **Then** (not done yet) the author changes the Cloud scopes (*Moving the existing project* above, steps 2–5): remove
    `auth/drive`, add `auth/drive.file`, submit for verification, and tell users to **Sign in again**.
 
 **Scope in code.** `auth::Scope::File` is the default everywhere; `Scope::Full` remains for the CLI

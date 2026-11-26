@@ -20,8 +20,8 @@ pub mod remote;
 pub mod syncer;
 pub mod util;
 
-pub use auth::{Authenticator, FileTokenStore, MemoryTokenStore, OAuthClient, Scope, TokenStore, Tokens};
-pub use gdrive::{is_folder_not_visible, DriveRoot, GoogleDrive, FOLDER_NOT_VISIBLE};
+pub use auth::{is_sign_in_needed, Authenticator, FileTokenStore, MemoryTokenStore, OAuthClient, Scope, TokenStore, Tokens, SIGN_IN_AGAIN};
+pub use gdrive::{is_folder_not_visible, DriveRoot, GoogleDrive, ADOPTION_INCOMPLETE, FOLDER_NOT_VISIBLE};
 pub use remote::{Listing, LocalDirRemote, RemoteFile, RemoteStore};
 pub use syncer::{SyncOptions, SyncReport, SyncStatus, Syncer};
 

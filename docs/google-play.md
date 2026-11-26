@@ -276,9 +276,9 @@ justification. The recommended answers above are what the policy describes, so e
 **Decided (20 Nov 2026):** the recommended answers above (Yes; files and docs plus user-generated content,
 collected only if Drive is connected, optional, App functionality, not shared, encrypted in transit, deletable).
 
-Note for the privacy policy page: it says Google asks to "see and edit the files in your Drive". That is right
-while `NARROW_DRIVE_ACCESS` is off (the full `drive` scope); when `drive.file` is switched on, change it to "see,
-edit, create and delete only the Google Drive files Lunta creates". Once Lunta is on Google Play, add that the
+Note for the privacy policy page: up to 1.2 it said Google asks to "see and edit the files in your Drive" (the
+full `drive` scope). Since 1.3 (`drive.file`, `NARROW_DRIVE_ACCESS` on) it says "see, edit, create and delete
+only the Google Drive files Lunta creates" (on main; published with the 1.3 site). Once Lunta is on Google Play, add that the
 Android app from Google Play is updated by Google Play. Reviewers compare the policy with the app.
 
 ### Foreground service permissions

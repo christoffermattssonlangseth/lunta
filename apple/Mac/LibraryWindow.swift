@@ -306,6 +306,9 @@ struct Sidebar: View {
                 Section {
                     DriveSidebarRow()
                 }
+            } else {
+                // Also Sync with Google Drive: said only when its sign-in must be renewed
+                BridgeSignInRow()
             }
         }
         .listStyle(.sidebar)
@@ -879,6 +882,24 @@ struct DriveSidebarRow: View {
         }
         .buttonStyle(.plain)
         .help(drive.error ?? "Library Storage…")
+    }
+}
+
+/// The copy in Google Drive (Also Sync with Google Drive…) stopped because Google no longer accepts
+/// its sign-in: say so in the sidebar, not only in that window.
+struct BridgeSignInRow: View {
+    @ObservedObject private var bridge = DriveBridge.shared
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        if bridge.connected && bridge.needsSignIn {
+            Section {
+                Button { openWindow(id: "drive") } label: {
+                    Label { Text("Google Drive: sign in again").font(.caption).foregroundStyle(.orange).lineLimit(1) } icon: { Image(systemName: "externaldrive.badge.exclamationmark") }
+                }
+                .buttonStyle(.plain)
+                .help(bridge.error ?? "Also Sync with Google Drive…")
+            }
+        }
     }
 }
 

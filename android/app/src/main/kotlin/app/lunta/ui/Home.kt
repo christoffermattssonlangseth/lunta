@@ -134,6 +134,10 @@ fun HomeScreen(model: AppModel) {
                 }
                 model.syncError?.let { e ->
                     item { Text("Sync problem: $e", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                    if (model.driveNeedsSignIn) item {
+                        val ctx = androidx.compose.ui.platform.LocalContext.current
+                        FilledTonalButton({ model.beginGoogleSignIn(ctx) }, Modifier.padding(horizontal = 16.dp)) { Text("Sign in again") }
+                    }
                     if (model.driveFolderNotVisible) item {
                         val ctx = androidx.compose.ui.platform.LocalContext.current
                         // The picker grants only drive.file: offer it only while Lunta asks for that
@@ -237,7 +241,10 @@ private fun SettingsSheet(model: AppModel, onDismiss: () -> Unit) {
                 FilledTonalButton({ model.refreshNow() }, enabled = !model.syncing) { Text(if (model.syncing) "Syncing…" else "Sync now") }
                 if (model.mode == LibraryMode.Drive) {
                     val ctx = androidx.compose.ui.platform.LocalContext.current
-                    if (model.driveFullAccess && model.syncError == null && model.lastSyncMs > 0L) {
+                    if (model.driveNeedsSignIn) {
+                        FilledTonalButton({ onDismiss(); model.beginGoogleSignIn(ctx) }, Modifier.padding(top = 8.dp), enabled = !model.syncing) { Text("Sign in again") }
+                    }
+                    if (model.driveFullAccess && !model.driveAdoptionPending && model.syncError == null && model.lastSyncMs > 0L) {
                         Text(
                             "Lunta now asks Google only for access to the files it makes (its Lunta folder), not your whole Drive. Your library has been prepared for it; sign in again to switch.",
                             Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodySmall,

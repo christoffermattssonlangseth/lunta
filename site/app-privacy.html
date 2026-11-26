@@ -43,7 +43,7 @@
     <div class="wrap">
       <p class="kicker">Privacy policy</p>
       <h1>Privacy policy</h1>
-      <p>Lunta for iPhone, iPad, Mac, Android, Windows and Linux · last updated 23 November 2026</p>
+      <p>Lunta for iPhone, iPad, Mac, Android, Windows and Linux · last updated 26 November 2026</p>
     </div>
   </div>
 </div>
@@ -74,13 +74,14 @@ highlights and notes are yours and stay in your own storage.</p>
   <li>On iPhone, iPad and Mac, where you choose when you first open Lunta: in your own iCloud Drive, in your own
       Google Drive (see <a href="#google-user-data">Google user data</a>), or only on the device. Apple stores an iCloud library under your Apple Account; the
       developer of Lunta has no access to it.</li>
-  <li>On Windows and Linux, in a folder you choose (for example one that Google Drive for desktop syncs).</li>
-  <li>On Android, on a Mac, iPhone or iPad whose library you put in Google Drive, and on a Mac that also syncs
-      its iCloud library with Google Drive, in a “Lunta” folder in your own Google Drive, if you choose to
-      connect it. When you sign in, Google asks you to let Lunta see and edit the files in your Drive
-      (Google's standard Drive permission). Lunta uses that access only for its “Lunta” folder: it finds that
-      folder and reads and writes the files inside it, and doesn't open, list or change anything else in your
-      Drive. The files go straight between your device and Google; the sign-in tokens stay on your device.</li>
+  <li>On Windows and Linux, in a folder you choose (for example one that Dropbox or OneDrive syncs), or in your
+      own Google Drive, synced by Lunta itself.</li>
+  <li>On Android, on Windows and Linux, on a Mac, iPhone or iPad whose library you put in Google Drive, and on a
+      Mac that also syncs its iCloud library with Google Drive, in a “Lunta” folder in your own Google Drive, if
+      you choose to connect it. When you sign in, Google asks you to let Lunta see, edit, create and delete only
+      the Google Drive files Lunta creates (permission <code>https://www.googleapis.com/auth/drive.file</code>):
+      Lunta can't see, list or open anything else in your Drive. The files go straight between your device and
+      Google; the sign-in tokens stay on your device.</li>
 </ul>
 
 <h2 id="what-lunta-sends-over-the-internet">What Lunta sends over the internet</h2>
@@ -118,9 +119,17 @@ protected, and how long it is kept.</p>
       gave it, Lunta reads the text and structure of the document you are citing in, as Google's Docs API returns
       it, including the citations, the bibliography and the details of the cited papers that Lunta stored in that
       document earlier.</li>
-  <li><strong>Google Drive</strong> (if you keep your library there): the “Lunta” folder Lunta creates in your
-      Drive and the files inside it (your library's papers, PDFs, highlights and notes). Lunta doesn't open, list
-      or change anything else in your Drive.</li>
+  <li><strong>Google Drive</strong> (if you keep your library there; permission
+      <code>https://www.googleapis.com/auth/drive.file</code>, “only the specific Google Drive files you use with
+      this app”): the “Lunta” folder Lunta creates in your Drive and the files Lunta creates inside it (your
+      library's papers, PDFs, highlights and notes), and a folder you choose for it in Google's file picker if
+      Lunta can't open its folder. Google doesn't let Lunta see anything else in your Drive.
+      Versions up to 1.2 asked for Google's broader Drive permission (see and edit the files in your Drive) and
+      used it only for the “Lunta” folder. If you signed in with one of them, the first sync after the update
+      copies the files that other apps (such as Google Drive for desktop) put in the “Lunta” folder into copies
+      Lunta creates, so the narrower permission still reaches them, and moves the originals, unchanged, to a
+      folder called “Lunta (originals from before the update)” in your Drive, which you can delete. Then Lunta
+      asks you to sign in again, which replaces the broader permission with the narrower one.</li>
   <li>Lunta does not access your name, email address, contacts or any other Google data.</li>
 </ul>
 

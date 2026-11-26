@@ -13,6 +13,7 @@ export interface DriveStatus {
   available: boolean; storage: 'drive' | 'folder'; library: string | null;
   signed_in: boolean; signing_in: boolean; syncing: boolean; last_sync_ms: number;
   error: string | null; notice: string | null; folder_not_visible: boolean; narrow: boolean;
+  needs_sign_in: boolean; full_access: boolean;
   download_on_open: boolean; pending_uploads: number; pending_downloads: number; not_downloaded: number;
   here_bytes: number; drive_only_bytes: number; progress: string | null; dev_remote: string | null;
 }
@@ -87,6 +88,7 @@ function summary(s: DriveStatus): { text: string; error: boolean } {
   if (s.storage !== 'drive') return { text: '', error: false };
   if (!s.signed_in) return { text: 'Google Drive: signed out — changes stay on this computer', error: true };
   if (s.syncing) return { text: s.progress ? `Syncing… ${s.progress}` : 'Syncing with Google Drive…', error: false };
+  if (s.needs_sign_in) return { text: 'Google Drive: sign in again', error: true };
   if (s.folder_not_visible) return { text: 'Google Drive: Lunta can’t open its folder', error: true };
   if (s.error) return { text: `Google Drive: ${s.error}`, error: true };
   return { text: `Google Drive: ${ago(s.last_sync_ms)}`, error: false };
@@ -113,10 +115,30 @@ async function refreshState() {
   dialogRender?.();
 }
 
+// A library in a folder that Google Drive for desktop syncs: since 1.3 Lunta's Google Drive
+// access covers only the files Lunta makes through its own connection (drive.file), so what Drive
+// for desktop uploads from here no longer reaches Lunta on Android, a Mac or an iPhone.
+const GDFD_HINT = 'This folder looks like one that Google Drive for desktop syncs. Lunta on Android, and on a Mac, iPhone or iPad with Google Drive, sees only the files Lunta itself puts into Google Drive, so what this computer adds here doesn’t reach them. Use Move to Google Drive… to sync through Lunta’s own connection.';
+const GDFD_TOLD = 'driveForDesktopTold';
+
+function looksLikeDriveForDesktop(s: DriveStatus): boolean {
+  return s.storage === 'folder' && s.available && /my drive|google ?drive/i.test(s.library ?? '');
+}
+
+/** Once: tells a library in a Google Drive for desktop folder to move to Google Drive. */
+async function tellAboutDriveForDesktop() {
+  if (!st || !looksLikeDriveForDesktop(st) || localStorage.getItem(GDFD_TOLD)) return;
+  localStorage.setItem(GDFD_TOLD, '1');
+  const open = await ask(`${GDFD_HINT}\n\nSettings ▾ › Library Storage… › Move to Google Drive…`,
+    { title: 'Your library is in Google Drive for desktop', okLabel: 'Library Storage…', cancelLabel: 'Later' });
+  if (open) storageDialog();
+}
+
 /** Starts listening to the sync (call once the library is shown). `changed` reloads the lists. */
 export async function startDrive(changed: () => void) {
   onChange = changed;
   await refreshState();
+  tellAboutDriveForDesktop().catch(() => {});
   listen<{ syncing: boolean; changed: boolean }>('drive-sync', async (e) => {
     await refreshState();
     if (e.payload.changed) onChange();
@@ -138,7 +160,7 @@ export async function startDrive(changed: () => void) {
 export function signIn(pick = false): Promise<boolean> {
   return new Promise((resolve) => {
     const msg = h('p.hint', { text: 'Your browser opens Google’s sign-in. Choose your account and allow Lunta to use Google Drive, then come back here.' });
-    const note = h('p.hint', { text: 'If Google says the app isn’t verified yet: Advanced › Go to Lunta. Lunta uses only its own “Lunta” folder in your Drive.' });
+    const note = h('p.hint', { text: 'Lunta asks only for the files it makes itself: its “Lunta” folder in your Drive, nothing else there.' });
     const close = (ok: boolean) => { back.remove(); resolve(ok); };
     const back = h('div.modal-back', {},
       h('div.modal', {},
@@ -219,15 +241,19 @@ export async function storageDialog() {
       h('p' + (sum.error ? '.cite-problem' : '.hint'), { text: sum.text }),
       s.dev_remote ? h('p.hint', { text: `Test mode: the folder ${s.dev_remote} stands in for Google Drive.` }) : null,
       s.notice ? h('p.hint', { text: s.notice }) : null,
+      s.needs_sign_in && s.error ? h('p.cite-problem', { text: s.error }) : null,
       s.folder_not_visible
         ? h('p.cite-problem', { text: s.narrow
             ? 'Lunta can’t open its folder in Google Drive (made by another app, or access removed). Choose your Lunta folder in Google’s picker.'
             : 'Lunta can’t open its folder in Google Drive. Sign in again, or check that the “Lunta” folder is still in your Drive.' })
         : null,
+      s.full_access && s.signed_in && !s.syncing && !s.error && s.last_sync_ms
+        ? h('p.hint', { text: 'Lunta now asks Google only for access to the files it makes, not your whole Drive. The Drive folder has been prepared for it; sign in again to switch.' }) : null,
       s.signed_in && (s.pending_uploads || s.pending_downloads)
         ? h('p.hint', { text: `Waiting: ${s.pending_uploads} to upload, ${s.pending_downloads} to download.` }) : null,
       h('div.buttons.left', {},
         s.signed_in ? button('Sync Now', () => run('Syncing…', async () => { await driveApi.syncNow(); return 'Synced.'; }, true), true) : button('Sign In…', () => signIn().then(() => render()), true),
+        s.signed_in && (s.needs_sign_in || (s.full_access && !s.error && s.last_sync_ms)) ? button('Sign In Again…', () => signIn().then(() => render())) : null,
         s.folder_not_visible && s.narrow ? button('Choose Your Lunta Folder…', () => signIn(true).then(() => render())) : null,
         s.signed_in && !s.dev_remote ? button('Sign Out', async () => {
           if (await ask('Lunta forgets your Google sign-in on this computer. Your library stays here and syncs again after you sign in; nothing is deleted in Google Drive.', { title: 'Sign out of Google Drive?', okLabel: 'Sign Out', cancelLabel: 'Cancel' })) {
@@ -251,8 +277,8 @@ export async function storageDialog() {
       choice(drive, 'Google Drive', 'Syncs through your Google account, with Lunta on Android, on a Mac, iPhone or iPad whose library is in Google Drive, and on your other computers. Lunta keeps it in a “Lunta” folder in your Drive and uses nothing else there.'),
       ...driveSide,
       choice(!drive, 'A folder on this computer', 'Any folder; to share it, one that Google Drive for desktop, Dropbox or OneDrive syncs. Each computer writes only its own change log, so syncing never conflicts.'),
-      !drive && s.available && /my drive|google ?drive/i.test(s.library ?? '')
-        ? h('p.hint', { text: 'This folder looks like one that Google Drive for desktop syncs. Move to Google Drive instead to sync through Lunta’s own connection, the way Lunta on Android and on a Mac or iPhone with Google Drive does; future versions of Lunta will need it to see the files this computer adds.' })
+      looksLikeDriveForDesktop(s)
+        ? h('p.hint', { text: GDFD_HINT })
         : null,
       unavailable,
       h('div.buttons.left', {},

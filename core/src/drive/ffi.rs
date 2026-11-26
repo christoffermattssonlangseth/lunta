@@ -26,8 +26,8 @@ pub struct DriveAuth {
 #[uniffi::export]
 impl DriveAuth {
     /// `full_access`: always ask for the restricted `drive` scope. The apps pass false, which
-    /// follows the narrow-access switch (`narrow_drive_access`): `drive.file` when it is on, the
-    /// full `drive` scope while it is off (see `auth::NARROW_DRIVE_ACCESS`).
+    /// follows the narrow-access switch (`narrow_drive_access`): `drive.file` (on since 1.3), the
+    /// full `drive` scope if it were off (see `auth::NARROW_DRIVE_ACCESS`).
     #[uniffi::constructor]
     pub fn new(client_id: String, token_file: String, full_access: bool) -> Arc<Self> {
         let client = OAuthClient::new(client_id, None).with_scope(sign_in_scope(full_access, auth::narrow_drive_access()));
@@ -171,6 +171,21 @@ pub fn narrow_drive_access() -> bool {
     auth::narrow_drive_access()
 }
 
+/// True if a sync error (or a file's error in `SyncSummary.errors`) is one only signing in again
+/// fixes: the grant expired or was removed, or it doesn't include Drive. Offer **Sign in again**
+/// (`DriveAuth::begin_sign_in`; no need to disconnect first).
+#[uniffi::export]
+pub fn drive_needs_sign_in(message: String) -> bool {
+    auth::is_sign_in_needed(&message)
+}
+
+/// True if a sync's notices say adoption left items behind (`gdrive::ADOPTION_INCOMPLETE`): don't
+/// offer "Sign in again" for the narrower access yet; the next sync with the full scope retries.
+#[uniffi::export]
+pub fn drive_adoption_incomplete(notices: Vec<String>) -> bool {
+    notices.iter().any(|n| n.contains(gdrive::ADOPTION_INCOMPLETE))
+}
+
 /// True if a sync error means Lunta cannot open its Google Drive folder (made by another app, or
 /// access removed): offer "Choose your Lunta folder" (`DriveAuth::begin_pick`).
 #[uniffi::export]
@@ -307,6 +322,13 @@ mod tests {
         let url = OAuthClient::new("id", None).with_scope(sign_in_scope(false, false)).authorization_url("x:/r", &auth::Pkce::generate().unwrap(), "s");
         assert!(url.contains(&format!("scope={}&", util::urlenc(Scope::Full.url()))), "{url}");
         assert!(!url.contains("drive.file"), "{url}");
+    }
+
+    #[test]
+    fn adoption_left_behind_is_recognised() {
+        let n = format!("2 item(s) {} and were left where they were", gdrive::ADOPTION_INCOMPLETE);
+        assert!(drive_adoption_incomplete(vec!["Lunta now uses narrower Google Drive access…".into(), n]));
+        assert!(!drive_adoption_incomplete(vec!["Lunta now uses narrower Google Drive access…".into()]));
     }
 
     #[test]

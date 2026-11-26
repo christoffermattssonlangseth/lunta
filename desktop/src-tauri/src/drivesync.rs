@@ -2,8 +2,8 @@
 //! (as before: a local folder, or one that Google Drive for desktop, Dropbox or OneDrive syncs), or
 //! in the app's data folder (`DriveLibrary`), synced with the "Lunta" folder in Google Drive
 //! **through the Drive API** by the core's `Syncer` — like Android and the Apple apps' Google Drive
-//! choice. Only files Lunta made through the API are visible to it once the narrower `drive.file`
-//! access is switched on (`NARROW_DRIVE_ACCESS`), which is why this exists.
+//! choice. Only files Lunta made through the API are visible to it with the narrower `drive.file`
+//! access (`NARROW_DRIVE_ACCESS`, on since 1.3), which is why this exists.
 //!
 //! Sign-in: OAuth for installed apps with a loopback redirect on 127.0.0.1 and PKCE, in the
 //! system browser (`Authenticator::connect_loopback_with`). The OAuth client is Google's
@@ -55,7 +55,7 @@ pub fn client() -> Option<OAuthClient> {
             std::env::var("LUNTA_GOOGLE_CLIENT_SECRET").ok(),
         ),
     };
-    // the scope follows the core's switch: full `drive` until NARROW_DRIVE_ACCESS is on
+    // the scope follows the core's switch (`drive.file` since 1.3)
     Some(OAuthClient::new(id, secret))
 }
 
@@ -82,6 +82,8 @@ struct Info {
     error: Option<String>,
     notice: Option<String>,
     folder_not_visible: bool,
+    /// The last sync's adoption left items behind: no "Sign In Again" until they are adopted.
+    adoption_pending: bool,
     progress: Option<String>,
 }
 
@@ -219,14 +221,17 @@ impl DriveSync {
                 Ok(r) => {
                     changed = after_sync(&a, r);
                     info.last_sync_ms = r.finished_ms;
-                    info.error = match r.errors.len() {
-                        0 => None,
-                        1 => Some(r.errors[0].clone()),
-                        n => Some(format!("{n} files couldn’t be synced, e.g. {}", r.errors[0])),
+                    // an error only signing in again fixes is the one to show (Sign In Again)
+                    let first = r.errors.iter().find(|e| drive::is_sign_in_needed(e)).or(r.errors.first());
+                    info.error = match (r.errors.len(), first) {
+                        (_, None) => None,
+                        (1, Some(e)) => Some(e.clone()),
+                        (n, Some(e)) => Some(format!("{n} files couldn’t be synced, e.g. {e}")),
                     };
                     if let Some(n) = r.notices.first() {
                         info.notice = Some(n.clone());
                     }
+                    info.adoption_pending = drive::ffi::drive_adoption_incomplete(r.notices.clone());
                     info.folder_not_visible = false;
                 }
                 Err(e) => {
@@ -390,6 +395,11 @@ pub struct Status {
     error: Option<String>,
     notice: Option<String>,
     folder_not_visible: bool,
+    /// The last sync failed in a way only signing in again fixes (expired or removed grant).
+    needs_sign_in: bool,
+    /// Signed in with the old full `drive` scope (a build from before 1.3) and nothing left to adopt:
+    /// offer Sign In Again.
+    full_access: bool,
     /// The narrow `drive.file` access is on (then "Choose your Lunta folder" is offered).
     narrow: bool,
     download_on_open: bool,
@@ -425,6 +435,7 @@ fn status_of(app: &AppHandle) -> Status {
         }
     }
     let signing_in = ds.sign_in.lock().unwrap().is_some();
+    let needs_sign_in = info.error.as_deref().is_some_and(drive::is_sign_in_needed);
     let library = st.open.lock().unwrap().as_ref().map(|o| o.root.to_string_lossy().to_string()).or(s.library.clone());
     Status {
         available: ds.available(),
@@ -437,6 +448,8 @@ fn status_of(app: &AppHandle) -> Status {
         error: info.error,
         notice: info.notice,
         folder_not_visible: info.folder_not_visible,
+        needs_sign_in,
+        full_access: dev_remote().is_none() && !info.adoption_pending && ds.auth().is_some_and(|a| a.has_full_drive_access()),
         narrow: drive::ffi::narrow_drive_access(),
         download_on_open: s.download_on_open(),
         pending_uploads: pu,

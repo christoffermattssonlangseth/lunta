@@ -95,6 +95,12 @@ class AppModel(val app: Application) {
         private set
     /** Something the last sync wants the user to know (files adopted for the narrower Drive access). */
     var syncNotice by mutableStateOf<String?>(null)
+    /** The last sync failed in a way only signing in again fixes (expired or removed grant, Drive unticked). */
+    var driveNeedsSignIn by mutableStateOf(false)
+        private set
+    /** The last sync's adoption left items behind: hold back "Sign in again" until they are adopted. */
+    var driveAdoptionPending by mutableStateOf(false)
+        private set
     /** Signed in by an older version with full Drive access: offer to reconnect with the narrower one. */
     var driveFullAccess by mutableStateOf(false)
         private set
@@ -159,8 +165,9 @@ class AppModel(val app: Application) {
         positions = Positions(root, device, "${Build.MODEL} (Android)")
     }
 
-    // false = follow the core's narrow-access switch (narrowDriveAccess()): the full drive scope
-    // while it is off, drive.file (only the files Lunta made or the user picked) once it is on.
+    // false = follow the core's narrow-access switch (narrowDriveAccess(), on since 1.3): drive.file,
+    // only the files Lunta made or the user picked. A token from 1.2 or earlier keeps the full scope
+    // until "Sign in again" (Settings sheet) replaces it.
     private fun makeAuth() = DriveAuth(
         BuildConfig.GOOGLE_CLIENT_ID, File(app.noBackupFilesDir, "google-tokens.json").absolutePath, false,
     )
@@ -215,7 +222,7 @@ class AppModel(val app: Application) {
         scope.launch {
             withContext(Dispatchers.IO) { if (disconnect) runCatching { driveAuth?.disconnect() } }
             if (disconnect) settings.driveFolderId = ""
-            driveFolderNotVisible = false; syncNotice = null; driveFullAccess = false
+            driveFolderNotVisible = false; syncNotice = null; driveFullAccess = false; driveNeedsSignIn = false
             SyncWorker.cancel(app)
             ForYouWorker.cancel(app)
             library = null; librarySync = null; driveAuth = null; positions = null
@@ -573,15 +580,18 @@ class AppModel(val app: Application) {
             }
             settings.lastSyncMs = r.finishedMs
             lastSyncMs = r.finishedMs
-            syncError = r.errors.firstOrNull()
+            syncError = r.errors.firstOrNull { driveNeedsSignIn(it) } ?: r.errors.firstOrNull()
+            driveNeedsSignIn = r.errors.any { driveNeedsSignIn(it) }
             driveFolderNotVisible = false
             r.notices.firstOrNull()?.let { syncNotice = it }
+            driveAdoptionPending = driveAdoptionIncomplete(r.notices)
             driveFullAccess = driveAuth?.hasFullAccess() == true
             reload()
             withContext(Dispatchers.IO) { library?.let { while (it.indexFulltext(25u) > 0u) { /* indexed a batch */ } } }
         } catch (e: Exception) {
             syncError = e.message ?: e.toString()
             driveFolderNotVisible = driveFolderNotVisible(syncError ?: "")
+            driveNeedsSignIn = driveNeedsSignIn(syncError ?: "")
         } finally {
             syncing = false
             status = null

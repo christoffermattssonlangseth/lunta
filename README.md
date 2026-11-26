@@ -217,8 +217,9 @@ The first time you open Lunta on a Mac, iPhone or iPad, it asks where your libra
   Lunta is open (at start, every few minutes, and soon after a change). On iPhone and iPad a paper's PDF
   and reading view stay in Drive until you open it (**Download papers when you open them** in Library
   Storage; off by default on the Mac). It uses space in your Google Drive (free accounts have 15 GB, shared
-  with Gmail and Photos). Sign in with Google when asked; until Google has verified Lunta, its sign-in shows
-  a warning: choose **Advanced › Go to Lunta**.
+  with Gmail and Photos). Sign in with Google when asked: Lunta asks only for the files it makes itself
+  (its *Lunta* folder), not the rest of your Drive. If you signed in with Lunta 1.2 or earlier, choose
+  **Sign In Again** in Library Storage after the first sync with 1.3.
 - **Only on this device:** no syncing.
 
 Change it later in **Lunta › Settings › Library › Change…** on the Mac, or **Library Storage…** at the

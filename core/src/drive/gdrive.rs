@@ -45,6 +45,23 @@ const FIELDS: &str = "id,name,mimeType,size,md5Checksum,modifiedTime,parents,tra
 /// "Choose your Lunta folder" (Google's picker). See `is_folder_not_visible`.
 pub const FOLDER_NOT_VISIBLE: &str = "Lunta can't open its folder in Google Drive";
 
+/// A Drive answer that only signing in again fixes: still 401 after a fresh token, or a token whose
+/// scopes don't include Drive (403 "insufficient authentication scopes").
+fn sign_in_error(status: u16, body: &str) -> Option<CoreError> {
+    let scopes = status == 403 && (body.contains("insufficientPermissions") || body.contains("ACCESS_TOKEN_SCOPE_INSUFFICIENT") || body.contains("insufficient authentication scopes"));
+    if status == 401 {
+        Some(super::auth::sign_in_needed("Google Drive doesn't accept Lunta's sign-in any more."))
+    } else if scopes {
+        Some(super::auth::sign_in_needed("Lunta's sign-in doesn't include access to its files in Google Drive."))
+    } else {
+        None
+    }
+}
+
+/// In the notice of a sync whose adoption left items behind: the apps hold back "Sign in again"
+/// (which would end the full scope and leave those items unseen) until a sync adopts them all.
+pub const ADOPTION_INCOMPLETE: &str = "could not be adopted";
+
 /// True if `message` is a `FOLDER_NOT_VISIBLE` error.
 pub fn is_folder_not_visible(message: &str) -> bool {
     message.contains(FOLDER_NOT_VISIBLE)
@@ -87,9 +104,12 @@ struct Cursor {
     token: String,
     root: String,
     folders: BTreeMap<String, String>,
-    /// Every item was app-created when this listing was made (see "Adoption"). Missing in cursors
-    /// from older versions: their first sync with the full scope lists and adopts once.
-    #[serde(default)]
+    /// Adoption ran with the full scope and every item was app-created when this listing was made
+    /// (see "Adoption"). Missing in cursors from older versions: their first sync with the full scope
+    /// lists and adopts once. Stored as `adoptedFull`, not `adopted`: 1.2 (narrow access off) wrote
+    /// `"adopted": true` after every full listing without adopting anything, and such a cursor must
+    /// still lead to an adoption once the switch is on.
+    #[serde(default, rename = "adoptedFull")]
     adopted: bool,
 }
 
@@ -231,6 +251,9 @@ impl GoogleDrive {
                         refreshed = true;
                         self.auth.force_refresh()?;
                         continue;
+                    }
+                    if let Some(e) = sign_in_error(status, &resp.body) {
+                        return Err(e);
                     }
                     let throttled = status == 429 || (500..600).contains(&status) || (status == 403 && resp.body.contains("ateLimitExceeded"));
                     if throttled && attempt < 5 {
@@ -530,7 +553,7 @@ impl GoogleDrive {
             );
         }
         if a.failed > 0 {
-            a.notices.push(format!("{} item(s) could not be adopted and were left where they were; Lunta tries again at the next sync.", a.failed));
+            a.notices.push(format!("{} item(s) {ADOPTION_INCOMPLETE} and were left where they were; Lunta tries again at the next sync.", a.failed));
         }
         Ok((a.notices, a.failed == 0))
     }
@@ -570,7 +593,9 @@ impl GoogleDrive {
     }
 
     fn full_list(&self, full_access: bool) -> Result<Listing> {
-        let (notices, adopted) = if full_access { self.adopt()? } else { (vec![], true) };
+        // without the full scope nothing was adopted (nor can be): say so, so that a full-scope token
+        // later (the CLI's `--scope full`) still adopts
+        let (notices, adopted) = if full_access { self.adopt()? } else { (vec![], false) };
         let root = self.root_id()?;
         // token first: changes made while we list are then reported by the next incremental call
         let token = self.get_json("/changes/startPageToken", &[])?["startPageToken"].as_str().unwrap_or_default().to_string();
@@ -842,6 +867,9 @@ impl RemoteStore for GoogleDrive {
                         refreshed = true;
                         self.auth.force_refresh()?;
                         continue;
+                    }
+                    if let Some(e) = sign_in_error(status, &resp.body) {
+                        return Err(e);
                     }
                     if (status == 429 || status >= 500) && attempt < 5 {
                         attempt += 1;

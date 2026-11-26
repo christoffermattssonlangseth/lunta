@@ -54,6 +54,10 @@ pub struct Inner {
     pub file_scope: bool,
     /// `scope` returned by the token endpoint (None: omitted, like some refresh answers)
     pub grant_scope: Option<String>,
+    /// the token endpoint answers 400 with this OAuth error (e.g. "invalid_grant": revoked)
+    pub token_error: Option<String>,
+    /// every Drive call answers 403 "insufficient authentication scopes" (Drive unticked)
+    pub no_drive_scope: bool,
 }
 
 impl Inner {
@@ -267,6 +271,9 @@ impl Mock {
         *g.counts.entry(key.clone()).or_insert(0) += 1;
         let j = |status: u16, v: Value| (status, vec![], v.to_string().into_bytes());
         if path == "/token" {
+            if let Some(e) = &g.token_error {
+                return j(400, json!({"error": e, "error_description": "Token has been expired or revoked."}));
+            }
             g.tokens_issued += 1;
             g.token = format!("tok-{}", g.tokens_issued);
             let mut v = json!({"access_token": g.token, "expires_in": 3600});
@@ -277,6 +284,9 @@ impl Mock {
         }
         if h.get("authorization").map(|a| a.as_str()) != Some(&format!("Bearer {}", g.token)) {
             return j(401, json!({"error": {"message": "Invalid Credentials"}}));
+        }
+        if g.no_drive_scope {
+            return j(403, json!({"error": {"code": 403, "message": "Request had insufficient authentication scopes.", "errors": [{"reason": "insufficientPermissions"}], "status": "PERMISSION_DENIED"}}));
         }
         let path = path.trim_start_matches("/upload").trim_start_matches("/drive/v3");
         let now = crate::model::now_ms();

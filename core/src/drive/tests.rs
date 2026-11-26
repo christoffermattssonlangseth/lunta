@@ -709,6 +709,7 @@ mod gdrive_mock {
     use crate::model::now_ms;
 
     const FILE: &str = "https://www.googleapis.com/auth/drive.file";
+    const FULL: &str = "https://www.googleapis.com/auth/drive";
 
     /// A client whose stored grant is `scope` (None: a token saved by a version that did not record
     /// scopes, i.e. the old full `drive` scope).
@@ -1018,6 +1019,94 @@ mod gdrive_mock {
         let r = tab.sync();
         assert_eq!(r.downloaded, 0, "{r:?}");
         assert!(!tab.root.join("papers/p3/paper.pdf").exists());
+    }
+
+    #[test]
+    fn a_revoked_sign_in_asks_to_sign_in_again() {
+        let m = Mock::start();
+        m.inner.lock().unwrap().file_scope = true;
+        let w = World::new();
+        let ph = file_scope_dev(&w, "phone", &m);
+        ph.lib.add_paper(meta("One", "10.1/one"), None, None, None).unwrap();
+        ph.sync();
+        // the user removed Lunta's access in their Google account: the token and its refresh fail
+        {
+            let mut g = m.inner.lock().unwrap();
+            g.token = "revoked".into();
+            g.token_error = Some("invalid_grant".into());
+        }
+        let e = try_sync(&ph).unwrap_err().to_string();
+        assert!(is_sign_in_needed(&e) && ffi::drive_needs_sign_in(e.clone()), "{e}");
+        assert!(!is_folder_not_visible(&e), "{e}");
+    }
+
+    #[test]
+    fn a_sign_in_without_drive_asks_to_sign_in_again() {
+        let m = Mock::start();
+        m.inner.lock().unwrap().file_scope = true;
+        let w = World::new();
+        // a token from before Google's per-permission checkboxes, now refused for Drive
+        let ph = file_scope_dev(&w, "phone", &m);
+        m.inner.lock().unwrap().no_drive_scope = true;
+        let e = try_sync(&ph).unwrap_err().to_string();
+        assert!(is_sign_in_needed(&e), "{e}");
+        assert!(!is_folder_not_visible(&e), "not \"choose your folder\": {e}");
+
+        // signing in with the Drive permission unticked: refused, nothing stored
+        let mut client = OAuthClient::new("cid", None);
+        client.token_uri = format!("{}/token", m.addr);
+        m.inner.lock().unwrap().grant_scope = Some("openid email".into());
+        let store = Arc::new(MemoryTokenStore::default());
+        let auth = Authenticator::new(client.clone(), store.clone());
+        let e = auth.complete("code", "verifier", "x:/r").unwrap_err().to_string();
+        assert!(is_sign_in_needed(&e), "{e}");
+        assert!(!auth.is_connected() && store.load().unwrap().is_none());
+        // with it ticked: kept
+        m.inner.lock().unwrap().grant_scope = Some(format!("openid {FILE}"));
+        auth.complete("code", "verifier", "x:/r").unwrap();
+        assert!(auth.is_connected() && !auth.has_full_drive_access());
+    }
+
+    #[test]
+    fn migration_adopts_after_a_1_2_cursor_that_says_adopted() {
+        // 1.2 (narrow access off) wrote `"adopted": true` after every full listing without adopting
+        // anything. A device updating to the version with the switch on, still on its old full-scope
+        // token, must adopt anyway, not go on with incremental syncs.
+        let m = Mock::start();
+        m.put("ops/mac.jsonl", b"{\"at\":1}\n", 1_700_000_000_000);
+        m.put("papers/p1/paper.pdf", b"pdf one", 1_700_000_000_000);
+        let root = m.id_of("Lunta").unwrap();
+        let ops = m.id_of("Lunta/ops").unwrap();
+        let papers = m.id_of("Lunta/papers").unwrap();
+        let p1 = m.id_of("Lunta/papers/p1").unwrap();
+        let token = m.inner.lock().unwrap().log.len().to_string();
+        let old = serde_json::json!({"token": token, "root": root, "folders": {root.clone(): "", ops: "ops", papers: "papers", p1: "papers/p1"}, "adopted": true}).to_string();
+        let d = drive_with(&m, 3_600_000, Some(FULL), DriveRoot::default());
+        let l = d.list(Some(&old)).unwrap();
+        assert!(l.full, "a full listing, not the 1.2 cursor's changes");
+        assert!(l.notices.first().is_some_and(|n| n.contains("2 file(s)")), "{:?}", l.notices);
+        assert!(m.everything().iter().filter(|(p, _)| p == "Lunta" || p.starts_with("Lunta/")).all(|(_, app)| *app), "{:?}", m.everything());
+        // the new cursor says so: the next sync is incremental
+        let l = d.list(l.cursor.as_deref()).unwrap();
+        assert!(!l.full && l.notices.is_empty(), "{:?}", l.notices);
+    }
+
+    #[test]
+    fn a_drive_file_listing_does_not_count_as_adopted() {
+        // a drive.file token lists without adopting; if the device later has the full scope again
+        // (the CLI's --scope full), that token adopts what other apps put in the folder
+        let m = Mock::start();
+        let w = World::new();
+        let ph = file_scope_dev(&w, "phone", &m);
+        ph.lib.add_paper(meta("One", "10.1/one"), None, None, None).unwrap();
+        ph.sync();
+        m.put("ops/mac.jsonl", b"{\"at\":1}\n", 1_700_000_000_000);
+        let d = drive_with(&m, 3_600_000, Some(FILE), DriveRoot::default());
+        let l = d.list(None).unwrap();
+        assert!(l.notices.is_empty());
+        let d = drive_with(&m, 3_600_000, Some(FULL), DriveRoot::default());
+        let l = d.list(l.cursor.as_deref()).unwrap();
+        assert!(l.notices.first().is_some_and(|n| n.contains("1 file(s)")), "{:?}", l.notices);
     }
 
     #[test]

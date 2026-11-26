@@ -28,6 +28,20 @@ pub const AUTH_URI: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 pub const TOKEN_URI: &str = "https://oauth2.googleapis.com/token";
 pub const REVOKE_URI: &str = "https://oauth2.googleapis.com/revoke";
 
+/// Begins every error that only signing in again can fix (the grant expired or was removed in the
+/// Google account, or Lunta was not allowed to see its files): the apps show **Sign in again** for
+/// it (`is_sign_in_needed`, `ffi::drive_needs_sign_in`) instead of a plain sync error.
+pub const SIGN_IN_AGAIN: &str = "Sign in to Google Drive again";
+
+/// True if `message` is an error that signing in again fixes (see `SIGN_IN_AGAIN`).
+pub fn is_sign_in_needed(message: &str) -> bool {
+    message.contains(SIGN_IN_AGAIN)
+}
+
+pub(crate) fn sign_in_needed(why: &str) -> CoreError {
+    CoreError::Invalid(format!("{SIGN_IN_AGAIN}: {why}"))
+}
+
 /// What the app asks Google to let it do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scope {
@@ -65,14 +79,12 @@ pub struct OAuthClient {
 }
 
 /// Whether Lunta asks Google for the narrow `drive.file` scope (and adopts other apps' files while
-/// an old full-scope token lasts). Off until the Windows and Linux app syncs through the Drive API:
-/// today it shares the library through a Google Drive for desktop folder, whose new files a
-/// `drive.file` grant can't see, so switching now would quietly stop its changes reaching Android
-/// and the Mac bridge. With this off, sign-in asks for the full `drive` scope as before and no
-/// adoption runs; the drive.file code stays tested and ready.
-pub const NARROW_DRIVE_ACCESS: bool = false;
+/// an old full-scope token lasts). On since 1.3, when the Windows and Linux app gained its own sync
+/// through the Drive API (Library Storage › Google Drive); 1.2 and earlier asked for the full `drive`
+/// scope. Off, sign-in would ask for the full scope again and no adoption would run.
+pub const NARROW_DRIVE_ACCESS: bool = true;
 
-/// The switch as used: always on in tests, which cover the drive.file behaviour it will turn on.
+/// The switch as used: always on in tests, which cover the drive.file behaviour.
 pub(crate) fn narrow_drive_access() -> bool {
     cfg!(test) || NARROW_DRIVE_ACCESS
 }
@@ -156,7 +168,7 @@ impl OAuthClient {
         let rt = tokens
             .refresh_token
             .as_deref()
-            .ok_or_else(|| CoreError::Invalid("not connected to Google Drive (no refresh token); connect again".into()))?;
+            .ok_or_else(|| sign_in_needed("Lunta's sign-in on this device has no refresh token."))?;
         let mut form = vec![("grant_type", "refresh_token"), ("refresh_token", rt), ("client_id", self.client_id.as_str())];
         if let Some(s) = &self.client_secret {
             form.push(("client_secret", s));
@@ -177,7 +189,11 @@ impl OAuthClient {
         if status != 200 {
             let err = v["error"].as_str().unwrap_or("error");
             let desc = v["error_description"].as_str().unwrap_or("");
-            // invalid_grant: the refresh token was revoked or expired (test-mode projects: 7 days)
+            // invalid_grant: the refresh token was revoked or expired (test-mode projects: 7 days),
+            // or a code was used twice
+            if err == "invalid_grant" {
+                return Err(sign_in_needed(&format!("Google no longer accepts Lunta's sign-in (it expired, or Lunta's access was removed in your Google account). ({err} {desc})")));
+            }
             return Err(CoreError::Network(format!("Google sign-in failed: {err} {desc} (HTTP {status})")));
         }
         Ok(Tokens {
@@ -238,6 +254,15 @@ pub struct Tokens {
 }
 
 impl Tokens {
+    /// True if the grant reaches Drive at all (`drive` or `drive.file`). Google lets people untick
+    /// permissions on the consent screen; a token saved without scopes came from the full scope.
+    pub fn has_drive(&self) -> bool {
+        match &self.scope {
+            None => true,
+            Some(s) => s.split_whitespace().any(|x| x == Scope::Full.url() || x == Scope::File.url()),
+        }
+    }
+
     /// True if the grant includes the full `drive` scope (or predates recording scopes, when the
     /// apps always asked for it).
     pub fn has_full_drive(&self) -> bool {
@@ -366,7 +391,7 @@ impl Authenticator {
 
     /// A valid access token (refreshed if it expires within a minute).
     pub fn access_token(&self) -> Result<String> {
-        let t = self.current()?.ok_or_else(|| CoreError::Invalid("not connected to Google Drive; run connect first".into()))?;
+        let t = self.current()?.ok_or_else(|| sign_in_needed("Lunta isn't signed in to Google on this device (lunta-sync: run connect first)."))?;
         if t.expires_at_ms - 60_000 > now_ms() {
             return Ok(t.access_token);
         }
@@ -375,7 +400,7 @@ impl Authenticator {
 
     /// Refreshes now (after the API answered 401).
     pub fn force_refresh(&self) -> Result<String> {
-        let t = self.current()?.ok_or_else(|| CoreError::Invalid("not connected to Google Drive".into()))?;
+        let t = self.current()?.ok_or_else(|| sign_in_needed("Lunta isn't signed in to Google on this device."))?;
         let mut n = self.client.refresh(&t)?;
         if n.scope.is_none() {
             n.scope = t.scope.clone();
@@ -392,8 +417,13 @@ impl Authenticator {
     }
 
     /// Second half of the flow for callers that run the browser step themselves (Android).
+    /// A grant without access to Drive (the user unticked it on Google's consent screen) is not
+    /// kept: it would only fail at every sync.
     pub fn complete(&self, code: &str, verifier: &str, redirect_uri: &str) -> Result<()> {
         let t = self.client.exchange_code(code, verifier, redirect_uri)?;
+        if !t.has_drive() {
+            return Err(sign_in_needed("Google didn't give Lunta access to its files in your Drive. When Google asks, leave the Google Drive permission ticked."));
+        }
         self.store.save(&t)?;
         *self.cached.lock().unwrap() = Some(t);
         Ok(())
