@@ -72,17 +72,38 @@ a Lunta server. Which storage depends on your devices:</p>
 <table>
   <thead><tr><th scope="col">Your devices</th><th scope="col">Where the library lives</th><th scope="col">What to do</th></tr></thead>
   <tbody>
-  <tr><td>Mac, iPhone, iPad only</td><td>iCloud Drive</td><td>Nothing: be signed in to iCloud and the
-    library syncs by itself.</td></tr>
-  <tr><td>A Mac (and iPhone/iPad) plus Android, Windows or Linux</td><td>iCloud Drive, with a copy in Google
-    Drive</td><td>On the Mac, choose <strong>Lunta › Google Drive for Android…</strong> and connect your
+  <tr><td>Mac, iPhone, iPad only</td><td>iCloud Drive</td><td>When Lunta asks where your library should
+    live, choose <strong>iCloud Drive</strong> (be signed in to iCloud). The library syncs by itself.</td></tr>
+  <tr><td>A Mac, iPhone or iPad plus Android, Windows or Linux, or no iCloud (a managed work Mac, say)</td>
+    <td>Google Drive</td><td>When Lunta asks, choose <strong>Google Drive</strong> and sign in with your
+    Google account, the same on every device. Each device syncs with the <em>Lunta</em> folder in your
+    Drive while Lunta is open on it.</td></tr>
+  <tr><td>Apple devices on iCloud, plus Android, Windows or Linux</td><td>iCloud Drive, with a copy in Google
+    Drive</td><td>On the Mac, choose <strong>Lunta › Also Sync with Google Drive…</strong> and connect your
     Google account. Sign in with the same account on Android, Windows or Linux. The Mac passes changes
     between the two while Lunta is open on it, every few minutes.</td></tr>
-  <tr><td>Android, Windows or Linux only</td><td>Google Drive</td><td>Sign in with your Google account in
-    the app. Lunta keeps its library in a <em>Lunta</em> folder in your Drive.</td></tr>
+  <tr><td>Android, Windows or Linux only</td><td>Google Drive</td><td>On Android, sign in with your Google
+    account in the app. On Windows and Linux, install Google Drive for desktop and open the <em>Lunta</em>
+    folder in your Drive as the library when Lunta asks for one on first start.</td></tr>
   </tbody>
 </table>
 </div>
+
+<h3 id="where">Where your library lives</h3>
+<p>The first time you open Lunta on a Mac, iPhone or iPad, it asks where your library should live. Lunta has
+no server and no account: your papers, highlights and notes go only to the place you choose.</p>
+<ul>
+  <li><strong>iCloud Drive</strong>, recommended if all your devices are Apple's. If your iCloud already has a
+    Lunta library (you use Lunta on another Mac, iPhone or iPad), Lunta opens it without asking.</li>
+  <li><strong>Google Drive</strong>, if you also use Lunta on Android, Windows or Linux, or can't use iCloud.
+    The library is kept on the device and synced with the <em>Lunta</em> folder in your Drive while Lunta is
+    open: at start, every few minutes and soon after a change. Until Google has verified Lunta's Google Drive
+    sign-in, its sign-in page shows a warning: choose <strong>Advanced › Go to Lunta</strong>.</li>
+  <li><strong>Only on this device</strong>, not synced.</li>
+</ul>
+<p>To change it later: on the Mac, <strong>Lunta › Settings › Library › Change…</strong>; on iPhone and iPad,
+<strong>Library Storage…</strong> at the end of the library's list. Lunta copies the library to the new place
+and leaves the old copy where it was.</p>
 </section>
 
 <section>
@@ -96,20 +117,32 @@ a Lunta server. Which storage depends on your devices:</p>
     App Store</a>, for iOS and iPadOS 18 or newer.</li>
   <li><strong>Browser extension</strong> (Chrome, Edge, Firefox; Mac, Windows, Linux): saves the paper you're
     looking at, with its PDF, using the access your browser already has, and turns a journal's article page into
-    the reading view (<em>Use this page's full text</em>). Download <code>Lunta-…-Chrome-Extension.zip</code> from the
-    <a href="https://github.com/christoffermattssonlangseth/lunta/releases/latest">latest release</a> and
-    unzip it somewhere permanent; open <code>chrome://extensions</code>, turn on <strong>Developer
-    mode</strong>, click <strong>Load unpacked</strong> and choose the folder
-    (<a href="download.html#extension">Firefox and more</a>). Lunta must be open on the same computer.
+    the reading view (<em>Use this page's full text</em>). Install it from the
+    <a href="https://chromewebstore.google.com/detail/hdgaobkaokmnkeckgebkbnflfgighipi">Chrome Web Store</a>
+    (Chrome and Edge) or <a href="https://addons.mozilla.org/firefox/addon/lunta/">Firefox Add-ons</a>
+    (<a href="download.html#extension">more</a>). Lunta must be open on the same computer.
     On Android, use a paper's <strong>Journal page</strong> in Lunta instead.</li>
   <li><strong>Safari extension</strong> (Mac, iPhone, iPad): comes with the app. On the Mac, open Lunta once,
     then turn it on in <strong>Safari › Settings › Extensions</strong>; on iPhone and iPad, in the Settings app
     under <strong>Apps › Safari › Extensions › Lunta</strong>. Allow it on all websites.</li>
-  <li><strong>Word</strong> (Mac and Windows) <strong>and Google Docs</strong> (with the browser extension and
-    Lunta for Mac, Windows or Linux): cite from your library. For Word, choose
+  <li><strong>Word</strong> (Mac, Windows, and Word on the web) <strong>and Google Docs</strong> (with the
+    browser extension and Lunta for Mac, Windows or Linux): cite from your library. For Word, choose
     <strong>Lunta › Citations in Word &amp; Google Docs…</strong> in Lunta for Mac, or
-    <strong>Settings ▾ › Citations in Word &amp; Google Docs…</strong> in Lunta for Windows, and follow the steps
-    there; see <a href="support.html">Lunta Citations</a>.</li>
+    <strong>Settings ▾ › Citations in Word &amp; Google Docs…</strong> in Lunta for Windows and Linux, and follow
+    the steps there; see <a href="support.html">Lunta Citations</a>. Click a citation to add a page
+    (“p. 12”), a prefix such as “see”, a suffix, or to leave the author out or put it in the text
+    (<strong>Page…</strong>); manuscripts from EndNote, Zotero or Mendeley <a href="#convert-citations">convert</a>.</li>
+  <li><strong>Citing in Word on Windows:</strong> in that window click <strong>Trust Certificate…</strong>.
+    Windows shows a security warning (“You are about to install a certificate from a certification authority
+    claiming to represent: Lunta Local CA…”): click <strong>Yes</strong>. It is Lunta's own certificate, valid
+    only for your computer (localhost), and needs no administrator. Then click <strong>Install in Word</strong>,
+    quit Word and open it again: <strong>Cite</strong> is on the Home tab. Keep Lunta open while you cite.</li>
+  <li><strong>Citing in Google Docs:</strong> with the browser extension installed and Lunta open, every Google
+    Docs document has a <strong>Lunta</strong> button at the bottom right. Click it and <strong>Connect Google
+    account</strong> (once). The first time you cite in a document, click <strong>Give Lunta access to this
+    document</strong> and then <strong>Select</strong> in Google's window (the document is chosen already): once
+    per document. Lunta sees only the documents you give it. A brand-new document appears in Google's window
+    once it has some text: type something, wait a few seconds, then try again.</li>
 </ul>
 </section>
 
@@ -167,12 +200,30 @@ your Google Drive. JabRef and BibDesk: choose the .bib file directly; linked PDF
 
 <p>Step-by-step details: <a href="https://github.com/christoffermattssonlangseth/lunta/blob/main/docs/importing.md">Bringing
 your library to Lunta</a>.</p>
+
+<h3 id="convert-citations">Moving a manuscript from EndNote, Zotero or Mendeley</h3>
+<p>A manuscript written with EndNote, Zotero or Mendeley keeps its citations: open it in Word and, in Lunta's
+panel (<strong>Cite</strong> on the Home tab), click <strong>More</strong> › <strong>Convert Citations from
+Zotero, EndNote or Mendeley…</strong>. In Google Docs, Lunta's panel has it under <strong>More</strong> too:
+<strong>Convert Citations from Zotero…</strong>. Lunta reads
+each citation's papers from the document, finds them in your library (by DOI, PubMed ID or title) and shows what
+it found, for example “12 citations, 34 papers: 30 in your library, 4 to add”, with the papers it would add; untick
+any you don't want. Papers found only by a similar title are listed too: untick one if it's another paper (Part II
+rather than Part I, say) and it's added instead. Nothing in the document changes until you click <strong>Convert</strong>. Then the citations
+become Lunta citations, keeping their pages, prefixes and suffixes, the old reference list becomes Lunta's, and
+the citations are formatted in the document's style (change it in the panel's style menu). A citation whose papers
+can't all be found stays exactly as it was, and the panel lists it. Save a copy of the document first
+(<strong>File › Save a Copy</strong> in Word; Google Docs keeps the old version in its version history).</p>
+<p>Word must be Word 2021 or newer, Microsoft 365 or Word on the web. Zotero citations stored as bookmarks can't
+be read: in Zotero's Document Preferences choose <em>Store citations as: Fields</em> first. Paperpile's
+citations in Google Docs can't be converted (Paperpile keeps their details on its own server).</p>
 </section>
 
 <section>
 <h2 id="first">4. First steps</h2>
 <ul>
   <li><strong>Add a paper:</strong> the + button (⇧⌘N on the Mac) with a DOI, PubMed ID or arXiv link; drop PDFs on the list; or share a page from Safari or Chrome.</li>
+  <li><strong>Add a web page or blog post:</strong> paste its link the same way, or use <strong>Save as web page</strong> in the browser extension. Lunta keeps its title, authors, date, site, address and the day you read it, makes a reading view of the text, and cites it like a paper (APA: “Author. (2019, April 25). Title. Site. URL”).</li>
   <li><strong>Read:</strong> open a paper for its reading view: text that fits the screen, tappable figures
     and citations, themes, scroll or turn pages. The PDF is one tap away.</li>
   <li><strong>Highlight:</strong> select text and pick a color, or turn on highlight mode (the highlighter

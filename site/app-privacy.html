@@ -43,7 +43,7 @@
     <div class="wrap">
       <p class="kicker">Privacy policy</p>
       <h1>Privacy policy</h1>
-      <p>Lunta for iPhone, iPad, Mac, Android, Windows and Linux · last updated 23 November 2026</p>
+      <p>Lunta for iPhone, iPad, Mac, Android, Windows and Linux · last updated 26 November 2026</p>
     </div>
   </div>
 </div>
@@ -112,10 +112,14 @@ protected, and how long it is kept.</p>
 
 <h3 id="google-data-accessed">What Lunta accesses</h3>
 <ul>
-  <li><strong>Google Docs</strong> (permission <code>https://www.googleapis.com/auth/documents</code>): the text and
-      structure of the document you are citing in, as Google's Docs API returns it, including the citations,
-      the bibliography and the details of the cited papers that Lunta stored in that document earlier.</li>
-  <li><strong>Google Drive</strong> (if you keep your library there): the “Lunta” folder Lunta creates in your
+  <li><strong>Google Docs</strong> (permission <code>https://www.googleapis.com/auth/drive.file</code>, “only the
+      specific Google Drive files you use with this app”): Lunta sees only the documents you choose to give it in
+      Google's file picker, one by one; it cannot see, list or open any other document or file. Of a document you
+      gave it, Lunta reads the text and structure of the document you are citing in, as Google's Docs API returns
+      it, including the citations, the bibliography and the details of the cited papers that Lunta stored in that
+      document earlier.</li>
+  <li><strong>Google Drive</strong> (if you keep your library there; permission
+      <code>https://www.googleapis.com/auth/drive</code>, a separate sign-in): the “Lunta” folder Lunta creates in your
       Drive and the files inside it (your library's papers, PDFs, highlights and notes). Lunta doesn't open, list
       or change anything else in your Drive.</li>
   <li>Lunta does not access your name, email address, contacts or any other Google data.</li>
@@ -123,7 +127,8 @@ protected, and how long it is kept.</p>
 
 <h3 id="google-data-use">How Lunta uses it</h3>
 <ul>
-  <li><strong>Google Docs</strong>: only for the document you are citing in, and only when you click Insert
+  <li><strong>Google Docs</strong>: only for the document you are citing in, after you gave it to Lunta in Google's
+      picker (“Give Lunta access to this document”), and only when you open Lunta's panel in it or click Insert
       Citation, Insert Bibliography or Update All, or change the citation style. Lunta reads the document to find
       its citations, and writes the formatted citations, the bibliography and the details of the cited papers
       (kept in the document, so co-authors can update it) back into that document.</li>
@@ -172,15 +177,20 @@ protected, and how long it is kept.</p>
       extension keeps its Google Docs token in the browser's session storage until the browser quits; the Lunta
       app on the Mac keeps its Google Docs sign-in in the macOS Keychain; the Google Drive sign-in is kept in the
       app's private storage on the device (a file only Lunta can read).</li>
+  <li>To show Google's file picker, the browser extension opens a page on this site
+      (<code>getlunta.app/picker.html</code>) in a window of its own and passes it the sign-in token in the part of
+      the address that browsers never send to a server. That page runs only in your browser, keeps nothing, has no
+      analytics, and gives the token only to Google's picker; it tells the extension which document you chose.</li>
   <li>Lunta asks only for the permissions these features need, and only when you connect.</li>
 </ul>
 
 <h3 id="google-data-retention">How long it is kept, and how to delete it</h3>
 <ul>
-  <li><strong>Google Docs</strong>: Lunta keeps no copy of your documents. A document's content is held in
+  <li><strong>Google Docs</strong>: Lunta keeps no copy of your documents. It remembers, on your device, the ids of
+      the documents you gave it (not their content), until you disconnect. A document's content is held in
       memory only while a citation or bibliography is being written, and discarded right after. What Lunta writes
-      into a document stays in that document, which you control; Convert Citations to Plain Text removes the
-      stored paper details from it.</li>
+      into a document, including the stored details of the cited papers, stays in that document, which you
+      control.</li>
   <li><strong>Google Drive</strong>: your library stays in your own Drive until you delete the “Lunta” folder.
       Lunta keeps a copy on your device to work offline, which is removed when you delete the app or choose a
       different library location.</li>
@@ -196,7 +206,8 @@ including the Limited Use requirements.</p>
 
 <h3 id="citing-in-google-docs-with-the-browser-extension">Citing in Google Docs in Safari</h3>
 <p>In Safari on the Mac, the Lunta app connects to Google instead of the extension (Safari doesn't let extensions
-sign in to Google), with the same permission used the same way: the extension passes your clicks to the Lunta app
+sign in to Google), with the same permission used the same way: you give it each document in Google's file picker,
+which Google shows on its sign-in page in your browser, and the extension passes your clicks to the Lunta app
 on your Mac, which reads and writes the document you are citing in. The document's content then goes only between
 Google and the Lunta app on your Mac. The app keeps its sign-in in your Mac's Keychain until you disconnect or
 remove the permission.</p>
