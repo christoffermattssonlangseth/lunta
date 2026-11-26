@@ -1,6 +1,6 @@
 [package]
 name = "lunta-desktop"
-version = "1.1.0"
+version = "1.2.91"
 description = "Lunta for Windows and Linux: the library and reader on top of the Rust core"
 edition = "2021"
 license = "MIT"
